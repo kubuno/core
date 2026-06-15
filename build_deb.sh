@@ -258,10 +258,10 @@ Depends: libssl3, ca-certificates, postgresql-common
 Recommends: postgresql-16
 Section: web
 Priority: optional
-Homepage: https://github.com/kubuno/kubuno
+Homepage: https://github.com/kubuno/core
 Description: Kubuno Core — plateforme cloud self-hosted (build ${BUILD_NUM})
  Core haute performance (Rust + Axum) de la plateforme Kubuno.
- Alternative open-source à Nextcloud, architecture modulaire.
+ Alternative souverainiste et open-source à Google Workspace et Microsoft 365, architecture modulaire.
 EOF
 
     cat > "${PKG_DIR}/DEBIAN/postinst" << 'POSTINST'

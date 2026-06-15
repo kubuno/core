@@ -115,7 +115,7 @@
   },
   "about": {
     "title": "Kubuno について",
-    "description": "オープンソースのセルフホスト型クラウドストレージ。Nextcloud/ownCloud の代替。高性能な Rust コアとモジュール型アーキテクチャを採用。",
+    "description": "オープンソースのセルフホスト型クラウドストレージ。Google Workspace / Microsoft 365 の代替。高性能な Rust コアとモジュール型アーキテクチャを採用。",
     "engine": "エンジン",
     "license": "ライセンス",
     "modules": "モジュール",

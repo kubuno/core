@@ -2,7 +2,7 @@
 
 ## Contexte & mission
 
-Implémenter le **core de Kubuno** : plateforme de stockage cloud self-hosted open source (AGPLv3), alternative à Nextcloud/ownCloud. Le core est le "système d'exploitation" de la plateforme — il fournit les infrastructures dont les modules indépendants (files, photos, chat, agenda, ai…) ont besoin.
+Implémenter le **core de Kubuno** : plateforme cloud self-hosted open source (AGPLv3), alternative souverainiste à Google Workspace et Microsoft 365. Le core est le "système d'exploitation" de la plateforme — il fournit les infrastructures dont les modules indépendants (files, photos, chat, agenda, ai…) ont besoin.
 
 **Principe fondamental :** les modules sont des processus séparés (Rust ou Python) qui se connectent au core au démarrage. Le core proxifie leurs routes, distribue les events, gère leur cycle de vie. Aucun module métier dans cette session.
 

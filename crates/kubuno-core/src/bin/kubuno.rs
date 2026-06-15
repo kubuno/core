@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::io::{self, BufRead, Write};
 use std::process::Command as Proc;
 
-// ── Helpers d'affichage (style Nextcloud OCC) ─────────────────────
+// ── Display helpers (OCC-style CLI output) ─────────────────────
 
 const RESET: &str = "\x1b[0m";
 const BOLD:  &str = "\x1b[1m";

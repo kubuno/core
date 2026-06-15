@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 use uuid::Uuid;
 
-// ── Style Nextcloud (nouveau) ─────────────────────────────────────────────────
+// ── User file storage path layout ─────────────────────────────────────────────
 
-/// Chemin physique d'un fichier utilisateur — style Nextcloud.
-/// Format (relatif à la base du storage): {owner_id}/files{folder_virt_path}/{filename}
+/// Physical path of a user file.
+/// Format (relative to the storage root): {owner_id}/files{folder_virt_path}/{filename}
 ///
-/// `folder_virt_path` vient de `files.folders.path` : chaîne vide pour la racine,
-/// "/Documents" pour un dossier racine, "/Documents/Sous-Dossier" pour un dossier imbriqué.
-/// Le nom original est conservé → l'arborescence sur disque reflète l'arborescence virtuelle.
+/// `folder_virt_path` comes from `files.folders.path`: empty string for the root,
+/// "/Documents" for a top-level folder, "/Documents/Subfolder" for a nested folder.
+/// The original name is preserved → the on-disk tree mirrors the virtual tree.
 pub fn user_file_path(owner_id: Uuid, folder_virt_path: &str, filename: &str) -> PathBuf {
     let mut p = PathBuf::from(owner_id.to_string()).join("files");
     let rel = folder_virt_path.trim_start_matches('/');
@@ -18,7 +18,7 @@ pub fn user_file_path(owner_id: Uuid, folder_virt_path: &str, filename: &str) ->
     p.join(filename)
 }
 
-/// Répertoire physique correspondant à un dossier virtuel.
+/// Physical directory matching a virtual folder.
 /// Format: {owner_id}/files{folder_virt_path}
 pub fn user_folder_dir(owner_id: Uuid, folder_virt_path: &str) -> PathBuf {
     let mut p = PathBuf::from(owner_id.to_string()).join("files");
@@ -29,7 +29,7 @@ pub fn user_folder_dir(owner_id: Uuid, folder_virt_path: &str) -> PathBuf {
     p
 }
 
-/// Chemin d'une version de fichier.
+/// Path of a file version.
 /// Format: {owner_id}/versions/{file_id}/{version_number}/{filename}
 pub fn user_version_path(owner_id: Uuid, file_id: Uuid, version_number: i32, filename: &str) -> PathBuf {
     PathBuf::from(owner_id.to_string())
@@ -39,7 +39,7 @@ pub fn user_version_path(owner_id: Uuid, file_id: Uuid, version_number: i32, fil
         .join(filename)
 }
 
-/// Chemin d'un thumbnail — style Nextcloud.
+/// Thumbnail path.
 /// Format: {owner_id}/thumbnails/{file_id}.jpg
 pub fn user_thumbnail_path(owner_id: Uuid, file_id: Uuid) -> PathBuf {
     PathBuf::from(owner_id.to_string())

@@ -13,7 +13,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)
 ![Status](https://img.shields.io/badge/status-alpha-yellow.svg)
 
-**The heart of Kubuno — a self-hosted, libre (AGPLv3) cloud storage platform, an alternative to Nextcloud/ownCloud.**
+**The heart of Kubuno — a self-hosted, libre (AGPLv3) cloud platform, a sovereign alternative to Google Workspace and Microsoft 365.**
 
 The *core* is the platform's "operating system": it provides the infrastructure (auth, database, events, storage, reverse proxy, WebSocket, module lifecycle) that **independent modules** (drive, calendar, mail, photos, office, chat…) rely on to run.
 

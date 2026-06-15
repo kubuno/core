@@ -115,7 +115,7 @@
   },
   "about": {
     "title": "关于 Kubuno",
-    "description": "开源自托管云存储平台，Nextcloud/ownCloud 的替代方案。基于高性能 Rust 内核和模块化架构构建。",
+    "description": "开源自托管云存储平台，Google Workspace / Microsoft 365 的替代方案。基于高性能 Rust 内核和模块化架构构建。",
     "engine": "引擎",
     "license": "许可证",
     "modules": "模块",
