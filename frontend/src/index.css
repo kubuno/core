@@ -1,3 +1,13 @@
+/* Cascade-layer order for runtime-loaded modules (polyrepo).
+ * Modules are built independently and their Tailwind CSS is injected AFTER the
+ * host stylesheet. Each module emits its utilities into the `kubuno-module`
+ * layer (via `@import "tailwindcss" layer(kubuno-module)` in its index.css).
+ * Placing `kubuno-module` BELOW the host `utilities` layer means host shell
+ * utilities (e.g. AppSidebar's `lg:relative`) always beat a module's
+ * re-emitted base utilities (e.g. `.fixed`); placing it ABOVE `base` keeps
+ * module utilities winning over the preflight reset. Order is locked here so
+ * the host establishes it before any module CSS loads at runtime. */
+@layer components, properties, theme, base, kubuno-module, utilities;
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 @import "./theme.css";
