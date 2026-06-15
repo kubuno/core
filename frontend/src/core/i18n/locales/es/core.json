@@ -115,7 +115,7 @@
   },
   "about": {
     "title": "Acerca de Kubuno",
-    "description": "Plataforma de almacenamiento en la nube autoalojada y de código abierto, alternativa a Nextcloud/ownCloud. Construida sobre un core de alto rendimiento en Rust y una arquitectura modular.",
+    "description": "Plataforma de almacenamiento en la nube autoalojada y de código abierto, alternativa a Google Workspace / Microsoft 365. Construida sobre un core de alto rendimiento en Rust y una arquitectura modular.",
     "engine": "Motor",
     "license": "Licencia",
     "modules": "Módulos",

@@ -115,7 +115,7 @@
   },
   "about": {
     "title": "À propos de Kubuno",
-    "description": "Plateforme de stockage cloud self-hosted open source, alternative à Nextcloud/ownCloud. Conçu autour d'un core haute performance en Rust et d'une architecture modulaire.",
+    "description": "Plateforme de stockage cloud self-hosted open source, alternative à Google Workspace / Microsoft 365. Conçu autour d'un core haute performance en Rust et d'une architecture modulaire.",
     "engine": "Moteur",
     "license": "Licence",
     "modules": "Modules",

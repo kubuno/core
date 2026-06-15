@@ -115,7 +115,7 @@
   },
   "about": {
     "title": "Σχετικά με το Kubuno",
-    "description": "Πλατφόρμα αποθήκευσης cloud ανοιχτού κώδικα για self-hosting, εναλλακτική στο Nextcloud/ownCloud. Βασισμένη σε έναν υψηλών επιδόσεων core σε Rust και αρθρωτή αρχιτεκτονική.",
+    "description": "Πλατφόρμα αποθήκευσης cloud ανοιχτού κώδικα για self-hosting, εναλλακτική στο Google Workspace / Microsoft 365. Βασισμένη σε έναν υψηλών επιδόσεων core σε Rust και αρθρωτή αρχιτεκτονική.",
     "engine": "Μηχανή",
     "license": "Άδεια",
     "modules": "Modules",
