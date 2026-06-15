@@ -1,19 +1,35 @@
 {
   "name": "@kubuno/drive",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Kubuno drive client surface (@kubuno/drive) — file browser, storage explorer and dialogs reused by file-backed modules. Provided by the host at runtime via the import map; this package ships the type surface.",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/drive",
-  "repository": { "type": "git", "url": "git+https://github.com/kubuno/core.git", "directory": "frontend/packages/drive" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubuno/core.git",
+    "directory": "frontend/packages/drive"
+  },
   "type": "module",
   "sideEffects": false,
-  "files": ["index.js", "types", "README.md"],
+  "files": [
+    "index.js",
+    "types",
+    "README.md"
+  ],
   "types": "./types/drive/index.d.ts",
   "exports": {
-    ".": { "types": "./types/drive/index.d.ts", "import": "./index.js" },
-    "./*": { "types": "./types/drive/*.d.ts", "import": "./index.js" }
+    ".": {
+      "types": "./types/drive/index.d.ts",
+      "import": "./index.js"
+    },
+    "./*": {
+      "types": "./types/drive/*.d.ts",
+      "import": "./index.js"
+    }
   },
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "@kubuno/sdk": "^0.1.1",
     "@kubuno/ui": "^0.1.1",
