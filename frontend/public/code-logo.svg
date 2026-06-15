@@ -1,0 +1,9 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Éditeur de code — curseur d'insertion</title>
+  <desc>Icône : carré arrondi sombre avec un curseur d'insertion cyan entre des caractères.</desc>
+  <rect width="512" height="512" rx="114" fill="#0F172A"/>
+  <rect x="171" y="218" width="34" height="76" rx="3" fill="#475569"/>
+  <rect x="215" y="218" width="34" height="76" rx="3" fill="#475569"/>
+  <rect x="307" y="218" width="34" height="76" rx="3" fill="#475569"/>
+  <path d="M271 168 L271 344 M247 168 L295 168 M247 344 L295 344" stroke="#38BDF8" stroke-width="16" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Precipitation droplet — amCharts visual style (palette #57A0EE / #91C0F8, CSS animation). -->
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <style type="text/css"><![CDATA[
+      @keyframes am-drop-bob {
+        0%, 100% { transform: translateY(0); }
+        50%      { transform: translateY(-1.2px); }
+      }
+      @keyframes am-drop-shine {
+        0%, 100% { opacity: .35; }
+        50%      { opacity: .6; }
+      }
+      .am-drop  { animation: am-drop-bob 2.4s ease-in-out infinite; transform-origin: 16px 18px; }
+      .am-drop-h{ animation: am-drop-shine 2.4s ease-in-out infinite; }
+    ]]></style>
+    <linearGradient id="am-drop-g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#91C0F8"/>
+      <stop offset="100%" stop-color="#57A0EE"/>
+    </linearGradient>
+  </defs>
+  <g class="am-drop">
+    <path d="M16 4 C16 4 7 16.5 7 22 a9 9 0 0 0 18 0 C25 16.5 16 4 16 4 Z"
+          fill="url(#am-drop-g)" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>
+    <ellipse class="am-drop-h" cx="12.6" cy="20" rx="2.1" ry="3.3" fill="#ffffff" opacity="0.45"
+             transform="rotate(-20 12.6 20)"/>
+  </g>
+</svg>

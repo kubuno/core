@@ -1,0 +1,162 @@
+.TH KUBUNO 1 "2026-05-21" "Kubuno 0.1.0" "Console d'administration Kubuno"
+.SH NOM
+kubuno \- Console d'administration de la plateforme cloud Kubuno
+.SH SYNOPSIS
+.B kubuno
+.I COMMANDE
+.RI [ OPTIONS ]
+.RI [ ARGUMENTS ]
+.SH DESCRIPTION
+.B kubuno
+est l'interface en ligne de commande de la plateforme cloud self-hosted Kubuno.
+Il permet de gérer la base de données PostgreSQL (sauvegarde, restauration,
+réinitialisation, migrations) et de consulter l'état du serveur.
+.PP
+La configuration est chargée depuis
+.B .env
+(répertoire courant) ou
+.B /etc/kubuno/kubuno.env
+(installation système).
+.SH COMMANDES
+.SS Base de données
+.TP
+.B db:backup [\-o FICHIER] [\-\-full]
+Sauvegarde la base de données PostgreSQL via
+.BR pg_dump (1).
+Par défaut, seul le schéma
+.I core
+est exporté au format SQL plain.
+L'option
+.B \-\-full
+exporte toute la base.
+Le fichier de sortie par défaut est
+.IR kubuno_backup_YYYYMMDD_HHMMSS.sql .
+.TP
+.B db:restore FICHIER [\-\-force]
+Restaure la base depuis un fichier SQL produit par
+.BR db:backup ,
+via
+.BR psql (1).
+Demande une confirmation interactive sauf avec
+.BR \-\-force .
+.TP
+.B db:reset [\-\-force]
+.B ATTENTION : détruit toutes les données.
+Supprime le schéma
+.I core
+en CASCADE puis applique toutes les migrations depuis zéro.
+Demande de saisir le mot
+.I reset
+pour confirmer, sauf avec
+.BR \-\-force .
+.TP
+.B db:migrate
+Applique les migrations SQL en attente (celles qui n'ont pas encore été exécutées).
+.TP
+.B db:status
+Affiche la connectivité à la base de données, la version PostgreSQL et
+la liste des migrations appliquées avec leur statut.
+.SS Serveur
+.TP
+.B status
+Interroge l'endpoint
+.I /health
+du serveur Kubuno en local et affiche son état.
+.SH OPTIONS GLOBALES
+.TP
+.B \-h, \-\-help
+Affiche l'aide et quitte.
+.TP
+.B \-V, \-\-version
+Affiche la version et quitte.
+.SH EXEMPLES
+.PP
+Sauvegarder la base dans un fichier nommé :
+.PP
+.RS
+.nf
+kubuno db:backup \-o /var/backups/kubuno_prod.sql
+.fi
+.RE
+.PP
+Restaurer sans confirmation :
+.PP
+.RS
+.nf
+kubuno db:restore /var/backups/kubuno_prod.sql \-\-force
+.fi
+.RE
+.PP
+Réinitialiser complètement la base en CI (non-interactif) :
+.PP
+.RS
+.nf
+kubuno db:reset \-\-force
+.fi
+.RE
+.PP
+Vérifier la connectivité et les migrations :
+.PP
+.RS
+.nf
+kubuno db:status
+.fi
+.RE
+.SH CONFIGURATION
+.B kubuno
+utilise le même fichier de configuration que le serveur.
+La recherche se fait dans l'ordre suivant :
+.TP
+.I config.toml
+Répertoire courant (développement).
+.TP
+.I /etc/kubuno/config.toml
+Installation système (production).
+.PP
+La connexion à la base de données peut être configurée de deux façons :
+.TP
+.B Champs individuels (recommandé)
+Renseignez
+.BR host ,
+.BR port ,
+.BR user ,
+.BR password
+et
+.B database
+séparément — les caractères spéciaux du mot de passe sont acceptés sans encodage.
+.TP
+.B URL complète
+Le champ
+.B url
+accepte une URL PostgreSQL complète ; les caractères spéciaux doivent être
+encodés URL ('#' → %23, '@' → %40).
+.PP
+Les variables d'environnement préfixées
+.B KV__
+(double underscore) surchargent les valeurs du fichier TOML.
+Exemple :
+.B KV__DATABASE__USER=kubuno
+ou
+.B KV__DATABASE__URL=postgres://...
+(utile pour Docker ou CI).
+.SH FICHIERS
+.TP
+.I /etc/kubuno/config.toml
+Fichier de configuration de l'instance installée.
+.TP
+.I /etc/kubuno/config.toml.example
+Modèle de configuration commenté.
+.TP
+.I /usr/share/kubuno/migrations/
+Fichiers SQL de migration du schéma core.
+.SH VOIR AUSSI
+.BR kubuno-core (8),
+.BR pg_dump (1),
+.BR psql (1),
+.BR systemctl (1)
+.SH AUTEURS
+Kubuno Contributors <contact@kubuno.io>
+.br
+.I https://github.com/kubuno/kubuno
+.SH LICENCE
+AGPLv3 — GNU Affero General Public License version 3.

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO files.remote_connections\n               (owner_id, name, provider, config_enc, mount_name)\n           VALUES ($1, $2, $3, $4, $5)\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Bytea",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1b2c9b27393374e4ba5047dc812beeb5df072ce0872a4295028982938530a72b"
+}
