@@ -1,0 +1,31 @@
+{
+  "id": "kubuno-dark",
+  "name": "Kubuno Dark",
+  "color_scheme": "dark",
+  "vars": {
+    "--color-primary":         "#8ab4f8",
+    "--color-primary-hover":   "#aecbfa",
+    "--color-primary-light":   "#1a3a5c",
+    "--color-white":           "#202124",
+    "--color-surface-0":       "#202124",
+    "--color-surface-1":       "#292a2d",
+    "--color-surface-2":       "#35363a",
+    "--color-surface-3":       "#444746",
+    "--color-search-bg":       "#303134",
+    "--color-text-primary":    "#e8eaed",
+    "--color-text-secondary":  "#9aa0a6",
+    "--color-text-tertiary":   "#80868b",
+    "--color-text-nav-active": "#aecbfa",
+    "--color-border":          "#5f6368",
+    "--color-border-strong":   "#80868b",
+    "--color-danger":          "#f28b82",
+    "--color-danger-light":    "#3d1c1c",
+    "--color-success":         "#81c995",
+    "--color-success-light":   "#1a3a27",
+    "--color-warning":         "#fdd663",
+    "--color-warning-light":   "#3d3218",
+    "--body-bg":               "#17181b",
+    "--scrollbar-thumb":       "#5f6368",
+    "--scrollbar-thumb-hover": "#80868b"
+  }
+}

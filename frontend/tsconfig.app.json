@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "paths": {
+      "@ui": ["./src/ui/index.ts"],
+      "@ui/*": ["./src/ui/*"],
+      "@kubuno/sdk": ["./src/sdk/index.ts"],
+      "@kubuno/drive": ["./src/drive/index.ts"]
+    },
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"],
+  "comment_exclude": "shims de build-only (ré-exports de paquets à `export =`) : compilés par rolldown, hors typecheck",
+  "exclude": ["src/sdk/shared"]
+}

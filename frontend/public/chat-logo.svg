@@ -1,0 +1,9 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Chat — dialogue</title>
+  <desc>Icône : carré arrondi bleu avec deux bulles de discussion qui se font face.</desc>
+  <rect width="512" height="512" rx="114" fill="#0EA5E9"/>
+  <rect x="72" y="132" width="150" height="116" rx="34" fill="#FFFFFF"/>
+  <polygon points="110,244 110,294 152,248" fill="#FFFFFF"/>
+  <rect x="290" y="204" width="150" height="116" rx="34" fill="#BAE6FD"/>
+  <polygon points="402,316 402,366 360,320" fill="#BAE6FD"/>
+</svg>

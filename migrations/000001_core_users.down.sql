@@ -1,0 +1,8 @@
+DROP TRIGGER IF EXISTS users_updated_at ON core.users;
+DROP FUNCTION IF EXISTS core.set_updated_at();
+DROP TABLE IF EXISTS core.users;
+DROP EXTENSION IF EXISTS "citext";
+DROP EXTENSION IF EXISTS "unaccent";
+DROP EXTENSION IF EXISTS "pg_trgm";
+DROP EXTENSION IF EXISTS "uuid-ossp";
+DROP SCHEMA IF EXISTS core;

@@ -1,0 +1,170 @@
+# ══════════════════════════════════════════════════════════════════
+# Kubuno Core — fichier de configuration
+#
+# Usage :
+#   Développement : copiez en config.toml dans la racine du projet
+#   Production    : copiez en /etc/kubuno/config.toml
+#
+# Les valeurs marquées OBLIGATOIRE n'ont pas de défaut raisonnable
+# et doivent impérativement être renseignées avant le démarrage.
+#
+# Surcharge ponctuelle possible via variables d'environnement :
+#   KV__SECTION__CLE=valeur  (double underscore comme séparateur)
+#   Exemple : KV__DATABASE__URL=postgres://...
+#   Utile pour Docker / CI sans modifier ce fichier.
+# ══════════════════════════════════════════════════════════════════
+
+
+# ── Serveur HTTP ──────────────────────────────────────────────────
+[server]
+
+# Adresse d'écoute. Utilisez "127.0.0.1" pour exposer uniquement en local.
+host = "0.0.0.0"
+
+# Port TCP.
+port = 8080
+
+# Chemin vers le build React servi par le core.
+# Modifié automatiquement lors de l'installation Debian (/usr/share/kubuno/frontend).
+frontend_dist = "./frontend/dist"
+
+# Répertoire contenant les modules installés.
+# Chaque sous-répertoire doit contenir un fichier module.toml.
+# Production (installation Debian) : /usr/lib/kubuno/modules
+# Développement local              : laisser vide pour désactiver le démarrage auto
+modules_dir = "/usr/lib/kubuno/modules"
+
+# Répertoire de stockage des thèmes importés par l'administrateur.
+# Les thèmes Kubuno Light et Kubuno Dark sont intégrés dans le binaire
+# et n'ont pas besoin de fichiers sur le disque.
+# Ce répertoire est utilisé uniquement pour les thèmes personnalisés importés via l'UI.
+# Production (installation Debian) : /var/lib/kubuno/themes
+# Développement local              : ./themes
+themes_dir = "/var/lib/kubuno/themes"
+
+# Secret partagé entre le core et les modules pour les appels /internal/*.
+# OBLIGATOIRE — générez avec : openssl rand -hex 32
+internal_secret = "CHANGEZ_MOI"
+
+# ── Protection anti-DDoS (surchargeable par variables d'environnement) ──
+# Ces réglages se font via l'environnement, pas via ce fichier :
+#   KV_SERVER_MAX_CONCURRENT     Requêtes traitées en parallèle avant load-shed (503). Défaut 1024.
+#   KV_SERVER_RATE_LIMIT_PER_MIN Requêtes/minute autorisées par IP, toutes routes. Défaut 600.
+# Les WebSockets et le streaming des modules ne sont pas comptés dans la
+# limite de concurrence. La terminaison TLS et les limites de connexions/
+# bande passante restent à configurer côté reverse-proxy (nginx).
+
+
+# ── Base de données ───────────────────────────────────────────────
+[database]
+
+# Mode recommandé : champs individuels (aucun encodage requis).
+# OBLIGATOIRE : user, password et database doivent être renseignés.
+host     = "localhost"
+port     = 5432
+user     = "kubuno"
+password = "votre_mot_de_passe"    # les caractères spéciaux sont acceptés tels quels
+database = "kubuno"
+
+# Mode alternatif : URL complète (les caractères spéciaux du mot de passe
+# doivent être encodés : '#' → %23  '@' → %40  ':' → %3A  '/' → %2F).
+# Si url est défini, les champs individuels ci-dessus sont ignorés.
+# url = "postgres://kubuno:mot_de_passe@localhost:5432/kubuno"
+
+# Taille maximale du pool de connexions (requêtes HTTP concurrentes).
+max_connections = 20
+
+# Connexions maintenues ouvertes en permanence (réduit la latence).
+min_connections = 2
+
+# Délai maximal pour établir une connexion, en secondes.
+connect_timeout = 10
+
+# Appliquer automatiquement les migrations SQL au démarrage.
+# Mettez à false si vous gérez les migrations manuellement (CI/CD, DBA).
+run_migrations = true
+
+
+# ── Authentification & sécurité ───────────────────────────────────
+[auth]
+
+# Clé de signature des tokens JWT.
+# OBLIGATOIRE — minimum 32 caractères — générez avec : openssl rand -base64 48
+jwt_secret = "CHANGEZ_MOI_AVEC_UNE_CLE_LONGUE_ET_ALEATOIRE"
+
+# Durée de vie du token d'accès, en secondes. 900 = 15 minutes.
+access_token_ttl = 900
+
+# Durée de vie du refresh token, en jours. 30 = un mois.
+refresh_token_ttl = 30
+
+# ─ OAuth Google (optionnel) ───────────────────────────────────────
+# Créez vos identifiants sur https://console.cloud.google.com
+# oauth_google_id     = ""
+# oauth_google_secret = ""
+
+# ─ OAuth GitHub (optionnel) ──────────────────────────────────────
+# Créez vos identifiants sur https://github.com/settings/developers
+# oauth_github_id     = ""
+# oauth_github_secret = ""
+
+
+# ── Stockage de fichiers ──────────────────────────────────────────
+[storage]
+
+# Backend de stockage : "local" ou "s3".
+backend = "local"
+
+# Chemin du répertoire de stockage local.
+# Doit être accessible en lecture/écriture par l'utilisateur kubuno.
+# Production (installation Debian) : /var/lib/kubuno/files
+# Développement local              : ./data/files
+local_path = "/var/lib/kubuno/files"
+
+# ─ Backend S3 / compatible (MinIO, Backblaze B2, OVH Object Storage…) ─
+# Décommentez et remplissez si backend = "s3".
+#
+# s3_bucket     = "kubuno"
+# s3_region     = "eu-west-1"
+# s3_endpoint   = "https://s3.amazonaws.com"  # ou URL MinIO, ex: http://minio:9000
+# s3_access_key = ""
+# s3_secret_key = ""
+
+
+# ── Journalisation ────────────────────────────────────────────────
+[logging]
+
+# Niveau de verbosité : "error", "warn", "info", "debug", "trace".
+# Recommandé : "info" en production, "debug" en développement.
+level = "info"
+
+# Format des logs vers stdout / journald :
+#   "pretty" — lisible par un humain, idéal pour le développement
+#   "json"   — structuré, idéal pour Loki, Elasticsearch, etc.
+# Les logs fichiers (access.log, error.log) ont toujours leur propre format
+# indépendamment de ce paramètre.
+format = "pretty"
+
+# Répertoire où écrire les fichiers de logs.
+#   access.log — toutes les requêtes HTTP, format Apache Combined Log
+#   error.log  — WARN et ERROR du core et des modules
+# Ce répertoire doit être accessible en écriture par l'utilisateur kubuno.
+# Production (installation Debian) : /var/log/kubuno
+# Développement local              : ./logs
+log_dir = "/var/log/kubuno"
+
+# Activer l'écriture dans les fichiers.
+# Mettez à false en développement pour n'utiliser que stdout.
+file_enabled = true
+
+# Politique de rotation des fichiers de logs.
+#   "never"  — fichiers fixes access.log / error.log (recommandé en production)
+#              la rotation externe est gérée par logrotate (/etc/logrotate.d/kubuno)
+#              qui archive avec une date (ex: access.log-2026-05-21.gz) sans
+#              interrompre le processus (copytruncate).
+#   "daily"  — un nouveau fichier par jour  (ex: access.2026-05-21.log)
+#   "hourly" — un nouveau fichier par heure (ex: access.2026-05-21-16.log)
+rotation = "never"
+
+# Nombre de fichiers rotatifs à conserver (ignoré si rotation = "never").
+max_log_files = 30

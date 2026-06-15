@@ -1,0 +1,6 @@
+/* Feuille de base d'un bundle de module : Tailwind (scanne les sources du module
+   → génère uniquement les utilitaires utilisés) + les tokens de thème partagés.
+   Importée par chaque `entry.ts` ; compilée en un seul `entry.css` que le loader
+   injecte avant d'exécuter le module. */
+@import "tailwindcss";
+@import "./theme.css";

@@ -1,0 +1,33 @@
+[package]
+name        = "kubuno-storage"
+version     = "0.1.0"
+edition     = "2021"
+description = "Kubuno shared storage backend (local FS + S3-compatible)"
+license     = "AGPL-3.0"
+
+[dependencies]
+tokio       = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures     = "0.3"
+bytes       = "1"
+tokio-util  = { version = "0.7", features = ["io"] }
+
+serde       = { version = "1", features = ["derive"] }
+
+thiserror   = "1"
+anyhow      = "1"
+
+uuid        = { version = "1", features = ["v4", "serde"] }
+chrono      = { version = "0.4", features = ["serde"] }
+tracing     = "0.1"
+sha2        = "0.10"
+hex         = "0.4"
+
+[dev-dependencies]
+tokio       = { version = "1", features = ["full"] }
+tempfile    = "3"
+
+[features]
+default = ["local"]
+local   = []
+s3      = []
