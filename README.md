@@ -13,22 +13,22 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)
 ![Status](https://img.shields.io/badge/status-alpha-yellow.svg)
 
-**Le cœur de Kubuno — une plateforme de stockage cloud self-hosted, libre (AGPLv3), alternative à Nextcloud/ownCloud.**
+**The heart of Kubuno — a self-hosted, libre (AGPLv3) cloud storage platform, an alternative to Nextcloud/ownCloud.**
 
-Le *core* est le « système d'exploitation » de la plateforme : il fournit les infrastructures (auth, base de données, événements, stockage, proxy, WebSocket, gestion des modules) dont les **modules indépendants** (files/drive, calendar, mail, photos, office, chat…) ont besoin pour fonctionner.
+The *core* is the platform's "operating system": it provides the infrastructure (auth, database, events, storage, reverse proxy, WebSocket, module lifecycle) that **independent modules** (drive, calendar, mail, photos, office, chat…) rely on to run.
 
 </div>
 
 ---
 
-## ✨ Pourquoi Kubuno ?
+## ✨ Why Kubuno?
 
-- 🧩 **Architecture modulaire** — chaque module (drive, calendar, mail, office, photos…) est un **processus séparé** (Rust ou Python) qui se connecte au core au démarrage. Le core proxifie leurs routes, distribue les événements et gère leur cycle de vie.
-- 🏠 **Vos données chez vous** — self-hosted de bout en bout, aucune dépendance à un service tiers.
-- 🔐 **Sécurité par défaut** — JWT + refresh tokens HttpOnly, Argon2id, AES-256-GCM, durcissement anti-DDoS, bac à sable seccomp pour les modules.
-- ⚡ **Rust + Axum + PostgreSQL** — un backend rapide et sobre ; PostgreSQL sert aussi de bus (`LISTEN/NOTIFY`) et de file de jobs (`SKIP LOCKED`).
-- 🖥️ **Frontend modulaire à l'exécution** — le host React 19 charge les modules **au runtime** via des *import maps* ESM et des singletons partagés (`@kubuno/sdk`, `@ui`), sans jamais nommer un module en dur.
-- 🌍 **i18n** — 13 langues, RTL inclus.
+- 🧩 **Modular architecture** — each module (drive, calendar, mail, office, photos…) is a **separate process** (Rust or Python) that connects to the core at startup. The core proxies its routes, distributes events and manages its lifecycle.
+- 🏠 **Your data, your rules** — fully self-hosted, no third-party service required.
+- 🔐 **Secure by default** — JWT + HttpOnly refresh tokens, Argon2id, AES-256-GCM, anti-DDoS hardening, seccomp sandbox for modules.
+- ⚡ **Rust + Axum + PostgreSQL** — a fast, lean backend; PostgreSQL also serves as the event bus (`LISTEN/NOTIFY`) and job queue (`SKIP LOCKED`).
+- 🖥️ **Runtime-loaded frontend** — the React 19 host loads modules **at runtime** via ESM import maps and shared singletons (`@kubuno/sdk`, `@ui`), without ever naming a module statically.
+- 🌍 **i18n** — 13 languages, RTL included.
 
 ## 🏗️ Architecture
 
@@ -36,46 +36,46 @@ Le *core* est le « système d'exploitation » de la plateforme : il fournit les
 ┌──────────────────────────────────────────────────────────┐
 │  Frontend host (React 19 / Vite)                         │
 │  — shell, auth, registries, import map → @kubuno/sdk,@ui │
-│  — charge /modules/<id>/entry.js au runtime              │
+│  — loads /modules/<id>/entry.js at runtime               │
 ├──────────────────────────────────────────────────────────┤
-│  Core (Rust / Axum)            ← CE DÉPÔT                 │
+│  Core (Rust / Axum)            ← THIS REPO               │
 │  auth · events · storage · proxy · websocket · modules   │
-│  PostgreSQL 16 (schéma `core`, LISTEN/NOTIFY, jobs)      │
+│  PostgreSQL 16 (schema `core`, LISTEN/NOTIFY, jobs)      │
 ├──────────────────────────────────────────────────────────┤
-│  Modules (process séparés, dépôts dédiés)                │
+│  Modules (separate processes, dedicated repos)           │
 │  drive · calendar · mail · photos · office · chat · …    │
 └──────────────────────────────────────────────────────────┘
 ```
 
-Ce dépôt contient :
+This repository contains:
 
-| Composant | Chemin | Rôle |
+| Component | Path | Role |
 |---|---|---|
-| **kubuno-core** | `crates/kubuno-core` | Application serveur (bin `kubuno-core` + CLI `kubuno`) |
-| **kubuno-storage** | `crates/kubuno-storage` | Abstraction de stockage (local / S3) — partagée |
-| **kubuno-seccomp** | `crates/kubuno-seccomp` | Bac à sable d'exécution (seccomp) — partagé |
-| **kubuno-mcp** | `crates/kubuno-mcp` | Briques du serveur MCP — partagé |
-| **Frontend host** | `frontend/` | Shell React + libs partagées `@kubuno/sdk`, `@ui`, `@kubuno/drive` |
-| **Migrations** | `migrations/` | Schéma PostgreSQL du core |
+| **kubuno-core** | `crates/kubuno-core` | Server application (bin `kubuno-core` + CLI `kubuno`) |
+| **kubuno-storage** | `crates/kubuno-storage` | Storage abstraction (local / S3) — shared |
+| **kubuno-seccomp** | `crates/kubuno-seccomp` | Execution sandbox (seccomp) — shared |
+| **kubuno-mcp** | `crates/kubuno-mcp` | MCP server building blocks — shared |
+| **Frontend host** | `frontend/` | React shell + shared libs `@kubuno/sdk`, `@ui`, `@kubuno/drive` |
+| **Migrations** | `migrations/` | Core PostgreSQL schema |
 
-Les crates partagées sont consommées par les **dépôts modules** via dépendances git taguées ; les libs frontend partagées sont publiées sur npm sous le scope **`@kubuno/*`**.
+Shared crates are consumed by the **module repos** via tagged git dependencies; the shared frontend libraries are published to npm under the **`@kubuno/*`** scope.
 
-## 🧩 Les modules
+## 🧩 Modules
 
-Chaque app vit dans son **propre dépôt** (`kubuno/<module>`) et produit son propre paquet :
+Each app lives in its **own repository** (`kubuno/<module>`) and ships its own package:
 
 | Module | Repo | Description |
 |---|---|---|
-| Drive | `kubuno/drive` | Stockage de fichiers, partages, montages distants |
-| Calendar | `kubuno/calendar` | Calendriers, événements, CalDAV |
-| Mail | `kubuno/mail` | Client e-mail (IMAP/SMTP) |
-| Photos | `kubuno/photos` | Galerie photo |
-| Office | `kubuno/office` | Suite bureautique (docs, tableur, présentations…) |
+| Drive | `kubuno/drive` | File storage, sharing, remote mounts |
+| Calendar | `kubuno/calendar` | Calendars, events, CalDAV |
+| Mail | `kubuno/mail` | Email client (IMAP/SMTP) |
+| Photos | `kubuno/photos` | Photo gallery |
+| Office | `kubuno/office` | Office suite (docs, sheets, slides…) |
 | Chat, Contacts, Notes, Tasks, Maps, Forms, Flow, Code, Media, KeeStore, PaintSharp, Jarvis | `kubuno/<id>` | … |
 
-## 🛠️ Build & développement
+## 🛠️ Build & development
 
-**Prérequis** : Rust ≥ 1.82, Node.js ≥ 20, PostgreSQL 16.
+**Requirements:** Rust ≥ 1.82, Node.js ≥ 20, PostgreSQL 16.
 
 ```bash
 # Backend (core)
@@ -84,23 +84,23 @@ cargo build --release --bin kubuno-core
 # Frontend host
 cd frontend && npm ci && npm run build
 
-# Dev (back + front en parallèle)
+# Dev (backend + frontend together)
 make dev
 
-# Paquet Debian du core
+# Debian package for the core
 bash build_deb.sh        # → dist/kubuno-core_*.deb
 ```
 
-Configuration : copier `config.toml.example` → `config.toml` (ou variables d'env préfixées `KV_`). Voir le détail dans [`CLAUDE.md`](CLAUDE.md).
+Configuration: copy `config.toml.example` → `config.toml` (or use `KV_`-prefixed env vars). See [`CLAUDE.md`](CLAUDE.md) for details.
 
-## 📦 Stack technique
+## 📦 Tech stack
 
 Rust 2021 · Axum 0.7 · Tokio · SQLx 0.8 (PostgreSQL) · jsonwebtoken · argon2 · aes-gcm — React 19 · TypeScript · Vite · Tailwind CSS v4 · Zustand · React Query.
 
-## 🤝 Contribuer
+## 🤝 Contributing
 
-Les contributions sont bienvenues. Ouvrez une *issue* pour discuter d'un changement important avant la *pull request*.
+Contributions are welcome. Please open an issue to discuss any significant change before submitting a pull request.
 
-## 📄 Licence
+## 📄 License
 
 [AGPL-3.0-or-later](LICENSE) © Kubuno contributors.
