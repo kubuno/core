@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "noEmitOnError": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "composite": false,
+    "rootDir": "./src",
+    "outDir": "./dist-types"
+  },
+  "include": ["src"],
+  "exclude": ["src/sdk/shared", "node_modules", "src/**/*.test.ts", "src/**/*.test.tsx"]
+}

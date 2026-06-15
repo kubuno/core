@@ -14,6 +14,7 @@ node_modules/
 # Frontend — sorties de build
 /frontend/dist/
 /frontend/dist-modules/
+/frontend/dist-types/
 
 # Paquets Debian générés
 /dist/
