@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::{Validate, ValidationError};
 
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 pub struct User {
     pub id:             Uuid,
     pub email:          String,
@@ -31,7 +32,7 @@ pub struct User {
     pub totp_pending_secret: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateUserDto {
     #[validate(email(message = "Email invalide"))]
     pub email:    String,

@@ -16,6 +16,12 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde_json::json;
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/modules",
+    tag = "modules",
+    responses((status = 200, description = "Modules actifs et leurs routes/points d'entrée (public, sert la découverte des clients)"))
+)]
 pub async fn list_modules(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {

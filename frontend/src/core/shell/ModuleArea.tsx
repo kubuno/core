@@ -27,8 +27,13 @@ export default function ModuleArea() {
               <Outlet />
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-6"><Outlet /></div>
+            // `flex flex-col` + `flex-1` sur le wrapper interne → il a une hauteur
+            // définie (= zone de contenu) : un enfant `h-full` (ex. StartPage d'un
+            // module) remplit la hauteur, tandis qu'un contenu plus haut déborde et
+            // scrolle via l'`overflow-y-auto` du parent (comportement inchangé pour
+            // les pages normales).
+            <div className="flex-1 overflow-y-auto flex flex-col">
+              <div className="p-6 flex-1 min-h-0"><Outlet /></div>
             </div>
           )}
       </ContextMenuProvider>

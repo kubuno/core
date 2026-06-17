@@ -35,11 +35,17 @@ function LoadingSplash() {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isInitialized } = useAuthStore()
+  const modulesReady = useModulesStore((s) => s.modulesReady)
   const location = useLocation()
   if (!isInitialized) return <LoadingSplash />
   // Déconnexion (token expiré sur le même onglet) → on mémorise la page courante
   // pour y revenir après reconnexion (sauf l'accueil, inutile).
   if (!user) {
+    // L'URL courante pourrait être une route PUBLIQUE de module pas encore
+    // enregistrée (bundles chargés à l'exécution). Tant que le premier chargement
+    // des modules n'est pas terminé, patienter au lieu de rediriger vers /login —
+    // sinon un répondant anonyme d'un formulaire public serait expulsé.
+    if (!modulesReady) return <LoadingSplash />
     const from = location.pathname + location.search
     return <Navigate to="/login" replace state={from !== '/' ? { from } : undefined} />
   }

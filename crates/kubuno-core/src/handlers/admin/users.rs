@@ -337,7 +337,8 @@ pub async fn list_user_sessions(
     let sessions = sqlx::query_as::<_, crate::models::session::RefreshToken>(
         r#"SELECT id, user_id, token_hash, device_name, device_type,
                   host(ip_address)::text as ip_address, user_agent,
-                  expires_at, created_at, last_used_at, revoked_at, revoke_reason
+                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                  family_id, client_type
            FROM core.refresh_tokens
            WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
            ORDER BY last_used_at DESC"#,
