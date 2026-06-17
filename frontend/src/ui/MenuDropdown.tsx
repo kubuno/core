@@ -54,21 +54,37 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
+  // Garde le menu TOUJOURS entièrement visible : on le ramène à l'intérieur du
+  // viewport s'il déborde, et on borne sa hauteur (défilement interne) s'il est
+  // plus grand que l'écran. Ré-appliqué au redimensionnement de la fenêtre.
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const r = el.getBoundingClientRect()
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const M = 8
-    let l = pos.left
-    let t = pos.top
-    if (r.right  > vw - M) l = vw - M - r.width
-    if (r.bottom > vh - M) t = vh - M - r.height
-    if (l < M) l = M
-    if (t < M) t = M
-    el.style.left = `${l}px`
-    el.style.top  = `${t}px`
+    const M = 8 // marge minimale avec le bord du viewport
+    const clamp = () => {
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      // Borne la hauteur (et la largeur) pour un menu plus grand que l'écran :
+      // il défile à l'intérieur plutôt que de déborder hors de la zone visible.
+      el.style.maxHeight = `${vh - 2 * M}px`
+      el.style.maxWidth  = `${vw - 2 * M}px`
+      el.style.overflowY = 'auto'
+      // Repart de l'ancre demandée avant de mesurer → re-clamp idempotent.
+      el.style.left = `${pos.left}px`
+      el.style.top  = `${pos.top}px`
+      const r = el.getBoundingClientRect()
+      let l = pos.left
+      let t = pos.top
+      if (l + r.width  > vw - M) l = vw - M - r.width
+      if (t + r.height > vh - M) t = vh - M - r.height
+      if (l < M) l = M
+      if (t < M) t = M
+      el.style.left = `${l}px`
+      el.style.top  = `${t}px`
+    }
+    clamp()
+    window.addEventListener('resize', clamp)
+    return () => window.removeEventListener('resize', clamp)
   }, [pos])
 
   return createPortal(
@@ -145,7 +161,14 @@ function SubmenuItem({ item, onClose, theme }: { item: Extract<MenuItem, { type:
   const openNow = () => {
     if (closeTmr.current) clearTimeout(closeTmr.current)
     const r = btnRef.current?.getBoundingClientRect()
-    if (r) setPos({ top: r.top - 4, left: r.right - 2, minWidth: 220 })
+    if (!r) return
+    const SUB_W = 220
+    // Ouverture en cascade vers la droite par défaut ; on bascule à GAUCHE du
+    // parent si la droite déborde du viewport (et qu'il y a la place à gauche),
+    // pour ne pas recouvrir le menu parent. Le clamp final affine la position.
+    const openLeft = r.right + SUB_W > window.innerWidth - 8 && r.left - SUB_W > 8
+    const left = openLeft ? r.left - SUB_W + 2 : r.right - 2
+    setPos({ top: r.top - 4, left, minWidth: SUB_W })
   }
   const scheduleClose = () => {
     if (closeTmr.current) clearTimeout(closeTmr.current)

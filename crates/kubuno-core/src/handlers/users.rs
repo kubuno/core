@@ -21,6 +21,16 @@ pub struct TotpCodeDto {
     pub code: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/me",
+    tag = "me",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "Profil de l'utilisateur courant", body = crate::models::user::User),
+        (status = 401, description = "Non authentifié")
+    )
+)]
 pub async fn get_me(
     State(_state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -142,6 +152,16 @@ pub async fn change_password(
     Ok(Json(json!({ "message": "Mot de passe mis à jour" })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/me/sessions",
+    tag = "me",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "Sessions actives (refresh tokens) de l'utilisateur, avec client_type", body = [crate::models::session::RefreshToken]),
+        (status = 401, description = "Non authentifié")
+    )
+)]
 pub async fn list_sessions(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -149,7 +169,8 @@ pub async fn list_sessions(
     let sessions = sqlx::query_as::<_, RefreshToken>(
         r#"SELECT id, user_id, token_hash, device_name, device_type,
                   host(ip_address)::text as ip_address, user_agent,
-                  expires_at, created_at, last_used_at, revoked_at, revoke_reason
+                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                  family_id, client_type
            FROM core.refresh_tokens
            WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
            ORDER BY last_used_at DESC"#,

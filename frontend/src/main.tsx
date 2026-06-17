@@ -142,6 +142,11 @@ useWsStore.subscribe((state, prev) => {
 async function bootstrap() {
   // Charger les thèmes en premier pour éviter le flash de thème par défaut
   useThemeStore.getState().fetchThemes()
+  // Charger les modules dès le démarrage, SANS attendre l'authentification : les
+  // routes publiques des modules (ex. forms/public/:token pour un répondant
+  // anonyme) doivent voir leurs bundles importés et leurs routes enregistrées
+  // avant le rendu. Idempotent : un nouveau fetch après login ne recharge rien.
+  useModulesStore.getState().fetchModules()
   const { initialize } = useAuthStore.getState()
   await initialize()
 }

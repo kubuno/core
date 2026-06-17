@@ -78,6 +78,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .nest("/auth", auth_routes)
         // ── Config publique ──────────────────────────────────────
         .route("/config",                   get(public_config))
+        // ── Spec OpenAPI + doc interactive (publiques) ───────────
+        .route("/openapi.json", get(crate::openapi::openapi_json))
+        .route("/docs",         get(crate::openapi::docs))
         // ── Thèmes (public) ──────────────────────────────────────
         .route("/themes", get(list_themes))
         // ── Thèmes admin ─────────────────────────────────────────
@@ -104,6 +107,10 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/me/2fa/setup",         post(setup_totp))
         .route("/me/2fa/enable",        post(enable_totp))
         .route("/me/2fa",              delete(disable_totp))
+        // Notifications push (devices + préférences)
+        .route("/me/push/devices",      post(crate::handlers::push::register_device))
+        .route("/me/push/devices/:id", delete(crate::handlers::push::delete_device))
+        .route("/me/push/preferences",  get(crate::handlers::push::list_preferences).patch(crate::handlers::push::set_preference))
         // ── Admin ────────────────────────────────────────────────
         .route("/admin/users",          get(list_users).post(create_user))
         .route("/admin/users/:id",     get(get_user).patch(update_user).delete(delete_user))
@@ -122,7 +129,16 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // Coupe les requêtes REST anormalement lentes (slowloris applicatif).
         // N'est PAS appliqué à /ws ni au proxy de modules (connexions longues /
         // streaming), interceptés avant ce sous-routeur.
-        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(60)));
+        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(60)))
+        // Idempotence des écritures (rejeu offline) : court-circuite les requêtes
+        // mutantes portant un Idempotency-Key déjà vu. No-op sur les GET.
+        .layer({
+            let st = state.clone();
+            middleware::from_fn(move |req: Request<Body>, next: Next| {
+                let st = st.clone();
+                async move { crate::middleware::idempotency::idempotency(st, req, next).await }
+            })
+        });
 
     let internal = Router::new()
         .route("/modules/register",         post(register_module))
@@ -241,7 +257,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         ))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("permissions-policy"),
-            HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+            // Allow same-origin access to camera/mic/screen-capture so the chat
+            // module can run WebRTC audio/video calls. Third parties stay blocked.
+            HeaderValue::from_static("camera=(self), microphone=(self), display-capture=(self), geolocation=()"),
         ))
         // ── Protections anti-DDoS (les plus externes : filtrent avant tout
         //    travail coûteux). global_rate_limit amortit un flood par IP ;

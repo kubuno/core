@@ -65,3 +65,4 @@ url.workspace               = true
 tokio-tungstenite.workspace = true
 kubuno-storage.workspace    = true
 kubuno-mcp.workspace        = true
+utoipa.workspace            = true
