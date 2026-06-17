@@ -4,6 +4,7 @@ pub mod auth;
 pub mod health;
 pub mod mcp;
 pub mod modules;
+pub mod push;
 pub mod storage_mounts;
 pub mod themes;
 pub mod users;

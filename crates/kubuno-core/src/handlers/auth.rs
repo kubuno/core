@@ -7,7 +7,7 @@ use crate::{
     crypto::{password, token},
     errors::AppError,
     models::{
-        session::{LoginDto, LoginResponse},
+        session::{LoginDto, LoginResponse, NativeTokenResponse},
         user::CreateUserDto,
     },
     state::AppState,
@@ -23,6 +23,17 @@ use serde::Deserialize;
 use serde_json::json;
 use validator::Validate;
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    tag = "auth",
+    request_body = CreateUserDto,
+    responses(
+        (status = 201, description = "Compte créé"),
+        (status = 403, description = "Inscription fermée"),
+        (status = 409, description = "Email ou nom d'utilisateur déjà pris")
+    )
+)]
 pub async fn register(
     State(state): State<AppState>,
     Json(dto): Json<CreateUserDto>,
@@ -96,6 +107,16 @@ pub async fn register(
     Ok((StatusCode::CREATED, Json(json!({ "user": user }))))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    tag = "auth",
+    request_body = LoginDto,
+    responses(
+        (status = 200, description = "Authentifié. Pour client_type 'native'/'desktop' le corps est un NativeTokenResponse ; sinon LoginResponse + cookie HttpOnly refresh_token.", body = NativeTokenResponse),
+        (status = 422, description = "Identifiants invalides")
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -131,17 +152,21 @@ pub async fn login(
         return Ok(Json(json!({ "requires_totp": true, "totp_session": totp_session })).into_response());
     }
 
-    Ok(issue_full_tokens(&state, &headers, user, dto.device_name.as_deref(), dto.device_type.as_deref()).await?.into_response())
+    issue_full_tokens(&state, &headers, user, dto.device_name.as_deref(), dto.device_type.as_deref(), dto.client_type.as_deref()).await
 }
 
 /// Émet le couple access_token / refresh_token après authentification complète.
+///
+/// `client_type` = 'native' | 'desktop' renvoie le refresh token dans le corps
+/// JSON (sans cookie) ; toute autre valeur conserve le cookie HttpOnly du web.
 async fn issue_full_tokens(
     state: &AppState,
     headers: &HeaderMap,
     user: crate::models::user::User,
     device_name: Option<&str>,
     device_type: Option<&str>,
-) -> Result<impl IntoResponse, AppError> {
+    client_type: Option<&str>,
+) -> Result<Response, AppError> {
     // Durées de session lues à chaud depuis core.settings (configurables en admin)
     let ttls = crate::config::runtime::security_ttls(&state.db, &state.settings).await;
 
@@ -164,11 +189,16 @@ async fn issue_full_tokens(
         .unwrap_or("");
 
     let expires_at = Utc::now() + ttls.refresh_ttl;
+    // New login = root of a fresh rotation family.
+    let family_id = uuid::Uuid::new_v4();
+    let is_native = matches!(client_type, Some("native") | Some("desktop"));
+    let stored_client_type = client_type.unwrap_or("web");
 
     sqlx::query(
         r#"INSERT INTO core.refresh_tokens
-           (user_id, token_hash, device_name, device_type, ip_address, user_agent, expires_at)
-           VALUES ($1, $2, $3, $4, $5::inet, $6, $7)"#,
+           (user_id, token_hash, device_name, device_type, ip_address, user_agent,
+            expires_at, family_id, client_type)
+           VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9)"#,
     )
     .bind(user.id)
     .bind(&refresh_hash)
@@ -177,6 +207,8 @@ async fn issue_full_tokens(
     .bind(ip)
     .bind(ua)
     .bind(expires_at)
+    .bind(family_id)
+    .bind(stored_client_type)
     .execute(&state.db)
     .await?;
 
@@ -188,6 +220,17 @@ async fn issue_full_tokens(
         .execute(&state.db)
         .await?;
 
+    // Native/desktop: refresh token in the JSON body, no cookie.
+    if is_native {
+        return Ok(Json(NativeTokenResponse {
+            access_token,
+            refresh_token: refresh_raw,
+            refresh_expires_at: expires_at,
+            user,
+        })
+        .into_response());
+    }
+
     let secure = if state.settings.server.secure_cookies { "; Secure" } else { "" };
     let cookie = format!(
         "refresh_token={refresh_raw}; HttpOnly{secure}; Path=/api/v1/auth; SameSite=Strict; Max-Age={}",
@@ -198,15 +241,29 @@ async fn issue_full_tokens(
         StatusCode::OK,
         [(header::SET_COOKIE, cookie)],
         Json(LoginResponse { access_token, user }),
-    ))
+    )
+        .into_response())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct TotpVerifyDto {
     pub code:         String,
     pub totp_session: String,
+    /// Idem qu'au login : 'native'/'desktop' reçoivent le refresh en JSON.
+    pub client_type:  Option<String>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/totp",
+    tag = "auth",
+    request_body = TotpVerifyDto,
+    responses(
+        (status = 200, description = "2FA validée, session émise", body = NativeTokenResponse),
+        (status = 401, description = "Session TOTP invalide"),
+        (status = 422, description = "Code incorrect")
+    )
+)]
 pub async fn totp_verify(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -237,39 +294,93 @@ pub async fn totp_verify(
         return Err(AppError::Validation("Code incorrect".into()));
     }
 
-    Ok(issue_full_tokens(&state, &headers, user, None, None).await?.into_response())
+    issue_full_tokens(&state, &headers, user, None, None, dto.client_type.as_deref()).await
 }
 
+/// Corps optionnel pour les clients natifs : le refresh token est transmis en
+/// JSON (les navigateurs continuent d'utiliser le cookie HttpOnly).
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct RefreshRequest {
+    pub refresh_token: String,
+}
+
+/// Extrait la valeur du cookie `refresh_token`.
+fn refresh_cookie(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("refresh_token=").map(str::to_string))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    tag = "auth",
+    request_body(content = RefreshRequest, description = "Optionnel — clients natifs. Le web envoie le refresh via cookie."),
+    responses(
+        (status = 200, description = "Nouveau couple (natif, avec rotation) ou nouvel access_token (web)", body = NativeTokenResponse),
+        (status = 401, description = "Refresh invalide, expiré ou réutilisé")
+    )
+)]
 pub async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<impl IntoResponse, AppError> {
-    let cookie_header = headers
-        .get("cookie")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    let refresh_raw = cookie_header
-        .split(';')
-        .find_map(|part| {
-            let part = part.trim();
-            part.strip_prefix("refresh_token=")
-        })
+    body: axum::body::Bytes,
+) -> Result<Response, AppError> {
+    // Source du refresh : corps JSON (natif) en priorité, sinon cookie (web).
+    let body_token: Option<String> = if body.is_empty() {
+        None
+    } else {
+        serde_json::from_slice::<RefreshRequest>(&body)
+            .ok()
+            .map(|r| r.refresh_token)
+    };
+    let is_native = body_token.is_some();
+    let refresh_raw = body_token
+        .or_else(|| refresh_cookie(&headers))
         .ok_or(AppError::Unauthorized)?;
 
-    let refresh_hash = token::hash_token(refresh_raw);
+    let refresh_hash = token::hash_token(&refresh_raw);
 
+    // On récupère le token SANS filtrer sur revoked_at afin de détecter la
+    // réutilisation d'un token déjà tourné (signe de vol).
     let rt = sqlx::query_as::<_, crate::models::session::RefreshToken>(
         r#"SELECT id, user_id, token_hash, device_name, device_type,
                   host(ip_address)::text as ip_address, user_agent,
-                  expires_at, created_at, last_used_at, revoked_at, revoke_reason
+                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                  family_id, client_type
            FROM core.refresh_tokens
-           WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()"#,
+           WHERE token_hash = $1"#,
     )
     .bind(&refresh_hash)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::Unauthorized)?;
+
+    // Détection de réutilisation : un token déjà « rotated » qu'on représente
+    // ⇒ on révoque toute la famille de l'appareil (le voleur ET l'utilisateur
+    // légitime devront se reconnecter).
+    if let Some(revoked_at) = rt.revoked_at {
+        if rt.revoke_reason.as_deref() == Some("rotated") {
+            let family = rt.family_id.unwrap_or(rt.id);
+            sqlx::query(
+                "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'reuse_detected'
+                 WHERE family_id = $1 AND revoked_at IS NULL",
+            )
+            .bind(family)
+            .execute(&state.db)
+            .await?;
+            tracing::warn!(user_id = %rt.user_id, family_id = %family, "Réutilisation de refresh token détectée — famille révoquée");
+        }
+        let _ = revoked_at;
+        return Err(AppError::Unauthorized);
+    }
+
+    if rt.expires_at <= Utc::now() {
+        return Err(AppError::Unauthorized);
+    }
 
     let user = sqlx::query_as::<_, crate::models::user::User>(
         "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
@@ -294,37 +405,85 @@ pub async fn refresh(
         }
     }
 
-    // Mettre à jour last_used_at (activité)
+    let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);
+    let access_token = jwt.generate_access_token(&user)?;
+
+    // Client natif : ROTATION. On révoque l'ancien refresh et on en émet un
+    // nouveau dans la même famille, transmis en JSON.
+    if is_native {
+        let (new_raw, new_hash) = JwtService::generate_refresh_token();
+        let new_expires = Utc::now() + ttls.refresh_ttl;
+        let family = rt.family_id.unwrap_or(rt.id);
+
+        let mut tx = state.db.begin().await?;
+        sqlx::query("UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'rotated' WHERE id = $1")
+            .bind(rt.id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            r#"INSERT INTO core.refresh_tokens
+               (user_id, token_hash, device_name, device_type, ip_address, user_agent,
+                expires_at, family_id, client_type)
+               VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9)"#,
+        )
+        .bind(rt.user_id)
+        .bind(&new_hash)
+        .bind(rt.device_name.as_deref())
+        .bind(rt.device_type.as_deref())
+        .bind(rt.ip_address.as_deref())
+        .bind(rt.user_agent.as_deref())
+        .bind(new_expires)
+        .bind(family)
+        .bind(rt.client_type.as_deref().unwrap_or("native"))
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+
+        return Ok(Json(NativeTokenResponse {
+            access_token,
+            refresh_token: new_raw,
+            refresh_expires_at: new_expires,
+            user,
+        })
+        .into_response());
+    }
+
+    // Web : pas de rotation, on met juste à jour l'activité et on renvoie un
+    // nouveau access token (le refresh reste en cookie).
     sqlx::query("UPDATE core.refresh_tokens SET last_used_at = NOW() WHERE id = $1")
         .bind(rt.id)
         .execute(&state.db)
         .await?;
-    let jwt = JwtService::new(
-        state.settings.auth.jwt_secret.clone(),
-        ttls.access_ttl,
-    );
-    let access_token = jwt.generate_access_token(&user)?;
 
-    Ok(Json(json!({ "access_token": access_token })))
+    Ok(Json(json!({ "access_token": access_token })).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    tag = "auth",
+    request_body(content = RefreshRequest, description = "Optionnel — clients natifs. Le web envoie le refresh via cookie."),
+    responses((status = 200, description = "Session révoquée"))
+)]
 pub async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<impl IntoResponse, AppError> {
-    let cookie_header = headers
-        .get("cookie")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    body: axum::body::Bytes,
+) -> Result<Response, AppError> {
+    // Refresh à révoquer : corps JSON (natif) ou cookie (web).
+    let body_token: Option<String> = if body.is_empty() {
+        None
+    } else {
+        serde_json::from_slice::<RefreshRequest>(&body)
+            .ok()
+            .map(|r| r.refresh_token)
+    };
 
-    if let Some(refresh_raw) = cookie_header.split(';').find_map(|part| {
-        let part = part.trim();
-        part.strip_prefix("refresh_token=")
-    }) {
-        let refresh_hash = token::hash_token(refresh_raw);
+    if let Some(refresh_raw) = body_token.or_else(|| refresh_cookie(&headers)) {
+        let refresh_hash = token::hash_token(&refresh_raw);
         sqlx::query(
             "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'logout'
-             WHERE token_hash = $1",
+             WHERE token_hash = $1 AND revoked_at IS NULL",
         )
         .bind(&refresh_hash)
         .execute(&state.db)
@@ -336,7 +495,8 @@ pub async fn logout(
         StatusCode::OK,
         [(header::SET_COOKIE, clear_cookie)],
         Json(json!({ "message": "Déconnecté" })),
-    ))
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]

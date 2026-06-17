@@ -2,3 +2,4 @@
 export { WorkspaceShell } from './WorkspaceShell'
 export { MenuBar, type MenuItem } from './MenuBar'
 export { WORKSPACE_DARK, WORKSPACE_LIGHT, WORKSPACE_OFFICE, type WorkspaceTheme } from './theme'
+export { DockArea, type DockPanel, type DockController, type DockTheme } from './Dock'

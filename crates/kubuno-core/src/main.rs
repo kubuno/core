@@ -96,6 +96,12 @@ async fn main() -> Result<()> {
     // Worker EventBus → WebSocket
     tokio::spawn(event_to_ws_worker(Arc::clone(&event_bus), Arc::clone(&ws_hub)));
 
+    // Worker EventBus → notifications push (UnifiedPush / APNs / FCM)
+    tokio::spawn(kubuno_core::push::worker::push_worker(
+        Arc::clone(&event_bus),
+        pool.clone(),
+    ));
+
     // Recompactage GC unique des snapshots collab (résorbe le bloat hérité de
     // l'ancienne concaténation sans GC). En arrière-plan : ne retarde pas le boot.
     tokio::spawn(kubuno_core::collab::recompact_all(pool.clone()));

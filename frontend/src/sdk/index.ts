@@ -44,8 +44,8 @@ export { useChromelessHeader } from '../core/shell/useChromelessHeader'
 // Chrome standard des apps avancées (topbar unifiée) — partagé par les modules
 // WorkspaceShell (keestore, office, paintsharp…). `MenuItem` est ré-exposé sous
 // `WorkspaceMenuItem` car `@ui` exporte déjà un `MenuItem` dans le chunk partagé.
-export { WorkspaceShell, MenuBar, WORKSPACE_DARK, WORKSPACE_LIGHT, WORKSPACE_OFFICE } from '../core/shell/workspace'
-export type { WorkspaceTheme } from '../core/shell/workspace'
+export { WorkspaceShell, MenuBar, WORKSPACE_DARK, WORKSPACE_LIGHT, WORKSPACE_OFFICE, DockArea } from '../core/shell/workspace'
+export type { WorkspaceTheme, DockPanel, DockController, DockTheme } from '../core/shell/workspace'
 export type { MenuItem as WorkspaceMenuItem } from '../core/shell/workspace'
 // Hook d'autosave debouncé partagé (paintsharp, office, flow, notes…).
 export { useDebouncedAutosave } from '../core/hooks/useAutosave'
