@@ -76,7 +76,7 @@ Each app lives in its **own repository** (`kubuno/<module>`) and ships its own p
 
 ## 🛠️ Build & development
 
-**Requirements:** Rust ≥ 1.82, Node.js ≥ 20, PostgreSQL 16.
+**Requirements:** Rust ≥ 1.82, Node.js ≥ 24, PostgreSQL 16.
 
 ```bash
 # Backend (core)
