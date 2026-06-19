@@ -1,6 +1,6 @@
 [package]
 name        = "kubuno-storage"
-version     = "0.1.0"
+version     = "0.1.0-alpha"
 edition     = "2021"
 description = "Kubuno shared storage backend (local FS + S3-compatible)"
 license     = "AGPL-3.0"
