@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio_util::io::ReaderStream;
 
@@ -38,7 +38,7 @@ impl LocalStorage {
     }
 }
 
-fn normalize_path(path: &PathBuf) -> PathBuf {
+fn normalize_path(path: &Path) -> PathBuf {
     let mut components: Vec<Component> = Vec::new();
     for component in path.components() {
         match component {

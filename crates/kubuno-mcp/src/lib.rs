@@ -63,10 +63,7 @@ pub async fn handle_message(
     let id = msg.get("id").cloned();
 
     // Notifications (pas d'id) → aucune réponse
-    if id.is_none() {
-        return None;
-    }
-    let id = id.unwrap_or(Value::Null);
+    let id = id?;
 
     match method {
         "initialize" => Some(rpc_result(id, json!({

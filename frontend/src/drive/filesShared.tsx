@@ -20,6 +20,9 @@ import { FileTypeRegistry } from '@kubuno/sdk'
 import { getIcon } from '@kubuno/sdk'
 import { useModulesStore } from '@kubuno/sdk'
 import { FilesOpenWithContext } from './FilesOpenWithContext'
+import { type MenuItem } from '@ui'
+
+type NavFn = (p: string) => void
 
 // ── Couleurs de dossier ─────────────────────────────────────────────────────────
 
@@ -280,4 +283,114 @@ export function OrganiserSubmenu({
       )}
     </div>
   )
+}
+
+// ── Sous-menus NATIFS (type 'submenu' du MenuDropdown) ───────────────────────────
+// Ces helpers remplacent les composants `custom` ci-dessus : le MenuDropdown rend
+// alors « Ouvrir avec » / « Organiser » avec le MÊME style que les autres items
+// (icône/police/espacement) et déploie le sous-menu dans son propre portal — donc
+// jamais rogné par le défilement du menu parent. Source unique pour les deux
+// navigateurs de fichiers (StorageExplorer + module Drive).
+
+/** Grille de couleurs de dossier, embarquée dans le sous-menu « Organiser ». */
+export function FolderColorGrid({ current, onPick }: { current?: string | null; onPick: (c: string | null) => void }) {
+  const { t } = useTranslation('drive')
+  return (
+    <div className="px-3 py-2">
+      <p className="flex items-center gap-1.5 text-xs text-text-tertiary mb-2 font-medium">
+        <Palette size={12} />
+        {t('ctx.folder_color')}
+      </p>
+      <div className="grid grid-cols-6 gap-1.5">
+        {FOLDER_COLORS.map((c, i) => (
+          <button
+            key={i}
+            title={c ?? t('ctx.no_color')}
+            onClick={() => onPick(c)}
+            className="w-6 h-6 rounded-full border-2 flex items-center justify-center hover:scale-110 transition-transform"
+            style={{
+              backgroundColor: c ?? '#f1f3f4',
+              borderColor: c === current ? '#1a73e8' : (c ? c : '#dadce0'),
+              boxShadow: c === current ? '0 0 0 2px #fff, 0 0 0 4px #1a73e8' : undefined,
+            }}
+          >
+            {c === null && <span style={{ fontSize: 10, color: '#80868b', lineHeight: 1 }}>✕</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Construit l'item de menu natif « Ouvrir avec » (apps + contributeurs de modules). */
+export function openWithMenuItem(file: FileItem, navigate: NavFn, tr: (k: string) => string): MenuItem {
+  const activeIds = new Set(useModulesStore.getState().activeModules.map(m => m.module_id))
+  const openers = FileTypeRegistry.openersFor(file)
+  const contributors = SlotRegistry.getSlot('files-open-with')
+    .filter(e => activeIds.has(e.moduleId))
+    .filter(e => !e.match || e.match(file))
+
+  const items: MenuItem[] = openers.map(decl => {
+    const Ic = decl.icon ? getIcon(decl.icon) : AppWindow
+    return {
+      type: 'action' as const,
+      label: decl.label,
+      icon: <Ic size={14} />,
+      onClick: () => { decl.open?.(file, navigate); filesApi.setOpenWith(file.id, decl.moduleId).catch(() => {}) },
+    }
+  })
+  for (const { moduleId, Component } of contributors) {
+    items.push({
+      type: 'custom',
+      render: () => (
+        <FilesOpenWithContext.Provider value={file}>
+          <Component key={moduleId} />
+        </FilesOpenWithContext.Provider>
+      ),
+    })
+  }
+
+  return {
+    type: 'submenu',
+    label: tr('ctx.open_with'),
+    icon: <AppWindow size={14} />,
+    disabled: items.length === 0,
+    items,
+  }
+}
+
+/** Construit l'item de menu natif « Organiser » (Déplacer / Étoiler / couleur). */
+export function organiseMenuItem(opts: {
+  isFolder: boolean
+  starred: boolean
+  folderColor?: string | null
+  isProtected?: boolean
+  disabled?: boolean
+  onMove: () => void
+  onStar: () => void
+  onSetColor: (c: string | null) => void
+  tr: (k: string) => string
+}): MenuItem {
+  const { isFolder, starred, folderColor, isProtected, disabled, onMove, onStar, onSetColor, tr } = opts
+  const items: MenuItem[] = [
+    { type: 'action', label: tr('ctx.move'), icon: <Move size={14} />, onClick: onMove, disabled: isProtected },
+    { type: 'separator' },
+    {
+      type: 'action',
+      label: starred ? tr('ctx.unstar') : tr('ctx.star'),
+      icon: <Star size={14} className={starred ? 'fill-yellow-400 text-yellow-400' : ''} />,
+      onClick: onStar,
+    },
+  ]
+  if (isFolder) {
+    items.push({ type: 'separator' })
+    items.push({ type: 'custom', render: (close) => <FolderColorGrid current={folderColor} onPick={(c) => { onSetColor(c); close() }} /> })
+  }
+  return {
+    type: 'submenu',
+    label: tr('ctx.organize'),
+    icon: <FolderInput size={14} />,
+    disabled,
+    items,
+  }
 }

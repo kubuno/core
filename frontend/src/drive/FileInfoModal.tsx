@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -11,10 +11,16 @@ import { FolderGlyph } from './FolderGlyph'
 import { FloatingWindow } from '@ui'
 import { Tabs, Dropdown, type DropdownOption } from '@ui'
 import { useModulesStore } from '@kubuno/sdk'
-import { SlotRegistry } from '@kubuno/sdk'
+import { SlotRegistry, Slot } from '@kubuno/sdk'
 export type InfoTarget =
   | { type: 'file';   item: FileItem }
   | { type: 'folder'; item: Folder }
+
+/** Cible courante de la fenêtre d'informations, exposée aux contributeurs de slot.
+ *  Le module Drive injecte par ex. une section « Étiquettes » via le slot
+ *  'files-info-extra' en lisant ce contexte. */
+export interface FileInfoExtraTarget { kind: 'file' | 'folder'; id: string; name: string }
+export const FileInfoExtraContext = createContext<FileInfoExtraTarget | null>(null)
 
 type TF = (key: string, opts?: Record<string, unknown>) => string
 
@@ -458,6 +464,13 @@ export default function FileInfoModal({ target, onClose }: Props) {
                   </Row>
                 )}
               </div>
+
+              {/* Sections injectées par les modules (ex. Étiquettes du Drive). */}
+              <FileInfoExtraContext.Provider
+                value={target ? { kind: targetType, id: target.item.id, name: target.item.name } : null}
+              >
+                <Slot name="files-info-extra" />
+              </FileInfoExtraContext.Provider>
 
               {targetId && (
                 <div className="mb-4">

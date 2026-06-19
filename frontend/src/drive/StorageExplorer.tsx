@@ -31,7 +31,7 @@ import VersionHistoryModal from './VersionHistoryModal'
 import UploadPanel from './UploadPanel'
 import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, type ConflictChoice, ConflictDialog } from '@ui'
 import { useImageCacheStore, bumpAllImageCache, FileTypeRegistry, usePendingDeletionStore, usePendingKind, pendingBoxClass, pendingBoxStyle, type DeletionKind, type PendingItem } from '@kubuno/sdk'
-import { getFileIcon, OpenWithSubmenu, OrganiserSubmenu } from './filesShared'
+import { getFileIcon, openWithMenuItem, organiseMenuItem } from './filesShared'
 import { useFilesMediaPlayerStore } from './filesMediaPlayerStore'
 import { useFilesVideoPlayerStore } from './filesVideoPlayerStore'
 import { useMarqueeSelection } from './useMarqueeSelection'
@@ -128,6 +128,7 @@ function Thumb({ spec, file, className }: { spec: ThumbSpec; file: FileItem; cla
 
 interface ItemMenuHandlers {
   caps: StorageSource['capabilities']
+  navigate: (p: string) => void
   onClose: () => void
   onRename: () => void
   onMove: () => void
@@ -184,7 +185,7 @@ function buildItemMenuItems(
 
   items.push({ type: 'action', label: isFolder ? tr('ctx.download_zip') : tr('common.download'), icon: <Download size={14} />, onClick: h.onDownload })
   if (caps.rename) items.push({ type: 'action', label: tr('common.rename'), shortcut: 'F2', icon: <Pencil size={14} />, onClick: h.onRename, disabled: isProtected })
-  if (isFile && caps.openWith) items.push({ type: 'custom', render: (close) => <OpenWithSubmenu file={menu.item as FileItem} onClose={close} /> })
+  if (isFile && caps.openWith) items.push(openWithMenuItem(menu.item as FileItem, h.navigate, tr))
   if (isFile && caps.openWith && (menu.item as FileItem).mime_type.startsWith('image/'))
     items.push({ type: 'action', label: tr('ctx.edit_paint'), icon: <Image size={14} />, onClick: h.onEditPaint })
 
@@ -192,13 +193,10 @@ function buildItemMenuItems(
   if (caps.share) items.push({ type: 'action', label: tr('ctx.share'), icon: <Share2 size={14} />, onClick: h.onShare })
   if (caps.getLink) items.push({ type: 'action', label: tr('ctx.get_link'), icon: <Link size={14} />, onClick: h.onGetLink })
   if (caps.richModals)
-    items.push({
-      type: 'custom',
-      render: (close) => (
-        <OrganiserSubmenu isFolder={isFolder} starred={starred} folderColor={folderColor} isProtected={isProtected}
-          onMove={h.onMove} onStar={h.onStar} onSetColor={h.onSetColor} onClose={close} />
-      ),
-    })
+    items.push(organiseMenuItem({
+      isFolder, starred, folderColor, isProtected,
+      onMove: h.onMove, onStar: h.onStar, onSetColor: h.onSetColor, tr,
+    }))
 
   if (caps.move || caps.copy || caps.compress) items.push({ type: 'separator' })
   if (caps.move) items.push({ type: 'action', label: tr('ctx.cut'), icon: <Scissors size={14} />, onClick: h.onCut, disabled: isProtected })
@@ -1113,7 +1111,7 @@ export default function StorageExplorer({
           pos={{ top: menu.y, left: menu.x }}
           onClose={() => setMenu(null)}
           items={buildItemMenuItems(menu, t, {
-            caps, isPlaying: isMenuItemPlaying, onClose: () => setMenu(null),
+            caps, navigate, isPlaying: isMenuItemPlaying, onClose: () => setMenu(null),
             onRename: doRename,
             onMove: () => { setMoveTarget({ type: menu.type, item: menu.item } as typeof moveTarget) },
             onStar: () => { src.star?.(asRef(menu)).then(invalidate) },

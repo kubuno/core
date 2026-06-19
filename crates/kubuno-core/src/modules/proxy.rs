@@ -196,12 +196,12 @@ pub async fn proxy_to_module(
         }
     }
 
-    let body = resp
-        .bytes()
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Lecture réponse module: {e}")))?;
+    // Stream the module response instead of buffering it fully: required for
+    // infinite responses (live radio/audio streams) and avoids holding large
+    // files in memory. Hop-by-hop headers were already stripped above.
+    let body = Body::from_stream(resp.bytes_stream());
 
-    Ok(builder.body(Body::from(body)).unwrap())
+    Ok(builder.body(body).unwrap())
 }
 
 /// Returns true if this request is a WebSocket upgrade.
