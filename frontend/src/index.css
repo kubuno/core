@@ -31,8 +31,88 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Page-level overscroll lock. The shell chrome is full-viewport and scrolling
+ * only happens inside inner panes. Without this, mobile browsers (iOS Safari)
+ * let the user drag the WHOLE page around — the rubber-band effect that reveals
+ * an empty layer behind the header, vertically and horizontally. We disable
+ * overscroll chaining on the viewport and forbid any horizontal page scroll,
+ * WITHOUT a `position: fixed` body lock (which would break long public pages
+ * like forms that rely on document scroll). The shell itself uses `100dvh`
+ * (see Shell.tsx) so it matches the visible viewport even when the browser
+ * address bar is shown — that removes the residual vertical document scroll. */
+html, body {
+  overscroll-behavior: none;
+  overflow-x: hidden;
+}
+
 :root {
   color-scheme: light;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Contraintes propres au tactile / mobile (hors @layer → priorité sur les
+ * utilitaires des modules). Voir aussi le verrou overscroll ci-dessus, le clamp
+ * FloatingWindow et les helpers d'activation (@ui interaction.ts).
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Anti-zoom iOS : Safari zoome automatiquement au focus d'un champ dont la
+ *    police fait < 16px. On force 16px sur les pointeurs grossiers (mobiles)
+ *    pour neutraliser ce zoom intempestif, sans toucher le rendu desktop. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  /* Comfortable tap target for icon-only overflow-menu buttons ("⋮"/"⋯"),
+   * which are otherwise ~22px — too small for a finger. Targets any button
+   * directly wrapping a lucide ellipsis icon, app-wide, without per-module
+   * edits. Coarse pointers only → desktop density unchanged. */
+  button:has(> svg.lucide-ellipsis-vertical),
+  button:has(> svg.lucide-ellipsis) {
+    min-width: 40px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Expand the tap area of small selection checkboxes (the ~20px circular
+   * FloatCheckbox on file/photo cards) without changing their visual size or
+   * position — a transparent ::after extends the clickable region. */
+  [role="checkbox"] {
+    position: relative;
+  }
+  [role="checkbox"]::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+}
+
+/* 2. Contrôles révélés au survol (boutons « ⋮ », overlays d'actions des cartes…)
+ *    invisibles au tactile (pas de :hover). Sur les appareils sans survol, on
+ *    les rend toujours visibles → actions accessibles d'un simple tap partout,
+ *    sans modifier chaque module. Couvre `group-hover:opacity-100` et les
+ *    variantes de groupes nommés (`group-hover/x:opacity-100`). */
+@media (hover: none) {
+  [class*="group-hover"][class*="opacity-100"] {
+    opacity: 1 !important;
+  }
+  /* Long-press on a file item opens our context menu (useLongPress) — suppress
+   * the iOS native callout ("Save image"/selection) that would compete with it. */
+  [data-selectable-id] {
+    -webkit-touch-callout: none;
+  }
+}
+
+/* 3. Safe-area (encoche / barre d'accueil iOS). `viewport-fit=cover` (index.html)
+ *    active env(safe-area-inset-*). On réserve, sous la barre de navigation
+ *    mobile fixe, sa hauteur PLUS l'inset bas ; la MobileNav elle-même est
+ *    rembourrée du même inset (cf. MobileNav.tsx). */
+@media (max-width: 1023px) {
+  [data-app-body] {
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom)) !important;
+  }
 }
 
 /* Scrollbars fines, style Google */
@@ -49,4 +129,48 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover, #bdc1c6);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * IMPRESSION PAPIER (globale, hors @layer → priorité maximale sur les modules).
+ *
+ * L'app web est une SPA à viewports scrollables (h-screen + overflow-hidden), ce
+ * qui imprime mal (contenu coupé à un écran + chrome inutile). Cette feuille :
+ *   - masque tout le chrome (header, sidebars, rails, nav mobile, fenêtres) ;
+ *   - remet le contenu en FLUX papier (height auto, overflow visible) ;
+ *   - rend la zone du module en pleine page, fond blanc, sans déco écran.
+ * Helpers à poser dans les modules : `.no-print` (masquer), `.print-only`
+ * (afficher à l'impression), `.print-break` (saut de page avant),
+ * `.print-avoid` (ne pas couper le bloc).
+ * ───────────────────────────────────────────────────────────────────────────── */
+.print-only { display: none; }
+
+@media print {
+  html, body, #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body { font-size: 11pt; color: #000; }
+
+  /* Le shell (flex h-screen overflow-hidden) doit laisser couler le contenu. */
+  [data-app-shell] { display: block !important; height: auto !important; overflow: visible !important; }
+  [data-app-body]  { display: block !important; overflow: visible !important; padding: 0 !important; gap: 0 !important; }
+
+  /* Chrome de l'application & éléments explicitement non imprimables. */
+  [data-app-chrome], .no-print { display: none !important; }
+
+  /* Zone du module : pleine page, sans déco écran, contenu en flux. */
+  [data-module] { overflow: visible !important; border-radius: 0 !important; box-shadow: none !important; background: #fff !important; }
+  [data-module] * { overflow: visible !important; }
+
+  .print-only { display: revert !important; }
+  .print-break { break-before: page; }
+  .print-avoid { break-inside: avoid; }
+
+  /* Couleurs fidèles (en-têtes intentionnels, badges, graphiques…). */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  @page { margin: 1.5cm; }
 }

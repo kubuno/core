@@ -13,6 +13,7 @@ import OAuthCallback from './core/auth/OAuthCallback'
 import SettingsPage from './core/settings/SettingsPage'
 import AdminPage from './core/admin/AdminPage'
 import HomePage from './core/pages/HomePage'
+import ModulesPage from './core/pages/ModulesPage'
 import AboutPage from './core/pages/AboutPage'
 import PromptHost from './core/components/PromptHost'
 import PendingDeletionHost from './core/components/PendingDeletionHost'
@@ -109,6 +110,7 @@ export default function App() {
       {/* Shell protégé */}
       <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
         <Route index         element={<HomePage />} />
+        <Route path="modules"  element={<ModulesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="admin"    element={<AdminPage />} />
         <Route path="about"    element={<AboutPage />} />

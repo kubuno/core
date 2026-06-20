@@ -29,7 +29,7 @@ import ShareModal, { type ShareTarget } from './ShareModal'
 import FileInfoModal, { type InfoTarget } from './FileInfoModal'
 import VersionHistoryModal from './VersionHistoryModal'
 import UploadPanel from './UploadPanel'
-import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, type ConflictChoice, ConflictDialog } from '@ui'
+import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, type ConflictChoice, ConflictDialog, openable, useLongPress } from '@ui'
 import { useImageCacheStore, bumpAllImageCache, FileTypeRegistry, usePendingDeletionStore, usePendingKind, pendingBoxClass, pendingBoxStyle, type DeletionKind, type PendingItem } from '@kubuno/sdk'
 import { getFileIcon, openWithMenuItem, organiseMenuItem } from './filesShared'
 import { useFilesMediaPlayerStore } from './filesMediaPlayerStore'
@@ -233,6 +233,7 @@ function FolderCard({ folder, isDragTarget, selected, preSelected, canMove, onSe
   onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
 }) {
   const pendingKind = usePendingKind(folder.id)
+  const longPress = useLongPress(onContextMenu)
   return (
     <div data-selectable-id={folder.id}
       className={`group relative flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all cursor-default select-none min-w-0
@@ -241,8 +242,11 @@ function FolderCard({ folder, isDragTarget, selected, preSelected, canMove, onSe
           : preSelected ? 'border-primary/50 bg-[#c9defa]'
           : 'border-[#e8eaed] bg-[#f3f4f5] hover:border-border hover:bg-[#e4ecf7] hover:shadow-sm'} ${pendingBoxClass(pendingKind)}`}
       style={pendingBoxStyle(pendingKind)} draggable={canMove}
-      onClick={(e) => { e.preventDefault(); onSelect(folder.id, e) }}
-      onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen() }}
+      {...openable<React.MouseEvent>({
+        select: (e) => { e.preventDefault(); onSelect(folder.id, e) },
+        open:   (e) => { e.preventDefault(); e.stopPropagation(); onOpen() },
+      })}
+      {...longPress}
       onContextMenu={onContextMenu} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <FloatCheckbox selected={selected} onToggle={() => onToggle(folder.id)} className="absolute -top-1.5 -left-1.5 z-10" />
       <FolderGlyph folder={folder} size={20} className="shrink-0" />
@@ -267,14 +271,18 @@ function FileCard({ file, thumb, selected, preSelected, canMove, allowVideoPrevi
   const isImage = file.mime_type.startsWith('image/')
   const isVideo = file.mime_type.startsWith('video/')
   const hasBigThumb = (thumb.kind !== 'none') && (isImage || (isVideo && allowVideoPreview))
+  const longPress = useLongPress(onContextMenu)
   return (
     <div data-selectable-id={file.id}
       className={`group relative rounded-xl border hover:shadow-[0_1px_6px_rgba(0,0,0,0.1)] transition-all min-w-0 select-none cursor-default overflow-hidden
         ${selected ? 'border-primary ring-2 ring-primary/20 bg-[#ddeafc]' : preSelected ? 'border-primary/50 bg-[#ddeafc]' : 'border-[#e8eaed] bg-surface-1 hover:border-border hover:bg-[#e4ecf7]'} ${pendingBoxClass(pendingKind)}`}
       style={pendingBoxStyle(pendingKind)} draggable={canMove}
       onContextMenu={onContextMenu} onDragStart={onDragStart}
-      onClick={(e) => { e.preventDefault(); onSelect(file.id, e) }}
-      onDoubleClick={(e) => { e.preventDefault(); onOpen() }}>
+      {...longPress}
+      {...openable<React.MouseEvent>({
+        select: (e) => { e.preventDefault(); onSelect(file.id, e) },
+        open:   (e) => { e.preventDefault(); onOpen() },
+      })}>
       <FloatCheckbox selected={selected} onToggle={() => onToggle(file.id)} className="absolute top-2 left-2 z-10" />
       {/* En-tête : icône de type + nom + étoile + menu (la checkbox couvre l'icône au survol) */}
       <div className={`flex items-center gap-2 ${dense ? 'px-2 h-8' : 'px-3 h-10'}`}>
@@ -310,9 +318,12 @@ function FileRow({ file, thumb, onContextMenu, onOpen, density = 'normal', hideM
   const updated = new Date(file.updated_at).toLocaleDateString(i18n.language, { day: '2-digit', month: 'short', year: 'numeric' })
   const pad = density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
   const thumbC = density === 'large' ? 'w-12 h-12' : density === 'compact' ? 'w-6 h-6' : 'w-8 h-8'
+  const longPress = useLongPress(onContextMenu)
   return (
     <div className={`group flex items-center gap-3 ${pad} bg-white hover:bg-surface-1 transition-colors cursor-default select-none ${pendingBoxClass(pendingKind)}`}
-      style={pendingBoxStyle(pendingKind)} onContextMenu={onContextMenu} onDoubleClick={e => { e.preventDefault(); onOpen() }}>
+      style={pendingBoxStyle(pendingKind)} onContextMenu={onContextMenu}
+      {...longPress}
+      {...openable<React.MouseEvent>({ open: (e) => { e.preventDefault(); onOpen() } })}>
       <div className={`shrink-0 ${thumbC} flex items-center justify-center rounded overflow-hidden bg-surface-2`}>
         <Thumb spec={thumb} file={file} className="w-full h-full object-cover" />
       </div>
@@ -954,7 +965,7 @@ export default function StorageExplorer({
       )}
 
       {/* En-tête : titre/fil d'ariane + actions */}
-      <div className="flex items-center justify-between gap-4 px-6 pt-6 pb-3 flex-shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-2 px-4 sm:px-6 pt-6 pb-3 flex-shrink-0">
         <StorageBreadcrumb
           rootName={title}
           crumbs={breadcrumbs}

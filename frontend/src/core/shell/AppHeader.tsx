@@ -1,16 +1,25 @@
+import { useState, useEffect } from 'react'
 import { KubunoLogo } from '@ui'
-import { Link } from 'react-router-dom'
-import { Menu } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
+import { Menu, Search, ArrowLeft } from 'lucide-react'
 import { useUiStore } from '../store/uiStore'
 import SearchBar from './SearchBar'
 import HeaderActions from './HeaderActions'
 
 export default function AppHeader() {
   const { toggleSidebar, sidebarCollapsed } = useUiStore()
+  const { pathname } = useLocation()
+
+  // Mobile: the inline search bar competes with the logo + action cluster and
+  // would push the avatar off-screen. Instead, a search icon opens a full-width
+  // search overlay (Gmail-style). Desktop keeps the inline bar.
+  const [searchOpen, setSearchOpen] = useState(false)
+  useEffect(() => { setSearchOpen(false) }, [pathname])
 
   return (
     <header
-      className="flex-shrink-0 h-16 z-50 flex items-center px-1 gap-0"
+      data-app-chrome
+      className="relative flex-shrink-0 h-16 z-50 flex items-center px-1 gap-0"
       style={{ background: 'var(--body-bg)' }}
     >
       {/* Zone logo — même largeur que la sidebar sur desktop pour aligner la recherche */}
@@ -49,15 +58,50 @@ export default function AppHeader() {
         </Link>
       </div>
 
-      {/* Barre de recherche — alignée à gauche, bord de la zone centrale */}
-      <div className="flex-1 max-w-2xl px-2">
+      {/* Barre de recherche inline — DESKTOP uniquement. `min-w-0` indispensable
+          (sinon l'élément flex ne rétrécit pas et pousse les actions hors écran). */}
+      <div className="hidden lg:block flex-1 min-w-0 max-w-2xl px-2">
         <SearchBar />
       </div>
 
-      {/* Actions droite (cluster réutilisable, partagé avec les barres de titre de sous-module) */}
-      <div className="ml-auto">
+      {/* Cluster droit, collé au bord (ml-auto) : icône de recherche (mobile) +
+          actions. `ml-auto` reproduit le comportement desktop d'origine où la
+          recherche est `flex-1 max-w-2xl` et les actions sont alignées à droite. */}
+      <div className="ml-auto flex items-center flex-shrink-0">
+        {/* Icône de recherche — mobile uniquement, ouvre la superposition. */}
+        <button
+          onClick={() => setSearchOpen(true)}
+          className="lg:hidden w-12 h-12 flex items-center justify-center text-text-secondary
+                     hover:bg-surface-2 rounded-full transition-colors flex-shrink-0"
+          aria-label="Rechercher"
+        >
+          <Search size={20} />
+        </button>
+
+        {/* Actions (cluster réutilisable, partagé avec les barres de titre de sous-module) */}
         <HeaderActions />
       </div>
+
+      {/* Superposition de recherche plein-écran (mobile) */}
+      {searchOpen && (
+        <div
+          data-app-chrome
+          className="lg:hidden absolute inset-0 z-[60] flex items-center gap-1 px-1"
+          style={{ background: 'var(--body-bg)' }}
+        >
+          <button
+            onClick={() => setSearchOpen(false)}
+            className="w-12 h-12 flex items-center justify-center text-text-secondary
+                       hover:bg-surface-2 rounded-full transition-colors flex-shrink-0"
+            aria-label="Retour"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div className="flex-1 min-w-0 pr-1">
+            <SearchBar />
+          </div>
+        </div>
+      )}
     </header>
   )
 }

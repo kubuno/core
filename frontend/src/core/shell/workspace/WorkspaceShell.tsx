@@ -166,7 +166,7 @@ export function WorkspaceShell({
   // · corbeille · recherche · actions · HeaderActions. Modifier ICI change tout à
   // l'identique partout — y compris le thème sombre.
   const topbar = (
-    <div className="flex items-center px-2 gap-2 flex-shrink-0"
+    <div className="flex items-center px-2 gap-2 flex-shrink-0 no-print"
          style={{ height:topbarHeight, background:topbarBg, borderBottom: tbFg ? 'none' : `1px solid ${theme.border}` }}>
       {onBack && (
         <button onClick={onBack}
@@ -202,11 +202,13 @@ export function WorkspaceShell({
       {topbar}
 
       {/* Barre de menus : slot custom > menus standard (menuActions) > MenuBar PaintSharp (menus) */}
-      {menuBar ?? (defaultMenus ? <WorkspaceMenuBar menus={defaultMenus} dark={dark} /> : (menus && <MenuBar C={theme} menus={menus} />))}
+      <div className="contents print:hidden no-print">
+        {menuBar ?? (defaultMenus ? <WorkspaceMenuBar menus={defaultMenus} dark={dark} /> : (menus && <MenuBar C={theme} menus={menus} />))}
+      </div>
 
       {/* Options bar (toolbar) */}
       {optionsBar && (
-        <div className="flex items-center gap-2.5 px-3 flex-shrink-0"
+        <div className="flex items-center gap-2.5 px-3 flex-shrink-0 no-print"
              style={{ height:optionsBarHeight, background:theme.header, borderBottom:`1px solid ${theme.border}`, fontSize:11 }}>
           {optionsBar}
         </div>
@@ -215,7 +217,7 @@ export function WorkspaceShell({
       {/* Corps : rail d'outils + contenu */}
       <div className="flex flex-1 min-h-0">
         {toolRail && (
-          <div className="flex flex-col items-center py-2 gap-0.5 flex-shrink-0"
+          <div className="flex flex-col items-center py-2 gap-0.5 flex-shrink-0 no-print"
                style={{ width:toolRailWidth, background:theme.toolbar, borderRight:`1px solid ${theme.border}`, order:0 }}>
             {toolRail}
           </div>
@@ -224,11 +226,11 @@ export function WorkspaceShell({
       </div>
 
       {/* Bottom bar (onglets de pages, timeline…) */}
-      {bottomBar}
+      {bottomBar && <div className="no-print">{bottomBar}</div>}
 
       {/* Status bar */}
       {statusBar && (
-        <div className="flex items-center gap-4 px-4 flex-shrink-0"
+        <div className="flex items-center gap-4 px-4 flex-shrink-0 no-print"
              style={{ height:statusHeight, background:statusBg, borderTop:`1px solid ${theme.border}`, fontSize:10, color:theme.textDim }}>
           {statusBar}
         </div>
