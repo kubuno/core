@@ -15,7 +15,7 @@ export default function ModuleArea() {
   return (
     <div data-module={moduleId} className="flex-1 flex flex-col overflow-hidden min-w-0 bg-white rounded-xl">
       {Toolbar && (
-        <div className="flex-shrink-0 bg-white">
+        <div className="flex-shrink-0 bg-white no-print">
           <Toolbar />
         </div>
       )}

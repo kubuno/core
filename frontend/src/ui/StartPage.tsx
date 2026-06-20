@@ -85,9 +85,11 @@ export function StartPage({
 
   return (
     <div className="relative flex h-full overflow-hidden bg-white">
-      {/* Colonne des récents (gauche), largeur redimensionnable */}
+      {/* Colonne des récents (gauche), largeur redimensionnable.
+          Masquée sur mobile : sa largeur fixe écraserait le contenu principal
+          (boutons « Nouveau… » poussés hors écran). */}
       <aside
-        className="flex-shrink-0 bg-surface-1 flex flex-col overflow-hidden"
+        className="hidden lg:flex flex-shrink-0 bg-surface-1 flex-col overflow-hidden"
         style={{ width: recentW }}
       >
         <div className="px-4 h-[57px] flex items-center gap-2 border-b border-border flex-shrink-0">
@@ -124,15 +126,17 @@ export function StartPage({
         )}
       </aside>
 
-      {/* Séparateur redimensionnable (poignée partagée @ui) */}
-      <ResizeHandle
-        position={recentW}
-        onResize={setRecentW}
-        min={RECENT_W_MIN}
-        max={RECENT_W_MAX}
-        onReset={() => setRecentW(RECENT_W_DEFAULT)}
-        title={recentTitle}
-      />
+      {/* Séparateur redimensionnable (poignée partagée @ui) — desktop only */}
+      <div className="hidden lg:block">
+        <ResizeHandle
+          position={recentW}
+          onResize={setRecentW}
+          min={RECENT_W_MIN}
+          max={RECENT_W_MAX}
+          onReset={() => setRecentW(RECENT_W_DEFAULT)}
+          title={recentTitle}
+        />
+      </div>
 
       {/* Onglets (parcourir / modèles / …) + contenu */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">

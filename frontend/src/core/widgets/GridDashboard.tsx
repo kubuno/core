@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import { COLS, ROW_H, GAP, type GridPos, type DragState, type ResizeState, type GhostState } from './gridTypes'
@@ -27,6 +27,18 @@ export default function GridDashboard({ allWidgets, activeIds, editMode }: Props
   const ghostRef    = useRef<HTMLDivElement>(null)
   const dragRef     = useRef<DragState | null>(null)
   const resizeRef   = useRef<ResizeState | null>(null)
+
+  // Mobile: the 12-column grid is unusable (each column ~30px); reflow to a
+  // single full-width stacked column. Drag/resize is disabled there.
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)')
+    const on = () => setIsMobile(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  const gridEditMode = editMode && !isMobile
 
   const [ghost, setGhost]       = useState<GhostState | null>(null)
   const [landingId, setLandingId] = useState<string | null>(null)
@@ -198,9 +210,14 @@ export default function GridDashboard({ allWidgets, activeIds, editMode }: Props
       {/* Grid */}
       <div
         ref={gridRef}
-        onPointerMove={editMode ? handlePointerMove : undefined}
-        onPointerUp={editMode ? handlePointerUp : undefined}
-        style={{
+        onPointerMove={gridEditMode ? handlePointerMove : undefined}
+        onPointerUp={gridEditMode ? handlePointerUp : undefined}
+        style={isMobile ? {
+          display:       'flex',
+          flexDirection: 'column',
+          gap:           `${GAP}px`,
+          position:      'relative',
+        } : {
           display:             'grid',
           gridTemplateColumns: `repeat(${COLS}, 1fr)`,
           gridAutoRows:        `${ROW_H}px`,
@@ -211,7 +228,7 @@ export default function GridDashboard({ allWidgets, activeIds, editMode }: Props
         className="w-full"
       >
         {/* Ghost preview */}
-        {editMode && ghost?.visible && (
+        {gridEditMode && ghost?.visible && (
           <div
             ref={ghostRef}
             style={ghostStyle}
@@ -221,8 +238,12 @@ export default function GridDashboard({ allWidgets, activeIds, editMode }: Props
           </div>
         )}
 
-        {/* Widgets */}
-        {gridItems.map(item => {
+        {/* Widgets — on mobile, render top-to-bottom (row then col) for a natural
+            stacked reading order. */}
+        {(isMobile
+          ? [...gridItems].sort((a, b) => a.pos.row - b.pos.row || a.pos.col - b.pos.col)
+          : gridItems
+        ).map(item => {
           const widgetDef = allWidgets.find(w => w.id === item.id)
           if (!widgetDef) return null
           return (
@@ -230,9 +251,10 @@ export default function GridDashboard({ allWidgets, activeIds, editMode }: Props
               key={item.id}
               widget={widgetDef}
               pos={item.pos}
-              editMode={editMode}
+              editMode={gridEditMode}
               isLanding={landingId === item.id}
               config={getConfig(item.id)}
+              mobile={isMobile}
               onConfigChange={setConfig}
               onDragStart={handleDragStart}
               onResizeStart={handleResizeStart}

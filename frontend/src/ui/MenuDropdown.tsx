@@ -1,5 +1,19 @@
-import React, { useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+
+/** True on touch devices (no precise pointer) → render menus as bottom sheets. */
+function useCoarsePointer(): boolean {
+  const [c, setC] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)')
+    const on = () => setC(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return c
+}
 
 export type MenuItem =
   | { type: 'action'; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; danger?: boolean; icon?: React.ReactNode; onClick: () => void }
@@ -45,6 +59,9 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
   const minWidth = pos.minWidth ?? minWidthProp
   const c = PALETTES[theme]
   const ref = useRef<HTMLDivElement>(null)
+  const isCoarse = useCoarsePointer()
+  // Bottom-sheet submenu drill-in (touch has no hover-cascade).
+  const [drill, setDrill] = useState<{ label: string; items: MenuItem[] } | null>(null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -59,7 +76,7 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
   // plus grand que l'écran. Ré-appliqué au redimensionnement de la fenêtre.
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el) return
+    if (!el || isCoarse) return // bottom sheet uses CSS positioning, no clamp
     const M = 8 // marge minimale avec le bord du viewport
     const clamp = () => {
       const vw = window.innerWidth
@@ -85,7 +102,75 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
     clamp()
     window.addEventListener('resize', clamp)
     return () => window.removeEventListener('resize', clamp)
-  }, [pos])
+  }, [pos, isCoarse])
+
+  // ── Bottom sheet (touch) ─────────────────────────────────────────────────────
+  if (isCoarse) {
+    const shown = drill ? drill.items : items
+    const rowBase: React.CSSProperties = {
+      padding: '13px 20px', fontSize: 15, lineHeight: '22px', minHeight: 50,
+      display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+    }
+    return createPortal(
+      <>
+        <div className="fixed inset-0 z-[9998]" style={{ background: 'rgba(0,0,0,0.35)' }} onClick={onClose} />
+        <div
+          ref={ref}
+          onMouseDown={e => e.stopPropagation()}
+          className="fixed left-0 right-0 bottom-0 z-[9999]"
+          style={{
+            background: c.bg, color: c.text,
+            borderTopLeftRadius: 16, borderTopRightRadius: 16,
+            maxHeight: '78vh', overflowY: 'auto',
+            paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
+            boxShadow: '0 -8px 30px rgba(0,0,0,0.28)',
+            animation: 'kbnSheetUp 0.18s ease-out',
+          }}
+        >
+          <style>{'@keyframes kbnSheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}'}</style>
+          {/* Grab handle */}
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 2px' }}>
+            <div style={{ width: 38, height: 4, borderRadius: 2, background: c.sep }} />
+          </div>
+
+          {/* Back row when drilled into a submenu */}
+          {drill && (
+            <button onClick={() => setDrill(null)} style={{ ...rowBase, color: c.text, fontWeight: 600, borderBottom: `1px solid ${c.sep}` }}>
+              <span style={{ width: 20, flexShrink: 0, color: c.accent, fontSize: 18, display: 'inline-flex', alignItems: 'center' }}>‹</span>
+              <span style={{ flex: 1 }}>{drill.label}</span>
+            </button>
+          )}
+
+          {shown.map((item, i) => {
+            if (item.type === 'separator') return <div key={i} style={{ background: c.sep, height: 1, margin: '4px 0' }} />
+            if (item.type === 'label') return (
+              <div key={i} style={{ padding: '8px 20px 4px', fontSize: 12, color: c.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.text}</div>
+            )
+            if (item.type === 'custom') return <React.Fragment key={i}>{item.render(onClose)}</React.Fragment>
+            if (item.type === 'submenu') return (
+              <button key={i} disabled={item.disabled} onClick={() => setDrill({ label: item.label, items: item.items })}
+                style={{ ...rowBase, color: c.text, opacity: item.disabled ? 0.4 : 1 }}>
+                <span style={{ width: 20, flexShrink: 0, color: c.accent, fontSize: 16, display: 'inline-flex', alignItems: 'center' }}>{item.icon ?? ''}</span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+                <span style={{ color: c.label, fontSize: 16, flexShrink: 0 }}>›</span>
+              </button>
+            )
+            const fg = item.danger ? c.danger : c.text
+            return (
+              <button key={i} disabled={item.disabled} onClick={() => { item.onClick(); onClose() }}
+                style={{ ...rowBase, color: fg, opacity: item.disabled ? 0.4 : 1 }}>
+                <span style={{ width: 20, flexShrink: 0, color: item.danger ? c.danger : c.accent, fontSize: 16, display: 'inline-flex', alignItems: 'center' }}>
+                  {item.checked ? '✓' : item.icon ? item.icon : ''}
+                </span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </>,
+      document.body,
+    )
+  }
 
   return createPortal(
     <div
@@ -200,12 +285,21 @@ function SubmenuItem({ item, onClose, theme }: { item: Extract<MenuItem, { type:
 export function useMenuDropdown() {
   const [pos, setPos] = React.useState<MenuDropdownPos | null>(null)
 
+  // Opens the menu below the triggering element (button) or, for a right-click
+  // (contextmenu) event, exactly at the cursor coordinates.
   const open = (e: React.MouseEvent | React.MouseEvent<HTMLElement>) => {
+    if (e.type === 'contextmenu') {
+      setPos({ top: e.clientY, left: e.clientX })
+      return
+    }
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
     setPos({ top: r.bottom + 2, left: r.left })
   }
 
+  // Opens the menu at explicit viewport coordinates (e.g. a right-click position).
+  const openAt = (x: number, y: number) => setPos({ top: y, left: x })
+
   const close = () => setPos(null)
 
-  return { pos, open, close, isOpen: pos !== null }
+  return { pos, open, openAt, close, isOpen: pos !== null }
 }

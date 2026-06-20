@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { FloatingWindow } from './FloatingWindow'
-import { Button } from './index'
+import { Button, RangeSlider } from './index'
 import { ZoomIn, ZoomOut, ImagePlus, ImageOff } from 'lucide-react'
 
 const BOX = 288   // taille du carré de recadrage (= boîte englobante du cercle)
@@ -163,8 +163,8 @@ export default function AvatarCropModal({ initialSrc, initialCrop, saving, onCan
         {nat && (
           <div className="flex items-center gap-2 w-full px-1">
             <ZoomOut size={16} className="text-text-tertiary shrink-0" />
-            <input type="range" min={minZoom} max={3} step={0.01} value={zoom}
-              onChange={e => setZoom(parseFloat(e.target.value))} className="flex-1 accent-primary" />
+            <RangeSlider min={minZoom} max={3} step={0.01} value={zoom}
+              onChange={setZoom} className="flex-1" aria-label="Zoom" />
             <ZoomIn size={16} className="text-text-tertiary shrink-0" />
           </div>
         )}

@@ -8,6 +8,7 @@ import ModuleArea from './ModuleArea'
 import RightRail from './RightRail'
 import RightPanel from './RightPanel'
 import MobileNav from './MobileNav'
+import MobileFab from './MobileFab'
 import { useUiStore } from '../store/uiStore'
 import { Slot } from '../slots/SlotRegistry'
 import { useIdleLogout } from '../hooks/useIdleLogout'
@@ -37,16 +38,18 @@ export default function Shell() {
   }, [location.pathname, setSidebarCollapsed])
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: 'var(--body-bg)' }}>
+    <div data-app-shell className="h-screen flex flex-col overflow-hidden" style={{ height: '100dvh', background: 'var(--body-bg)' }}>
       {/* Header global pleine largeur — masqué quand un sous-module héberge la
           recherche + les actions dans sa propre barre de titre. */}
       {!headerHidden && <AppHeader />}
 
-      {/* Corps : fond #f1f4f8 visible entre les zones comme séparateur */}
-      <div className="flex flex-1 overflow-hidden gap-1 p-1">
+      {/* Corps : fond #f1f4f8 visible entre les zones comme séparateur. La marge
+          basse mobile réserve la place de la barre de navigation fixe. */}
+      <div data-app-body className="flex flex-1 overflow-hidden gap-1 p-1 pb-14 lg:pb-1">
         {/* Overlay mobile */}
         {sidebarOpen && (
           <div
+            data-app-chrome
             className="fixed inset-0 bg-black/40 z-40 lg:hidden"
             onClick={closeSidebar}
           />
@@ -55,7 +58,7 @@ export default function Shell() {
         {!isHome && <AppSidebar />}
 
         {!isHome && (
-          <div className="hidden lg:flex flex-shrink-0">
+          <div data-app-chrome className="hidden lg:flex flex-shrink-0">
             <LeftRail />
           </div>
         )}
@@ -63,13 +66,14 @@ export default function Shell() {
         <ModuleArea />
 
         {!isHome && (
-          <div className="hidden lg:flex flex-shrink-0">
+          <div data-app-chrome className="hidden lg:flex flex-shrink-0">
             <RightPanel />
             <RightRail />
           </div>
         )}
       </div>
 
+      <MobileFab />
       <MobileNav />
 
       {/* Dialogs globaux (portals, zéro-coût quand fermés) */}

@@ -4,7 +4,7 @@ import { GripVertical, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Set
 import { WidgetSizeContext } from './WidgetSizeContext'
 import { WidgetConfigContext } from './WidgetConfigContext'
 import WidgetSettingsPopover from './WidgetSettingsPopover'
-import { posToWidgetSize, COLS, type GridPos } from './gridTypes'
+import { posToWidgetSize, COLS, ROW_H, GAP, type GridPos } from './gridTypes'
 import type { WidgetDef } from './WidgetRegistry'
 
 interface Props {
@@ -13,6 +13,9 @@ interface Props {
   editMode:     boolean
   isLanding:    boolean
   config:       Record<string, unknown>
+  // On mobile the grid reflows to a single stacked column: each widget spans the
+  // full width with an explicit height (rowSpan rows), positioned in flow.
+  mobile?:      boolean
   onConfigChange: (id: string, key: string, value: unknown) => void
   onDragStart:  (e: React.PointerEvent, widgetId: string) => void
   onResizeStart:(e: React.PointerEvent, widgetId: string, edge: 'right' | 'bottom' | 'corner') => void
@@ -25,11 +28,13 @@ const MAX_COL_SPAN = COLS
 const MIN_ROW_SPAN = 2
 
 function GridWidget({
-  widget, pos, editMode, isLanding, config, onConfigChange,
+  widget, pos, editMode, isLanding, config, mobile = false, onConfigChange,
   onDragStart, onResizeStart, onRemove, onManualResize,
 }: Props) {
   const { t } = useTranslation()
-  const widgetSize = posToWidgetSize(pos.colSpan)
+  // On mobile, treat every widget as full-width so its inner layout uses the
+  // roomy "large/medium" rendering rather than the cramped "small" one.
+  const widgetSize = mobile ? posToWidgetSize(COLS) : posToWidgetSize(pos.colSpan)
   const nodeRef = useRef<HTMLDivElement>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hasSettings = !!widget.settings?.length
@@ -43,7 +48,12 @@ function GridWidget({
     <div
       ref={nodeRef}
       data-widget-id={widget.id}
-      style={{
+      style={mobile ? {
+        // Stacked full-width; explicit height from the widget's row span.
+        width:    '100%',
+        height:   `${pos.rowSpan * ROW_H + (pos.rowSpan - 1) * GAP}px`,
+        position: 'relative',
+      } : {
         gridColumn: `${pos.col} / span ${pos.colSpan}`,
         gridRow:    `${pos.row} / span ${pos.rowSpan}`,
         position:   'relative',
