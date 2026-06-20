@@ -186,7 +186,7 @@ export function FloatingWindow({
     <>
       {backdrop && (
         <div
-          className="fixed inset-0 bg-black/30 backdrop-blur-[1px]"
+          className="fixed inset-0 bg-black/30 backdrop-blur-[1px] no-print"
           style={{ zIndex: zIndex - 1 }}
           onClick={onClose}
         />
@@ -197,12 +197,14 @@ export function FloatingWindow({
         role="dialog"
         aria-modal={backdrop}
         className={`fixed bg-white rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.18)]
-                    flex flex-col overflow-hidden ${className}`}
+                    flex flex-col overflow-hidden no-print ${className}`}
         style={{
           width:     defaultWidth,
           height:    defaultHeight,
-          minWidth,
-          minHeight,
+          // Clamp à la fenêtre : un `minWidth` plus large que l'écran (mobile)
+          // déborderait sinon (min-width l'emporte sur max-width en CSS).
+          minWidth:  `min(${minWidth}px, calc(100vw - 16px))`,
+          minHeight: `min(${minHeight}px, calc(100vh - 16px))`,
           maxWidth:  'calc(100vw - 16px)',
           maxHeight: 'calc(100vh - 16px)',
           zIndex,

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, LogOut, UserPlus, X, ExternalLink, ChevronDown, ChevronUp, Shield } from 'lucide-react'
+import { Camera, LogOut, UserPlus, X, ExternalLink, ChevronDown, ChevronUp, Shield, Check } from 'lucide-react'
 import * as Avatar from '@radix-ui/react-avatar'
 import { useAuthStore } from '../store/authStore'
 import { useLinkedAccountsStore } from '../store/linkedAccountsStore'
+import { LANGUAGES, setLanguage } from '../i18n'
 import { api } from '../api/client'
 import AvatarCropModal, { type AvatarCrop } from '@ui/AvatarCropModal'
 import { Button } from '@ui'
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export default function UserPanel({ open, onClose, onAddAccount, anchorRef }: Props) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user, logout, updateUser } = useAuthStore()
   const { accounts, remove: removeAccount } = useLinkedAccountsStore()
   const navigate = useNavigate()
@@ -84,6 +85,14 @@ export default function UserPanel({ open, onClose, onAddAccount, anchorRef }: Pr
     onClose()
     await logout()
     navigate('/login')
+  }
+
+  // Persist the chosen language to the user's server preferences (same as the
+  // header LanguagePicker, which is hidden on mobile to save header space).
+  const persistLang = (lng: string) => {
+    api.patch<{ user: typeof user }>('/me', { preferences: { language: lng } })
+      .then(({ data }) => { if (data?.user) updateUser({ preferences: data.user.preferences }) })
+      .catch(() => { /* cookie already persists locally */ })
   }
 
   return (
@@ -239,6 +248,26 @@ export default function UserPanel({ open, onClose, onAddAccount, anchorRef }: Pr
             )}
           </div>
         )}
+
+        {/* Langue — visible sur mobile uniquement (le sélecteur de l'en-tête y est
+            masqué pour dégager de la place à la recherche). */}
+        <div className="lg:hidden mx-3 mb-2 rounded-xl bg-white border border-border/60 p-2">
+          <p className="px-2 py-1 text-xs font-medium text-text-tertiary">{t('header.language')}</p>
+          <div className="flex flex-wrap gap-1">
+            {LANGUAGES.map(l => (
+              <button
+                key={l.code}
+                onClick={() => setLanguage(l.code, persistLang)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors
+                            ${i18n.language === l.code ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-surface-1'}`}
+              >
+                <span className="text-base leading-none">{l.flag}</span>
+                <span>{l.label}</span>
+                {i18n.language === l.code && <Check size={13} />}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Actions list */}
         <div className="mx-3 mb-3 rounded-xl overflow-hidden bg-white border border-border/60 divide-y divide-border/50">

@@ -64,7 +64,11 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
       <Slot name="header-actions-right" />
       <Slot name="topbar-actions" />
 
-      <LanguagePicker compact={compact} dark={dark} />
+      {/* Langue : masquée sur mobile (accessible via le panneau du compte) pour
+          dégager de la place à la barre de recherche. */}
+      <div className="hidden lg:block">
+        <LanguagePicker compact={compact} dark={dark} />
+      </div>
 
       {/* Notifications */}
       <DropdownMenu.Root>
@@ -132,10 +136,11 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
         </button>
       )}
 
-      {/* Aide */}
+      {/* Aide — masquée sur mobile (place à la recherche ; « À propos » reste
+          accessible via le panneau du compte / la page À propos). */}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
-          <button className={btn}>
+          <button className={`${btn} hidden lg:flex`}>
             <HelpCircle size={ico} />
           </button>
         </DropdownMenu.Trigger>
@@ -162,7 +167,11 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
 
-      <WaffleMenu allApps={allWaffleApps} compact={compact} dark={dark} />
+      {/* Grille d'apps : masquée sur mobile — la barre de navigation du bas
+          (« Modules ») remplit ce rôle et la page /modules liste tout. */}
+      <div className="hidden lg:block">
+        <WaffleMenu allApps={allWaffleApps} compact={compact} dark={dark} />
+      </div>
 
       {/* Avatar — ouvre le UserPanel. Même gabarit que les autres icônes (cercle 48px
           en normal / 36px en compact) → aligné verticalement et de la même dimension

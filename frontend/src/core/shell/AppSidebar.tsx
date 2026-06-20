@@ -140,6 +140,7 @@ export default function AppSidebar() {
   return (
     <aside
       data-module={activeConfig?.moduleId}
+      data-app-chrome
       className={`
         fixed left-0 bottom-0 flex flex-col py-3 overflow-hidden
         z-50 transition-all duration-200 ease-in-out

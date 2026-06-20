@@ -7,7 +7,7 @@ import { getDateLocale } from '../i18n/dateLocale'
 import { UserPlus, Pencil, MonitorSmartphone, X } from 'lucide-react'
 import type { User, Session } from '../types'
 import { FloatingWindow } from '@ui/FloatingWindow'
-import { Toggle, Dropdown, Button, Input, Spinner } from '@ui'
+import { Toggle, Dropdown, Button, Input, Spinner, RangeSlider } from '@ui'
 
 interface CreateUserForm {
   email: string
@@ -162,12 +162,17 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
           <label className="block text-sm font-medium text-text-secondary mb-1">
             {t('admin.u_quota_gb')}
           </label>
-          <Input
-            type="number"
+          <RangeSlider
+            variant="boxed"
             min={0}
-            max={10000}
+            max={200}
+            step={1}
             value={form.quota_gb}
-            onChange={e => setForm(f => ({ ...f, quota_gb: Number(e.target.value) }))}
+            onChange={v => setForm(f => ({ ...f, quota_gb: v }))}
+            format={v => `${v} Go`}
+            minLabel="0 Go"
+            maxLabel="200 Go"
+            aria-label={t('admin.u_quota_gb')}
           />
           <p className="text-xs text-text-tertiary mt-0.5">
             {t('admin.u_current_usage')} {formatBytes(user.used_bytes)}
@@ -361,8 +366,10 @@ export default function UsersPanel() {
         </Button>
       </div>
 
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
-        <table className="w-full text-sm">
+      {/* overflow-x-auto : la table à 6 colonnes défile horizontalement sur
+          mobile au lieu d'être tronquée. min-w garde les colonnes lisibles. */}
+      <div className="bg-white rounded-xl border border-border overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-1">
               {[t('admin.th_user'), t('admin.th_role'), t('admin.th_quota'), t('admin.th_last_login'), t('admin.th_status'), ''].map((h, hi) => (

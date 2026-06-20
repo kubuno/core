@@ -10,6 +10,7 @@ import type { TFunction } from 'i18next'
 import type { CSSProperties } from 'react'
 import { Trash2, Plus } from 'lucide-react'
 import { ColorField } from './ColorField'
+import { RangeSlider } from './RangeSlider'
 import { useAppPickerTheme, type PickerTheme } from './ColorPicker'
 import { hexToRgb, rgbToHex } from './color'
 import { type Gradient, type GradientStop, gradientToCss, DEFAULT_GRADIENT } from './gradient'
@@ -131,8 +132,9 @@ export function GradientPicker({ t, value, onChange, onClose, C: CProp }: {
       {grad.type === 'linear' && (
         <label className="flex items-center gap-2 mb-2">
           <span className="text-[9px] uppercase flex-shrink-0" style={{ color: C.textDim, width: 48 }}>{tr('gradient_angle')}</span>
-          <input type="range" min={0} max={360} className="flex-1" value={grad.angle}
-                 onChange={e => patch({ angle: Number(e.target.value) })} />
+          <RangeSlider min={0} max={360} className="flex-1" value={grad.angle}
+                       onChange={angle => patch({ angle })}
+                       accent={C.accent} trackColor={C.border} aria-label={tr('gradient_angle')} />
           <input type="number" min={0} max={360} value={Math.round(grad.angle)}
                  onChange={e => patch({ angle: Math.max(0, Math.min(360, Number(e.target.value))) })}
                  className="w-14 px-1.5 py-0.5 text-[11px] outline-none"
@@ -162,8 +164,9 @@ export function GradientPicker({ t, value, onChange, onClose, C: CProp }: {
           </div>
           <label className="flex items-center gap-2">
             <span className="text-[9px] uppercase flex-shrink-0" style={{ color: C.textDim, width: 48 }}>{tr('gradient_opacity')}</span>
-            <input type="range" min={0} max={100} className="flex-1" value={selStop.opacity}
-                   onChange={e => patchStop(grad.stops.indexOf(selStop), { opacity: Number(e.target.value) })} />
+            <RangeSlider min={0} max={100} className="flex-1" value={selStop.opacity}
+                         onChange={opacity => patchStop(grad.stops.indexOf(selStop), { opacity })}
+                         accent={C.accent} trackColor={C.border} aria-label={tr('gradient_opacity')} />
             <input type="number" min={0} max={100} value={Math.round(selStop.opacity)}
                    onChange={e => patchStop(grad.stops.indexOf(selStop), { opacity: Math.max(0, Math.min(100, Number(e.target.value))) })}
                    className="w-14 px-1.5 py-0.5 text-[11px] outline-none"
