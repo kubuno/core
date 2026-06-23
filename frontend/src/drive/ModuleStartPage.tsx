@@ -1,13 +1,12 @@
 import { useMemo, type ReactNode } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { format } from 'date-fns'
 import { FileText, ExternalLink, Trash2 } from 'lucide-react'
 import { StartPage } from '@ui'
 import type { StartPageRecentItem, StartPageTab, MenuItem } from '@ui'
-import ModuleFileBrowser, { type FileContextAction, resolveRootFolder } from './ModuleFileBrowser'
-import { filesApi, type FileItem } from './api'
-import { FileTypeRegistry } from '@kubuno/sdk'
+import ModuleFileBrowser, { type FileContextAction } from './ModuleFileBrowser'
+import { recentApi, type FileItem } from './api'
 import { usePendingDeletionStore } from '@kubuno/sdk'
 import { getDateLocale } from '@kubuno/sdk'
 // StartPage « complète » : lanceur (récents) + onglet « Parcourir » alimenté PAR
@@ -50,50 +49,39 @@ export default function ModuleStartPage({
   const qc = useQueryClient()
   const pendingDel = usePendingDeletionStore(s => s.pending)
 
-  // Dossier racine du module (ex. PaintSharp/Apex) + ses fichiers — requête PARTAGÉE
-  // avec le ModuleFileBrowser (même clé) → invalidations et polling communs.
-  const { data: root } = useQuery({
-    queryKey: ['mbf-root', browse.folderPathPrefix],
-    queryFn:  () => resolveRootFolder(browse.folderPathPrefix),
-    staleTime: 60_000,
-  })
-  const rootId = root?.id ?? null
-  const { data: filesData } = useQuery({
-    queryKey: ['mbf-files', rootId, browse.folderPathPrefix],
-    queryFn:  () => filesApi.listFiles(rootId),
-    enabled:  !!rootId,
-    refetchInterval: 3_000,
+  // RÉCENTS CENTRALISÉS : journal des ouvertures tenu par le drive (recentApi),
+  // filtré sur cette application — au lieu d'un tri local par date de modification.
+  const { data: recentData } = useQuery({
+    queryKey: ['recent-opens', browse.fileTypeModuleId ?? ''],
+    queryFn:  () => recentApi.list({ module: browse.fileTypeModuleId, limit: 12 }),
     refetchOnWindowFocus: true,
   })
 
-  const trashMut = useMutation({
-    mutationFn: (id: string) => filesApi.trashFile(id),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['mbf-files'] }),
-  })
+  // Ouverture depuis le module → enregistre l'ouverture (centralise les récents).
+  const openAndRecord = (f: FileItem) => {
+    recentApi.record(f.id, browse.fileTypeModuleId)
+    qc.invalidateQueries({ queryKey: ['recent-opens'] })
+    browse.onOpenFile?.(f)
+  }
 
   const fileRecents: StartPageRecentItem[] = useMemo(() => {
-    let fs = filesData?.files ?? []
-    if (browse.fileTypeModuleId) fs = fs.filter(f => FileTypeRegistry.matches(browse.fileTypeModuleId!, f))
-    return [...fs]
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-      .slice(0, 12)
-      .map(f => ({
-        id:          f.id,
-        name:        f.name.replace(/\.[^.]+$/, ''),
-        subtitle:    format(new Date(f.updated_at), 'd MMM', { locale: getDateLocale(i18n.language) }),
-        icon:        <FileText size={18} className="text-text-tertiary" strokeWidth={1.5} />,
-        pendingTone: pendingDel[f.id],
-        onClick:  () => { browse.onOpenFile?.(f) },
-        actions: [
-          { id: 'open',  label: t('common.open'),  icon: <ExternalLink size={15} />, onClick: () => { browse.onOpenFile?.(f) } },
-          { id: 'trash', label: t('ctx.trash'),    icon: <Trash2 size={15} />, danger: true, onClick: () => trashMut.mutate(f.id) },
-        ],
-      }))
+    return (recentData ?? []).map(f => ({
+      id:          f.id,
+      name:        f.name.replace(/\.[^.]+$/, ''),
+      subtitle:    format(new Date(f.opened_at), 'd MMM', { locale: getDateLocale(i18n.language) }),
+      icon:        <FileText size={18} className="text-text-tertiary" strokeWidth={1.5} />,
+      pendingTone: pendingDel[f.id],
+      onClick:  () => { openAndRecord(f) },
+      actions: [
+        { id: 'open',   label: t('common.open'),  icon: <ExternalLink size={15} />, onClick: () => { openAndRecord(f) } },
+        { id: 'remove', label: t('app.clear_search', { defaultValue: 'Retirer des récents' }), icon: <Trash2 size={15} />, onClick: () => { recentApi.remove(f.id).then(() => qc.invalidateQueries({ queryKey: ['recent-opens'] })) } },
+      ],
+    }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filesData, browse.fileTypeModuleId, i18n.language, pendingDel])
+  }, [recentData, i18n.language, pendingDel])
 
-  // Récents = fichiers (une fois le dossier résolu) ; repli sur la prop avant.
-  const recents = rootId ? fileRecents : (recentItems ?? [])
+  // Récents centralisés ; repli sur la prop fournie par l'app tant qu'il n'y en a pas.
+  const recents = fileRecents.length ? fileRecents : (recentItems ?? [])
 
   const tabs: StartPageTab[] = [
     {
@@ -103,7 +91,7 @@ export default function ModuleStartPage({
         <ModuleFileBrowser
           folderPathPrefix={browse.folderPathPrefix}
           title={browse.title}
-          onOpenFile={browse.onOpenFile}
+          onOpenFile={openAndRecord}
           fileTypeModuleId={browse.fileTypeModuleId}
           toolbarContent={browse.toolbarContent}
           fileContextActions={browse.fileContextActions}

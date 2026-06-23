@@ -78,6 +78,75 @@ export const SlotRegistry = {
     for (const [key, entry] of overrides) {
       if (entry.moduleId === moduleId) overrides.delete(key)
     }
+    settingsRoutes.delete(moduleId)
+    for (let i = notifGroups.length - 1; i >= 0; i--) {
+      if (notifGroups[i].moduleId === moduleId) notifGroups.splice(i, 1)
+    }
+  },
+}
+
+// ── Per-module user settings ────────────────────────────────────────────────────
+// A module declares that it has a per-user settings page; the header gear button
+// then routes to it whenever the user is inside that module's routes. Unlike a
+// `topbar-settings` override (single global winner), this scales to every module
+// because resolution is keyed by the CURRENT route's module, not a global slot.
+const settingsRoutes = new Map<string, string>()
+
+export const ModuleSettingsRegistry = {
+  /** Declare the module's per-user settings route (default `/<moduleId>/settings`). */
+  register(moduleId: string, route?: string) {
+    settingsRoutes.set(moduleId, route ?? `/${moduleId}/settings`)
+  },
+  /** Settings route for `moduleId` if it registered one and is active, else null. */
+  getRoute(moduleId: string | undefined, activeIds: Set<string>): string | null {
+    if (!moduleId) return null
+    const route = settingsRoutes.get(moduleId)
+    return route && activeIds.has(moduleId) ? route : null
+  },
+  /** Whether `pathname` is a registered per-user settings page (full-bleed, no toolbar). */
+  isSettingsRoute(pathname: string): boolean {
+    for (const route of settingsRoutes.values()) if (route === pathname) return true
+    return false
+  },
+}
+
+// ── Notification activity registry ──────────────────────────────────────────────
+// Any module that emits notifications declares one or more activity groups; they
+// are rendered as an E-mail/Push matrix in the core Settings → Notifications tab.
+// The user's per-activity choices are stored in `users.preferences.notifications`.
+export interface NotifActivity {
+  /** Stable id, unique within the group. */
+  id: string
+  /** Human label (already translated; modules pass `t(..., { defaultValue })`). */
+  label: string
+  /** Default channel states when the user hasn't chosen yet. */
+  emailDefault?: boolean
+  pushDefault?: boolean
+}
+export interface NotifGroup {
+  /** Owning module ('core' = always shown; others shown only when the module is active). */
+  moduleId: string
+  /** Group heading (e.g. "Tâches"). */
+  title: string
+  /** Sort order among groups (lower first; default 100). */
+  order?: number
+  activities: NotifActivity[]
+}
+
+const notifGroups: NotifGroup[] = []
+
+export const NotificationRegistry = {
+  /** Register (or replace, by moduleId+title) a notification activity group. */
+  register(group: NotifGroup) {
+    const i = notifGroups.findIndex(g => g.moduleId === group.moduleId && g.title === group.title)
+    if (i >= 0) notifGroups[i] = group
+    else notifGroups.push(group)
+  },
+  /** Groups to display: core groups always, module groups only when active. */
+  getGroups(activeIds: Set<string>): NotifGroup[] {
+    return notifGroups
+      .filter(g => g.moduleId === 'core' || activeIds.has(g.moduleId))
+      .sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
   },
 }
 

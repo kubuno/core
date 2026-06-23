@@ -11,12 +11,11 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { useNotificationStore } from '../store/notificationStore'
-import { Slot, SlotRegistry } from '../slots/SlotRegistry'
+import { Slot, SlotRegistry, ModuleSettingsRegistry } from '../slots/SlotRegistry'
 import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
 import UserPanel from './UserPanel'
 import AddAccountModal from '../components/AddAccountModal'
 import WaffleMenu from './WaffleMenu'
-import LanguagePicker from './LanguagePicker'
 
 const NOTIF_ICONS: Record<string, LucideIcon> = { Calendar, PhoneMissed }
 
@@ -32,7 +31,12 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
   const SettingsButtonOverride = SlotRegistry.getActiveOverride<{ compact?: boolean; dark?: boolean }>('topbar-settings', activeIds)
   const { notifications, unreadCount, markRead, markAllRead } = useNotificationStore()
   const navigate = useNavigate()
-  const isHome = useLocation().pathname === '/'
+  const pathname = useLocation().pathname
+  const isHome = pathname === '/'
+  // Per-user settings of the module the user is currently inside (e.g. /photos/… →
+  // /photos/settings). Falls back to the global settings page when the current
+  // module has no per-user settings page registered.
+  const moduleSettingsRoute = ModuleSettingsRegistry.getRoute(pathname.split('/')[1], activeIds)
   const [panelOpen, setPanelOpen]           = useState(false)
   const [addAccountOpen, setAddAccountOpen] = useState(false)
   const avatarBtnRef = useRef<HTMLButtonElement>(null)
@@ -63,12 +67,6 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
     <div className="flex items-center gap-0 flex-shrink-0">
       <Slot name="header-actions-right" />
       <Slot name="topbar-actions" />
-
-      {/* Langue : masquée sur mobile (accessible via le panneau du compte) pour
-          dégager de la place à la barre de recherche. */}
-      <div className="hidden lg:block">
-        <LanguagePicker compact={compact} dark={dark} />
-      </div>
 
       {/* Notifications */}
       <DropdownMenu.Root>
@@ -129,7 +127,7 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
       {isHome ? null : SettingsButtonOverride ? (
         <SettingsButtonOverride compact={compact} dark={dark} />
       ) : (
-        <button onClick={() => navigate('/settings')}
+        <button onClick={() => navigate(moduleSettingsRoute ?? '/settings')}
           className={btn}
           aria-label={t('header.settings')}>
           <Settings size={ico} />

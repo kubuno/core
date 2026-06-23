@@ -2,12 +2,17 @@ import { useLocation } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import { ContextMenuProvider } from './ContextMenuProvider'
 import { useToolbarStore, resolveToolbarConfig } from '../store/toolbarStore'
+import { ModuleSettingsRegistry } from '../slots/SlotRegistry'
 
 export default function ModuleArea() {
   const { pathname } = useLocation()
   const { configs }  = useToolbarStore()
   const toolbarConfig = resolveToolbarConfig(configs, pathname)
-  const Toolbar       = toolbarConfig?.ToolbarComponent ?? null
+  // Per-user module settings pages render full-bleed (no padding) and without the
+  // module toolbar — they own their chrome (breadcrumb + tab bar), like mail.
+  const isSettings    = ModuleSettingsRegistry.isSettingsRoute(pathname)
+  const noPadding     = isSettings || toolbarConfig?.noPadding
+  const Toolbar       = isSettings ? null : (toolbarConfig?.ToolbarComponent ?? null)
   // Identifiant du module actif (1er segment d'URL) → thème par module via CSS
   // (ex: [data-module="calendar"] surcharge --color-primary).
   const moduleId = pathname.split('/').filter(Boolean)[0] || 'home'
@@ -21,7 +26,7 @@ export default function ModuleArea() {
       )}
 
       <ContextMenuProvider>
-        {toolbarConfig?.noPadding
+        {noPadding
           ? (
             <div className="flex-1 overflow-hidden flex flex-col min-h-0">
               <Outlet />

@@ -137,16 +137,103 @@ async fn main() -> Result<()> {
     let frontend_dist = settings.server.frontend_dist.clone();
     let app = builder::build(state, frontend_dist);
 
-    let addr = format!("{}:{}", settings.server.host, settings.server.port);
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .with_context(|| format!("Bind sur {addr}"))?;
+    let addr: std::net::SocketAddr = format!("{}:{}", settings.server.host, settings.server.port)
+        .parse()
+        .with_context(|| format!("Adresse d'écoute invalide : {}:{}", settings.server.host, settings.server.port))?;
 
-    tracing::info!("Serveur démarré sur http://{addr}");
+    let tls = &settings.server.tls;
+    if tls.enabled {
+        // Terminaison TLS native (HTTPS) dans le core.
+        // Provider crypto explicite (ring) — rustls 0.23 exige un provider par
+        // défaut installé au niveau du process, sinon panique au handshake.
+        let _ = rustls::crypto::ring::default_provider().install_default();
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+        let rustls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+            &tls.cert_path,
+            &tls.key_path,
+        )
         .await
-        .context("Erreur du serveur HTTP")?;
+        .with_context(|| format!(
+            "Chargement du certificat/clé TLS ({} / {})",
+            tls.cert_path, tls.key_path
+        ))?;
+
+        // Redirection optionnelle HTTP → HTTPS.
+        if tls.redirect_http_from_port > 0 {
+            spawn_https_redirect(settings.server.host.clone(), tls.redirect_http_from_port, addr.port());
+        }
+
+        if !settings.server.secure_cookies {
+            tracing::warn!(
+                "server.tls.enabled = true mais server.secure_cookies = false — \
+                 activez secure_cookies pour que les cookies (refresh token) soient marqués Secure."
+            );
+        }
+
+        tracing::info!("Serveur démarré sur https://{addr} (TLS natif)");
+        axum_server::bind_rustls(addr, rustls_config)
+            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            .await
+            .context("Erreur du serveur HTTPS")?;
+    } else {
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .with_context(|| format!("Bind sur {addr}"))?;
+
+        tracing::info!("Serveur démarré sur http://{addr}");
+        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            .await
+            .context("Erreur du serveur HTTP")?;
+    }
 
     Ok(())
+}
+
+/// Lance, en tâche de fond, un petit serveur HTTP qui redirige (308) tout le
+/// trafic vers HTTPS. Le domaine est repris de l'en-tête `Host` de la requête
+/// (à défaut, l'hôte d'écoute configuré). Le port HTTPS n'est ajouté que s'il
+/// diffère de 443.
+fn spawn_https_redirect(bind_host: String, http_port: u16, https_port: u16) {
+    use axum::{
+        extract::OriginalUri,
+        http::{header, HeaderMap},
+        response::Redirect,
+        routing::any,
+        Router,
+    };
+    tokio::spawn(async move {
+        let fallback_host = bind_host.clone();
+        let handler = move |headers: HeaderMap, OriginalUri(uri): OriginalUri| {
+            let fallback_host = fallback_host.clone();
+            async move {
+                let host_hdr = headers
+                    .get(header::HOST)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                let domain = host_hdr
+                    .split(':')
+                    .next()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(fallback_host.as_str());
+                let authority = if https_port == 443 {
+                    domain.to_string()
+                } else {
+                    format!("{domain}:{https_port}")
+                };
+                let path = uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+                Redirect::permanent(&format!("https://{authority}{path}"))
+            }
+        };
+        let app = Router::new().fallback(any(handler));
+        let addr = format!("{bind_host}:{http_port}");
+        match tokio::net::TcpListener::bind(&addr).await {
+            Ok(listener) => {
+                tracing::info!("Redirection HTTP→HTTPS active sur http://{addr}");
+                if let Err(e) = axum::serve(listener, app).await {
+                    tracing::error!("Serveur de redirection HTTP→HTTPS arrêté : {e}");
+                }
+            }
+            Err(e) => tracing::error!("Bind du port de redirection {addr} échoué : {e}"),
+        }
+    });
 }

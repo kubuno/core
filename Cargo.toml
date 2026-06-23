@@ -23,6 +23,10 @@ tokio       = { version = "1",    features = ["full"] }
 # CRDT Yjs côté serveur (consolidation GC des snapshots collab)
 yrs         = "0.23"
 axum        = { version = "0.7",  features = ["macros", "ws", "multipart"] }
+# HTTPS natif (terminaison TLS dans le core). default-features=false + ring pour
+# rester aligné sur le provider crypto de sqlx (évite de tirer aws-lc-rs/C).
+axum-server = { version = "0.7",  default-features = false, features = ["tls-rustls"] }
+rustls      = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tower       = { version = "0.5",  features = ["full"] }
 tower-http  = { version = "0.6",  features = ["cors", "compression-gzip", "trace", "limit", "fs", "set-header", "timeout"] }
 async-trait = "0.1"

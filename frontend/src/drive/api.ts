@@ -614,3 +614,25 @@ export const systemApi = {
   downloadUrl: (id: string) => `/api/v1/drive/system/files/${id}/download`,
   downloadBlob: async (id: string): Promise<Blob> => { const r = await api.get(`/drive/system/files/${id}/download`, { responseType: 'blob' }); return r.data as Blob },
 }
+
+// ── Récents centralisés ──────────────────────────────────────────────────────
+// Journal partagé « quelle app a ouvert quel fichier et quand » (30 max), tenu
+// par le drive. Les applications ENREGISTRENT leurs ouvertures ici (au lieu de
+// chacune gérer sa propre liste) → gestion des récents centralisée en un point.
+
+// The full file plus which app opened it and when.
+export type RecentFile = FileItem & { module_id: string; opened_at: string }
+
+export const recentApi = {
+  /** Enregistre l'ouverture d'un fichier par une app (best-effort, non bloquant). */
+  record: (fileId: string, moduleId?: string): void => {
+    void api.post('/drive/recent', { file_id: fileId, module_id: moduleId }).catch(() => {})
+  },
+  /** Liste les fichiers récemment ouverts (récent → ancien), filtrable par app. */
+  list: async (opts?: { module?: string; limit?: number }): Promise<RecentFile[]> => {
+    const r = await api.get<{ recent: RecentFile[] }>('/drive/recent', { params: opts })
+    return r.data.recent
+  },
+  remove: async (fileId: string): Promise<void> => { await api.delete(`/drive/recent/${fileId}`) },
+  clear:  async (): Promise<void> => { await api.delete('/drive/recent') },
+}

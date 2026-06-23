@@ -10,14 +10,20 @@
 //
 // Generalised from `paintsharp/ui/Dock` so every module can reuse the same dock,
 // exactly like WorkspaceShell was generalised from `paintsharp/ui/EditorShell`.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Fragment } from 'react'
 import type { ReactNode, CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { X, Plus, GripVertical } from 'lucide-react'
+import { X, Plus, GripVertical, GripHorizontal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Square } from 'lucide-react'
 import { MenuDropdown, type MenuItem, type MenuDropdownPos } from '@ui'
 
 export type PanelId = string
 export type DockSideKey = 'left' | 'right' | 'float'
-export interface DockGroup { id: string; panels: PanelId[]; active: PanelId; x?: number; y?: number }
+export interface DockGroup {
+  id: string; panels: PanelId[]; active: PanelId
+  x?: number; y?: number   // float position
+  h?: number               // stacked-group height weight (left/right columns)
+  rolled?: boolean         // float rolled up to its header bar
+  max?: boolean            // float maximized to the viewport
+}
 export interface DockLayout {
   left: DockGroup[]; right: DockGroup[]; float: DockGroup[]
   leftW?: number; rightW?: number     // column widths (resizable, persisted)
@@ -28,6 +34,11 @@ export type DropTarget =
   | { type:'split';  side:'left'|'right'; gid:string; where:'top'|'bottom' }
   | { type:'newcol'; side:'left'|'right' }
   | { type:'float';  x:number; y:number }
+
+type GuideRect = { left: number; top: number; width: number; height: number }
+// Visual Studio "guide diamond" indicator: a compass over the hovered pane plus
+// edge arrows. Dropping the dragged panel on a guide docks it in that zone.
+type Guide = { id: string; cx: number; cy: number; dir: 'C'|'N'|'S'|'E'|'W'; tgt: DropTarget; rect: GuideRect }
 
 export type DockPanel = { label: ReactNode; render: () => ReactNode }
 export type DockController = {
@@ -40,6 +51,7 @@ export type DockTheme = { panel:string; header:string; border:string; text:strin
 
 const DEFAULT_THEME: DockTheme = { panel:'#f8f9fa', header:'#f1f3f4', border:'#dadce0', text:'#202124', textDim:'#5f6368', accent:'#1a73e8' }
 const MIN_W = 190, MAX_W = 480, DEF_W = 256
+const MIN_H = 60   // minimum height (px) of a stacked panel group when resizing
 
 let _gid = 1
 const newGid = () => 'g' + (_gid++)
@@ -132,6 +144,8 @@ export function DockArea({
   })
   const [docking, setDocking] = useState(false)
   const [ghostRect, setGhostRect] = useState<{left:number;top:number;width:number;height:number}|null>(null)
+  const [guides, setGuides] = useState<Guide[]>([])
+  const [activeGuideId, setActiveGuideId] = useState<string | null>(null)
   const [tabMenu, setTabMenu] = useState<{ pos: MenuDropdownPos; panel: PanelId } | null>(null)
   const [openMenu, setOpenMenu] = useState<MenuDropdownPos | null>(null)
   const dragPanelRef = useRef<PanelId|null>(null)
@@ -163,28 +177,106 @@ export function DockArea({
     document.body.style.cursor = 'ew-resize'; document.body.style.userSelect = 'none'
   }
 
-  // ── Drag-to-dock hit testing ──
-  function computeDropTarget(x:number, y:number): { tgt:DropTarget; rect:{left:number;top:number;width:number;height:number} } {
-    const root = bodyAreaRef.current ?? document
+  // ── Row resize (drag the divider between two stacked groups in a column) ──
+  // Groups in a column flex by weight (`h`). On drag start we freeze every group's
+  // weight to its current pixel height so only the dragged pair's heights change.
+  function startRowResize(side: 'left'|'right', index: number, e: ReactPointerEvent) {
+    e.preventDefault(); e.stopPropagation()
+    const root = bodyAreaRef.current
+    if (!root) return
+    const els = Array.from(root.querySelectorAll(`[data-grp][data-side="${side}"]`)) as HTMLElement[]
+    const heights = els.map(el => el.getBoundingClientRect().height)
+    setLayout(prev => ({ ...prev, [side]: prev[side].map((g, i) => ({ ...g, h: heights[i] ?? g.h ?? 1 })) }))
+    const startY = e.clientY
+    const h1 = heights[index] ?? 0, h2 = heights[index + 1] ?? 0, total = h1 + h2
+    const onMove = (ev: PointerEvent) => {
+      const n1 = Math.max(MIN_H, Math.min(total - MIN_H, h1 + (ev.clientY - startY)))
+      const n2 = total - n1
+      setLayout(prev => {
+        const arr = [...prev[side]]
+        if (arr[index])     arr[index]     = { ...arr[index],     h: n1 }
+        if (arr[index + 1]) arr[index + 1] = { ...arr[index + 1], h: n2 }
+        return { ...prev, [side]: arr }
+      })
+    }
+    const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); document.body.style.cursor=''; document.body.style.userSelect='' }
+    window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp)
+    document.body.style.cursor = 'ns-resize'; document.body.style.userSelect = 'none'
+  }
+
+  // ── Float toggles (roll-up to header bar / maximize to viewport) ──
+  const toggleRoll = (gid: string) => setLayout(prev => ({ ...prev, float: prev.float.map(g => g.id===gid ? { ...g, rolled: !g.rolled } : g) }))
+  const toggleMax  = (gid: string) => setLayout(prev => ({ ...prev, float: prev.float.map(g => g.id===gid ? { ...g, max: !g.max } : g) }))
+
+  // ── Float snapping (magnetic alignment to viewport edges and other floats) ──
+  // Mirrors Syncfusion's EnableSnappingFloatWindow: a float's edge snaps to the
+  // viewport bounds or to any other float's edge so windows line up cleanly.
+  const SNAP = 9
+  function snapFloat(left: number, top: number, width: number, height: number): { left: number; top: number } {
+    const xs: number[] = [], ys: number[] = []
+    const b = bodyAreaRef.current?.getBoundingClientRect()
+    if (b) { xs.push(b.left, b.right); ys.push(b.top, b.bottom) }
+    const dragged = dragPanelRef.current
+    for (const g of layout.float) {
+      if (dragged && g.panels.includes(dragged)) continue   // ignore the window being moved
+      const el = document.querySelector(`[data-floatgrp="${g.id}"]`) as HTMLElement | null
+      const r = el?.getBoundingClientRect(); if (!r) continue
+      xs.push(r.left, r.right); ys.push(r.top, r.bottom)
+    }
+    let L = left, T = top
+    for (const x of xs) {
+      if (Math.abs(L - x) <= SNAP) { L = x; break }                 // align left edge
+      if (Math.abs(L + width - x) <= SNAP) { L = x - width; break } // align right edge
+    }
+    for (const yy of ys) {
+      if (Math.abs(T - yy) <= SNAP) { T = yy; break }                  // align top edge
+      if (Math.abs(T + height - yy) <= SNAP) { T = yy - height; break } // align bottom edge
+    }
+    return { left: L, top: T }
+  }
+
+  // ── Drag-to-dock: VS-style guide diamond ──
+  // Build the guide indicators for the current cursor: window-edge arrows (dock to
+  // a new left/right column) + a 5-way compass over the pane under the cursor
+  // (centre = merge as tab, N/S = split above/below, W/E = dock to a side column).
+  const GUIDE_HIT = 20
+  function computeGuides(x: number, y: number): Guide[] {
+    const root = bodyAreaRef.current
+    const b = root?.getBoundingClientRect()
+    if (!root || !b) return []
+    const R = (l: number, t: number, w: number, h: number): GuideRect => ({ left: l, top: t, width: w, height: h })
+    const out: Guide[] = []
+    out.push({ id:'win-w', cx:b.left+24,  cy:b.top+b.height/2, dir:'W', tgt:{type:'newcol',side:'left'},  rect:R(b.left, b.top, DEF_W, b.height) })
+    out.push({ id:'win-e', cx:b.right-24, cy:b.top+b.height/2, dir:'E', tgt:{type:'newcol',side:'right'}, rect:R(b.right-DEF_W, b.top, DEF_W, b.height) })
     const boxes = Array.from(root.querySelectorAll('[data-grp]')) as HTMLElement[]
     for (const el of boxes) {
       const r = el.getBoundingClientRect()
       if (x>=r.left && x<=r.right && y>=r.top && y<=r.bottom) {
         const side = el.getAttribute('data-side') as DockSideKey
+        if (side === 'float') break
         const gid = el.getAttribute('data-grp')!
-        const strip = el.querySelector('[data-strip]') as HTMLElement | null
-        const box = { left:r.left, top:r.top, width:r.width, height:r.height }
-        if (strip) { const sr = strip.getBoundingClientRect(); if (y <= sr.bottom) return { tgt:{type:'tabs',side,gid}, rect:box } }
-        const rel = (y - r.top) / r.height
-        if (side!=='float' && rel<0.30) return { tgt:{type:'split',side,gid,where:'top'}, rect:{...box, height:r.height/2} }
-        if (side!=='float' && rel>0.70) return { tgt:{type:'split',side,gid,where:'bottom'}, rect:{...box, top:r.top+r.height/2, height:r.height/2} }
-        return { tgt:{type:'tabs',side,gid}, rect:box }
+        const cx = r.left+r.width/2, cy = r.top+r.height/2, D = 38
+        const box = R(r.left, r.top, r.width, r.height)
+        out.push({ id:'d-c', cx,        cy,        dir:'C', tgt:{type:'tabs', side, gid},                     rect:box })
+        out.push({ id:'d-n', cx,        cy:cy-D,   dir:'N', tgt:{type:'split', side, gid, where:'top'},       rect:R(r.left, r.top, r.width, r.height/2) })
+        out.push({ id:'d-s', cx,        cy:cy+D,   dir:'S', tgt:{type:'split', side, gid, where:'bottom'},    rect:R(r.left, r.top+r.height/2, r.width, r.height/2) })
+        out.push({ id:'d-w', cx:cx-D,   cy,        dir:'W', tgt:{type:'newcol', side:'left'},                 rect:R(b.left, b.top, DEF_W, b.height) })
+        out.push({ id:'d-e', cx:cx+D,   cy,        dir:'E', tgt:{type:'newcol', side:'right'},                rect:R(b.right-DEF_W, b.top, DEF_W, b.height) })
+        break
       }
     }
-    const b = bodyAreaRef.current?.getBoundingClientRect()
-    if (b && x < b.left+60)  return { tgt:{type:'newcol',side:'left'},  rect:{left:b.left, top:b.top, width:DEF_W, height:b.height} }
-    if (b && x > b.right-60)  return { tgt:{type:'newcol',side:'right'}, rect:{left:b.right-DEF_W, top:b.top, width:DEF_W, height:b.height} }
-    return { tgt:{type:'float',x,y}, rect:{left:Math.max(8,x-dragSize.current.w/2), top:Math.max(56,y-14), width:dragSize.current.w, height:dragSize.current.h} }
+    return out
+  }
+  function guideHit(x: number, y: number, gs: Guide[]): Guide | null {
+    let best: Guide | null = null, bd = GUIDE_HIT
+    for (const g of gs) { const d = Math.hypot(x-g.cx, y-g.cy); if (d <= bd) { bd = d; best = g } }
+    return best
+  }
+  // Where the panel lands when NOT dropped on a guide: a floating window (snapped).
+  function floatTarget(x: number, y: number): { tgt: DropTarget; rect: GuideRect } {
+    const fw = dragSize.current.w, fh = dragSize.current.h
+    const s = snapFloat(Math.max(8, x - fw/2), Math.max(56, y - 14), fw, fh)
+    return { tgt:{type:'float', x:s.left, y:s.top}, rect:{ left:s.left, top:s.top, width:fw, height:fh } }
   }
   function startPanelDrag(panel: PanelId, e: ReactPointerEvent) {
     if (e.button !== 0) return
@@ -198,15 +290,23 @@ export function DockArea({
     if (!docking) return
     const move = (e: PointerEvent) => {
       if (Math.hypot(e.clientX-dragStartPt.current.x, e.clientY-dragStartPt.current.y) > 5) dragMoved.current = true
-      setGhostRect(dragMoved.current ? computeDropTarget(e.clientX, e.clientY).rect : null)
+      if (!dragMoved.current) { setGhostRect(null); setGuides([]); return }
+      const gs = computeGuides(e.clientX, e.clientY)
+      const hit = guideHit(e.clientX, e.clientY, gs)
+      setGuides(gs); setActiveGuideId(hit?.id ?? null)
+      setGhostRect(hit ? hit.rect : floatTarget(e.clientX, e.clientY).rect)
     }
     const up = (e: PointerEvent) => {
       const p = dragPanelRef.current
       if (p) {
         if (!dragMoved.current) setLayout(prev => activatePanel(prev, p))
-        else { const { tgt } = computeDropTarget(e.clientX, e.clientY); setLayout(prev => applyDrop(prev, p, tgt)) }
+        else {
+          const hit = guideHit(e.clientX, e.clientY, computeGuides(e.clientX, e.clientY))
+          const tgt = hit ? hit.tgt : floatTarget(e.clientX, e.clientY).tgt
+          setLayout(prev => applyDrop(prev, p, tgt))
+        }
       }
-      dragPanelRef.current = null; setDocking(false); setGhostRect(null)
+      dragPanelRef.current = null; setDocking(false); setGhostRect(null); setGuides([]); setActiveGuideId(null)
     }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
@@ -232,7 +332,7 @@ export function DockArea({
 
   // ── Rendering ──
   const groupBox = (grp: DockGroup, side: DockSideKey) => (
-    <div key={grp.id} data-grp={grp.id} data-side={side} className="flex flex-col min-h-0" style={{ flex: side==='float' ? '1 1 auto' : 1 }}>
+    <div key={grp.id} data-grp={grp.id} data-side={side} className="flex flex-col min-h-0" style={{ flex: side==='float' ? '1 1 auto' : `${grp.h ?? 1} 1 0` }}>
       <div data-strip className="flex flex-shrink-0 flex-wrap items-stretch" style={{ background:theme.header, borderBottom:`1px solid ${theme.border}` }}>
         {grp.panels.map(p => {
           const active = grp.active === p
@@ -259,8 +359,25 @@ export function DockArea({
             </div>
           )
         })}
+        {/* Float-only caption controls: roll-up to header + maximize to viewport. */}
+        {side==='float' && (
+          <div className="ml-auto flex items-center pr-1" style={{ color: theme.textDim }}>
+            <button type="button" title={grp.rolled ? 'Dérouler' : 'Enrouler'}
+              onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{ e.stopPropagation(); toggleRoll(grp.id) }}
+              className="flex items-center justify-center rounded p-1 opacity-60 hover:opacity-100 hover:bg-black/10">
+              {grp.rolled ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+            </button>
+            <button type="button" title={grp.max ? 'Restaurer' : 'Agrandir'}
+              onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{ e.stopPropagation(); toggleMax(grp.id) }}
+              className="flex items-center justify-center rounded p-1 opacity-60 hover:opacity-100 hover:bg-black/10">
+              {grp.max ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+            </button>
+          </div>
+        )}
       </div>
-      <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">{panels[grp.active]?.render()}</div>
+      {!(side==='float' && grp.rolled) && (
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">{panels[grp.active]?.render()}</div>
+      )}
     </div>
   )
 
@@ -282,19 +399,40 @@ export function DockArea({
            style={{ width:w, background:theme.panel, order: side==='left'?0:4,
                     borderLeft: side==='right'?`1px solid ${theme.border}`:'none',
                     borderRight: side==='left'?`1px solid ${theme.border}`:'none' }}>
-        {groups.map(grp => groupBox(grp, side))}
+        {groups.map((grp, i) => (
+          <Fragment key={grp.id}>
+            {groupBox(grp, side)}
+            {/* Vertical resizer between two stacked groups (only when ≥2 in the column). */}
+            {i < groups.length - 1 && (
+              <div onPointerDown={(e)=>startRowResize(side, i, e)}
+                   className="group/rzv relative flex-shrink-0 h-1.5 cursor-ns-resize"
+                   title={moveTitle}>
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px transition-colors group-hover/rzv:bg-primary" style={{ background:theme.border }} />
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover/rzv:opacity-100 transition" style={{ color:theme.textDim }}>
+                  <GripHorizontal size={11} />
+                </div>
+              </div>
+            )}
+          </Fragment>
+        ))}
       </div>
     )
     return side==='left' ? [col, resizer] : [resizer, col]
   }
 
-  const floats = layout.float.map(grp => (
-    <div key={grp.id} className="fixed flex flex-col shadow-2xl rounded-md overflow-hidden"
-         style={{ left:grp.x, top:grp.y, width:DEF_W, maxHeight:'72vh', background:theme.panel,
-                  border:`1px solid ${theme.border}`, zIndex:80 }}>
-      {groupBox(grp, 'float')}
-    </div>
-  ))
+  const bodyRect = bodyAreaRef.current?.getBoundingClientRect()
+  const floats = layout.float.map(grp => {
+    const maxed = grp.max && bodyRect
+    const posStyle: CSSProperties = maxed
+      ? { left: bodyRect!.left, top: bodyRect!.top, width: bodyRect!.width, height: bodyRect!.height }
+      : { left: grp.x, top: grp.y, width: DEF_W, maxHeight: grp.rolled ? undefined : '72vh' }
+    return (
+      <div key={grp.id} data-floatgrp={grp.id} className="fixed flex flex-col shadow-2xl rounded-md overflow-hidden"
+           style={{ ...posStyle, background:theme.panel, border:`1px solid ${theme.border}`, zIndex:80 }}>
+        {groupBox(grp, 'float')}
+      </div>
+    )
+  })
 
   const closed = layout.closed ?? []
 
@@ -323,6 +461,27 @@ export function DockArea({
         <div className="fixed inset-0 z-[100]" style={{ cursor:'grabbing' }}>
           <div className="absolute" style={{ left:ghostRect.left, top:ghostRect.top, width:ghostRect.width, height:ghostRect.height,
                         background:'rgba(90,160,255,0.22)', border:'2px solid rgba(90,160,255,0.95)', borderRadius:4 }} />
+        </div>
+      )}
+
+      {/* Guide diamond + edge arrows (VS-style dock indicators). */}
+      {docking && guides.length > 0 && (
+        <div className="fixed inset-0 z-[101] pointer-events-none">
+          {guides.map(g => {
+            const active = g.id === activeGuideId
+            const Icon = g.dir==='N' ? ChevronUp : g.dir==='S' ? ChevronDown : g.dir==='W' ? ChevronLeft : g.dir==='E' ? ChevronRight : Square
+            return (
+              <div key={g.id}
+                style={{ position:'absolute', left:g.cx-15, top:g.cy-15, width:30, height:30,
+                         background: active ? '#1a73e8' : 'rgba(255,255,255,0.96)',
+                         color: active ? '#fff' : '#5f6368',
+                         border:`1px solid ${active ? '#1a73e8' : '#bdc1c6'}`,
+                         transform: active ? 'scale(1.12)' : 'none', transition:'transform .08s, background .08s' }}
+                className="flex items-center justify-center rounded-md shadow-md">
+                <Icon size={g.dir==='C' ? 13 : 16} {...(g.dir==='C' && active ? { fill:'#fff' } : g.dir==='C' ? { fill:'#5f6368' } : {})} />
+              </div>
+            )
+          })}
         </div>
       )}
 

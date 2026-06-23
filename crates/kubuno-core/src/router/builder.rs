@@ -146,6 +146,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/modules/:id/unregister",  post(unregister_module))
         .route("/modules/:id/log",         post(module_log))
         .route("/events/publish",           post(publish_event))
+        // Passerelle MCP interne : l'assistant (jarvis) liste/exécute les outils
+        // des modules au nom d'un utilisateur (identité via en-tête, pas de token API).
+        .route("/mcp",                      post(crate::handlers::mcp::internal_mcp_endpoint))
         // Montages distants centralisés (le module drive proxifie vers ici).
         .route("/storage/mounts/:user_id",                  get(crate::handlers::storage_mounts::list).post(crate::handlers::storage_mounts::create))
         .route("/storage/mounts/:user_id/:id",              axum::routing::delete(crate::handlers::storage_mounts::delete))
