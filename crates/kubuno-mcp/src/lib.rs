@@ -21,6 +21,11 @@ pub struct Tool {
     /// JSON Schema des arguments d'entrée.
     #[serde(rename = "inputSchema")]
     pub input_schema: Value,
+    /// Annotations facultatives (spec MCP) — transmises telles quelles. Kubuno
+    /// y place p.ex. `confirm`/`destructiveHint` ou `kubuno_ui` (outil à
+    /// dispatcher dans le client plutôt qu'exécuté côté serveur).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Value>,
 }
 
 /// Résultat d'un appel d'outil.

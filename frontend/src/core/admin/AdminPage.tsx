@@ -1,20 +1,20 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Slot } from '../slots/SlotRegistry'
+import { useSidebarStore } from '../store/sidebarStore'
 import UsersPanel from './UsersPanel'
 import GroupsPanel from './GroupsPanel'
 import ModulesPanel from './ModulesPanel'
 import SettingsPanel from './SettingsPanel'
 import ThemesPanel from './ThemesPanel'
 import { useAuthStore } from '../store/authStore'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import {
   Users, Package, Settings, BarChart2, ShieldCheck, Palette, MonitorSmartphone, Wifi,
-  HardDrive, UserPlus, Activity, TrendingUp,
+  HardDrive, UserPlus, Activity, TrendingUp, type LucideIcon,
 } from 'lucide-react'
-import { Tabs } from '@ui'
 import {
   CHART_COLORS, fmtBytes, ProgressRing, DonutChart, BarChart, AreaChart, HBarList, Sparkline,
 } from './DashboardCharts'
@@ -207,43 +207,74 @@ function DashboardTab() {
 }
 
 
+const ADMIN_TABS: { id: Tab; labelKey: string; Icon: LucideIcon }[] = [
+  { id: 'dashboard', labelKey: 'admin.tab_dashboard',  Icon: BarChart2 },
+  { id: 'users',     labelKey: 'admin.tab_users',      Icon: Users },
+  { id: 'groups',    labelKey: 'admin.tab_groups',     Icon: ShieldCheck },
+  { id: 'modules',   labelKey: 'admin.tab_modules',    Icon: Package },
+  { id: 'settings',  labelKey: 'admin.tab_settings',   Icon: Settings },
+  { id: 'apparence', labelKey: 'admin.tab_appearance', Icon: Palette },
+]
+
+// Rendered inside AppSidebar as the left panel while on /admin (replaces the
+// module navigation), like the Settings sidebar. Tab selection is URL-driven.
+function AdminSidebar({ collapsed }: { collapsed?: boolean }) {
+  const { t } = useTranslation()
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const active = (params.get('tab') as Tab) || 'dashboard'
+  return (
+    <nav className={`flex-1 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
+      {!collapsed && (
+        <p className="px-3 pt-1 pb-2 text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+          {t('user.admin')}
+        </p>
+      )}
+      {ADMIN_TABS.map(({ id, labelKey, Icon }) => {
+        const label = t(labelKey)
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => navigate(id === 'dashboard' ? '/admin' : `/admin?tab=${id}`)}
+            title={collapsed ? label : undefined}
+            className={`w-full flex items-center gap-3 rounded-lg text-sm transition-colors ${
+              collapsed ? 'justify-center py-2.5' : 'px-3 py-2'} ${
+              active === id ? 'bg-primary-light text-primary font-medium' : 'text-text-secondary hover:bg-surface-2'}`}
+          >
+            <Icon size={18} className="shrink-0" />
+            {!collapsed && label}
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+// Override the left panel on /admin (registered once at module load; resolves
+// only when the route is /admin, so it is inert elsewhere).
+useSidebarStore.getState().register({
+  moduleId:      'core-admin',
+  routePrefix:   '/admin',
+  SidebarBody:   AdminSidebar,
+  collapsedBody: true,
+})
+
 export default function AdminPage() {
   const { t } = useTranslation()
   const { user } = useAuthStore()
-  const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
-    { id: 'dashboard', label: t('admin.tab_dashboard'), icon: BarChart2 },
-    { id: 'users',     label: t('admin.tab_users'),     icon: Users },
-    { id: 'groups',    label: t('admin.tab_groups'),    icon: ShieldCheck },
-    { id: 'modules',   label: t('admin.tab_modules'),   icon: Package },
-    { id: 'settings',  label: t('admin.tab_settings'),  icon: Settings },
-    { id: 'apparence', label: t('admin.tab_appearance'), icon: Palette },
-  ]
-  const location = useLocation()
-  const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>(() => {
-    const p = new URLSearchParams(location.search).get('tab')
-    return (p as Tab | null) ?? 'dashboard'
-  })
-
-  // Sync URL when tab changes
-  useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    if (tab === 'dashboard') {
-      params.delete('tab')
-    } else {
-      params.set('tab', tab)
-    }
-    const qs = params.toString()
-    navigate(`/admin${qs ? `?${qs}` : ''}`, { replace: true })
-  }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [params] = useSearchParams()
+  const tab = (params.get('tab') as Tab) || 'dashboard'
 
   if (user?.role !== 'admin') return <Navigate to="/" replace />
 
+  const current = ADMIN_TABS.find(x => x.id === tab)
+
   return (
     <div>
-      <h1 className="text-xl font-medium text-text-primary mb-6">{t('user.admin')}</h1>
-
-      <Tabs tabs={TABS} value={tab} onChange={setTab} className="mb-6" />
+      <h1 className="text-xl font-medium text-text-primary mb-6">
+        {current ? t(current.labelKey) : t('user.admin')}
+      </h1>
 
       {tab === 'dashboard' && <DashboardTab />}
       {tab === 'users'     && <UsersPanel />}
