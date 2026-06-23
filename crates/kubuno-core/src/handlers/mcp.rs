@@ -12,7 +12,7 @@ use kubuno_mcp::{handle_message, McpToolProvider, Tool, ToolCallResult};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::{handlers::api_tokens::resolve_token, state::AppState};
+use crate::{auth::middleware::InternalRequest, handlers::api_tokens::resolve_token, state::AppState};
 
 /// Provider adossé à `core.module_instances.mcp_tools` + exécution par proxy HTTP.
 struct CoreToolProvider {
@@ -40,6 +40,7 @@ impl McpToolProvider for CoreToolProvider {
                         description: t.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         input_schema: t.get("input_schema").cloned()
                             .unwrap_or_else(|| json!({ "type": "object" })),
+                        annotations: t.get("annotations").cloned(),
                     });
                 }
             }
@@ -62,6 +63,13 @@ impl McpToolProvider for CoreToolProvider {
             if let Some(arr) = tools.as_array() {
                 for t in arr {
                     if t.get("name").and_then(|x| x.as_str()) == Some(name) {
+                        // Les outils UI ne s'exécutent pas côté serveur : ils sont
+                        // dispatchés dans le client par l'assistant.
+                        if t.pointer("/annotations/kubuno_ui").is_some() {
+                            return ToolCallResult::error(format!(
+                                "L'outil '{name}' est une action d'interface (à dispatcher côté client)."
+                            ));
+                        }
                         let route  = t.get("route").and_then(|x| x.as_str()).unwrap_or("/").to_string();
                         let method = t.get("method").and_then(|x| x.as_str()).unwrap_or("POST").to_uppercase();
                         target = Some((base_url.clone(), route, method));
@@ -145,10 +153,39 @@ pub async fn mcp_endpoint(
         return (StatusCode::UNAUTHORIZED, "Token API requis").into_response();
     };
 
+    dispatch(&state, user_id, body).await
+}
+
+/// POST /internal/mcp — variante interne pour les modules de confiance (ex. jarvis)
+/// agissant au nom d'un utilisateur. Auth : `x-internal-secret` (extracteur
+/// `InternalRequest`) + identité via l'en-tête `x-kubuno-user-id`, au lieu d'un
+/// token API personnel (que l'assistant ne possède pas en cours de conversation).
+pub async fn internal_mcp_endpoint(
+    _internal: InternalRequest,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    if !mcp_enabled(&state).await {
+        return (StatusCode::NOT_FOUND, "Serveur MCP désactivé").into_response();
+    }
+
+    let user_id = headers
+        .get("x-kubuno-user-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| Uuid::parse_str(v).ok());
+    let Some(user_id) = user_id else {
+        return (StatusCode::BAD_REQUEST, "En-tête x-kubuno-user-id requis").into_response();
+    };
+
+    dispatch(&state, user_id, body).await
+}
+
+/// Traite un message JSON-RPC unique ou un lot (array), au nom de `user_id`.
+async fn dispatch(state: &AppState, user_id: Uuid, body: Value) -> Response {
     let provider = CoreToolProvider { state: state.clone() };
     let version = env!("CARGO_PKG_VERSION");
 
-    // Supporte un message unique ou un lot (array)
     if let Some(arr) = body.as_array() {
         let mut out = Vec::new();
         for m in arr {

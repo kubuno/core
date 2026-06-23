@@ -16,7 +16,7 @@ import {
   Image, History, FolderPlus, RefreshCw, Scissors, Copy, ClipboardPaste,
   Archive, Link, X, ListChecks, CheckSquare,
 } from 'lucide-react'
-import { filesApi, formatSize, type Folder, type FileItem } from './api'
+import { filesApi, recentApi, formatSize, type Folder, type FileItem } from './api'
 import { useFilesStore } from './store'
 import { useFilesPaintStore } from './filesPaintStore'
 import { useAuthStore, api, prompt, useConfirm, type User } from '@kubuno/sdk'
@@ -29,7 +29,8 @@ import ShareModal, { type ShareTarget } from './ShareModal'
 import FileInfoModal, { type InfoTarget } from './FileInfoModal'
 import VersionHistoryModal from './VersionHistoryModal'
 import UploadPanel from './UploadPanel'
-import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, type ConflictChoice, ConflictDialog, openable, useLongPress } from '@ui'
+import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, openable, useLongPress } from '@ui'
+import { useImportConflicts } from './useImportConflicts'
 import { useImageCacheStore, bumpAllImageCache, FileTypeRegistry, usePendingDeletionStore, usePendingKind, pendingBoxClass, pendingBoxStyle, type DeletionKind, type PendingItem } from '@kubuno/sdk'
 import { getFileIcon, openWithMenuItem, organiseMenuItem } from './filesShared'
 import { useFilesMediaPlayerStore } from './filesMediaPlayerStore'
@@ -87,16 +88,6 @@ type MenuTarget =
   | null
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-async function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
-  const all: FileSystemEntry[] = []
-  for (;;) {
-    const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej))
-    if (batch.length === 0) break
-    all.push(...batch)
-  }
-  return all
-}
 
 // Miniature pilotée par la source : URL directe (local), blob chargé à la demande
 // (distant), ou icône par type.
@@ -226,8 +217,8 @@ function buildItemMenuItems(
 
 // ── FolderCard ─────────────────────────────────────────────────────────────────
 
-function FolderCard({ folder, isDragTarget, selected, preSelected, canMove, onSelect, onToggle, onOpen, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop }: {
-  folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; canMove: boolean
+function FolderCard({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop }: {
+  folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
   onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
@@ -240,6 +231,7 @@ function FolderCard({ folder, isDragTarget, selected, preSelected, canMove, onSe
         ${isDragTarget ? 'border-primary bg-primary/10 ring-2 ring-primary/20'
           : selected ? 'border-primary ring-2 ring-primary/20 bg-[#c9defa]'
           : preSelected ? 'border-primary/50 bg-[#c9defa]'
+          : focused ? 'border-primary/60 ring-2 ring-primary/20 bg-[#f3f4f5]'
           : 'border-[#e8eaed] bg-[#f3f4f5] hover:border-border hover:bg-[#e4ecf7] hover:shadow-sm'} ${pendingBoxClass(pendingKind)}`}
       style={pendingBoxStyle(pendingKind)} draggable={canMove}
       {...openable<React.MouseEvent>({
@@ -261,8 +253,8 @@ function FolderCard({ folder, isDragTarget, selected, preSelected, canMove, onSe
 
 // ── FileCard (vue icônes) ────────────────────────────────────────────────────────
 
-function FileCard({ file, thumb, selected, preSelected, canMove, allowVideoPreview, onSelect, onToggle, onContextMenu, onDragStart, onOpen, thumbH = 128, iconScale = 1, dense = false }: {
-  file: FileItem; thumb: ThumbSpec; selected: boolean; preSelected?: boolean; canMove: boolean; allowVideoPreview: boolean
+function FileCard({ file, thumb, selected, preSelected, focused, canMove, allowVideoPreview, onSelect, onToggle, onContextMenu, onDragStart, onOpen, thumbH = 128, iconScale = 1, dense = false }: {
+  file: FileItem; thumb: ThumbSpec; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean; allowVideoPreview: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
   onContextMenu: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onOpen: () => void
   thumbH?: number; iconScale?: number; dense?: boolean
@@ -274,8 +266,8 @@ function FileCard({ file, thumb, selected, preSelected, canMove, allowVideoPrevi
   const longPress = useLongPress(onContextMenu)
   return (
     <div data-selectable-id={file.id}
-      className={`group relative rounded-xl border hover:shadow-[0_1px_6px_rgba(0,0,0,0.1)] transition-all min-w-0 select-none cursor-default overflow-hidden
-        ${selected ? 'border-primary ring-2 ring-primary/20 bg-[#ddeafc]' : preSelected ? 'border-primary/50 bg-[#ddeafc]' : 'border-[#e8eaed] bg-surface-1 hover:border-border hover:bg-[#e4ecf7]'} ${pendingBoxClass(pendingKind)}`}
+      className={`group relative rounded-xl border hover:shadow-[0_1px_6px_rgba(0,0,0,0.1)] transition-all min-w-0 select-none cursor-default
+        ${selected ? 'border-primary ring-2 ring-primary/20 bg-[#ddeafc]' : preSelected ? 'border-primary/50 bg-[#ddeafc]' : focused ? 'border-primary/60 ring-2 ring-primary/20 bg-surface-1' : 'border-[#e8eaed] bg-surface-1 hover:border-border hover:bg-[#e4ecf7]'} ${pendingBoxClass(pendingKind)}`}
       style={pendingBoxStyle(pendingKind)} draggable={canMove}
       onContextMenu={onContextMenu} onDragStart={onDragStart}
       {...longPress}
@@ -283,8 +275,8 @@ function FileCard({ file, thumb, selected, preSelected, canMove, allowVideoPrevi
         select: (e) => { e.preventDefault(); onSelect(file.id, e) },
         open:   (e) => { e.preventDefault(); onOpen() },
       })}>
-      <FloatCheckbox selected={selected} onToggle={() => onToggle(file.id)} className="absolute top-2 left-2 z-10" />
-      {/* En-tête : icône de type + nom + étoile + menu (la checkbox couvre l'icône au survol) */}
+      <FloatCheckbox selected={selected} onToggle={() => onToggle(file.id)} className="absolute -top-1.5 -left-1.5 z-10" />
+      {/* En-tête : icône de type + nom + étoile + menu */}
       <div className={`flex items-center gap-2 ${dense ? 'px-2 h-8' : 'px-3 h-10'}`}>
         <span className="shrink-0 flex items-center [&_svg]:w-[18px] [&_svg]:h-[18px]">{getFileIcon(file.mime_type, file.name)}</span>
         <span className={`${dense ? 'text-xs' : 'text-[13px]'} font-medium text-text-primary truncate flex-1`} title={file.name}>{file.name}</span>
@@ -309,8 +301,14 @@ function FileCard({ file, thumb, selected, preSelected, canMove, allowVideoPrevi
 
 // ── FileRow (vue liste) ──────────────────────────────────────────────────────────
 
-function FileRow({ file, thumb, onContextMenu, onOpen, density = 'normal', hideMeta = false }: {
-  file: FileItem; thumb: ThumbSpec; onContextMenu: (e: React.MouseEvent) => void; onOpen: () => void
+// FileRow — vues liste/détails/tuiles/contenu. MÊMES opérations que FileCard
+// (sélection clic/Ctrl/Maj, case à cocher, marquee, glisser, menu, ouverture,
+// curseur clavier) pour que les actions soient identiques quelle que soit la vue.
+function FileRow({ file, thumb, selected, preSelected, focused, canMove, onSelect, onToggle, onContextMenu, onOpen, onDragStart, density = 'normal', hideMeta = false }: {
+  file: FileItem; thumb: ThumbSpec
+  selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
+  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
+  onContextMenu: (e: React.MouseEvent) => void; onOpen: () => void; onDragStart?: (e: React.DragEvent) => void
   density?: 'compact' | 'normal' | 'large'; hideMeta?: boolean
 }) {
   const { i18n } = useTranslation('drive')
@@ -320,10 +318,17 @@ function FileRow({ file, thumb, onContextMenu, onOpen, density = 'normal', hideM
   const thumbC = density === 'large' ? 'w-12 h-12' : density === 'compact' ? 'w-6 h-6' : 'w-8 h-8'
   const longPress = useLongPress(onContextMenu)
   return (
-    <div className={`group flex items-center gap-3 ${pad} bg-white hover:bg-surface-1 transition-colors cursor-default select-none ${pendingBoxClass(pendingKind)}`}
+    <div data-selectable-id={file.id}
+      draggable={canMove} onDragStart={onDragStart}
+      className={`group relative flex items-center gap-3 ${pad} transition-colors cursor-default select-none border-l-[3px]
+        ${selected ? 'bg-[#e8f0fe] border-primary' : preSelected ? 'bg-[#e8f0fe] border-primary/50' : focused ? 'bg-surface-1 border-primary/40' : 'bg-white border-transparent hover:bg-surface-1'} ${pendingBoxClass(pendingKind)}`}
       style={pendingBoxStyle(pendingKind)} onContextMenu={onContextMenu}
       {...longPress}
-      {...openable<React.MouseEvent>({ open: (e) => { e.preventDefault(); onOpen() } })}>
+      {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(file.id, e) }, open: (e) => { e.preventDefault(); onOpen() } })}>
+      <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(file.id) }}
+        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        <FloatCheckbox selected={selected || !!preSelected} onToggle={() => onToggle(file.id)} />
+      </span>
       <div className={`shrink-0 ${thumbC} flex items-center justify-center rounded overflow-hidden bg-surface-2`}>
         <Thumb spec={thumb} file={file} className="w-full h-full object-cover" />
       </div>
@@ -334,7 +339,41 @@ function FileRow({ file, thumb, onContextMenu, onOpen, density = 'normal', hideM
       {!hideMeta && file.updated_at > '1971' && <span className="text-xs text-text-tertiary shrink-0 w-28 text-right">{updated}</span>}
       {!hideMeta && <span className="text-xs text-text-tertiary shrink-0 w-20 text-right">{formatSize(file.size_bytes)}</span>}
       {file.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
-      <button className="shrink-0 p-1.5 rounded-full hover:bg-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
+      <button data-no-drag className="shrink-0 p-1.5 rounded-full hover:bg-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
+        <MoreVertical size={14} className="text-text-secondary" />
+      </button>
+    </div>
+  )
+}
+
+// FolderRow — pendant de FileRow pour les dossiers (vues non-icônes) : mêmes
+// opérations + cible de dépôt (déplacer DANS le dossier).
+function FolderRow({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, density = 'normal' }: {
+  folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
+  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
+  onContextMenu: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void
+  onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
+  density?: 'compact' | 'normal' | 'large'
+}) {
+  const pendingKind = usePendingKind(folder.id)
+  const pad = density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
+  const longPress = useLongPress(onContextMenu)
+  return (
+    <div data-selectable-id={folder.id}
+      draggable={canMove} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+      className={`group relative flex items-center gap-3 ${pad} transition-colors cursor-default select-none border-l-[3px]
+        ${isDragTarget ? 'bg-primary/10 border-primary' : selected ? 'bg-[#e8f0fe] border-primary' : preSelected ? 'bg-[#e8f0fe] border-primary/50' : focused ? 'bg-surface-1 border-primary/40' : 'bg-white border-transparent hover:bg-surface-1'} ${pendingBoxClass(pendingKind)}`}
+      style={pendingBoxStyle(pendingKind)} onContextMenu={onContextMenu}
+      {...longPress}
+      {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(folder.id, e) }, open: (e) => { e.preventDefault(); e.stopPropagation(); onOpen() } })}>
+      <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(folder.id) }}
+        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        <FloatCheckbox selected={selected || !!preSelected} onToggle={() => onToggle(folder.id)} />
+      </span>
+      <FolderGlyph folder={folder} size={20} className="shrink-0" />
+      <span className="flex-1 min-w-0 text-sm text-text-primary truncate">{folder.name}</span>
+      {folder.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
+      <button data-no-drag className="shrink-0 p-1.5 rounded-full hover:bg-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
         <MoreVertical size={14} className="text-text-secondary" />
       </button>
     </div>
@@ -571,6 +610,8 @@ export default function StorageExplorer({
   const [showHidden, setShowHidden] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const lastSelectedIdxRef = useRef<number>(-1)
+  // Curseur clavier (flèches) — id de l'item focalisé dans la grille/liste.
+  const [cursorId, setCursorId] = useState<string | null>(null)
 
   const handleMarqueeSelect = useCallback((ids: Set<string>, additive: boolean) => {
     setSelectedIds(additive ? prev => new Set([...prev, ...ids]) : ids)
@@ -676,11 +717,20 @@ export default function StorageExplorer({
       if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
         if (orderedIds.length === 0) return
         e.preventDefault(); setSelectedIds(new Set(orderedIds))
-      } else if (e.key === 'Escape' && selectedIds.size > 0) setSelectedIds(new Set())
+      } else if (e.key === 'Escape' && selectedIds.size > 0) {
+        setSelectedIds(new Set())
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0 && caps.delete && !hasPlayingInSelection) {
+        // Suppr → corbeille (ou suppression définitive si la source n'a pas de corbeille).
+        // Maj+Suppr → suppression définitive forcée.
+        e.preventDefault()
+        const items: PendingItem[] = [...selectedIds].map(id => ({ id, type: itemTypeMap.get(id) === 'file' ? 'file' : 'folder' }))
+        scheduleDelete(items, e.shiftKey)
+        setSelectedIds(new Set())
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [orderedIds, selectedIds.size])
+  }, [orderedIds, selectedIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Navigation ───────────────────────────────────────────────────────────────
   // Écrit la position dans l'URL (paramètre `pathParam`) si demandé — permet à la
@@ -725,6 +775,8 @@ export default function StorageExplorer({
   // ── Sélection ──────────────────────────────────────────────────────────────────
   const handleItemSelect = useCallback((id: string, e: React.MouseEvent) => {
     const currentIdx = orderedIds.indexOf(id)
+    // Anchor the keyboard cursor on the clicked item so arrows continue from it.
+    setCursorId(id)
     if (e.shiftKey && lastSelectedIdxRef.current >= 0) {
       const from = Math.min(lastSelectedIdxRef.current, currentIdx), to = Math.max(lastSelectedIdxRef.current, currentIdx)
       const range = orderedIds.slice(from, to + 1)
@@ -735,6 +787,7 @@ export default function StorageExplorer({
     } else { setSelectedIds(new Set([id])); lastSelectedIdxRef.current = currentIdx }
   }, [orderedIds])
   const handleItemToggle = useCallback((id: string) => {
+    setCursorId(id)
     setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
     lastSelectedIdxRef.current = orderedIds.indexOf(id)
   }, [orderedIds])
@@ -742,7 +795,6 @@ export default function StorageExplorer({
   const invalidate = useCallback(() => { qc.invalidateQueries({ queryKey: ['explorer', src.key] }); refreshUser() }, [qc, src.key, refreshUser])
 
   // ── Upload ──────────────────────────────────────────────────────────────────
-  const [uploadConflictQueue, setUploadConflictQueue] = useState<Array<{ file: File; folderId: string | null }>>([])
   const uploadFileTracked = useCallback((file: File, targetFolderId: string | null, overwrite = false) => {
     const id = crypto.randomUUID()
     addUpload({ id, name: file.name, progress: 0, status: 'uploading' })
@@ -753,51 +805,19 @@ export default function StorageExplorer({
       })
       .catch(err => updateUpload(id, { status: 'error', error: (err as Error).message ?? t('common.error') }))
   }, [addUpload, updateUpload, invalidate, src, t])
-  const handleUploadConflictChoice = useCallback((choice: ConflictChoice) => {
-    setUploadConflictQueue(prev => { const [cur, ...rest] = prev; if (cur && choice !== 'cancel') uploadFileTracked(cur.file, cur.folderId, choice === 'overwrite'); return rest })
-  }, [uploadFileTracked])
-  const enqueueUpload = useCallback((file: File, targetFolderId: string | null) => {
-    const hasConflict = rawFiles.some(f => f.name === file.name)
-    if (hasConflict && targetFolderId === effectiveFolderId) setUploadConflictQueue(prev => [...prev, { file, folderId: targetFolderId }])
-    else uploadFileTracked(file, targetFolderId)
-  }, [rawFiles, effectiveFolderId, uploadFileTracked])
-  const processEntry = useCallback(async (entry: FileSystemEntry, parentFolderId: string | null): Promise<void> => {
-    if (entry.isFile) {
-      const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej))
-      uploadFileTracked(file, parentFolderId)
-    } else if (entry.isDirectory && caps.mkdir) {
-      await src.createFolder(entry.name, parentFolderId)
-      qc.invalidateQueries({ queryKey: ['explorer', src.key] })
-      // Après mkdir on ne connaît pas l'id distant exact → on liste pour retrouver.
-      const { folders: fs } = await src.list(parentFolderId)
-      const created = fs.find(f => f.name === entry.name)
-      if (created) { const entries = await readAllEntries((entry as FileSystemDirectoryEntry).createReader()); for (const c of entries) await processEntry(c, created.id) }
-    }
-  }, [uploadFileTracked, qc, src, caps.mkdir])
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => { Array.from(e.target.files ?? []).forEach(f => enqueueUpload(f, effectiveFolderId)); e.target.value = '' }
 
-  // Import d'un DOSSIER (<input webkitdirectory>) : reconstruit l'arborescence à
-  // partir de `webkitRelativePath`, en créant les dossiers manquants à la volée.
-  const handleFolderInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []); e.target.value = ''
-    if (!files.length || !caps.mkdir) return
-    const folderId = new Map<string, string | null>([['', effectiveFolderId]])
-    for (const file of files) {
-      const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
-      const parts = rel.split('/'); parts.pop()
-      let parentId = effectiveFolderId; let acc = ''
-      for (const part of parts) {
-        acc = acc ? `${acc}/${part}` : part
-        if (!folderId.has(acc)) {
-          await src.createFolder(part, parentId)
-          const { folders } = await src.list(parentId)
-          folderId.set(acc, folders.find(f => f.name === part)?.id ?? parentId)
-        }
-        parentId = folderId.get(acc) ?? parentId
-      }
-      enqueueUpload(file, parentId)
-    }
-  }
+  // Shared import-with-conflict pipeline: any imported file OR folder whose name
+  // already exists prompts the user (overwrite / keep both / cancel), at any depth.
+  const { importFiles, importEntries, importWebkitFolder, conflictDialog } = useImportConflicts({
+    list: (fid) => src.list(fid),
+    createFolder: async (name, parentId) => { await src.createFolder(name, parentId); const { folders } = await src.list(parentId); return { id: folders.find(f => f.name === name)?.id ?? parentId } },
+    uploadFile: uploadFileTracked,
+    canMkdir: caps.mkdir,
+  })
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void importFiles(files, effectiveFolderId) }
+  // Import d'un DOSSIER (<input webkitdirectory>) — arborescence + conflits gérés par le hook.
+  const handleFolderInput = (e: React.ChangeEvent<HTMLInputElement>) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; if (caps.mkdir) void importWebkitFolder(files, effectiveFolderId) }
 
   // Nouveau dossier (modale locale ou prompt distant).
   const openNewFolder = useCallback(() => {
@@ -843,21 +863,22 @@ export default function StorageExplorer({
     }
     if (!caps.upload) return
     const entries = Array.from(e.dataTransfer.items).map(it => it.webkitGetAsEntry?.() ?? null).filter((en): en is FileSystemEntry => en !== null)
-    if (entries.length > 0) entries.forEach(en => processEntry(en, targetFolderId))
-    else Array.from(e.dataTransfer.files).forEach(f => enqueueUpload(f, targetFolderId))
-  }, [effectiveFolderId, draggingItem, selectedIds, itemTypeMap, processEntry, enqueueUpload, invalidate, caps, folders, files, src, onExternalDrop])
+    if (entries.length > 0) void importEntries(entries, targetFolderId)
+    else void importFiles(Array.from(e.dataTransfer.files), targetFolderId)
+  }, [effectiveFolderId, draggingItem, selectedIds, itemTypeMap, importEntries, importFiles, invalidate, caps, folders, files, src, onExternalDrop])
 
   // ── Suppression différée (5 s) ──────────────────────────────────────────────
-  const scheduleDelete = (items: PendingItem[]) => {
+  const scheduleDelete = (items: PendingItem[], forcePermanent = false) => {
     if (items.length === 0) return
-    const kind: DeletionKind = caps.trash ? 'trash' : 'permanent'
+    const permanent = forcePermanent || !caps.trash
+    const kind: DeletionKind = permanent ? 'permanent' : 'trash'
     usePendingDeletionStore.getState().schedule({
       kind, items,
       label: t(kind === 'permanent' ? 'app.del_pending_perm' : 'app.del_pending_trash', { count: items.length }),
       undoLabel: t('common.cancel'),
       commit: (its) => {
         const refs: ItemRef[] = its.map(it => ({ id: it.id, type: it.type, name: '' }))
-        return (caps.trash ? src.trash(refs) : src.remove(refs)).then(() => { invalidate() })
+        return (permanent ? src.remove(refs) : src.trash(refs)).then(() => { invalidate() })
       },
     })
   }
@@ -916,19 +937,19 @@ export default function StorageExplorer({
   const openWithRegistry = (file: FileItem): boolean => {
     const openWith = typeof file.metadata?.['open_with'] === 'string' ? file.metadata['open_with'] as string : null
     const pref = openWith ? FileTypeRegistry.get(openWith) : undefined
-    if (pref?.open) { pref.open(file, navigate); return true }
+    if (pref?.open) { recentApi.record(file.id, pref.moduleId); pref.open(file, navigate); return true }
     const opener = FileTypeRegistry.openersFor(file)[0]
-    if (opener?.open) { opener.open(file, navigate); return true }
+    if (opener?.open) { recentApi.record(file.id, opener.moduleId); opener.open(file, navigate); return true }
     return false
   }
   const openFile = async (file: FileItem) => {
     if (onOpenFile && onOpenFile(file)) return
-    if (isViewable(file)) { setViewerFile(file); return }
+    if (isViewable(file)) { recentApi.record(file.id, 'drive'); setViewerFile(file); return }
     // Préférence explicite « Ouvrir avec » (métadonnée par-fichier) : priorité absolue.
     const hasExplicit = typeof file.metadata?.['open_with'] === 'string'
     if (hasExplicit && caps.openWith && openWithRegistry(file)) return
     // Texte → visionneuse rapide par défaut (un éditeur reste accessible via « Ouvrir avec »).
-    if (isTextFile(file)) { setTextFile(file); return }
+    if (isTextFile(file)) { recentApi.record(file.id, 'drive'); setTextFile(file); return }
     if (caps.openWith && openWithRegistry(file)) return
     // Distant : un éditeur (.kb*) ne sait ouvrir qu'un fichier local → on
     // matérialise dans Mon Drive puis on ouvre la copie locale.
@@ -940,6 +961,72 @@ export default function StorageExplorer({
     }
     src.download({ id: file.id, type: 'file', name: file.name })
   }
+
+  // ── Navigation au clavier (flèches = déplacer le curseur ; Entrée = ouvrir) ──
+  // Fonctionne dans TOUTES les vues (icônes/liste/détails/tuiles/contenu) car
+  // dossiers ET fichiers portent `data-selectable-id` ; haut/bas = plus proche
+  // voisin géométrique (gère grilles et listes, y compris la frontière dossiers↔fichiers).
+  useEffect(() => {
+    const openItem = (id: string) => {
+      const folder = sortedFolders.find(f => f.id === id)
+      if (folder) { navigateTo(folder); return }
+      const file = filteredFiles.find(f => f.id === id)
+      if (file) openFile(file)
+    }
+    const focusCursor = (id: string, additive: boolean) => {
+      setCursorId(id)
+      lastSelectedIdxRef.current = orderedIds.indexOf(id)
+      setSelectedIds(prev => { if (!additive) return new Set([id]); const n = new Set(prev); n.add(id); return n })
+      requestAnimationFrame(() => {
+        try { const sel = (window.CSS && CSS.escape) ? CSS.escape(id) : id; document.querySelector(`[data-selectable-id="${sel}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) } catch { /* ignore */ }
+      })
+    }
+    const vertical = (id: string, dir: 1 | -1): string | null => {
+      const root = marqueeContainerRef.current
+      if (!root) return null
+      const els = [...root.querySelectorAll('[data-selectable-id]')] as HTMLElement[]
+      const cur = els.find(e => e.dataset.selectableId === id)
+      if (!cur) return null
+      const cr = cur.getBoundingClientRect(); const cx = cr.left + cr.width / 2
+      let best: string | null = null, bestScore = Infinity
+      for (const e of els) {
+        if (e === cur) continue
+        const r = e.getBoundingClientRect()
+        const ok = dir === 1 ? (r.top - cr.top > 4) : (cr.top - r.top > 4)
+        if (!ok) continue
+        const score = Math.abs(r.top - cr.top) * 100000 + Math.abs((r.left + r.width / 2) - cx)
+        if (score < bestScore) { bestScore = score; best = e.dataset.selectableId ?? null }
+      }
+      return best
+    }
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) return
+      if (orderedIds.length === 0) return
+      e.preventDefault()
+      // Anchor on the cursor, else on the current selection, so arrows continue
+      // from the selected object.
+      const selectionAnchor = (): string | null => {
+        if (selectedIds.size === 0) return null
+        const li = lastSelectedIdxRef.current
+        if (li >= 0 && li < orderedIds.length && selectedIds.has(orderedIds[li])) return orderedIds[li]
+        for (let i = orderedIds.length - 1; i >= 0; i--) if (selectedIds.has(orderedIds[i])) return orderedIds[i]
+        return null
+      }
+      const anchor = (cursorId && orderedIds.includes(cursorId) ? cursorId : null) ?? selectionAnchor()
+      if (e.key === 'Enter') { openItem(anchor ?? orderedIds[0]); return }
+      if (!anchor) { focusCursor(orderedIds[0], false); return }
+      const idx = orderedIds.indexOf(anchor)
+      let next = anchor
+      if (e.key === 'ArrowRight') next = orderedIds[Math.min(orderedIds.length - 1, idx + 1)]
+      else if (e.key === 'ArrowLeft') next = orderedIds[Math.max(0, idx - 1)]
+      else next = vertical(anchor, e.key === 'ArrowDown' ? 1 : -1) ?? anchor
+      focusCursor(next, e.shiftKey)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [orderedIds, cursorId, selectedIds, sortedFolders, filteredFiles]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Rendu ────────────────────────────────────────────────────────────────────
   const isEmpty = !isLoading && folders.length === 0 && filteredFiles.length === 0
@@ -961,6 +1048,7 @@ export default function StorageExplorer({
         <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-primary bg-primary/5 transition-all">
           <CloudUpload size={52} className="text-primary opacity-80" />
           <p className="text-primary font-medium text-sm">{t('mfb.drop_here')}</p>
+          <p className="text-primary/60 text-xs">{t('app.accepted')}</p>
         </div>
       )}
 
@@ -975,7 +1063,7 @@ export default function StorageExplorer({
           ariaLabel={t('app.breadcrumb')}
         />
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center flex-wrap justify-end gap-2 min-w-0">
           {selectedIds.size > 0 ? (
             <>
               <span className="text-sm text-text-secondary">{t('storage.selected', { count: selectedIds.size })}</span>
@@ -1050,16 +1138,29 @@ export default function StorageExplorer({
             {sortedFolders.length > 0 && (
               <section>
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary mb-2">{t('app.folders')}</h2>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
-                  {sortedFolders.map(folder => (
-                    <FolderCard key={folder.id} folder={folder} isDragTarget={dragOverFolderId === folder.id}
-                      selected={selectedIds.has(folder.id)} preSelected={preSelectedIds.has(folder.id)} canMove={caps.move}
-                      onSelect={handleItemSelect} onToggle={handleItemToggle} onOpen={() => navigateTo(folder)} onContextMenu={e => openMenu(e, 'folder', folder)}
-                      onDragStart={(e) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: folder.id, type: 'folder', name: folder.name })); if (!selectedIds.has(folder.id)) { setSelectedIds(new Set([folder.id])); lastSelectedIdxRef.current = orderedIds.indexOf(folder.id) } setDraggingItem({ type: 'folder', id: folder.id }) }}
-                      onDragOver={e => { if (caps.move) { e.preventDefault(); e.stopPropagation(); setDragOverFolderId(folder.id) } }}
-                      onDragLeave={() => setDragOverFolderId(null)} onDrop={e => handleDrop(e, folder.id)} />
-                  ))}
-                </div>
+                {(() => {
+                  const spec = VIEW_SPECS[viewMode]
+                  // Mêmes opérations dans toutes les vues : carte en icônes, ligne sinon.
+                  const common = (folder: Folder) => ({
+                    folder, isDragTarget: dragOverFolderId === folder.id,
+                    selected: selectedIds.has(folder.id), preSelected: preSelectedIds.has(folder.id), focused: cursorId === folder.id, canMove: caps.move,
+                    onSelect: handleItemSelect, onToggle: handleItemToggle, onOpen: () => navigateTo(folder), onContextMenu: (e: React.MouseEvent) => openMenu(e, 'folder', folder),
+                    onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: folder.id, type: 'folder', name: folder.name })); if (!selectedIds.has(folder.id)) { setSelectedIds(new Set([folder.id])); lastSelectedIdxRef.current = orderedIds.indexOf(folder.id) } setDraggingItem({ type: 'folder', id: folder.id }) },
+                    onDragOver: (e: React.DragEvent) => { if (caps.move) { e.preventDefault(); e.stopPropagation(); setDragOverFolderId(folder.id) } },
+                    onDragLeave: () => setDragOverFolderId(null), onDrop: (e: React.DragEvent) => handleDrop(e, folder.id),
+                  })
+                  if (spec.kind === 'icons') {
+                    return <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">{sortedFolders.map(f => <FolderCard key={f.id} {...common(f)} />)}</div>
+                  }
+                  const dens = spec.multicol ? 'compact' : (spec.density ?? 'normal')
+                  if (spec.kind === 'tiles') {
+                    return <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 10 }}>{sortedFolders.map(f => <div key={f.id} className="border border-border rounded-lg overflow-hidden bg-white"><FolderRow {...common(f)} density="normal" /></div>)}</div>
+                  }
+                  if (spec.multicol) {
+                    return <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 2 }}>{sortedFolders.map(f => <FolderRow key={f.id} {...common(f)} density="compact" />)}</div>
+                  }
+                  return <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">{sortedFolders.map(f => <FolderRow key={f.id} {...common(f)} density={dens} />)}</div>
+                })()}
               </section>
             )}
 
@@ -1071,16 +1172,21 @@ export default function StorageExplorer({
                 </h2>
                 {(() => {
                   const spec = VIEW_SPECS[viewMode]
+                  // Props communs → MÊMES opérations (sélection/case/marquee/glisser/
+                  // menu/ouverture/curseur) quelle que soit la vue.
+                  const common = (file: FileItem) => ({
+                    file, thumb: src.thumbnail(file),
+                    selected: selectedIds.has(file.id), preSelected: preSelectedIds.has(file.id), focused: cursorId === file.id, canMove: caps.move,
+                    onSelect: handleItemSelect, onToggle: handleItemToggle, onContextMenu: (e: React.MouseEvent) => openMenu(e, 'file', file),
+                    onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: file.id, type: 'file', name: file.name })); if (!selectedIds.has(file.id)) { setSelectedIds(new Set([file.id])); lastSelectedIdxRef.current = orderedIds.indexOf(file.id) } setDraggingItem({ type: 'file', id: file.id }) },
+                    onOpen: () => openFile(file),
+                  })
                   if (spec.kind === 'icons') {
                     return (
                       <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 12 }}>
                         {filteredFiles.map(file => {
                           const defaultCard = (
-                            <FileCard key={file.id} file={file} thumb={src.thumbnail(file)} selected={selectedIds.has(file.id)} preSelected={preSelectedIds.has(file.id)}
-                              canMove={caps.move} allowVideoPreview={caps.thumbnails === 'url'}
-                              onSelect={handleItemSelect} onToggle={handleItemToggle} onContextMenu={e => openMenu(e, 'file', file)}
-                              onDragStart={(e) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: file.id, type: 'file', name: file.name })); if (!selectedIds.has(file.id)) { setSelectedIds(new Set([file.id])); lastSelectedIdxRef.current = orderedIds.indexOf(file.id) } setDraggingItem({ type: 'file', id: file.id }) }}
-                              onOpen={() => openFile(file)} thumbH={spec.thumbH} iconScale={spec.iconScale} dense={spec.dense} />
+                            <FileCard {...common(file)} allowVideoPreview={caps.thumbnails === 'url'} thumbH={spec.thumbH} iconScale={spec.iconScale} dense={spec.dense} />
                           )
                           return <div key={file.id}>{renderFileCard ? renderFileCard(file, defaultCard) : defaultCard}</div>
                         })}
@@ -1092,7 +1198,7 @@ export default function StorageExplorer({
                       <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 10 }}>
                         {filteredFiles.map(file => (
                           <div key={file.id} className="border border-border rounded-lg overflow-hidden bg-white hover:border-border-strong transition-colors">
-                            <FileRow file={file} thumb={src.thumbnail(file)} onContextMenu={e => openMenu(e, 'file', file)} onOpen={() => openFile(file)} hideMeta />
+                            <FileRow {...common(file)} hideMeta />
                           </div>
                         ))}
                       </div>
@@ -1101,13 +1207,13 @@ export default function StorageExplorer({
                   if (spec.multicol) {
                     return (
                       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 2 }}>
-                        {filteredFiles.map(file => <FileRow key={file.id} file={file} thumb={src.thumbnail(file)} onContextMenu={e => openMenu(e, 'file', file)} onOpen={() => openFile(file)} density="compact" hideMeta />)}
+                        {filteredFiles.map(file => <FileRow key={file.id} {...common(file)} density="compact" hideMeta />)}
                       </div>
                     )
                   }
                   return (
                     <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">
-                      {filteredFiles.map(file => <FileRow key={file.id} file={file} thumb={src.thumbnail(file)} onContextMenu={e => openMenu(e, 'file', file)} onOpen={() => openFile(file)} density={spec.density} />)}
+                      {filteredFiles.map(file => <FileRow key={file.id} {...common(file)} density={spec.density} />)}
                     </div>
                   )
                 })()}
@@ -1168,7 +1274,7 @@ export default function StorageExplorer({
 
       <UploadPanel />
 
-      {uploadConflictQueue.length > 0 && <ConflictDialog type="file" name={uploadConflictQueue[0].file.name} onChoice={handleUploadConflictChoice} />}
+      {conflictDialog}
       {confirmState && <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />}
       {viewerFile && (() => {
         const isImg = viewerFile.mime_type.startsWith('image/')

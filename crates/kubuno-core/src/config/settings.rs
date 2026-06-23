@@ -31,6 +31,52 @@ pub struct ServerSettings {
     /// Ajoute l'attribut Secure aux cookies (activer en production HTTPS).
     #[serde(default)]
     pub secure_cookies:  bool,
+    /// Terminaison TLS native (HTTPS) dans le core. Voir [`TlsSettings`].
+    #[serde(default)]
+    pub tls:             TlsSettings,
+}
+
+/// Configuration HTTPS / TLS native.
+///
+/// Quand `enabled = true`, le core termine lui-même le TLS (HTTPS direct, sans
+/// reverse-proxy). Quand `enabled = false` (défaut), il sert en HTTP nu — la
+/// terminaison TLS peut alors être faite par un reverse-proxy (nginx…).
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TlsSettings {
+    /// Active la terminaison TLS native (HTTPS) dans le core.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Chemin du certificat PEM (chaîne complète : feuille + intermédiaires).
+    #[serde(default)]
+    pub cert_path: String,
+    /// Chemin de la clé privée PEM (PKCS#8 ou RSA, non chiffrée).
+    #[serde(default)]
+    pub key_path: String,
+    /// Si > 0, écoute AUSSI en HTTP nu sur ce port et redirige (308) vers HTTPS.
+    /// 0 (défaut) = pas de redirection. Exemple : 80 pour rediriger le web standard.
+    #[serde(default)]
+    pub redirect_http_from_port: u16,
+}
+
+impl TlsSettings {
+    /// Valide la cohérence quand TLS est activé : les chemins doivent être
+    /// renseignés et les fichiers exister/être lisibles.
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self.cert_path.trim().is_empty() || self.key_path.trim().is_empty() {
+            return Err(
+                "server.tls.enabled = true exige server.tls.cert_path et server.tls.key_path".into(),
+            );
+        }
+        for (label, path) in [("cert_path", &self.cert_path), ("key_path", &self.key_path)] {
+            if !std::path::Path::new(path).is_file() {
+                return Err(format!("server.tls.{label} introuvable : {path}"));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -190,6 +236,10 @@ impl Settings {
             .set_default("server.themes_dir", "/var/lib/kubuno/themes")?
             .set_default("server.cors_origins", Vec::<String>::new())?
             .set_default("server.secure_cookies", false)?
+            .set_default("server.tls.enabled", false)?
+            .set_default("server.tls.cert_path", "")?
+            .set_default("server.tls.key_path", "")?
+            .set_default("server.tls.redirect_http_from_port", 0)?
             .set_default("database.max_connections", 20)?
             .set_default("database.min_connections", 2)?
             .set_default("database.connect_timeout", 10u64)?
@@ -220,7 +270,9 @@ impl Settings {
 
         let settings: Settings = cfg.try_deserialize()?;
         settings.database.validate()
-            .map_err(|e| ConfigError::Message(e))?;
+            .map_err(ConfigError::Message)?;
+        settings.server.tls.validate()
+            .map_err(ConfigError::Message)?;
         Ok(settings)
     }
 }

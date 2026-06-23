@@ -46,13 +46,41 @@ themes_dir = "/var/lib/kubuno/themes"
 # OBLIGATOIRE — générez avec : openssl rand -hex 32
 internal_secret = "CHANGEZ_MOI"
 
+# Ajoute l'attribut "Secure" aux cookies (refresh token). À activer dès que le
+# site est servi en HTTPS (TLS natif ci-dessous OU reverse-proxy en frontal).
+secure_cookies = false
+
 # ── Protection anti-DDoS (surchargeable par variables d'environnement) ──
 # Ces réglages se font via l'environnement, pas via ce fichier :
 #   KV_SERVER_MAX_CONCURRENT     Requêtes traitées en parallèle avant load-shed (503). Défaut 1024.
 #   KV_SERVER_RATE_LIMIT_PER_MIN Requêtes/minute autorisées par IP, toutes routes. Défaut 600.
 # Les WebSockets et le streaming des modules ne sont pas comptés dans la
-# limite de concurrence. La terminaison TLS et les limites de connexions/
-# bande passante restent à configurer côté reverse-proxy (nginx).
+# limite de concurrence.
+
+
+# ── HTTPS / TLS natif ─────────────────────────────────────────────
+# Quand enabled = true, le core termine lui-même le TLS et sert directement
+# en HTTPS (plus besoin de reverse-proxy pour le chiffrement). Laissez
+# enabled = false pour servir en HTTP nu (TLS délégué à nginx en frontal).
+[server.tls]
+
+# Active la terminaison TLS native (HTTPS) dans le core.
+enabled = false
+
+# Certificat PEM (chaîne complète : feuille + intermédiaires).
+# OBLIGATOIRE si enabled = true. Let's Encrypt : fullchain.pem
+# Auto-signé pour un test :
+#   openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
+cert_path = ""
+
+# Clé privée PEM (PKCS#8 ou RSA, NON chiffrée). OBLIGATOIRE si enabled = true.
+# Let's Encrypt : privkey.pem
+key_path = ""
+
+# Si > 0, écoute AUSSI en HTTP nu sur ce port et redirige (308) vers HTTPS.
+# 0 = pas de redirection. Exemple : 80 pour rediriger tout le trafic web standard.
+# (Lier un port < 1024 peut exiger CAP_NET_BIND_SERVICE ou root.)
+redirect_http_from_port = 0
 
 
 # ── Base de données ───────────────────────────────────────────────

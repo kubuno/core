@@ -141,7 +141,7 @@ useWsStore.subscribe((state, prev) => {
 // Bootstrap asynchrone après le montage initial
 async function bootstrap() {
   // Charger les thèmes en premier pour éviter le flash de thème par défaut
-  useThemeStore.getState().fetchThemes()
+  const themesPromise = useThemeStore.getState().fetchThemes()
   // Charger les modules dès le démarrage, SANS attendre l'authentification : les
   // routes publiques des modules (ex. forms/public/:token pour un répondant
   // anonyme) doivent voir leurs bundles importés et leurs routes enregistrées
@@ -149,6 +149,11 @@ async function bootstrap() {
   useModulesStore.getState().fetchModules()
   const { initialize } = useAuthStore.getState()
   await initialize()
+  // Apply the user's per-user theme preference (follows them across devices).
+  // Waits for themes to be available so applyTheme can resolve the definition.
+  await themesPromise
+  const userTheme = useAuthStore.getState().user?.preferences?.theme
+  if (typeof userTheme === 'string') useThemeStore.getState().applyTheme(userTheme)
 }
 
 bootstrap()
