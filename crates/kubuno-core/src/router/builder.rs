@@ -88,6 +88,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/admin/themes/:id", delete(delete_theme))
         // ── Modules (public) ─────────────────────────────────────
         .route("/modules", get(list_modules))
+        // ── Composants WASM local-first (authentifié) ────────────
+        .route("/desktop/wasm",         get(crate::handlers::desktop::wasm_manifest))
+        .route("/desktop/wasm/:name",   get(crate::handlers::desktop::wasm_file))
         // ── User profile (authentifié) ───────────────────────────
         .route("/me",                   get(get_me).patch(update_me))
         .route("/me/activity",          get(me_activity))

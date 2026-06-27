@@ -7,19 +7,20 @@ import GroupsPanel from './GroupsPanel'
 import ModulesPanel from './ModulesPanel'
 import SettingsPanel from './SettingsPanel'
 import ThemesPanel from './ThemesPanel'
+import SpeechToTextPanel from './SpeechToTextPanel'
 import { useAuthStore } from '../store/authStore'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import {
   Users, Package, Settings, BarChart2, ShieldCheck, Palette, MonitorSmartphone, Wifi,
-  HardDrive, UserPlus, Activity, TrendingUp, type LucideIcon,
+  HardDrive, UserPlus, Activity, TrendingUp, Mic, type LucideIcon,
 } from 'lucide-react'
 import {
   CHART_COLORS, fmtBytes, ProgressRing, DonutChart, BarChart, AreaChart, HBarList, Sparkline,
 } from './DashboardCharts'
 
-type Tab = 'dashboard' | 'users' | 'groups' | 'modules' | 'settings' | 'apparence'
+type Tab = 'dashboard' | 'users' | 'groups' | 'modules' | 'settings' | 'apparence' | 'speech-to-text'
 
 interface KV { key: string; count: number }
 interface Series { date: string; count: number }
@@ -214,6 +215,7 @@ const ADMIN_TABS: { id: Tab; labelKey: string; Icon: LucideIcon }[] = [
   { id: 'modules',   labelKey: 'admin.tab_modules',    Icon: Package },
   { id: 'settings',  labelKey: 'admin.tab_settings',   Icon: Settings },
   { id: 'apparence', labelKey: 'admin.tab_appearance', Icon: Palette },
+  { id: 'speech-to-text', labelKey: 'admin.tab_speech_to_text', Icon: Mic },
 ]
 
 // Rendered inside AppSidebar as the left panel while on /admin (replaces the
@@ -282,6 +284,7 @@ export default function AdminPage() {
       {tab === 'modules'   && <ModulesPanel />}
       {tab === 'settings'  && <SettingsPanel />}
       {tab === 'apparence' && <ThemesPanel />}
+      {tab === 'speech-to-text' && <SpeechToTextPanel />}
 
       <Slot name="admin-panels" />
     </div>

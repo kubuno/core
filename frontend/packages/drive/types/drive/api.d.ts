@@ -336,3 +336,18 @@ export declare const systemApi: {
     downloadUrl: (id: string) => string;
     downloadBlob: (id: string) => Promise<Blob>;
 };
+export type RecentFile = FileItem & {
+    module_id: string;
+    opened_at: string;
+};
+export declare const recentApi: {
+    /** Enregistre l'ouverture d'un fichier par une app (best-effort, non bloquant). */
+    record: (fileId: string, moduleId?: string) => void;
+    /** Liste les fichiers récemment ouverts (récent → ancien), filtrable par app. */
+    list: (opts?: {
+        module?: string;
+        limit?: number;
+    }) => Promise<RecentFile[]>;
+    remove: (fileId: string) => Promise<void>;
+    clear: () => Promise<void>;
+};

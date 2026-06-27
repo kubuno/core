@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
-import { Search, X, Camera } from 'lucide-react'
+import { Search, X, Camera, Mic } from 'lucide-react'
 import { useSearchStore, resolveSearchConfig } from '../store/searchStore'
+import { useVoiceDictation } from './useVoiceDictation'
 
 function DefaultFilterPanel({ onClose, dark = false }: { onClose: () => void; dark?: boolean }) {
   const { t } = useTranslation()
@@ -38,11 +39,19 @@ export default function SearchBar({ dark = false, compact = false }: { dark?: bo
   const [filterOpen, setFilterOpen] = useState(false)
   const [focused,    setFocused]    = useState(false)
   const [query,      setQuery]      = useState('')
-  const containerRef = useRef<HTMLDivElement>(null)
-  const inputRef     = useRef<HTMLInputElement>(null)
-  const imgPickRef   = useRef<HTMLInputElement>(null)
+  const containerRef  = useRef<HTMLDivElement>(null)
+  const inputRef      = useRef<HTMLInputElement>(null)
+  const imgPickRef    = useRef<HTMLInputElement>(null)
 
   const config = resolveSearchConfig(configs, pathname)
+
+  const handleChange = (value: string) => {
+    setQuery(value)
+    config?.onSearch?.(value)
+  }
+
+  // Voice dictation (shared hook): live transcript fills the search field.
+  const voice = useVoiceDictation({ getSeed: () => '', onText: handleChange })
 
   useEffect(() => {
     setQuery('')
@@ -51,15 +60,16 @@ export default function SearchBar({ dark = false, compact = false }: { dark?: bo
   }, [config?.moduleId])
 
   useEffect(() => {
-    if (!filterOpen) return
+    if (!filterOpen && !voice.listening) return
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setFilterOpen(false)
+        voice.stop()
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [filterOpen])
+  }, [filterOpen, voice.listening]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (config?.SearchComponent) return <config.SearchComponent />
 
@@ -68,11 +78,6 @@ export default function SearchBar({ dark = false, compact = false }: { dark?: bo
     : (config?.placeholder ?? t('header.search_placeholder'))
   const CustomFilterPanel = config?.FilterPanel
   const isActive          = focused || filterOpen
-
-  const handleChange = (value: string) => {
-    setQuery(value)
-    config?.onSearch?.(value)
-  }
 
   const rowH   = compact ? 'h-9' : 'h-12'
   const ico    = compact ? 16 : 20
@@ -108,6 +113,22 @@ export default function SearchBar({ dark = false, compact = false }: { dark?: bo
       )}
 
       <div className="flex items-center flex-shrink-0 pr-2">
+        {/* Bouton micro — recherche vocale auto-hébergée (Vosk/Whisper), présent
+            par défaut sur tous les navigateurs. Masqué si l'admin a désactivé la
+            reconnaissance vocale ou si le module stt est absent. */}
+        {voice.enabled && (
+          <button
+            onClick={voice.toggleVoice}
+            aria-label={t('shell.search_by_voice', { defaultValue: 'Recherche vocale' })}
+            title={t('shell.search_by_voice', { defaultValue: 'Recherche vocale' })}
+            className={`${fltBtn} flex items-center justify-center rounded-full transition-colors
+              ${(voice.listening || voice.voiceLoading)
+                ? 'text-red-500 bg-red-500/10'
+                : (dark ? 'text-white/60 hover:bg-white/10' : 'text-text-secondary hover:bg-[#e8f0fe]')}`}
+          >
+            <Mic size={ico} className={voice.listening ? 'animate-pulse' : ''} />
+          </button>
+        )}
         {config?.onImageSearch && (
           <>
             <input
@@ -145,6 +166,11 @@ export default function SearchBar({ dark = false, compact = false }: { dark?: bo
 
   return (
     <div ref={containerRef} className="relative w-full">
+
+      {/* Toast d'écoute vocale — centré à l'écran, fourni par le hook partagé.
+          Rendu DANS containerRef pour que le clic dessus ne compte pas comme un
+          clic « extérieur » (qui arrête la dictée). */}
+      {voice.voiceToast}
 
       {filterOpen ? (
         <>

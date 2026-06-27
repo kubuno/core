@@ -1,5 +1,7 @@
 export { Button } from './Button';
 export { NumberInput } from './NumberInput';
+export { RangeSlider, RollingNumber } from './RangeSlider';
+export type { RangeSliderProps } from './RangeSlider';
 export { Input } from './Input';
 export { Textarea } from './Textarea';
 export { RichText } from './RichText';
@@ -41,3 +43,4 @@ export { hexToRgb, rgbToHex, rgbToHsl, hslToRgb, rgbToHsv, hsvToRgb, rgbToCmyk, 
 export { GradientPicker, GradientField } from './GradientPicker';
 export { gradientToCss, rgbaFromHex, DEFAULT_GRADIENT } from './gradient';
 export type { Gradient, GradientStop } from './gradient';
+export { isCoarsePointer, openable, useLongPress } from './interaction';

@@ -95,8 +95,10 @@ pub async fn list_admin_modules(
     State(state): State<AppState>,
     _admin: AdminUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Internal infrastructure modules (e.g. stt) are registered for routing but
+    // hidden from the admin module list.
     let modules = sqlx::query(
-        "SELECT id, display_name, version, description, is_enabled, installed_at, config FROM core.modules ORDER BY display_name"
+        "SELECT id, display_name, version, description, is_enabled, installed_at, config FROM core.modules WHERE is_core_module = FALSE ORDER BY display_name"
     )
     .fetch_all(&state.db)
     .await?;
