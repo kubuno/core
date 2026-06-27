@@ -36,8 +36,8 @@ export { SidebarNavItem } from '../core/shell/SidebarNavItem';
 export { useUiStore } from '../core/store/uiStore';
 export { default as HeaderActions } from '../core/shell/HeaderActions';
 export { useChromelessHeader } from '../core/shell/useChromelessHeader';
-export { WorkspaceShell, MenuBar, WORKSPACE_DARK, WORKSPACE_LIGHT, WORKSPACE_OFFICE } from '../core/shell/workspace';
-export type { WorkspaceTheme } from '../core/shell/workspace';
+export { WorkspaceShell, MenuBar, WORKSPACE_DARK, WORKSPACE_LIGHT, WORKSPACE_OFFICE, DockArea } from '../core/shell/workspace';
+export type { WorkspaceTheme, DockPanel, DockController, DockTheme } from '../core/shell/workspace';
 export type { MenuItem as WorkspaceMenuItem } from '../core/shell/workspace';
 export { useDebouncedAutosave } from '../core/hooks/useAutosave';
 export { formatSize } from '../core/utils/format';
@@ -50,6 +50,8 @@ export { useWsStore } from '../core/store/wsStore';
 export { getDateLocale } from '../core/i18n/dateLocale';
 export { getIcon, ICON_MAP } from '../core/utils/iconMap';
 export type { User } from '../core/types';
+export { useVoiceDictation } from '../core/shell/useVoiceDictation';
+export type { VoiceDictation, UseVoiceDictationOptions } from '../core/shell/useVoiceDictation';
 /**
  * Version de contrat du SDK. À incrémenter UNIQUEMENT sur un changement cassant
  * (export retiré/renommé, signature de registry modifiée). Le loader rejette

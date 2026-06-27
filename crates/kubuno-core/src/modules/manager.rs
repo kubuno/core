@@ -44,18 +44,20 @@ async fn sync_to_db(db: &PgPool, manifest: &ModuleManifest) -> bool {
         r#"
         INSERT INTO core.modules
             (id, display_name, version, description, author, license,
-             homepage_url, runtime, dependencies, is_enabled)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)
+             homepage_url, runtime, dependencies, is_enabled, is_core_module)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10)
         ON CONFLICT (id) DO UPDATE SET
-            display_name = EXCLUDED.display_name,
-            version      = EXCLUDED.version,
-            description  = EXCLUDED.description,
-            author       = EXCLUDED.author,
-            license      = EXCLUDED.license,
-            homepage_url = EXCLUDED.homepage_url,
-            runtime      = EXCLUDED.runtime,
-            dependencies = EXCLUDED.dependencies,
-            updated_at   = NOW()
+            display_name   = EXCLUDED.display_name,
+            version        = EXCLUDED.version,
+            description    = EXCLUDED.description,
+            author         = EXCLUDED.author,
+            license        = EXCLUDED.license,
+            homepage_url   = EXCLUDED.homepage_url,
+            runtime        = EXCLUDED.runtime,
+            dependencies   = EXCLUDED.dependencies,
+            -- "Sticky": once internal, stays internal (a later re-register can't unset it).
+            is_core_module = core.modules.is_core_module OR EXCLUDED.is_core_module,
+            updated_at     = NOW()
         RETURNING is_enabled
         "#,
     )
@@ -68,6 +70,7 @@ async fn sync_to_db(db: &PgPool, manifest: &ModuleManifest) -> bool {
     .bind(m.homepage_url.as_deref())
     .bind(&m.runtime)
     .bind(&m.dependencies[..])
+    .bind(m.internal)
     .fetch_one(db)
     .await;
 

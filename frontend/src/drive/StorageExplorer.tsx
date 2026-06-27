@@ -263,6 +263,14 @@ function FileCard({ file, thumb, selected, preSelected, focused, canMove, allowV
   const isImage = file.mime_type.startsWith('image/')
   const isVideo = file.mime_type.startsWith('video/')
   const hasBigThumb = (thumb.kind !== 'none') && (isImage || (isVideo && allowVideoPreview))
+  // Extension badge shown on the thumbnail (e.g. "DOCX", "PDF"). Skipped for
+  // dotless names, hidden files (".gitignore") and non-extension-looking tails.
+  const badgeExt = (() => {
+    const dot = file.name.lastIndexOf('.')
+    if (dot <= 0 || dot === file.name.length - 1) return ''
+    const e = file.name.slice(dot + 1)
+    return /^[a-z0-9]{1,5}$/i.test(e) ? e.toUpperCase() : ''
+  })()
   const longPress = useLongPress(onContextMenu)
   return (
     <div data-selectable-id={file.id}
@@ -295,6 +303,34 @@ function FileCard({ file, thumb, selected, preSelected, focused, canMove, allowV
           </div>
         )}
       </div>
+      {/* Extension badge — bottom-right of the preview. The outer span uses
+          `background-color: inherit` so its padding ring matches the card's own
+          background in EVERY state (hover/selected/focused) live, carving a
+          seamless notch into the white preview area around the white pill.
+          Inline styles so it never depends on arbitrary Tailwind utilities. */}
+      {badgeExt && (
+        <span
+          className="absolute z-10 inline-block pointer-events-none"
+          style={{
+            bottom: '4px', right: '4px',
+            padding: dense ? '5px' : '7px', borderRadius: dense ? '10px 0 0 0' : '12px 0 0 0',
+            backgroundColor: 'inherit',
+            // Match the card's `transition-all` (150ms) so the notch colour
+            // animates in lockstep with the card background on hover/select.
+            transition: 'background-color 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
+          <span
+            className="block font-semibold uppercase"
+            style={{
+              fontSize: '9px', lineHeight: 1, padding: '2px 5px', letterSpacing: '0.04em',
+              borderRadius: '6px', color: 'var(--color-text-secondary)',
+            }}
+          >
+            {badgeExt}
+          </span>
+        </span>
+      )}
     </div>
   )
 }
@@ -886,6 +922,13 @@ export default function StorageExplorer({
   // ── Menu contextuel ──────────────────────────────────────────────────────────
   const openMenu = (e: React.MouseEvent, type: 'folder' | 'file', item: Folder | FileItem) => {
     e.preventDefault(); e.stopPropagation()
+    // Right-clicking an item that isn't part of the current selection makes it
+    // the sole selection; right-clicking within a multi-selection keeps it (so
+    // the menu still acts on the whole group).
+    if (!selectedIds.has(item.id)) {
+      setSelectedIds(new Set([item.id]))
+      lastSelectedIdxRef.current = orderedIds.indexOf(item.id)
+    }
     setMenu({ type, item, x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - 360) } as MenuTarget)
   }
   const asRef = (m: NonNullable<MenuTarget>): ItemRef => ({ id: m.item.id, type: m.type, name: m.item.name })
@@ -1100,6 +1143,9 @@ export default function StorageExplorer({
       {/* Contenu défilable */}
       <div ref={marqueeContainerRef} className="flex-1 min-h-0 overflow-y-auto px-6 pb-6"
         onContextMenu={e => {
+          // Right-clicking empty space drops the current selection. (Item cards
+          // stop propagation in openMenu, so this only fires on the backdrop.)
+          setSelectedIds(new Set())
           // Sur le Drive principal (source locale, route /drive), le menu de fond est fourni
           // par le ContextMenuProvider du core (FilesContextMenuItems) → laisser remonter,
           // ne pas ouvrir le menu local (sinon DOUBLON). Pour les autres explorateurs

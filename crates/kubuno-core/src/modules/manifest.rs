@@ -30,6 +30,10 @@ pub struct ModuleInfo {
     pub dependencies:  Vec<String>,
     /// Route vers la page de paramètres du module (ex: "/files/settings")
     pub settings_path: Option<String>,
+    /// Module d'infrastructure interne (ex. stt) : enregistré pour le routage
+    /// mais masqué de la liste des modules de l'administration.
+    #[serde(default)]
+    pub internal:      bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
