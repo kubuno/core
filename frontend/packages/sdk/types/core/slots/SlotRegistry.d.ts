@@ -16,6 +16,38 @@ export declare const SlotRegistry: {
     getActiveOverride<T = Record<string, unknown>>(key: string, activeIds: Set<string>): React.ComponentType<T> | null;
     unregisterModule(moduleId: string): void;
 };
+export declare const ModuleSettingsRegistry: {
+    /** Declare the module's per-user settings route (default `/<moduleId>/settings`). */
+    register(moduleId: string, route?: string): void;
+    /** Settings route for `moduleId` if it registered one and is active, else null. */
+    getRoute(moduleId: string | undefined, activeIds: Set<string>): string | null;
+    /** Whether `pathname` is a registered per-user settings page (full-bleed, no toolbar). */
+    isSettingsRoute(pathname: string): boolean;
+};
+export interface NotifActivity {
+    /** Stable id, unique within the group. */
+    id: string;
+    /** Human label (already translated; modules pass `t(..., { defaultValue })`). */
+    label: string;
+    /** Default channel states when the user hasn't chosen yet. */
+    emailDefault?: boolean;
+    pushDefault?: boolean;
+}
+export interface NotifGroup {
+    /** Owning module ('core' = always shown; others shown only when the module is active). */
+    moduleId: string;
+    /** Group heading (e.g. "Tâches"). */
+    title: string;
+    /** Sort order among groups (lower first; default 100). */
+    order?: number;
+    activities: NotifActivity[];
+}
+export declare const NotificationRegistry: {
+    /** Register (or replace, by moduleId+title) a notification activity group. */
+    register(group: NotifGroup): void;
+    /** Groups to display: core groups always, module groups only when active. */
+    getGroups(activeIds: Set<string>): NotifGroup[];
+};
 interface SlotProps {
     name: SlotName;
     fallback?: React.ReactNode;

@@ -18,6 +18,17 @@ pub struct SidebarItem {
     pub badge:            Option<String>,
     pub section:          Option<String>,
     pub protected_folder: Option<String>,
+    /// Whether this entry is a launchable app (`true`) or an internal view/filter of
+    /// another app (`false`, e.g. Drive's "Shared with me" / "Trash"). Defaults to
+    /// `true` for backward compatibility — modules mark their views explicitly.
+    /// Consumed by the desktop launcher to list only real apps (the web sidebar
+    /// keeps showing every item as navigation).
+    #[serde(default = "default_launchable")]
+    pub launchable:       bool,
+}
+
+fn default_launchable() -> bool {
+    true
 }
 
 #[derive(Debug, Clone)]

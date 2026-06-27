@@ -52,6 +52,9 @@ export default defineConfig({
         // seul chunk, pour que host ET modules en partagent une seule instance.
         // Les paquets vendor (react, zustand…) sont gérés par les entrées-facades.
         manualChunks(id: string) {
+          // Capture vocale : chargée à la demande (import dynamique) → la garder
+          // hors du chunk eager kubuno-shared. AVANT la règle /src/core/.
+          if (/\/src\/core\/shell\/voiceStt/.test(id)) return undefined
           if (/\/src\/sdk\//.test(id)) return 'kubuno-shared'
           if (/\/src\/ui\//.test(id)) return 'kubuno-shared'
           // core/components peut tirer du lourd (PdfViewerModal→pdfjs) : ne pas

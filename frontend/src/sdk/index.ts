@@ -60,6 +60,10 @@ export { useWsStore } from '../core/store/wsStore'
 export { getDateLocale } from '../core/i18n/dateLocale'
 export { getIcon, ICON_MAP } from '../core/utils/iconMap'
 export type { User } from '../core/types'
+// Dictée vocale partagée (barre de recherche du core + modules type Jarvis) :
+// hook + toast éditable centré, branché sur le backend STT auto-hébergé.
+export { useVoiceDictation } from '../core/shell/useVoiceDictation'
+export type { VoiceDictation, UseVoiceDictationOptions } from '../core/shell/useVoiceDictation'
 
 /**
  * Version de contrat du SDK. À incrémenter UNIQUEMENT sur un changement cassant

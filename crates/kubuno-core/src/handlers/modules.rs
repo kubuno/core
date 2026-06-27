@@ -126,6 +126,10 @@ pub struct RegisterModuleDto {
     /// Format : [{ "name", "description", "input_schema", "route", "method" }]
     #[serde(default)]
     pub mcp_tools:         Vec<serde_json::Value>,
+    /// Module d'infrastructure interne (ex. stt) : enregistré pour le routage,
+    /// mais masqué de la liste des modules de l'administration.
+    #[serde(default)]
+    pub internal:          bool,
 }
 
 const RESERVED_MODULE_IDS: &[&str] = &[
@@ -165,15 +169,16 @@ pub async fn register_module(
     });
     let cli_commands = serde_json::Value::Array(dto.cli_commands.clone());
     sqlx::query(
-        r#"INSERT INTO core.modules (id, display_name, description, version, runtime, is_enabled, config, cli_commands)
-           VALUES ($1, $2, $3, $4, 'rust', TRUE, $5, $6)
+        r#"INSERT INTO core.modules (id, display_name, description, version, runtime, is_enabled, config, cli_commands, is_core_module)
+           VALUES ($1, $2, $3, $4, 'rust', TRUE, $5, $6, $7)
            ON CONFLICT (id) DO UPDATE
-               SET version      = EXCLUDED.version,
-                   display_name = EXCLUDED.display_name,
-                   description  = EXCLUDED.description,
-                   config       = EXCLUDED.config,
-                   cli_commands = EXCLUDED.cli_commands,
-                   updated_at   = NOW()"#,
+               SET version        = EXCLUDED.version,
+                   display_name   = EXCLUDED.display_name,
+                   description    = EXCLUDED.description,
+                   config         = EXCLUDED.config,
+                   cli_commands   = EXCLUDED.cli_commands,
+                   is_core_module = core.modules.is_core_module OR EXCLUDED.is_core_module,
+                   updated_at     = NOW()"#,
     )
     .bind(&dto.module_id)
     .bind(display_name)
@@ -181,6 +186,7 @@ pub async fn register_module(
     .bind(&dto.version)
     .bind(&config)
     .bind(&cli_commands)
+    .bind(dto.internal)
     .execute(&state.db)
     .await?;
 

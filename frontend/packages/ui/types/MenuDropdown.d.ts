@@ -43,6 +43,7 @@ export declare function MenuDropdown({ items, pos, onClose, minWidth: minWidthPr
 export declare function useMenuDropdown(): {
     pos: MenuDropdownPos | null;
     open: (e: React.MouseEvent | React.MouseEvent<HTMLElement>) => void;
+    openAt: (x: number, y: number) => void;
     close: () => void;
     isOpen: boolean;
 };

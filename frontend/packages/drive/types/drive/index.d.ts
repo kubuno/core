@@ -13,6 +13,7 @@ export * from './storageSource';
 export * from './filesShared';
 export * from './fileView';
 export * from './useMarqueeSelection';
+export * from './useImportConflicts';
 export * from './FilesOpenWithContext';
 export * from './batchRenameStore';
 export * from './filesDialogStore';
