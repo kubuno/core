@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { Button, KubunoLogo } from '@ui'
+import LoginAnimation from './LoginAnimation'
 
 function usePublicConfig() {
   return useQuery({
@@ -28,14 +29,21 @@ function useDefaultModulePath(): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function useKeycloakEnabled(): { enabled: boolean; label: string } {
-  const { data } = usePublicConfig()
-  return {
-    enabled: data?.['auth.oauth_keycloak_enabled'] === true || data?.['auth.oauth_keycloak_enabled'] === 'true',
-    label:   typeof data?.['auth.keycloak_display_name'] === 'string'
-               ? (data['auth.keycloak_display_name'] as string)
-               : 'Keycloak',
-  }
+interface OAuthProviderInfo {
+  slug:         string
+  display_name: string
+  button_color: string | null
+}
+
+function useOAuthProviders() {
+  return useQuery({
+    queryKey: ['oauth-providers'],
+    queryFn: () =>
+      axios
+        .get<{ providers: OAuthProviderInfo[] }>('/api/v1/auth/providers')
+        .then((r) => r.data.providers),
+    staleTime: 60_000,
+  })
 }
 
 export default function LoginPage() {
@@ -51,7 +59,7 @@ export default function LoginPage() {
   const location = useLocation()
   const registrationOpen = useRegistrationOpen()
   const defaultModulePath = useDefaultModulePath()
-  const keycloak = useKeycloakEnabled()
+  const { data: oauthProviders } = useOAuthProviders()
   // Page d'origine si on a été redirigé ici par une déconnexion (même onglet).
   const from = (location.state as { from?: string } | null)?.from
   const postLoginPath = () => from ?? defaultModulePath ?? '/'
@@ -86,20 +94,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex bg-white">
-      {/* Panneau gauche — branding */}
+      {/* Panneau gauche — branding, avec l'animation « Ondes de lumière » en fond */}
       <div
         className="hidden lg:flex lg:w-[45%] flex-col justify-center items-center p-12 relative overflow-hidden"
-        style={{ background: 'linear-gradient(160deg, #1a73e8 0%, #0d47a1 60%, #1a237e 100%)' }}
+        style={{ background: 'linear-gradient(160deg, #08174d 0%, #03091a 100%)' }}
       >
-        {/* Cercles décoratifs style Google */}
-        <div
-          className="absolute -top-24 -left-24 w-96 h-96 rounded-full opacity-20"
-          style={{ background: 'radial-gradient(circle, #ffffff 0%, transparent 70%)' }}
-        />
-        <div
-          className="absolute -bottom-32 -right-16 w-80 h-80 rounded-full opacity-15"
-          style={{ background: 'radial-gradient(circle, #4fc3f7 0%, transparent 70%)' }}
-        />
+        {/* Aurora animée (canvas) — derrière le contenu, décalée vers le bas
+            pour dégager la zone du texte. */}
+        <LoginAnimation preset="A" yShift={0.24} />
 
         <div className="relative text-white text-center max-w-sm z-10">
           <div className="flex items-center justify-center gap-3 mb-10">
@@ -205,25 +207,29 @@ export default function LoginPage() {
             {t('login.subtitle')}
           </p>
 
-          {/* Keycloak SSO */}
-          {keycloak.enabled && (
+          {/* SSO / OIDC providers (Keycloak, GitLab, …) */}
+          {(oauthProviders?.length ?? 0) > 0 && (
             <>
-              <a
-                href="/api/v1/auth/oauth/keycloak"
-                className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-md
-                           border text-sm font-medium transition-colors"
-                style={{ borderColor: '#dadce0', color: '#3c4043', background: '#fff' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#f8f9fa' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = '#fff' }}
-              >
-                {/* Keycloak icon (shield) */}
-                <svg viewBox="0 0 48 48" width="18" height="18" fill="none">
-                  <path d="M24 4L6 12v16c0 9.4 7.6 18.2 18 20 10.4-1.8 18-10.6 18-20V12L24 4z" fill="#4d9de0"/>
-                  <path d="M24 4L6 12v16c0 9.4 7.6 18.2 18 20V4z" fill="#3a7bc8"/>
-                  <path d="M16 22h16M24 14v20" stroke="#fff" strokeWidth="3" strokeLinecap="round"/>
-                </svg>
-                {t('login.continue_with', { provider: keycloak.label })}
-              </a>
+              <div className="space-y-2">
+                {oauthProviders!.map((p) => (
+                  <a
+                    key={p.slug}
+                    href={`/api/v1/auth/oauth/${p.slug}`}
+                    className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-md
+                               border text-sm font-medium transition-colors"
+                    style={{ borderColor: p.button_color || '#dadce0', color: '#3c4043', background: '#fff' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f8f9fa' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = '#fff' }}
+                  >
+                    {/* Generic SSO shield (accent uses the provider's color when set) */}
+                    <svg viewBox="0 0 48 48" width="18" height="18" fill="none">
+                      <path d="M24 4L6 12v16c0 9.4 7.6 18.2 18 20 10.4-1.8 18-10.6 18-20V12L24 4z" fill={p.button_color || '#4d9de0'}/>
+                      <path d="M16 22h16M24 14v20" stroke="#fff" strokeWidth="3" strokeLinecap="round"/>
+                    </svg>
+                    {t('login.continue_with', { provider: p.display_name })}
+                  </a>
+                ))}
+              </div>
               <div className="flex items-center gap-3 my-2">
                 <div className="flex-1 h-px" style={{ background: '#dadce0' }} />
                 <span className="text-xs" style={{ color: '#80868b' }}>{t('login.or')}</span>

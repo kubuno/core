@@ -1,5 +1,5 @@
 use crate::{
-    auth::middleware::InternalRequest,
+    auth::middleware::{AuthUser, InternalRequest},
     errors::AppError,
     events::AppEvent,
     modules::registry::{ActiveInstance, ModuleRoute, SidebarItem},
@@ -13,8 +13,9 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 
 #[utoipa::path(
     get,
@@ -126,11 +127,48 @@ pub struct RegisterModuleDto {
     /// Format : [{ "name", "description", "input_schema", "route", "method" }]
     #[serde(default)]
     pub mcp_tools:         Vec<serde_json::Value>,
+    /// Schéma déclaratif des paramètres du module (manifeste `[[settings]]`).
+    /// Le core sème les portées `global`/`overridable` dans core.settings et
+    /// résout la valeur effective (override utilisateur ?? défaut global).
+    #[serde(default)]
+    pub settings_schema:   Vec<SettingDef>,
     /// Module d'infrastructure interne (ex. stt) : enregistré pour le routage,
     /// mais masqué de la liste des modules de l'administration.
     #[serde(default)]
     pub internal:          bool,
 }
+
+/// Une déclaration de paramètre poussée par un module à l'enregistrement.
+/// `key` est relatif au module (sans préfixe) ; le core le stocke sous
+/// `<module_id>.<key>` dans core.settings.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SettingDef {
+    pub key:         String,
+    /// "global" (admin only), "user" (par utilisateur), "overridable"
+    /// (défaut global surchargeable par l'utilisateur).
+    pub scope:       String,
+    /// "bool" | "int" | "string" | "enum"
+    #[serde(rename = "type")]
+    pub value_type:  String,
+    /// Domaine des valeurs autorisées pour `type = "enum"`.
+    #[serde(default)]
+    pub values:      Option<Vec<serde_json::Value>>,
+    /// Valeur par défaut (sortie d'usine).
+    pub default:     serde_json::Value,
+    #[serde(default)]
+    pub label:       Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Sous-catégorie d'affichage (sinon = module_id).
+    #[serde(default)]
+    pub category:    Option<String>,
+    /// Exposé dans /api/v1/config public (is_public).
+    #[serde(default)]
+    pub public:      bool,
+}
+
+const VALID_SCOPES:      &[&str] = &["global", "user", "overridable"];
+const VALID_VALUE_TYPES: &[&str] = &["bool", "int", "string", "enum"];
 
 const RESERVED_MODULE_IDS: &[&str] = &[
     "admin", "auth", "me", "config", "modules", "ws", "health", "ready",
@@ -164,8 +202,11 @@ pub async fn register_module(
     // Première inscription : is_enabled = TRUE (le module est actif par défaut).
     // Sur ON CONFLICT, is_enabled n'est PAS mis à jour — l'admin garde le contrôle.
     let display_name = dto.display_name.as_deref().unwrap_or(&dto.module_id);
+    // The full settings manifest (every scope) is kept durably in core.modules.config
+    // so the user-settings page can render even when the module process is down.
     let config = serde_json::json!({
-        "settings_path": dto.settings_path,
+        "settings_path":   dto.settings_path,
+        "settings_schema": dto.settings_schema,
     });
     let cli_commands = serde_json::Value::Array(dto.cli_commands.clone());
     sqlx::query(
@@ -233,6 +274,59 @@ pub async fn register_module(
     .bind(serde_json::Value::Array(dto.mcp_tools.clone()))
     .execute(&mut *tx)
     .await?;
+
+    // Seed instance-level settings (scope global|overridable) into core.settings so
+    // the admin edits them through the existing /admin/settings surface. The value
+    // column is preserved on conflict (an admin-set value is never clobbered by a
+    // re-registration); only metadata and the factory default are refreshed.
+    for def in &dto.settings_schema {
+        if !VALID_SCOPES.contains(&def.scope.as_str()) {
+            tracing::warn!(module_id = %dto.module_id, key = %def.key, scope = %def.scope,
+                "Paramètre ignoré : portée invalide");
+            continue;
+        }
+        if !VALID_VALUE_TYPES.contains(&def.value_type.as_str()) {
+            tracing::warn!(module_id = %dto.module_id, key = %def.key, value_type = %def.value_type,
+                "Paramètre ignoré : type invalide");
+            continue;
+        }
+        // User-only settings live in core.users.preferences, not core.settings.
+        if def.scope == "user" {
+            continue;
+        }
+        let full_key = format!("{}.{}", dto.module_id, def.key);
+        let category = def.category.clone().unwrap_or_else(|| dto.module_id.clone());
+        let allowed  = def.values.clone().map(serde_json::Value::Array);
+        sqlx::query(
+            r#"INSERT INTO core.settings
+                   (key, value, default_value, category, label, description, is_public,
+                    scope, value_type, allowed_values, module_id)
+               VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               ON CONFLICT (key) DO UPDATE SET
+                   default_value  = EXCLUDED.default_value,
+                   category       = EXCLUDED.category,
+                   label          = EXCLUDED.label,
+                   description    = EXCLUDED.description,
+                   is_public      = EXCLUDED.is_public,
+                   scope          = EXCLUDED.scope,
+                   value_type     = EXCLUDED.value_type,
+                   allowed_values = EXCLUDED.allowed_values,
+                   module_id      = EXCLUDED.module_id"#,
+        )
+        .bind(&full_key)
+        .bind(&def.default)
+        .bind(&category)
+        .bind(def.label.as_deref())
+        .bind(def.description.as_deref())
+        .bind(def.public)
+        .bind(&def.scope)
+        .bind(&def.value_type)
+        .bind(allowed.as_ref())
+        .bind(&dto.module_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
     tx.commit().await?;
 
     state.modules.write().await.register(instance);
@@ -243,6 +337,97 @@ pub async fn register_module(
     });
 
     Ok((StatusCode::CREATED, Json(json!({ "message": "Module enregistré" }))))
+}
+
+/// GET /api/v1/modules/:module/config
+///
+/// Renvoie, pour l'utilisateur courant, le schéma des paramètres du module et leur
+/// résolution : valeur globale (instance), surcharge utilisateur, et valeur
+/// **effective** (override ?? défaut global ?? défaut d'usine). Filtré par rôle :
+/// un non-admin ne voit pas les paramètres de portée `global` (réservés admin).
+pub async fn get_module_config(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    AxumPath(module_id): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    use sqlx::Row;
+
+    // 1. Schéma déclaré (durable, lu depuis core.modules.config).
+    let config: Option<serde_json::Value> = sqlx::query_scalar(
+        "SELECT config FROM core.modules WHERE id = $1",
+    )
+    .bind(&module_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let schema: Vec<SettingDef> = config
+        .as_ref()
+        .and_then(|c| c.get("settings_schema"))
+        .and_then(|s| serde_json::from_value(s.clone()).ok())
+        .unwrap_or_default();
+
+    // 2. Valeurs d'instance (global + overridable) depuis core.settings.
+    let rows = sqlx::query(
+        "SELECT key, value FROM core.settings WHERE module_id = $1",
+    )
+    .bind(&module_id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut global_values: HashMap<String, serde_json::Value> = HashMap::new();
+    for r in rows {
+        global_values.insert(r.get::<String, _>("key"), r.get::<serde_json::Value, _>("value"));
+    }
+
+    // 3. Surcharges de l'utilisateur (core.users.preferences[module_id]).
+    let user_prefs = user
+        .preferences
+        .get(&module_id)
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    let is_admin = user.role == "admin";
+    let mut out: Vec<serde_json::Value> = Vec::new();
+
+    for def in &schema {
+        // Les non-admins ne voient pas les paramètres purement globaux.
+        if def.scope == "global" && !is_admin {
+            continue;
+        }
+        let full_key = format!("{}.{}", module_id, def.key);
+        let global = global_values.get(&full_key).cloned();
+        // A stored JSON null means "no override" (the user reverted to the instance
+        // default), so it must not shadow the global value.
+        let user_val = user_prefs
+            .get(&def.key)
+            .filter(|v| !v.is_null())
+            .cloned();
+
+        let effective = match def.scope.as_str() {
+            "user" => user_val.clone().unwrap_or_else(|| def.default.clone()),
+            "overridable" => user_val
+                .clone()
+                .or_else(|| global.clone())
+                .unwrap_or_else(|| def.default.clone()),
+            _ /* global */ => global.clone().unwrap_or_else(|| def.default.clone()),
+        };
+
+        out.push(json!({
+            "key":              def.key,
+            "scope":            def.scope,
+            "type":             def.value_type,
+            "values":           def.values,
+            "label":            def.label,
+            "description":      def.description,
+            "category":         def.category.clone().unwrap_or_else(|| module_id.clone()),
+            "default":          def.default,
+            "global":           global,
+            "user":             user_val,
+            "effective":        effective,
+            "editable_by_user": def.scope == "user" || def.scope == "overridable",
+        }));
+    }
+
+    Ok(Json(json!({ "module": module_id, "settings": out })))
 }
 
 pub async fn module_heartbeat(

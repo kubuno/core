@@ -183,21 +183,8 @@ pub struct AuthSettings {
     pub oauth_google_secret: Option<String>,
     pub oauth_github_id:     Option<String>,
     pub oauth_github_secret: Option<String>,
-    // Keycloak OIDC — credentials en config (pas en DB pour la sécurité)
-    pub keycloak_issuer_url:    Option<String>,
-    pub keycloak_client_id:     Option<String>,
-    pub keycloak_client_secret: Option<String>,
-}
-
-impl AuthSettings {
-    /// Retourne la config Keycloak si les trois champs sont renseignés.
-    pub fn keycloak(&self) -> Option<crate::auth::oauth::KeycloakConfig> {
-        Some(crate::auth::oauth::KeycloakConfig {
-            issuer_url:    self.keycloak_issuer_url.clone()?,
-            client_id:     self.keycloak_client_id.clone()?,
-            client_secret: self.keycloak_client_secret.clone()?,
-        })
-    }
+    // OIDC providers (Keycloak, GitLab…) are configured at runtime from the admin
+    // console and stored in `core.oauth_providers`, not in static config.
 }
 
 pub use kubuno_storage::config::StorageConfig as StorageSettings;

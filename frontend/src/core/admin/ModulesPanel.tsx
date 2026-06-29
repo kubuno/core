@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useModulesStore } from '../store/modulesStore'
-import { Package, Settings, AlertCircle, X } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Package, Settings, AlertCircle, X, ArrowLeft } from 'lucide-react'
 import { Toggle, Radio } from '@ui'
+import ModuleAdminSettings from './ModuleAdminSettings'
 
 interface Module {
   id: string
@@ -36,6 +36,9 @@ export default function ModulesPanel() {
   const queryClient = useQueryClient()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [infoMsg,  setInfoMsg]  = useState<string | null>(null)
+  // When set, the panel shows that module's instance settings IN-PLACE (we stay in
+  // the admin console — admins are never sent into the module's own shell).
+  const [settingsFor, setSettingsFor] = useState<Module | null>(null)
 
   const { data } = useQuery({
     queryKey: ['admin-modules'],
@@ -99,6 +102,30 @@ export default function ModulesPanel() {
     },
   })
 
+  if (settingsFor) {
+    return (
+      <div>
+        <button
+          onClick={() => setSettingsFor(null)}
+          className="mb-4 inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary"
+        >
+          <ArrowLeft size={15} />
+          {t('admin.m_back', { defaultValue: 'Modules' })}
+        </button>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 rounded-lg bg-primary-light flex items-center justify-center">
+            <Package size={16} className="text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-text-primary">{settingsFor.display_name}</p>
+            <p className="text-xs text-text-tertiary">{t('admin.m_settings', { defaultValue: 'Réglages' })} · v{settingsFor.version}</p>
+          </div>
+        </div>
+        <ModuleAdminSettings moduleId={settingsFor.id} />
+      </div>
+    )
+  }
+
   return (
     <div>
       {infoMsg && (
@@ -134,15 +161,13 @@ export default function ModulesPanel() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {mod.settings_path && (
-                  <Link
-                    to={mod.settings_path}
-                    title={t('admin.m_settings')}
-                    className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-colors"
-                  >
-                    <Settings size={15} />
-                  </Link>
-                )}
+                <button
+                  onClick={() => setSettingsFor(mod)}
+                  title={t('admin.m_settings')}
+                  className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-colors"
+                >
+                  <Settings size={15} />
+                </button>
                 <Toggle
                   checked={mod.is_enabled}
                   onChange={() => toggle.mutate({ id: mod.id, is_enabled: !mod.is_enabled })}

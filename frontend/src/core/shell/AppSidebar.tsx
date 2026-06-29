@@ -134,8 +134,20 @@ export default function AppSidebar() {
     : (activeConfig?.newButtonLabel ?? tc('shell.new'))
   const NewActionsComponent = activeConfig?.NewActions ?? null
 
+  // Le panneau est « vide » quand il n'a ni corps de module (`SidebarBody`) ni
+  // item de navigation à afficher.
+  const bodyEmpty =
+    !activeConfig?.SidebarBody && mainItems.length === 0 && secondaryItems.length === 0
+
   // Le module demande à gérer sa propre navigation interne
   if (activeConfig?.hideSidebar) return null
+
+  // Panneau vide :
+  //  • avec bouton « Nouveau » → on garde le rail enroulé par défaut (accès au +) ;
+  //  • sans bouton « Nouveau » → on masque entièrement la sidebar.
+  if (bodyEmpty && !showNewButton) return null
+  const forceCollapsed = bodyEmpty && showNewButton
+  const collapsed = sidebarCollapsed || forceCollapsed
 
   return (
     <aside
@@ -146,7 +158,7 @@ export default function AppSidebar() {
         z-50 transition-all duration-200 ease-in-out
         lg:relative lg:translate-x-0 lg:z-auto lg:rounded-xl
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${sidebarCollapsed ? 'w-16' : 'w-64'}
+        ${collapsed ? 'w-16' : 'w-64'}
         top-16 lg:top-auto
       `}
       style={{ background: 'var(--body-bg)' }}
@@ -156,18 +168,18 @@ export default function AppSidebar() {
       {headerHidden && (
         <Link
           to="/"
-          className={`flex items-center gap-1.5 mb-8 flex-shrink-0 hover:opacity-90 transition-opacity ${sidebarCollapsed ? 'justify-center' : 'pl-2 pr-3'}`}
+          className={`flex items-center gap-1.5 mb-8 flex-shrink-0 hover:opacity-90 transition-opacity ${collapsed ? 'justify-center' : 'pl-2 pr-3'}`}
           style={{ height: 32 }}
         >
           <KubunoLogo size={22} className="text-primary" />
-          {!sidebarCollapsed && (
+          {!collapsed && (
             <span className="text-[22px] font-normal" style={{ color: '#5f6368', letterSpacing: '-0.01em' }}>Kubuno</span>
           )}
         </Link>
       )}
 
       {/* ── Bouton Nouveau / Créer ─────────────────────────────────────── */}
-      {showNewButton && !sidebarCollapsed && (
+      {showNewButton && !collapsed && (
         <div className="px-3 flex items-center" style={{ height: 72 }}>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
@@ -209,7 +221,7 @@ export default function AppSidebar() {
       )}
 
       {/* Icône "+" compacte en mode collapsed */}
-      {showNewButton && sidebarCollapsed && (
+      {showNewButton && collapsed && (
         <div className="flex justify-center items-center" style={{ height: 72 }}>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
@@ -240,28 +252,28 @@ export default function AppSidebar() {
       {/* Le SidebarBody du module est rendu dans LES DEUX états (replié/déplié) en
           lui passant `collapsed`, pour que la nav reste identique — au lieu de
           retomber sur la liste générique quand replié. */}
-      {activeConfig?.SidebarBody && (!sidebarCollapsed || activeConfig.collapsedBody) ? (
-        <activeConfig.SidebarBody collapsed={sidebarCollapsed} />
+      {activeConfig?.SidebarBody && (!collapsed || activeConfig.collapsedBody) ? (
+        <activeConfig.SidebarBody collapsed={collapsed} />
       ) : (
         <>
-          <nav className={`flex-1 space-y-0.5 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
+          <nav className={`flex-1 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
             {mainItems.map((item) => (
-              <SidebarLink key={item.id} item={item} collapsed={sidebarCollapsed} />
+              <SidebarLink key={item.id} item={item} collapsed={collapsed} />
             ))}
           </nav>
 
           {secondaryItems.length > 0 && (
             <>
               <div className="mx-3 my-2 h-px bg-border" />
-              <nav className={`space-y-0.5 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
+              <nav className={`space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
                 {secondaryItems.map((item) => (
-                  <SidebarLink key={item.id} item={item} collapsed={sidebarCollapsed} />
+                  <SidebarLink key={item.id} item={item} collapsed={collapsed} />
                 ))}
               </nav>
             </>
           )}
 
-          {!sidebarCollapsed && (
+          {!collapsed && (
             <div className="mt-1">
               <Slot name="sidebar-footer" />
               <Slot name="sidebar-storage" />
@@ -273,18 +285,22 @@ export default function AppSidebar() {
       {/* Lien Administration déplacé dans le menu du compte (UserPanel). */}
 
       {/* ── Bouton collapse desktop ────────────────────────────────────── */}
-      <div className={`hidden lg:flex pt-1 pb-1 ${sidebarCollapsed ? 'justify-center' : 'justify-end px-2'}`}>
-        <button
-          onClick={toggleSidebarCollapsed}
-          className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
-          style={{ color: '#80868b' }}
-          onMouseEnter={(e) => e.currentTarget.style.background = '#f1f3f4'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-          aria-label={sidebarCollapsed ? tc('shell.expand_sidebar') : tc('shell.collapse_sidebar')}
-        >
-          {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
-      </div>
+      {/* Masqué quand le panneau est forcé en mode enroulé (vide + bouton
+          « Nouveau ») : il n'y a rien à déplier. */}
+      {!forceCollapsed && (
+        <div className={`hidden lg:flex pt-1 pb-1 ${collapsed ? 'justify-center' : 'justify-end px-2'}`}>
+          <button
+            onClick={toggleSidebarCollapsed}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+            style={{ color: '#80868b' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#f1f3f4'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            aria-label={collapsed ? tc('shell.expand_sidebar') : tc('shell.collapse_sidebar')}
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
+        </div>
+      )}
     </aside>
   )
 }

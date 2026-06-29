@@ -17,11 +17,19 @@ export declare const SlotRegistry: {
     unregisterModule(moduleId: string): void;
 };
 export declare const ModuleSettingsRegistry: {
-    /** Declare the module's per-user settings route (default `/<moduleId>/settings`). */
+    /** Legacy: declare the module's per-user settings route (default `/<moduleId>/settings`).
+     *  Kept for modules not yet migrated to the admin/user split. */
     register(moduleId: string, route?: string): void;
-    /** Settings route for `moduleId` if it registered one and is active, else null. */
+    /** Declare the module's admin (instance-wide) settings route. */
+    registerAdmin(moduleId: string, route?: string): void;
+    /** Declare the module's per-user settings route (default `/<moduleId>/user-settings`). */
+    registerUser(moduleId: string, route?: string): void;
+    /** Per-user settings route for `moduleId` if registered and active, else null.
+     *  This is what the header gear button navigates to. */
     getRoute(moduleId: string | undefined, activeIds: Set<string>): string | null;
-    /** Whether `pathname` is a registered per-user settings page (full-bleed, no toolbar). */
+    /** Admin (instance-wide) settings route for `moduleId` if registered and active. */
+    getAdminRoute(moduleId: string | undefined, activeIds: Set<string>): string | null;
+    /** Whether `pathname` is a registered settings page (full-bleed, no toolbar). */
     isSettingsRoute(pathname: string): boolean;
 };
 export interface NotifActivity {
