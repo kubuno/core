@@ -1665,7 +1665,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-mcp"
-version = "0.1.0-alpha"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "serde",

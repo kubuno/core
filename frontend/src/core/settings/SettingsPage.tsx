@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
@@ -12,8 +12,33 @@ import { Slot, NotificationRegistry } from '../slots/SlotRegistry'
 import type { Session, ApiToken } from '../types'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Key, Trash2, Copy, Check, Plus, X, ShieldCheck, ShieldOff, Shield, Users, Lock, Clock, User, Laptop, Bell, Palette, Monitor, Smartphone, Download, Apple, Calendar as CalendarIcon, Folder, type LucideIcon } from 'lucide-react'
-import QRCode from 'react-qr-code'
+import * as ReactQRCode from 'react-qr-code'
 import { Button, Input, Dropdown, Textarea, Checkbox } from '@ui'
+
+// react-qr-code is a CommonJS package: under Vite/rolldown the ESM-interop can
+// nest the actual component under `.default`/`.QRCode` (sometimes several levels
+// deep), so a plain default import resolves to a module *object* and crashes the
+// render with React error #130 ("Element type is invalid… got: object"). Walk the
+// interop wrappers and grab the first thing that is actually a function.
+type QRCodeProps = { value: string; size?: number; bgColor?: string; fgColor?: string }
+// A React element type is either a function component OR an object carrying
+// `$$typeof` (forwardRef/memo). react-qr-code is a forwardRef component, so the
+// real value is an OBJECT — a `typeof === 'function'` check would wrongly skip it.
+function isReactComponent(x: unknown): x is ComponentType<QRCodeProps> {
+  return typeof x === 'function' || (typeof x === 'object' && x !== null && '$$typeof' in x)
+}
+function resolveQRCode(mod: unknown): ComponentType<QRCodeProps> {
+  let cur = mod
+  for (let i = 0; cur && i < 5; i++) {
+    if (isReactComponent(cur)) return cur
+    const obj = cur as { QRCode?: unknown; default?: unknown }
+    if (isReactComponent(obj.QRCode)) return obj.QRCode
+    if (isReactComponent(obj.default)) return obj.default
+    cur = obj.default
+  }
+  return mod as ComponentType<QRCodeProps>
+}
+const QRCode = resolveQRCode(ReactQRCode)
 
 type Tab = 'profile' | 'notifications' | 'themes' | 'clients' | 'security' | 'sessions' | 'api-tokens'
 

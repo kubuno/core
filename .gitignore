@@ -52,3 +52,6 @@ nohup.out
 
 # symlink local éventuel
 node_modules
+
+# Binaires téléchargés au build (ex. WinSW pour le service Windows)
+_cache/
