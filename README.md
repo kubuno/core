@@ -74,6 +74,20 @@ Each app lives in its **own repository** (`kubuno/<module>`) and ships its own p
 | Forum | `kubuno/forum` | Discussion boards (categories, forums, topics, posts) |
 | Chat, Contacts, Notes, Tasks, Maps, Forms, Flow, Code, Media, KeeStore, PaintSharp, Jarvis | `kubuno/<id>` | … |
 
+## 🐳 Install with Docker
+
+The fastest way to self-host Kubuno (core + all modules) is the all-in-one Docker image, published as `ghcr.io/kubuno/kubuno`:
+
+```bash
+git clone https://github.com/kubuno/docker && cd docker
+cp .env.docker.example .env     # set POSTGRES_PASSWORD, KUBUNO_JWT_SECRET, KUBUNO_INTERNAL_SECRET
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# → http://localhost:8080   (default admin: admin / kubuno — change it!)
+```
+
+Prefer building the image yourself? Run `docker compose up --build`. The full guide,
+configuration, module selection and CI live in **[kubuno/docker](https://github.com/kubuno/docker)**.
+
 ## 🛠️ Build & development
 
 **Requirements:** Rust ≥ 1.82, Node.js ≥ 24, PostgreSQL 16.
