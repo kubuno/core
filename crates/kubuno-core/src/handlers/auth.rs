@@ -1,12 +1,13 @@
 use crate::{
     auth::{
         jwt::JwtService,
-        oauth::{keycloak_auth_url, keycloak_exchange_code, keycloak_userinfo, OAuthPkce},
+        oauth::{self, OAuthPkce},
         totp as totp_auth,
     },
-    crypto::{password, token},
+    crypto::{encryption, password, token},
     errors::AppError,
     models::{
+        oauth_provider::{OAuthProvider, PublicOAuthProvider},
         session::{LoginDto, LoginResponse, NativeTokenResponse},
         user::CreateUserDto,
     },
@@ -603,47 +604,74 @@ pub async fn reset_password(
     Ok(Json(json!({ "message": "Mot de passe réinitialisé avec succès" })))
 }
 
-// ── OAuth redirect ────────────────────────────────────────────────────────────
+// ── OAuth / OIDC — generic providers (Keycloak, GitLab, Authentik, …) ──────────
+
+/// HTTP client for IdP calls (discovery, token, userinfo).
+fn oidc_http_client() -> Result<reqwest::Client, AppError> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| AppError::Internal(e.into()))
+}
+
+/// Load an enabled provider by slug, 404 otherwise.
+async fn load_enabled_provider(db: &sqlx::PgPool, slug: &str) -> Result<OAuthProvider, AppError> {
+    sqlx::query_as::<_, OAuthProvider>(
+        "SELECT * FROM core.oauth_providers WHERE slug = $1 AND enabled = TRUE",
+    )
+    .bind(slug)
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Fournisseur SSO inconnu ou désactivé: {slug}")))
+}
+
+/// Public list of enabled providers for the login page (no secrets).
+pub async fn list_public_oauth_providers(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let providers = sqlx::query_as::<_, OAuthProvider>(
+        "SELECT * FROM core.oauth_providers WHERE enabled = TRUE ORDER BY position, display_name",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let list: Vec<PublicOAuthProvider> = providers
+        .into_iter()
+        .map(|p| PublicOAuthProvider {
+            slug:         p.slug,
+            display_name: p.display_name,
+            button_color: p.button_color,
+        })
+        .collect();
+
+    Ok(Json(json!({ "providers": list })))
+}
 
 pub async fn oauth_redirect(
     axum::extract::Path(provider): axum::extract::Path<String>,
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    match provider.as_str() {
-        "keycloak" => {
-            let enabled: bool = sqlx::query_scalar(
-                "SELECT (value #>> '{}' = 'true') FROM core.settings WHERE key = 'auth.oauth_keycloak_enabled'",
-            )
-            .fetch_optional(&state.db)
-            .await?
-            .unwrap_or(false);
+    let p = load_enabled_provider(&state.db, &provider).await?;
 
-            if !enabled {
-                return Err(AppError::NotFound("Keycloak SSO non activé".into()));
-            }
+    let http = oidc_http_client()?;
+    let disc = oauth::discover(&http, &p.issuer_url).await.map_err(AppError::Internal)?;
 
-            let kc = state.settings.auth.keycloak()
-                .ok_or_else(|| AppError::NotFound("Keycloak non configuré (issuer/client_id/client_secret manquants)".into()))?;
+    let redirect_uri = build_oauth_redirect_uri(&headers, &p.slug);
+    let pkce = OAuthPkce::generate();
+    let auth_url = oauth::oidc_auth_url(&disc, &p.client_id, &p.scopes, &redirect_uri, &pkce)
+        .map_err(AppError::Internal)?;
 
-            let redirect_uri = build_oauth_redirect_uri(&headers, &provider);
-            let pkce = OAuthPkce::generate();
-            let auth_url = keycloak_auth_url(&kc, &redirect_uri, &pkce)
-                .map_err(|e| AppError::Internal(e))?;
+    let secure_attr = if state.settings.server.secure_cookies { "; Secure" } else { "" };
+    let pkce_cookie = format!(
+        "oauth_pkce={}; HttpOnly{secure_attr}; Path=/api/v1/auth; SameSite=Lax; Max-Age=600",
+        pkce.to_cookie_value()
+    );
 
-            let secure_attr = if state.settings.server.secure_cookies { "; Secure" } else { "" };
-            let pkce_cookie = format!(
-                "oauth_pkce={}; HttpOnly{secure_attr}; Path=/api/v1/auth; SameSite=Lax; Max-Age=600",
-                pkce.to_cookie_value()
-            );
-
-            Ok((
-                [(header::SET_COOKIE, pkce_cookie)],
-                Redirect::to(&auth_url),
-            ).into_response())
-        }
-        _ => Err(AppError::NotFound(format!("Provider OAuth inconnu: {provider}"))),
-    }
+    Ok((
+        [(header::SET_COOKIE, pkce_cookie)],
+        Redirect::to(&auth_url),
+    ).into_response())
 }
 
 // ── OAuth callback ────────────────────────────────────────────────────────────
@@ -662,120 +690,130 @@ pub async fn oauth_callback(
     headers: HeaderMap,
     Query(params): Query<OAuthCallbackQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Effacer le cookie PKCE dans tous les cas
+    // Clear the PKCE cookie in every branch.
     let clear_pkce = "oauth_pkce=; HttpOnly; Path=/api/v1/auth; SameSite=Lax; Max-Age=0";
 
-    match provider.as_str() {
-        "keycloak" => {
-            // Erreur renvoyée par Keycloak
-            if let Some(err) = params.error {
-                let desc = params.error_description.unwrap_or_default();
-                tracing::warn!(error = %err, description = %desc, "Keycloak a retourné une erreur");
-                let url = format!("/auth/oauth/callback?error={}", urlencoding_encode(&format!("{err}: {desc}")));
-                return Ok(([(header::SET_COOKIE, clear_pkce)], Redirect::to(&url)).into_response());
-            }
-
-            let code        = params.code.ok_or_else(|| AppError::Validation("Code d'autorisation manquant".into()))?;
-            let state_param = params.state.ok_or_else(|| AppError::Validation("Paramètre state manquant".into()))?;
-
-            // Lire et vérifier le cookie PKCE
-            let pkce_value = extract_cookie_value(&headers, "oauth_pkce")
-                .ok_or_else(|| AppError::Validation("Session OAuth expirée — veuillez réessayer".into()))?;
-            let pkce = OAuthPkce::from_cookie_value(&pkce_value)
-                .ok_or_else(|| AppError::Validation("Cookie OAuth corrompu".into()))?;
-
-            if state_param != pkce.nonce {
-                return Err(AppError::Validation("Vérification CSRF échouée".into()));
-            }
-
-            let kc = state.settings.auth.keycloak()
-                .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Config Keycloak disparue entre redirect et callback")))?;
-
-            let redirect_uri = build_oauth_redirect_uri(&headers, &provider);
-            let http = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(15))
-                .build()
-                .map_err(|e| AppError::Internal(e.into()))?;
-
-            // Échange code → access token Keycloak
-            let kc_tokens = keycloak_exchange_code(&http, &kc, &code, &redirect_uri, &pkce.code_verifier)
-                .await
-                .map_err(|e| AppError::Internal(e))?;
-
-            // Récupérer le profil utilisateur
-            let userinfo = keycloak_userinfo(&http, &kc, &kc_tokens.access_token)
-                .await
-                .map_err(|e| AppError::Internal(e))?;
-
-            let email = userinfo.email.ok_or_else(|| {
-                AppError::Validation("Le profil Keycloak ne contient pas d'email (scope 'email' requis)".into())
-            })?;
-
-            // Trouver ou créer l'utilisateur Kubuno
-            let user = find_or_create_keycloak_user(
-                &state.db,
-                &userinfo.sub,
-                &email,
-                userinfo.preferred_username.as_deref(),
-                userinfo.name.as_deref(),
-            )
-            .await?;
-
-            // Générer les tokens Kubuno
-            let jwt = JwtService::new(
-                state.settings.auth.jwt_secret.clone(),
-                state.settings.auth.access_token_ttl,
-            );
-            let access_token = jwt.generate_access_token(&user)?;
-            let (refresh_raw, refresh_hash) = JwtService::generate_refresh_token();
-
-            let xff_owned2 = headers
-                .get("x-forwarded-for")
-                .and_then(|v| v.to_str().ok())
-                .map(|v| v.split(',').next().unwrap_or(v).trim().to_string());
-            let ip = xff_owned2.as_deref()
-                .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()));
-            let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
-            let expires_at = Utc::now() + state.settings.auth.refresh_token_ttl;
-
-            sqlx::query(
-                r#"INSERT INTO core.refresh_tokens
-                   (user_id, token_hash, device_name, device_type, ip_address, user_agent, expires_at)
-                   VALUES ($1, $2, 'Keycloak SSO', 'web', $3::inet, $4, $5)"#,
-            )
-            .bind(user.id)
-            .bind(&refresh_hash)
-            .bind(ip)
-            .bind(ua)
-            .bind(expires_at)
-            .execute(&state.db)
-            .await?;
-
-            sqlx::query("UPDATE core.users SET last_login_at = NOW() WHERE id = $1")
-                .bind(user.id)
-                .execute(&state.db)
-                .await?;
-
-            let secure = if state.settings.server.secure_cookies { "; Secure" } else { "" };
-            let refresh_cookie = format!(
-                "refresh_token={refresh_raw}; HttpOnly{secure}; Path=/api/v1/auth; SameSite=Strict; Max-Age={}",
-                state.settings.auth.refresh_token_ttl.as_secs()
-            );
-            // Passe le JWT via un cookie éphémère (60 s) plutôt qu'en query param
-            // pour éviter l'exposition dans l'historique navigateur et les logs serveur.
-            let token_cookie = format!(
-                "oauth_token={access_token}; Path=/auth/oauth/callback; SameSite=Strict; Max-Age=60{secure}"
-            );
-
-            let mut resp_headers = axum::http::HeaderMap::new();
-            resp_headers.append(header::SET_COOKIE, clear_pkce.parse().unwrap());
-            resp_headers.append(header::SET_COOKIE, refresh_cookie.parse().unwrap());
-            resp_headers.append(header::SET_COOKIE, token_cookie.parse().unwrap());
-
-            Ok((resp_headers, Redirect::to("/auth/oauth/callback")).into_response())
-        }
-        _ => Err(AppError::NotFound(format!("Provider OAuth inconnu: {provider}"))),
+    // Error returned by the IdP → bounce to the SPA callback with a message.
+    if let Some(err) = params.error {
+        let desc = params.error_description.unwrap_or_default();
+        tracing::warn!(provider = %provider, error = %err, description = %desc, "SSO a retourné une erreur");
+        let url = format!("/auth/oauth/callback?error={}", urlencoding_encode(&format!("{err}: {desc}")));
+        return Ok(([(header::SET_COOKIE, clear_pkce)], Redirect::to(&url)).into_response());
     }
+
+    let p = load_enabled_provider(&state.db, &provider).await?;
+
+    let code        = params.code.ok_or_else(|| AppError::Validation("Code d'autorisation manquant".into()))?;
+    let state_param = params.state.ok_or_else(|| AppError::Validation("Paramètre state manquant".into()))?;
+
+    // Read and verify the PKCE cookie (CSRF protection via `state`).
+    let pkce_value = extract_cookie_value(&headers, "oauth_pkce")
+        .ok_or_else(|| AppError::Validation("Session OAuth expirée — veuillez réessayer".into()))?;
+    let pkce = OAuthPkce::from_cookie_value(&pkce_value)
+        .ok_or_else(|| AppError::Validation("Cookie OAuth corrompu".into()))?;
+    if state_param != pkce.nonce {
+        return Err(AppError::Validation("Vérification CSRF échouée".into()));
+    }
+
+    // Decrypt the stored client secret (empty for public clients).
+    let client_secret = if p.client_secret_enc.is_empty() {
+        String::new()
+    } else {
+        let key = oauth::secret_key(&state.settings.auth.jwt_secret);
+        let bytes = encryption::decrypt(&key, &p.client_secret_enc).map_err(AppError::Internal)?;
+        String::from_utf8(bytes).map_err(|e| AppError::Internal(e.into()))?
+    };
+
+    let redirect_uri = build_oauth_redirect_uri(&headers, &p.slug);
+    let http = oidc_http_client()?;
+    let disc = oauth::discover(&http, &p.issuer_url).await.map_err(AppError::Internal)?;
+
+    // Exchange code → access token, then fetch the OIDC profile.
+    let tokens = oauth::oidc_exchange_code(
+        &http, &disc, &p.client_id, &client_secret, &code, &redirect_uri, &pkce.code_verifier,
+    )
+    .await
+    .map_err(AppError::Internal)?;
+
+    let userinfo = oauth::oidc_userinfo(&http, &disc, &tokens.access_token)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let email = userinfo.email.ok_or_else(|| {
+        AppError::Validation("Le profil SSO ne contient pas d'email (scope 'email' requis)".into())
+    })?;
+    let preferred = userinfo.preferred_username.or(userinfo.nickname);
+
+    // Find (or link) an existing user; otherwise create one if signup is allowed.
+    let user = match find_oauth_user(&state.db, &p.slug, &userinfo.sub, &email).await? {
+        Some(u) => u,
+        None if !p.allow_signup => {
+            let url = format!(
+                "/auth/oauth/callback?error={}",
+                urlencoding_encode("Création de compte via SSO désactivée pour ce fournisseur")
+            );
+            return Ok(([(header::SET_COOKIE, clear_pkce)], Redirect::to(&url)).into_response());
+        }
+        None => {
+            create_oauth_user(&state.db, &p.slug, &userinfo.sub, &email, preferred.as_deref(), userinfo.name.as_deref())
+                .await?
+        }
+    };
+
+    // Issue Kubuno tokens.
+    let jwt = JwtService::new(
+        state.settings.auth.jwt_secret.clone(),
+        state.settings.auth.access_token_ttl,
+    );
+    let access_token = jwt.generate_access_token(&user)?;
+    let (refresh_raw, refresh_hash) = JwtService::generate_refresh_token();
+
+    let xff_owned2 = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(',').next().unwrap_or(v).trim().to_string());
+    let ip = xff_owned2.as_deref()
+        .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()));
+    let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let expires_at = Utc::now() + state.settings.auth.refresh_token_ttl;
+    let device_name = format!("{} SSO", p.display_name);
+
+    sqlx::query(
+        r#"INSERT INTO core.refresh_tokens
+           (user_id, token_hash, device_name, device_type, ip_address, user_agent, expires_at)
+           VALUES ($1, $2, $3, 'web', $4::inet, $5, $6)"#,
+    )
+    .bind(user.id)
+    .bind(&refresh_hash)
+    .bind(&device_name)
+    .bind(ip)
+    .bind(ua)
+    .bind(expires_at)
+    .execute(&state.db)
+    .await?;
+
+    sqlx::query("UPDATE core.users SET last_login_at = NOW() WHERE id = $1")
+        .bind(user.id)
+        .execute(&state.db)
+        .await?;
+
+    let secure = if state.settings.server.secure_cookies { "; Secure" } else { "" };
+    let refresh_cookie = format!(
+        "refresh_token={refresh_raw}; HttpOnly{secure}; Path=/api/v1/auth; SameSite=Strict; Max-Age={}",
+        state.settings.auth.refresh_token_ttl.as_secs()
+    );
+    // JWT passed via a 60 s ephemeral cookie rather than a query param, to avoid
+    // exposure in browser history and server logs.
+    let token_cookie = format!(
+        "oauth_token={access_token}; Path=/auth/oauth/callback; SameSite=Strict; Max-Age=60{secure}"
+    );
+
+    let mut resp_headers = axum::http::HeaderMap::new();
+    resp_headers.append(header::SET_COOKIE, clear_pkce.parse().unwrap());
+    resp_headers.append(header::SET_COOKIE, refresh_cookie.parse().unwrap());
+    resp_headers.append(header::SET_COOKIE, token_cookie.parse().unwrap());
+
+    Ok((resp_headers, Redirect::to("/auth/oauth/callback")).into_response())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -805,64 +843,73 @@ fn urlencoding_encode(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
-async fn find_or_create_keycloak_user(
-    db:           &sqlx::PgPool,
-    sub:          &str,
-    email:        &str,
-    preferred_username: Option<&str>,
-    display_name: Option<&str>,
-) -> Result<crate::models::user::User, AppError> {
-    // 1. Chercher par (provider, oauth_id)
+/// Find a user by (provider, sub), or link a local account sharing the verified
+/// email. Returns `None` if neither matches (caller decides whether to create).
+async fn find_oauth_user(
+    db:       &sqlx::PgPool,
+    provider: &str,
+    sub:      &str,
+    email:    &str,
+) -> Result<Option<crate::models::user::User>, AppError> {
+    // 1. By (provider, oauth_id)
     if let Some(user) = sqlx::query_as::<_, crate::models::user::User>(
-        "SELECT * FROM core.users WHERE oauth_provider = 'keycloak' AND oauth_id = $1 AND is_active = TRUE",
+        "SELECT * FROM core.users WHERE oauth_provider = $1 AND oauth_id = $2 AND is_active = TRUE",
     )
+    .bind(provider)
     .bind(sub)
     .fetch_optional(db)
     .await?
     {
-        return Ok(user);
+        return Ok(Some(user));
     }
 
-    // 2. Chercher par email et lier à Keycloak si compte local existant
+    // 2. Link a pre-existing local account with the same email.
     if let Some(user) = sqlx::query_as::<_, crate::models::user::User>(
-        "UPDATE core.users SET oauth_provider = 'keycloak', oauth_id = $1,
-                               display_name = COALESCE(display_name, $2),
-                               email_verified = TRUE
+        "UPDATE core.users SET oauth_provider = $1, oauth_id = $2, email_verified = TRUE
          WHERE email = $3 AND is_active = TRUE
          RETURNING *",
     )
+    .bind(provider)
     .bind(sub)
-    .bind(display_name)
     .bind(email)
     .fetch_optional(db)
     .await?
     {
-        tracing::info!(user_id = %user.id, "Compte local lié à Keycloak SSO");
-        return Ok(user);
+        tracing::info!(user_id = %user.id, provider = %provider, "Compte local lié au SSO");
+        return Ok(Some(user));
     }
 
-    // 3. Créer un nouveau compte
+    Ok(None)
+}
+
+async fn create_oauth_user(
+    db:                 &sqlx::PgPool,
+    provider:           &str,
+    sub:                &str,
+    email:              &str,
+    preferred_username: Option<&str>,
+    display_name:       Option<&str>,
+) -> Result<crate::models::user::User, AppError> {
     let base_username = preferred_username
         .filter(|u| !u.is_empty())
         .unwrap_or(email.split('@').next().unwrap_or("user"));
-
-    // Déduplication du username si déjà pris
     let username = unique_username(db, base_username).await?;
 
     let user = sqlx::query_as::<_, crate::models::user::User>(
         r#"INSERT INTO core.users
                (email, username, display_name, oauth_provider, oauth_id, email_verified)
-           VALUES ($1, $2, $3, 'keycloak', $4, TRUE)
+           VALUES ($1, $2, $3, $4, $5, TRUE)
            RETURNING *"#,
     )
     .bind(email)
     .bind(&username)
     .bind(display_name)
+    .bind(provider)
     .bind(sub)
     .fetch_one(db)
     .await?;
 
-    tracing::info!(user_id = %user.id, username = %username, "Nouveau compte créé via Keycloak SSO");
+    tracing::info!(user_id = %user.id, username = %username, provider = %provider, "Nouveau compte créé via SSO");
     Ok(user)
 }
 

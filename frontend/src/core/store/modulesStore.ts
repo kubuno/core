@@ -3,9 +3,10 @@ import { modulesApi } from '../api/modules'
 import { loadRemoteModules } from '../modules/loadRemoteModules'
 import type { ActiveModule, SidebarItem } from '../types'
 
-const CORE_ITEMS: SidebarItem[] = [
-  { id: 'home', label: 'Accueil', icon: 'Home', path: '/', position: 0 },
-]
+// Le panneau de gauche n'a plus d'item par défaut : ni modules, ni « Accueil »
+// (la home reste accessible via le logo). Le panneau ne s'affiche donc que
+// lorsqu'un module fournit sa propre navigation ; sinon il est caché/enroulé.
+const CORE_ITEMS: SidebarItem[] = []
 
 interface ModulesState {
   activeModules: ActiveModule[]
@@ -36,9 +37,10 @@ export const useModulesStore = create<ModulesState>((set) => ({
     set({ isLoading: true })
     try {
       const { data } = await modulesApi.list()
-      const moduleItems = data.modules.flatMap((m) => m.sidebar_items)
-      const all = [...CORE_ITEMS, ...moduleItems].sort((a, b) => a.position - b.position)
-      set({ activeModules: data.modules, sidebarItems: all })
+      // Les modules ne sont plus affichés dans le panneau de gauche par défaut :
+      // on garde uniquement les items du core. Les modules restent enregistrés
+      // (`activeModules`) pour le routage et le chargement de leurs bundles UI.
+      set({ activeModules: data.modules, sidebarItems: CORE_ITEMS })
       // Charge les bundles UI des modules à l'exécution (no-op pour ceux déjà
       // chargés). Bump loadedVersion si de nouvelles routes/slots sont apparus.
       const n = await loadRemoteModules(data.modules)

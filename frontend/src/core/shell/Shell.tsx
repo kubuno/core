@@ -1,6 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { CollapseSidebarRegistry } from '../registry/CollapseSidebarRegistry'
 import AppHeader from './AppHeader'
 import AppSidebar from './AppSidebar'
 import LeftRail from './LeftRail'
@@ -12,30 +11,29 @@ import MobileFab from './MobileFab'
 import { useUiStore } from '../store/uiStore'
 import { Slot } from '../slots/SlotRegistry'
 import { useIdleLogout } from '../hooks/useIdleLogout'
+import { usePanelStatePersistence } from '../hooks/usePanelStatePersistence'
+import { useAppNavMemory } from '../hooks/useAppNavMemory'
 
 export default function Shell() {
-  const { sidebarOpen, closeSidebar, setSidebarCollapsed, headerHidden } = useUiStore()
+  const { sidebarOpen, closeSidebar, headerHidden } = useUiStore()
   const location = useLocation()
 
   // Déconnexion automatique après inactivité (réglage admin).
   useIdleLogout()
 
+  // Mémorise/restaure l'état (déplié/enroulé) des panneaux gauche et droit, par
+  // application et par onglet (survit au F5 et au retour ultérieur). Couvre aussi
+  // le repli par défaut des apps déclarées dans CollapseSidebarRegistry.
+  usePanelStatePersistence()
+
+  // Mémorise la dernière route de chaque application (par onglet) : quitter une
+  // app puis y revenir via le lanceur ramène exactement où on l'avait laissée.
+  useAppNavMemory()
+
   // Page d'accueil : tableau de bord pleine largeur, sans panneaux latéraux.
   const isHome = location.pathname === '/'
 
   useEffect(() => { closeSidebar() }, [location.pathname, closeSidebar])
-
-  // Apps PaintSharp/Office (déclarées dans CollapseSidebarRegistry) : replier la sidebar
-  // à l'ENTRÉE pour gagner de la largeur, la restaurer à la SORTIE. On ne réagit
-  // qu'aux transitions entrée/sortie → un repli/dépli manuel reste respecté tant
-  // qu'on navigue à l'intérieur du groupe.
-  const wasCollapsedScope = useRef(false)
-  useEffect(() => {
-    const inScope = CollapseSidebarRegistry.matches(location.pathname)
-    if (inScope && !wasCollapsedScope.current) setSidebarCollapsed(true)
-    else if (!inScope && wasCollapsedScope.current) setSidebarCollapsed(false)
-    wasCollapsedScope.current = inScope
-  }, [location.pathname, setSidebarCollapsed])
 
   return (
     <div data-app-shell className="h-screen flex flex-col overflow-hidden" style={{ height: '100dvh', background: 'var(--body-bg)' }}>

@@ -85,27 +85,55 @@ export const SlotRegistry = {
   },
 }
 
-// ── Per-module user settings ────────────────────────────────────────────────────
-// A module declares that it has a per-user settings page; the header gear button
-// then routes to it whenever the user is inside that module's routes. Unlike a
-// `topbar-settings` override (single global winner), this scales to every module
-// because resolution is keyed by the CURRENT route's module, not a global slot.
-const settingsRoutes = new Map<string, string>()
+// ── Per-module settings (admin global + per-user) ───────────────────────────────
+// Each module exposes up to two settings pages:
+//   • admin → instance-wide settings, admin only      (default `/<moduleId>/settings`)
+//   • user  → per-user settings + overrides           (default `/<moduleId>/user-settings`)
+// The header gear button routes to the USER page whenever the user is inside that
+// module's routes. Resolution is keyed by the CURRENT route's module (not a global
+// slot), so it scales to every module.
+interface SettingsRoutes {
+  admin?: string
+  user?:  string
+}
+const settingsRoutes = new Map<string, SettingsRoutes>()
+
+function setRoute(moduleId: string, patch: SettingsRoutes) {
+  settingsRoutes.set(moduleId, { ...settingsRoutes.get(moduleId), ...patch })
+}
 
 export const ModuleSettingsRegistry = {
-  /** Declare the module's per-user settings route (default `/<moduleId>/settings`). */
+  /** Legacy: declare the module's per-user settings route (default `/<moduleId>/settings`).
+   *  Kept for modules not yet migrated to the admin/user split. */
   register(moduleId: string, route?: string) {
-    settingsRoutes.set(moduleId, route ?? `/${moduleId}/settings`)
+    setRoute(moduleId, { user: route ?? `/${moduleId}/settings` })
   },
-  /** Settings route for `moduleId` if it registered one and is active, else null. */
+  /** Declare the module's admin (instance-wide) settings route. */
+  registerAdmin(moduleId: string, route?: string) {
+    setRoute(moduleId, { admin: route ?? `/${moduleId}/settings` })
+  },
+  /** Declare the module's per-user settings route. */
+  registerUser(moduleId: string, route?: string) {
+    setRoute(moduleId, { user: route ?? `/${moduleId}/user-settings` })
+  },
+  /** Per-user settings route for `moduleId` if registered and active, else null.
+   *  This is what the header gear button navigates to. */
   getRoute(moduleId: string | undefined, activeIds: Set<string>): string | null {
     if (!moduleId) return null
-    const route = settingsRoutes.get(moduleId)
+    const route = settingsRoutes.get(moduleId)?.user
     return route && activeIds.has(moduleId) ? route : null
   },
-  /** Whether `pathname` is a registered per-user settings page (full-bleed, no toolbar). */
+  /** Admin (instance-wide) settings route for `moduleId` if registered and active. */
+  getAdminRoute(moduleId: string | undefined, activeIds: Set<string>): string | null {
+    if (!moduleId) return null
+    const route = settingsRoutes.get(moduleId)?.admin
+    return route && activeIds.has(moduleId) ? route : null
+  },
+  /** Whether `pathname` is a registered settings page (full-bleed, no toolbar). */
   isSettingsRoute(pathname: string): boolean {
-    for (const route of settingsRoutes.values()) if (route === pathname) return true
+    for (const r of settingsRoutes.values()) {
+      if (r.admin === pathname || r.user === pathname) return true
+    }
     return false
   },
 }
