@@ -8,6 +8,10 @@ use crate::{
                 list_groups, get_group, create_group, update_group, delete_group,
                 add_member, remove_member,
             },
+            oauth_providers::{
+                create_oauth_provider, delete_oauth_provider, list_oauth_providers,
+                update_oauth_provider,
+            },
             settings::{
                 get_admin_module, get_settings, list_admin_modules, list_event_log, public_config,
                 toggle_module, update_settings,
@@ -18,14 +22,14 @@ use crate::{
             },
         },
         auth::{
-            forgot_password, login, logout, oauth_callback, oauth_redirect, refresh, register,
-            reset_password, totp_verify,
+            forgot_password, list_public_oauth_providers, login, logout, oauth_callback,
+            oauth_redirect, refresh, register, reset_password, totp_verify,
         },
         health::{health, ready},
         themes::{create_theme, delete_theme, list_themes},
         modules::{
-            list_modules, module_heartbeat, module_log, publish_event, register_module,
-            serve_module_asset, unregister_module,
+            get_module_config, list_modules, module_heartbeat, module_log, publish_event,
+            register_module, serve_module_asset, unregister_module,
         },
         users::{
             change_password, get_me, me_activity, list_sessions, revoke_all_sessions, revoke_session,
@@ -70,6 +74,7 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/reset-password",            post(reset_password))
         .route("/oauth/:provider",          get(oauth_redirect))
         .route("/oauth/:provider/callback", get(oauth_callback))
+        .route("/providers",                get(list_public_oauth_providers))
         .route("/totp",                     post(totp_verify))
         .layer(middleware::from_fn(rate_limit_auth));
 
@@ -88,6 +93,8 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/admin/themes/:id", delete(delete_theme))
         // ── Modules (public) ─────────────────────────────────────
         .route("/modules", get(list_modules))
+        // Paramètres résolus d'un module pour l'utilisateur courant (authentifié).
+        .route("/modules/:module/config", get(get_module_config))
         // ── Composants WASM local-first (authentifié) ────────────
         .route("/desktop/wasm",         get(crate::handlers::desktop::wasm_manifest))
         .route("/desktop/wasm/:name",   get(crate::handlers::desktop::wasm_file))
@@ -121,6 +128,8 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/admin/users/:id/sessions/:sid", delete(revoke_user_session))
         .route("/admin/stats",          get(admin_stats))
         .route("/admin/settings",       get(get_settings).patch(update_settings))
+        .route("/admin/oauth-providers",      get(list_oauth_providers).post(create_oauth_provider))
+        .route("/admin/oauth-providers/:id", patch(update_oauth_provider).delete(delete_oauth_provider))
         .route("/admin/modules",        get(list_admin_modules))
         .route("/admin/modules/:id",   get(get_admin_module).patch(toggle_module))
         .route("/admin/event-log",      get(list_event_log))

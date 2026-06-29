@@ -16,6 +16,8 @@ interface RightPanelState {
   unregisterEntry: (moduleId: string) => void
   togglePanel:    (moduleId: string) => void
   closePanel:     () => void
+  /** Set the open panel directly (used to restore persisted state). */
+  setActive:      (moduleId: string | null) => void
 }
 
 export const useRightPanelStore = create<RightPanelState>((set) => ({
@@ -39,4 +41,6 @@ export const useRightPanelStore = create<RightPanelState>((set) => ({
     })),
 
   closePanel: () => set({ activeModuleId: null }),
+
+  setActive: (moduleId) => set({ activeModuleId: moduleId }),
 }))

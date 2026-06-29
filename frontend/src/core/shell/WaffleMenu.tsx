@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { LayoutGrid, Pencil } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import type { WaffleApp } from '../registry/WaffleAppRegistry'
+import { appNavMemory } from '../store/appNavMemory'
 import { Button } from '@ui'
 import { useAuthStore } from '../store/authStore'
 import { api } from '../api/client'
@@ -239,6 +240,10 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
 
   const favZonePlaceholder = editing && displayed.length === 0
 
+  // Launching an app returns the user to the last location they visited within
+  // it (this tab) instead of its root — so leaving an app doesn't lose your place.
+  const launchTarget = (app: WaffleApp) => appNavMemory.get(app.id) ?? app.path
+
   // Rendu d'une cellule de la zone « toutes les apps » (non-favorites) : version
   // éditable (glissable vers les favoris) ou lien normal. Partagé par les apps
   // autonomes et les groupes de sous-modules.
@@ -260,7 +265,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
     ) : (
       <DropdownMenu.Item key={app.id} asChild>
         <Link
-          to={app.path}
+          to={launchTarget(app)}
           className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-white/70 transition-colors outline-none"
         >
           <app.Icon size={48} className="text-text-secondary" />
@@ -379,7 +384,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
                     ) : (
                       <DropdownMenu.Item key={app.id} asChild>
                         <Link
-                          to={app.path}
+                          to={launchTarget(app)}
                           className="flex flex-col items-center gap-2 p-3 rounded-xl
                                      hover:bg-surface-1 transition-colors outline-none"
                         >
