@@ -17,7 +17,9 @@ pub fn generate_secret(jwt_secret: &str, email: &str) -> Result<(String, String,
     let secret_bytes = secret
         .to_bytes()
         .map_err(|e| anyhow::anyhow!("Secret TOTP: {e}"))?;
-    let secret_base32 = secret.to_string();
+    // `Secret::Raw.to_string()` yields HEX; manual entry in authenticator apps
+    // needs the BASE32 form (matching what the otpauth URI/QR encodes).
+    let secret_base32 = secret.to_encoded().to_string();
 
     let totp = TOTP::new(
         Algorithm::SHA1,

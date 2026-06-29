@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore'
 
 // Gestion de session liée à l'ACTIVITÉ réelle de l'utilisateur.
 //
-// Deux mécanismes complémentaires :
+// Trois mécanismes complémentaires :
 //  1. Déconnexion après inactivité (réglage admin `security.session_idle_timeout_min`,
 //     0 = désactivé). Minuteur réarmé à chaque interaction → déconnexion visible.
 //  2. Keepalive proactif : tant que l'utilisateur est actif, on rafraîchit le jeton
@@ -13,6 +13,11 @@ import { useAuthStore } from '../store/authStore'
 //     Sans keepalive, un utilisateur actif dans un module qui ne tape pas l'API REST
 //     pendant un moment (édition locale, dessin, lecture, WebSocket only) voyait son
 //     token expirer côté backend et se faisait déconnecter au prochain appel.
+//  3. Activité PARTAGÉE entre onglets (BroadcastChannel). Sans ça, chaque onglet
+//     mesure l'inactivité indépendamment alors que `logout()` ferme la session
+//     entière : un onglet laissé inactif atteint la limite et déconnecte l'utilisateur
+//     même s'il travaille dans un AUTRE onglet. Toute interaction dans un onglet réarme
+//     donc le minuteur de tous les onglets.
 //
 // Plafond du keepalive : doit rester sous le TTL du jeton d'accès (15 min par défaut)
 // pour qu'il soit renouvelé à temps, et sous la fenêtre d'inactivité.
@@ -32,6 +37,11 @@ export function useIdleLogout() {
     let keepAliveTimer: ReturnType<typeof setTimeout> | undefined
     let lastActivity = Date.now()
 
+    // Canal d'activité partagé entre onglets de la même origine.
+    let bc: BroadcastChannel | null = null
+    try { bc = new BroadcastChannel('kubuno-session-activity') } catch { bc = null }
+    let lastBroadcast = 0
+
     // Fenêtre pendant laquelle on considère l'utilisateur « actif » pour le
     // keepalive (même si la déconnexion auto est désactivée, on garde la session
     // vivante tant qu'il interagit, dans une fenêtre raisonnable).
@@ -46,8 +56,26 @@ export function useIdleLogout() {
 
     const onActivity = () => {
       if (cancelled) return
-      lastActivity = Date.now()
+      const now = Date.now()
+      lastActivity = now
       armLogout()
+      // Diffuse l'activité aux autres onglets (throttle 1 s pour ne pas spammer).
+      if (bc && now - lastBroadcast > 1000) {
+        lastBroadcast = now
+        bc.postMessage(now)
+      }
+    }
+
+    // Activité reçue d'un autre onglet : on s'aligne sur l'horodatage le plus récent.
+    if (bc) {
+      bc.onmessage = (e) => {
+        if (cancelled) return
+        const ts = typeof e.data === 'number' ? e.data : 0
+        if (ts > lastActivity) {
+          lastActivity = ts
+          armLogout()
+        }
+      }
     }
 
     const scheduleKeepAlive = () => {
@@ -93,6 +121,7 @@ export function useIdleLogout() {
       cancelled = true
       if (logoutTimer) clearTimeout(logoutTimer)
       if (keepAliveTimer) clearTimeout(keepAliveTimer)
+      if (bc) { bc.onmessage = null; bc.close() }
       events.forEach(e => window.removeEventListener(e, onActivity))
     }
   }, [user, logout, refreshToken])

@@ -1,0 +1,84 @@
+name: Distributions (RPM / Windows / macOS)
+
+# Construit les paquets natifs sur chaque OS et les attache à la Release GitHub
+# créée sur un tag v*. Complète build.yml (qui produit le .deb).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── RPM (Fedora / RHEL / openSUSE) ──────────────────────────────────────
+  rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Install rpm tooling
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - name: Build RPM
+        env: { SQLX_OFFLINE: "true" }
+        run: bash build_rpm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubuno-core-rpm
+          path: dist/*.rpm
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: dist/*.rpm }
+
+  # ── Windows (installeur NSIS + service WinSW) ────────────────────────────
+  windows:
+    runs-on: windows-latest
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: x86_64-pc-windows-msvc }
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+      - name: Add NSIS to PATH
+        run: echo "C:/Program Files (x86)/NSIS" >> "$GITHUB_PATH"
+      - name: Build Windows installer
+        env: { SQLX_OFFLINE: "true" }
+        run: bash build_windows.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubuno-core-windows
+          path: dist/*.exe
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: dist/*.exe }
+
+  # ── macOS (.pkg + launchd, Apple Silicon) ───────────────────────────────
+  macos:
+    runs-on: macos-latest          # arm64 (Apple Silicon)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: aarch64-apple-darwin }
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Build macOS package
+        env: { SQLX_OFFLINE: "true" }
+        run: bash build_macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubuno-core-macos
+          path: dist/*.pkg
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: dist/*.pkg }
