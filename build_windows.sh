@@ -75,6 +75,7 @@ install -m 755 "$BIN_DIR/kubuno-core.exe" "$STAGE/kubuno-core.exe"
 install -m 755 "$BIN_DIR/kubuno.exe"      "$STAGE/kubuno.exe"
 cp -r frontend/dist   "$STAGE/frontend"
 cp -r migrations      "$STAGE/migrations"
+cp -r themes          "$STAGE/themes"
 cp LICENSE            "$STAGE/LICENSE.txt"
 cp README.md          "$STAGE/README.txt" 2>/dev/null || echo "Kubuno Core" > "$STAGE/README.txt"
 
@@ -124,12 +125,21 @@ Section "Install"
   File "README.txt"
   File /r "frontend"
   File /r "migrations"
+  File /r "themes"
   CreateDirectory "\$INSTDIR\\modules"   ; emplacement des modules ajoutés ultérieurement
 
   ; Répertoire de données inscriptible (config + fichiers + logs)
   CreateDirectory "\$APPDATA\\Kubuno"
+
+  ; Sème/rafraîchit les thèmes livrés dans le répertoire de données inscriptible
+  ; (themes_dir = \$APPDATA\\Kubuno\\themes). Les thèmes importés par l'admin (autres
+  ; IDs) ne sont pas écrasés ; CopyFiles fusionne.
+  CreateDirectory "\$APPDATA\\Kubuno\\themes"
+  CopyFiles /SILENT "\$INSTDIR\\themes\\*.*" "\$APPDATA\\Kubuno\\themes"
   CreateDirectory "\$APPDATA\\Kubuno\\files"
   CreateDirectory "\$APPDATA\\Kubuno\\logs"
+  CreateDirectory "\$APPDATA\\Kubuno\\modules-config"   ; configs des modules (CWD module)
+  CreateDirectory "\$APPDATA\\Kubuno\\modules-data"     ; données des modules
 
   ; XML du service WinSW (basename = kubuno-service → kubuno-service.xml)
   FileOpen \$0 "\$INSTDIR\\kubuno-service.xml" w
@@ -140,6 +150,8 @@ Section "Install"
   FileWrite \$0 '  <executable>\$INSTDIR\\kubuno-core.exe</executable>\$\r\$\n'
   FileWrite \$0 '  <workingdirectory>\$APPDATA\\Kubuno</workingdirectory>\$\r\$\n'
   FileWrite \$0 '  <env name="KV__SERVER__FRONTEND_DIST" value="\$INSTDIR\\frontend" />\$\r\$\n'
+  FileWrite \$0 '  <env name="KV__SERVER__MODULES_CONFIG_DIR" value="\$APPDATA\\Kubuno\\modules-config" />\$\r\$\n'
+  FileWrite \$0 '  <env name="KV__SERVER__MODULES_DATA_DIR" value="\$APPDATA\\Kubuno\\modules-data" />\$\r\$\n'
   FileWrite \$0 '  <onfailure action="restart" delay="3 sec" />\$\r\$\n'
   FileWrite \$0 '  <log mode="roll-by-size"><sizeThreshold>10240</sizeThreshold><keepFiles>8</keepFiles></log>\$\r\$\n'
   FileWrite \$0 '  <logpath>\$APPDATA\\Kubuno\\logs</logpath>\$\r\$\n'
@@ -183,7 +195,9 @@ config_done:
 
   ; Désinstalleur + entrée Programmes et fonctionnalités
   WriteUninstaller "\$INSTDIR\\uninstall.exe"
+  WriteRegStr HKLM "Software\\Kubuno" "InstallLocation" "\$INSTDIR"
   WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Kubuno" "DisplayName" "\${APPNAME}"
+  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Kubuno" "InstallLocation" "\$INSTDIR"
   WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Kubuno" "DisplayVersion" "\${VERSION}"
   WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Kubuno" "Publisher" "\${COMPANY}"
   WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Kubuno" "UninstallString" '"\$INSTDIR\\uninstall.exe"'
@@ -205,6 +219,7 @@ Section "Uninstall"
   Delete "\$INSTDIR\\uninstall.exe"
   RMDir /r "\$INSTDIR\\frontend"
   RMDir /r "\$INSTDIR\\migrations"
+  RMDir /r "\$INSTDIR\\themes"
   RMDir "\$INSTDIR"
   DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Kubuno"
   ; Les données (\$APPDATA\\Kubuno) sont CONSERVÉES volontairement.

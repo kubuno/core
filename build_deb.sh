@@ -203,6 +203,14 @@ setup_core() {
     install -m 640 config.toml.example "${PKG_DIR}/etc/kubuno/config.toml.example"
     cp migrations/*.sql "${PKG_DIR}/usr/share/kubuno/migrations/"
 
+    # Thèmes livrés avec l'application (bundles CSS/JS dans themes/). Stagés en
+    # lecture seule sous /usr/share, puis semés dans /var/lib/kubuno/themes au
+    # postinst (le répertoire lu à l'exécution).
+    if [[ -d themes ]]; then
+        mkdir -p "${PKG_DIR}/usr/share/kubuno/themes"
+        cp -r themes/. "${PKG_DIR}/usr/share/kubuno/themes/"
+    fi
+
     cat > "${PKG_DIR}/etc/logrotate.d/kubuno" << 'LOGROTATE'
 /var/log/kubuno/error.log
 /var/log/kubuno/access.log {
@@ -271,6 +279,12 @@ if ! id -u kubuno &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin kubuno
 fi
 mkdir -p /var/lib/kubuno/drive /var/lib/kubuno/themes
+# Sème/rafraîchit les thèmes livrés (IDs kubuno-*). Écrase les thèmes livrés pour
+# qu'ils restent à jour ; les thèmes IMPORTÉS par l'admin (autres IDs) ne sont
+# jamais dans /usr/share et restent donc intacts.
+if [ -d /usr/share/kubuno/themes ]; then
+    cp -r /usr/share/kubuno/themes/. /var/lib/kubuno/themes/ 2>/dev/null || true
+fi
 chown -R kubuno:kubuno /var/lib/kubuno
 chmod 750 /var/lib/kubuno /var/lib/kubuno/themes
 mkdir -p /var/log/kubuno

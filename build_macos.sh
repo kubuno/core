@@ -78,6 +78,7 @@ mkdir -p \
   "$PKGROOT/usr/local/kubuno/bin" \
   "$PKGROOT/usr/local/kubuno/frontend" \
   "$PKGROOT/usr/local/kubuno/migrations" \
+  "$PKGROOT/usr/local/kubuno/themes" \
   "$PKGROOT/usr/local/kubuno/modules" \
   "$PKGROOT/etc/kubuno" \
   "$PKGROOT/Library/LaunchDaemons"
@@ -88,6 +89,7 @@ install -m 755 "$BIN_DIR/kubuno-core" "$PKGROOT/usr/local/kubuno/bin/kubuno-core
 install -m 755 "$BIN_DIR/kubuno"      "$PKGROOT/usr/local/kubuno/bin/kubuno"
 cp -R frontend/dist/. "$PKGROOT/usr/local/kubuno/frontend/"
 cp migrations/*.sql    "$PKGROOT/usr/local/kubuno/migrations/"
+cp -R themes/.         "$PKGROOT/usr/local/kubuno/themes/"
 
 # config.toml.example adapté macOS (chemins Apple)
 cat > "$PKGROOT/etc/kubuno/config.toml.example" << 'CFG'
@@ -137,7 +139,8 @@ cat > "$PKGROOT/Library/LaunchDaemons/${IDENTIFIER}.plist" << PLIST
     <key>WorkingDirectory</key> <string>/usr/local/var/kubuno</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>KV__SERVER__FRONTEND_DIST</key> <string>/usr/local/kubuno/frontend</string>
+        <key>KV__SERVER__FRONTEND_DIST</key>    <string>/usr/local/kubuno/frontend</string>
+        <key>KV__SERVER__MODULES_DATA_DIR</key> <string>/usr/local/var/kubuno/modules</string>
     </dict>
     <key>RunAtLoad</key>        <true/>
     <key>KeepAlive</key>        <true/>
@@ -191,9 +194,18 @@ if ! dscl . -read /Users/_kubuno >/dev/null 2>&1; then
 fi
 
 # ── Répertoires de données ──────────────────────────────────────────────────
-mkdir -p /usr/local/var/kubuno/files /usr/local/var/kubuno/logs /usr/local/var/kubuno/themes
+mkdir -p /usr/local/var/kubuno/files /usr/local/var/kubuno/logs \
+         /usr/local/var/kubuno/themes /usr/local/var/kubuno/modules
+# Sème/rafraîchit les thèmes livrés (themes_dir = /usr/local/var/kubuno/themes).
+# Les thèmes importés par l'admin (autres IDs) ne sont jamais sous /usr/local/kubuno
+# et restent donc intacts.
+if [ -d /usr/local/kubuno/themes ]; then
+    cp -R /usr/local/kubuno/themes/. /usr/local/var/kubuno/themes/ 2>/dev/null || true
+fi
 chown -R _kubuno:_kubuno /usr/local/var/kubuno
 chmod 750 /usr/local/var/kubuno
+# Répertoire des configs par module (CWD des processus modules ; défaut FHS)
+mkdir -p /etc/kubuno/modules
 
 # ── config.toml (sans écrasement) ───────────────────────────────────────────
 if [ ! -f /etc/kubuno/config.toml ]; then
