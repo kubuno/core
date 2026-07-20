@@ -22,7 +22,7 @@ export declare const ModuleSettingsRegistry: {
     register(moduleId: string, route?: string): void;
     /** Declare the module's admin (instance-wide) settings route. */
     registerAdmin(moduleId: string, route?: string): void;
-    /** Declare the module's per-user settings route (default `/<moduleId>/user-settings`). */
+    /** Declare the module's per-user settings route. */
     registerUser(moduleId: string, route?: string): void;
     /** Per-user settings route for `moduleId` if registered and active, else null.
      *  This is what the header gear button navigates to. */

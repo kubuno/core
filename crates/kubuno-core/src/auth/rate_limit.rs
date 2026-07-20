@@ -22,7 +22,17 @@ static LIMITER: LazyLock<Mutex<HashMap<String, Window>>> =
 const WINDOW_SECS: u64 = 60;
 
 fn limit_for_path(path: &str) -> u32 {
-    if path.contains("forgot-password") || path.contains("reset-password") { 3 } else { 10 }
+    if path.contains("forgot-password") || path.contains("reset-password") {
+        // Brute-forceable and mail-sending — keep these tight.
+        3
+    } else if path.ends_with("/refresh") {
+        // One home/office IP legitimately carries many refresh callers (browser tabs,
+        // desktop daemon + doc proxy, mobile). A refresh without a valid HttpOnly
+        // cookie is not brute-forceable, so a generous per-IP budget is safe.
+        60
+    } else {
+        10
+    }
 }
 
 pub async fn rate_limit_auth(req: Request<Body>, next: Next) -> Response {

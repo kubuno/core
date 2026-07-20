@@ -1,5 +1,6 @@
 import { SDK_VERSION } from '@kubuno/sdk'
 import type { ActiveModule } from '../types'
+import { useThemeStore } from '../store/themeStore'
 
 /**
  * Chargement À L'EXÉCUTION des bundles UI des modules.
@@ -67,6 +68,13 @@ async function loadOne(m: ActiveModule): Promise<boolean> {
     // Marqué chargé SEULEMENT après un register() réussi : tant que ce n'est pas
     // fait, un appel concurrent attend `inflight` plutôt que de l'ignorer.
     loaded.add(m.module_id)
+    // Le thème actif peut cibler ce module (CSS/JS) : appliquer ses overrides
+    // maintenant que le bundle est enregistré (best-effort, jamais bloquant).
+    try {
+      useThemeStore.getState().applyThemeModuleAssets(m.module_id)
+    } catch (e) {
+      console.error(`[theme] application des overrides du module ${m.module_id}`, e)
+    }
     return true
   } catch (err) {
     // Isolation : l'échec d'un module ne casse jamais le shell ni les autres.

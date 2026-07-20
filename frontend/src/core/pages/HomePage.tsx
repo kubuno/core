@@ -8,6 +8,8 @@ import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { WidgetRegistry } from '../widgets/WidgetRegistry'
 import GridDashboard from '../widgets/GridDashboard'
+import { useFavoriteApps } from '../hooks/useFavoriteApps'
+import { appNavMemory } from '../store/appNavMemory'
 import { Button } from '@ui'
 
 const DATE_LOCALES: Record<string, Locale> = {
@@ -22,6 +24,7 @@ export default function HomePage() {
   const allWidgets        = WidgetRegistry.getAll().filter(w => w.moduleId === 'core' || activeIds.has(w.moduleId))
 
   const [editMode, setEditMode] = useState(false)
+  const favApps = useFavoriteApps()
 
   const name = user?.display_name?.split(' ')[0] ?? user?.username ?? t('home.you')
 
@@ -49,13 +52,34 @@ export default function HomePage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="shrink-0">
           <h1 className="text-xl font-medium text-text-primary">{t(greetingKey, { name })}</h1>
           <p className="text-sm text-text-tertiary mt-0.5 capitalize">
             {format(new Date(), "EEEE d MMMM yyyy", { locale: dateLocale })}
           </p>
         </div>
+
+        {/* Favourite apps — quick launch (from the waffle launcher favourites) */}
+        {!editMode && favApps.length > 0 && (
+          <div className="flex-1 min-w-0 flex items-center justify-center gap-1.5 overflow-x-auto no-scrollbar">
+            {favApps.map(app => (
+              <Link
+                key={app.id}
+                to={appNavMemory.get(app.id) ?? app.path}
+                title={app.label}
+                aria-label={app.label}
+                className="group flex flex-col items-center justify-center w-20 shrink-0 gap-1 py-1.5 rounded-xl
+                           hover:bg-surface-2 transition-colors"
+              >
+                <app.Icon size={48} className="text-text-secondary group-hover:text-primary transition-colors" />
+                <span className="text-[10px] leading-tight text-text-tertiary group-hover:text-text-secondary truncate max-w-full">
+                  {app.label}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
 
         {editMode ? (
           <Button size="sm" icon={<Check size={14} />} onClick={() => setEditMode(false)}>

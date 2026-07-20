@@ -17,6 +17,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 
+/// Résout le dossier on-disk d'un module en privilégiant le store marketplace
+/// (`modules_install_dir`) sur les paquets système (`modules_dir`).
+pub fn module_disk_dir(settings: &crate::config::Settings, id: &str) -> std::path::PathBuf {
+    let store = std::path::Path::new(&settings.server.modules_install_dir).join(id);
+    if store.is_dir() {
+        store
+    } else {
+        std::path::Path::new(&settings.server.modules_dir).join(id)
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/modules",
@@ -26,7 +37,6 @@ use std::collections::HashMap;
 pub async fn list_modules(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let modules_dir = state.settings.server.modules_dir.clone();
     let registry = state.modules.read().await;
     let modules: Vec<_> = registry
         .all()
@@ -35,8 +45,7 @@ pub async fn list_modules(
             // Bundle frontend du module (chargé à l'exécution par le host). Présent
             // seulement si le module a déposé son UI buildée dans <dir>/<id>/frontend/.
             // Les modules sans UI (ou non migrés vers le plugin runtime) renvoient null.
-            let entry = std::path::Path::new(&modules_dir)
-                .join(&i.module_id)
+            let entry = module_disk_dir(&state.settings, &i.module_id)
                 .join("frontend")
                 .join("entry.js");
             let frontend_entry = entry
@@ -79,8 +88,7 @@ pub async fn serve_module_asset(
         return Err(AppError::NotFound("asset".into()));
     }
 
-    let full = std::path::Path::new(&state.settings.server.modules_dir)
-        .join(&module_id)
+    let full = module_disk_dir(&state.settings, &module_id)
         .join("frontend")
         .join(&asset_path);
 
@@ -335,6 +343,13 @@ pub async fn register_module(
         module_id: dto.module_id.clone(),
         base_url:  dto.base_url,
     });
+
+    // When the drive comes online, (re)build the read-only theme mirror it hosts
+    // under System/Themes. Best-effort, off the request path.
+    if dto.module_id == "drive" {
+        let st = state.clone();
+        tokio::spawn(async move { crate::handlers::theme_mirror::sync(&st).await });
+    }
 
     Ok((StatusCode::CREATED, Json(json!({ "message": "Module enregistré" }))))
 }

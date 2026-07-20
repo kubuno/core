@@ -8,13 +8,51 @@
  * module utilities winning over the preflight reset. Order is locked here so
  * the host establishes it before any module CSS loads at runtime. */
 @layer components, properties, theme, base, kubuno-module, utilities;
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&family=DM+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 @import "./theme.css";
+
+/* Global weight bump: every 500-weight ("font-medium") text renders at 600.
+ * Tailwind emits `.font-medium { font-weight: var(--font-weight-medium) }` and
+ * each bundle (host + every runtime-loaded module) re-declares
+ * `--font-weight-medium: 500` at :root. Since the utility resolves the variable
+ * at the use-site, this single `!important` override wins over ALL of those
+ * re-declarations regardless of load order — no per-module rebuild needed.
+ * `font-semibold` (600) and `font-bold` (700) are untouched. */
+:root {
+  --font-weight-medium: 600 !important;
+}
+
+/* Body font, same mechanism as the weight override above: each module bundle
+ * re-declares `--font-family-sans` at :root and loads AFTER the host, so only
+ * `!important` reaches all 18 of them without a rebuild.
+ * TRIAL: Roboto Flex, a variable face carrying a `wdth` axis — unlike DM Sans,
+ * it can actually be condensed via `font-stretch` (not applied yet). */
+:root {
+  --font-family-sans: "Roboto Flex", "DM Sans", Inter, system-ui, sans-serif !important;
+}
+
+/* Corner-radius scale, same mechanism as the weight override above: every
+ * module bundle ships its own copy of theme.css and re-declares these at :root,
+ * and module CSS is loaded AFTER the host's — so a plain declaration here would
+ * lose. `!important` wins whatever the load order, without rebuilding the 18
+ * modules. Values aligned on the design reference (cards at 8px, not 16px). */
+:root {
+  --radius-sm:  4px !important;
+  --radius:     4px !important;
+  --radius-md:  4px !important;
+  --radius-lg:  6px !important;
+  --radius-xl:  8px !important;
+  --radius-2xl: 8px !important;
+}
 
 * {
   box-sizing: border-box;
 }
+
+/* Horizontal scroll without a visible scrollbar (e.g. home favourite apps bar). */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 button, input, textarea, select {
   font-family: var(--font-family-sans);
@@ -174,3 +212,8 @@ html, body {
 
   @page { margin: 1.5cm; }
 }
+
+/* Bottom sheet (@ui MobileSheet) — slide-up + scrim fade. Declared here rather
+   than inline so both the host and runtime-loaded modules share one definition. */
+@keyframes kb-sheet-up   { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes kb-sheet-fade { from { opacity: 0; }                 to { opacity: 1; } }

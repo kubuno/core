@@ -315,6 +315,96 @@ fn refresh_cookie(headers: &HeaderMap) -> Option<String> {
         .find_map(|part| part.trim().strip_prefix("refresh_token=").map(str::to_string))
 }
 
+/// Rotation grace: heals a native client that lost the successor token (killed
+/// between the server rotation and its own persistence). Eligible only when the
+/// successor has NEVER been used — it then gets superseded by a fresh token in
+/// the same family. Returns None when the presentation must be treated as reuse.
+async fn try_rotation_grace(
+    state: &AppState,
+    rt: &crate::models::session::RefreshToken,
+) -> Result<Option<Response>, AppError> {
+    let rotated_to: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT rotated_to FROM core.refresh_tokens WHERE id = $1")
+            .bind(rt.id)
+            .fetch_one(&state.db)
+            .await?;
+    let Some(succ_id) = rotated_to else { return Ok(None) };
+
+    // Successor must be alive and virgin (last_used_at untouched since creation):
+    // if it ever served, the old-token presentation is genuine reuse.
+    let succ: Option<(chrono::DateTime<Utc>,)> = sqlx::query_as(
+        "SELECT expires_at FROM core.refresh_tokens
+         WHERE id = $1 AND revoked_at IS NULL AND last_used_at = created_at",
+    )
+    .bind(succ_id)
+    .fetch_optional(&state.db)
+    .await?;
+    if succ.is_none() {
+        return Ok(None);
+    }
+
+    let user = sqlx::query_as::<_, crate::models::user::User>(
+        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+    )
+    .bind(rt.user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    let ttls = crate::config::runtime::security_ttls(&state.db, &state.settings).await;
+    let (new_raw, new_hash) = JwtService::generate_refresh_token();
+    let new_expires = Utc::now() + ttls.refresh_ttl;
+    let family = rt.family_id.unwrap_or(rt.id);
+
+    let mut tx = state.db.begin().await?;
+    sqlx::query(
+        "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'rotation_grace_superseded' WHERE id = $1",
+    )
+    .bind(succ_id)
+    .execute(&mut *tx)
+    .await?;
+    let new_id: uuid::Uuid = sqlx::query_scalar(
+        r#"INSERT INTO core.refresh_tokens
+           (user_id, token_hash, device_name, device_type, ip_address, user_agent,
+            expires_at, family_id, client_type)
+           VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9)
+           RETURNING id"#,
+    )
+    .bind(rt.user_id)
+    .bind(&new_hash)
+    .bind(rt.device_name.as_deref())
+    .bind(rt.device_type.as_deref())
+    .bind(rt.ip_address.as_deref())
+    .bind(rt.user_agent.as_deref())
+    .bind(new_expires)
+    .bind(family)
+    .bind(rt.client_type.as_deref().unwrap_or("native"))
+    .fetch_one(&mut *tx)
+    .await?;
+    // Repoint (revoked_at unchanged → the grace window stays anchored at the
+    // ORIGINAL rotation, a crash-loop cannot extend it indefinitely).
+    sqlx::query("UPDATE core.refresh_tokens SET rotated_to = $2 WHERE id = $1")
+        .bind(rt.id)
+        .bind(new_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+
+    tracing::info!(user_id = %rt.user_id, family_id = %family, "Grâce de rotation servie (successeur vierge remplacé)");
+
+    let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);
+    let access_token = jwt.generate_access_token(&user)?;
+    Ok(Some(
+        Json(NativeTokenResponse {
+            access_token,
+            refresh_token: new_raw,
+            refresh_expires_at: new_expires,
+            user,
+        })
+        .into_response(),
+    ))
+}
+
 #[utoipa::path(
     post,
     path = "/api/v1/auth/refresh",
@@ -363,8 +453,30 @@ pub async fn refresh(
     // Détection de réutilisation : un token déjà « rotated » qu'on représente
     // ⇒ on révoque toute la famille de l'appareil (le voleur ET l'utilisateur
     // légitime devront se reconnecter).
+    //
+    // GRÂCE DE ROTATION : un client natif tué/crashé ENTRE la rotation serveur et
+    // sa persistance du nouveau token rejoue l'ancien au redémarrage — ce n'est
+    // pas un vol. Si le successeur n'a JAMAIS servi, `try_rotation_grace` le
+    // remplace par un token frais au lieu de révoquer la famille ; un successeur
+    // déjà utilisé y renvoie None → on retombe sur la révocation ci-dessous.
+    //
+    // FENÊTRE : le successeur VIERGE prouve à lui seul le cas crash (un voleur
+    // ayant intercepté la rotation présenterait le successeur, pas l'ancien
+    // token), donc la fenêtre est large (24 h) — une boucle de dev qui tue/relance
+    // l'app bien au-delà de 60 s reste soignée. Elle reste ancrée sur le
+    // `revoked_at` D'ORIGINE (la grâce ne le déplace pas), donc une crash-loop ne
+    // peut pas l'étendre indéfiniment ; et le cas « successeur déjà utilisé »
+    // garde la révocation immédiate (via le None de `try_rotation_grace`).
     if let Some(revoked_at) = rt.revoked_at {
         if rt.revoke_reason.as_deref() == Some("rotated") {
+            const ROTATION_GRACE_SECS: i64 = 24 * 60 * 60;
+            let in_grace = is_native
+                && Utc::now() - revoked_at <= chrono::Duration::seconds(ROTATION_GRACE_SECS);
+            if in_grace {
+                if let Some(healed) = try_rotation_grace(&state, &rt).await? {
+                    return Ok(healed);
+                }
+            }
             let family = rt.family_id.unwrap_or(rt.id);
             sqlx::query(
                 "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'reuse_detected'
@@ -375,7 +487,6 @@ pub async fn refresh(
             .await?;
             tracing::warn!(user_id = %rt.user_id, family_id = %family, "Réutilisation de refresh token détectée — famille révoquée");
         }
-        let _ = revoked_at;
         return Err(AppError::Unauthorized);
     }
 
@@ -417,15 +528,12 @@ pub async fn refresh(
         let family = rt.family_id.unwrap_or(rt.id);
 
         let mut tx = state.db.begin().await?;
-        sqlx::query("UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'rotated' WHERE id = $1")
-            .bind(rt.id)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query(
+        let new_id: uuid::Uuid = sqlx::query_scalar(
             r#"INSERT INTO core.refresh_tokens
                (user_id, token_hash, device_name, device_type, ip_address, user_agent,
                 expires_at, family_id, client_type)
-               VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9)"#,
+               VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9)
+               RETURNING id"#,
         )
         .bind(rt.user_id)
         .bind(&new_hash)
@@ -436,8 +544,14 @@ pub async fn refresh(
         .bind(new_expires)
         .bind(family)
         .bind(rt.client_type.as_deref().unwrap_or("native"))
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
+        // rotated_to feeds the rotation grace (crash between rotation and persistence).
+        sqlx::query("UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'rotated', rotated_to = $2 WHERE id = $1")
+            .bind(rt.id)
+            .bind(new_id)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
 
         return Ok(Json(NativeTokenResponse {

@@ -6,6 +6,7 @@ import { useModulesStore } from '../store/modulesStore'
 import { Package, Settings, AlertCircle, X, ArrowLeft } from 'lucide-react'
 import { Toggle, Radio } from '@ui'
 import ModuleAdminSettings from './ModuleAdminSettings'
+import MarketplacePanel from './MarketplacePanel'
 
 interface Module {
   id: string
@@ -39,6 +40,7 @@ export default function ModulesPanel() {
   // When set, the panel shows that module's instance settings IN-PLACE (we stay in
   // the admin console — admins are never sent into the module's own shell).
   const [settingsFor, setSettingsFor] = useState<Module | null>(null)
+  const [showMarketplace, setShowMarketplace] = useState(false)
 
   const { data } = useQuery({
     queryKey: ['admin-modules'],
@@ -101,6 +103,10 @@ export default function ModulesPanel() {
       useModulesStore.getState().fetchModules()
     },
   })
+
+  if (showMarketplace) {
+    return <MarketplacePanel onBack={() => setShowMarketplace(false)} />
+  }
 
   if (settingsFor) {
     return (
@@ -195,13 +201,16 @@ export default function ModulesPanel() {
           </div>
         ))}
 
-        {/* Placeholder marketplace */}
-        <div className="bg-surface-1 rounded-xl border border-dashed border-border p-4
-                        flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
-          <Package size={24} className="text-text-tertiary" />
-          <p className="text-sm text-text-secondary font-medium">{t('admin.m_marketplace')}</p>
-          <p className="text-xs text-text-tertiary">{t('admin.m_soon')}</p>
-        </div>
+        {/* Carte marketplace : ouvre le catalogue distant. */}
+        <button
+          onClick={() => setShowMarketplace(true)}
+          className="bg-surface-1 rounded-xl border border-dashed border-border p-4
+                     flex flex-col items-center justify-center text-center gap-2 min-h-[120px]
+                     hover:border-primary hover:bg-primary-light/40 transition-colors">
+          <Package size={24} className="text-primary" />
+          <p className="text-sm text-text-primary font-medium">{t('admin.m_marketplace', { defaultValue: 'Marketplace' })}</p>
+          <p className="text-xs text-text-tertiary">{t('admin.mk_browse', { defaultValue: 'Parcourir & installer des modules' })}</p>
+        </button>
       </div>
     </div>
   )

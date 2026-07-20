@@ -19,8 +19,7 @@ import type { ApiToken } from '../types'
 import DashboardWidget from './DashboardWidget'
 import { WidgetRegistry } from './WidgetRegistry'
 import { useWidgetConfig } from './WidgetConfigContext'
-import FlipClock from './FlipClock'
-import AnalogClock from './AnalogClock'
+import { ClockCanvas, FlipClockCanvas, CLOCK_FACES, type FaceExtras } from './clockFaces'
 
 function fmtBytes(n: number): string {
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
@@ -193,37 +192,40 @@ function ClockWidget() {
   const mm = String(now.getMinutes()).padStart(2, '0')
   const ss = String(now.getSeconds()).padStart(2, '0')
   const ampm = cfg.format24 ? undefined : (h24 < 12 ? 'AM' : 'PM')
-
-  // Espace disponible pour la face (cadre moins la date + paddings).
-  const availW = Math.max(40, box.w - 20)
-  const availH = Math.max(40, box.h - 34)
   const time = `${hh}:${mm}${cfg.seconds ? ':' + ss : ''}${ampm ? ' ' + ampm : ''}`
 
-  let face: React.ReactNode
-  if (cfg.style === 'flip') {
-    const groups = cfg.seconds ? 3 : 2
-    const unitsW = groups * 1.5 + (groups - 1) * 0.45 + (ampm ? 1 : 0)  // largeur en em
-    const fs = Math.max(14, Math.min(availW / unitsW, availH / 2.2))
-    face = <FlipClock hours={hh} minutes={mm} seconds={ss} showSeconds={cfg.seconds} ampm={ampm} fontSize={fs} />
-  } else if (cfg.style === 'analog') {
-    const sz = Math.max(48, Math.min(availW, availH))
-    face = <AnalogClock date={now} showSeconds={cfg.seconds} size={sz} />
-  } else {
-    const fs = Math.max(18, Math.min(availW / (time.length * 0.6), availH * 0.9))
-    face = (
-      <span
-        className="font-light text-text-primary tabular-nums tracking-tight leading-none"
-        style={{ fontSize: fs }}
-      >
-        {time}
-      </span>
-    )
+  const isFlip = cfg.style === 'flip'
+  const face = CLOCK_FACES[cfg.style] ?? CLOCK_FACES.digital
+  const bleed = face.chrome === 'bleed'
+
+  // Card-chrome faces leave room for the date label below; bleed faces are square
+  // and fill the whole frame (they embed their own date/branding).
+  const canvasW = bleed ? Math.max(60, Math.min(box.w - 16, box.h - 16)) : Math.max(40, box.w - 20)
+  const canvasH = bleed ? canvasW : Math.max(40, box.h - 34)
+
+  const extras: FaceExtras = {
+    time, hh, mm, ss, ampm, showSeconds: cfg.seconds,
+    digital: `${hh}:${mm}`,
+    day: String(now.getDate()).padStart(2, '0'),
+    year: String(now.getFullYear()),
+    month: now.toLocaleDateString('en', { month: 'short' }).toUpperCase(),
+    weekday: now.toLocaleDateString('en', { weekday: 'short' }).toUpperCase(),
   }
 
   return (
-    <div ref={bodyRef} className="bg-white rounded-xl border border-border overflow-hidden h-full flex flex-col items-center justify-center p-3 gap-1.5">
-      <div className="flex-1 min-h-0 w-full flex items-center justify-center">{face}</div>
-      <span className="text-xs text-text-secondary capitalize flex-shrink-0">{date}</span>
+    <div
+      ref={bodyRef}
+      className={`rounded-2xl overflow-hidden h-full flex flex-col items-center justify-center p-3 gap-1.5 ${
+        bleed ? '' : 'bg-[var(--color-surface-card)] border-[3px] border-[var(--color-surface-card-border)]'
+      }`}
+      style={bleed ? { background: face.bg } : undefined}
+    >
+      <div className="flex-1 min-h-0 w-full flex items-center justify-center">
+        {box.w > 0 && (isFlip
+          ? <FlipClockCanvas width={canvasW} height={canvasH} hh={hh} mm={mm} ss={ss} showSeconds={cfg.seconds} ampm={ampm} />
+          : <ClockCanvas draw={face.draw} width={canvasW} height={canvasH} date={now} extras={extras} />)}
+      </div>
+      {!bleed && <span className="text-xs text-text-secondary capitalize flex-shrink-0">{date}</span>}
     </div>
   )
 }
@@ -273,22 +275,41 @@ function TokensWidget() {
 }
 
 // ── Enregistrement ──────────────────────────────────────────────────────────
-WidgetRegistry.register({ id: 'core-profile',  moduleId: 'core', Component: ProfileWidget,  size: 'small',  order: 1 })
-WidgetRegistry.register({ id: 'core-quota',    moduleId: 'core', Component: QuotaWidget,    size: 'small',  order: 2 })
+WidgetRegistry.register({
+  id: 'core-profile', moduleId: 'core', Component: ProfileWidget, size: 'small', order: 1,
+  title: 'widgets.name_profile', description: 'widgets.desc_profile', icon: 'UserCircle', accent: '#1a73e8',
+})
+WidgetRegistry.register({
+  id: 'core-quota', moduleId: 'core', Component: QuotaWidget, size: 'small', order: 2,
+  title: 'widgets.name_quota', description: 'widgets.desc_quota', icon: 'HardDrive', accent: '#1e8e3e',
+})
 WidgetRegistry.register({
   id: 'core-clock', moduleId: 'core', Component: ClockWidget, size: 'small', order: 3,
+  title: 'widgets.name_clock', description: 'widgets.desc_clock', icon: 'Clock', accent: '#f9ab00',
   settings: [
     {
       key: 'style', type: 'select', label: 'widgets.set_clock_style', default: 'digital',
       options: [
-        { value: 'digital', label: 'widgets.set_clock_digital' },
-        { value: 'flip',    label: 'widgets.set_clock_flip' },
-        { value: 'analog',  label: 'widgets.set_clock_analog' },
+        { value: 'digital',            label: 'widgets.set_clock_digital' },
+        { value: 'flip',               label: 'widgets.set_clock_flip' },
+        { value: 'analog',             label: 'widgets.set_clock_analog' },
+        { value: 'style7',             label: 'widgets.set_clock_style7' },
+        { value: 'roman_blue_gold',    label: 'widgets.set_clock_roman' },
+        { value: 'gorgy',              label: 'widgets.set_clock_gorgy' },
+        { value: 'style_seven_square', label: 'widgets.set_clock_seven_square' },
+        { value: 'sapling',            label: 'widgets.set_clock_sapling' },
+        { value: 'blue_round',         label: 'widgets.set_clock_blue_round' },
       ],
     },
     { key: 'seconds',  type: 'toggle', label: 'widgets.set_clock_seconds',  default: false },
     { key: 'format24', type: 'toggle', label: 'widgets.set_clock_24h',      default: true },
   ],
 })
-WidgetRegistry.register({ id: 'core-tokens',   moduleId: 'core', Component: TokensWidget,   size: 'small',  order: 4 })
-WidgetRegistry.register({ id: 'core-activity', moduleId: 'core', Component: ActivityWidget, size: 'medium', order: 5 })
+WidgetRegistry.register({
+  id: 'core-tokens', moduleId: 'core', Component: TokensWidget, size: 'small', order: 4,
+  title: 'widgets.name_tokens', description: 'widgets.desc_tokens', icon: 'KeyRound', accent: '#8430ce',
+})
+WidgetRegistry.register({
+  id: 'core-activity', moduleId: 'core', Component: ActivityWidget, size: 'medium', order: 5,
+  title: 'widgets.name_activity', description: 'widgets.desc_activity', icon: 'Activity', accent: '#d93025',
+})

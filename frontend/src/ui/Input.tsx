@@ -2,7 +2,7 @@ import React from 'react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: React.ReactNode
   error?: string
   hint?: string

@@ -1,0 +1,42 @@
+{
+  "id": "kubuno-reference",
+  "name": "Kubuno (référence)",
+  "color_scheme": "light",
+  "version": "1.0.0",
+  "theme_api_version": 1,
+  "vars": {
+    "--color-primary": "#1a73e8",
+    "--color-primary-hover": "#1557b0",
+    "--color-primary-light": "#d3e3fd",
+    "--color-white": "#ffffff",
+    "--color-surface-0": "#ffffff",
+    "--color-surface-1": "#f8f9fa",
+    "--color-surface-2": "#f1f3f4",
+    "--color-surface-3": "#e8eaed",
+    "--color-search-bg": "#eaf1fb",
+    "--color-text-primary": "#202124",
+    "--color-text-secondary": "#5f6368",
+    "--color-text-tertiary": "#80868b",
+    "--color-text-nav-active": "#041e49",
+    "--color-border": "#e0e0e0",
+    "--color-border-strong": "#bdc1c6",
+    "--color-danger": "#d93025",
+    "--color-danger-light": "#fce8e6",
+    "--color-success": "#1e8e3e",
+    "--color-success-light": "#e6f4ea",
+    "--color-warning": "#f9ab00",
+    "--color-warning-light": "#fef7e0",
+    "--body-bg": "#f1f4f8",
+    "--scrollbar-thumb": "#dadce0",
+    "--scrollbar-thumb-hover": "#bdc1c6"
+  },
+  "global": {
+    "css": "global.css",
+    "script": "global.js"
+  },
+  "modules": {
+    "drive": {
+      "css": "modules/drive.css"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-export declare function SidebarNavItem({ label, icon, active, collapsed, onClick, to, end, badge, }: {
+declare function SidebarNavItemBase({ label, icon, active, collapsed, onClick, to, end, badge, }: {
     label: string;
     icon: ReactNode;
     active?: boolean;
@@ -9,3 +9,5 @@ export declare function SidebarNavItem({ label, icon, active, collapsed, onClick
     end?: boolean;
     badge?: number;
 }): import("react").JSX.Element;
+export declare const SidebarNavItem: typeof SidebarNavItemBase;
+export {};

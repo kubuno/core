@@ -5,7 +5,7 @@ interface CheckboxProps {
     label?: string;
     description?: string;
     variant?: CheckboxVariant;
-    /** Couleur d'accent (coché). Défaut : bleu primaire. Ex. couleur d'un agenda. */
+    /** Accent color (when checked). Defaults to the theme primary. E.g. a calendar color. */
     color?: string;
     disabled?: boolean;
     className?: string;

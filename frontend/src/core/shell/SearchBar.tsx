@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { Search, X, Camera, Mic } from 'lucide-react'
 import { useSearchStore, resolveSearchConfig } from '../store/searchStore'
 import { useVoiceDictation } from './useVoiceDictation'
+import { themed } from '@ui'
 
 function DefaultFilterPanel({ onClose, dark = false }: { onClose: () => void; dark?: boolean }) {
   const { t } = useTranslation()
@@ -32,7 +33,7 @@ function TuneIcon({ size = 20 }: { size?: number }) {
 // `dark` : variante sombre pour les topbars PaintSharp (#111). `compact` : hauteur réduite
 // (h-9 au lieu de h-12) pour tenir dans une topbar de 40px. Défauts = barre claire de
 // l'AppHeader, strictement inchangée.
-export default function SearchBar({ dark = false, compact = false }: { dark?: boolean; compact?: boolean } = {}) {
+function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; compact?: boolean }) {
   const { t } = useTranslation()
   const { configs } = useSearchStore()
   const { pathname } = useLocation()
@@ -225,3 +226,6 @@ export default function SearchBar({ dark = false, compact = false }: { dark?: bo
     </div>
   )
 }
+
+// Themeable core shell object: a theme can override the global search bar.
+export default themed('shell.search', SearchBarBase)

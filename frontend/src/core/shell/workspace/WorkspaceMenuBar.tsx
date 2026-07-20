@@ -131,7 +131,7 @@ export function WorkspaceMenuBar({ menus, dark = false }: { menus: WsMenu[]; dar
               ;(e.currentTarget as HTMLElement).style.background = openMenu === menu.label ? hoverBg : hoverBgSoft
             }}
             onMouseLeave={e => { if (openMenu !== menu.label) (e.currentTarget as HTMLElement).style.background = '' }}
-            style={{ fontSize: 13, padding: '2px 8px', borderRadius: 4, color: dark ? '#cccccc' : '#202124', background: openMenu === menu.label ? hoverBg : undefined, transition: 'background 0.1s' }}
+            style={{ fontSize: 13, padding: '2px 8px', borderRadius: 4, color: dark ? '#cccccc' : 'var(--kbn-ws-text, #202124)', background: openMenu === menu.label ? hoverBg : undefined, transition: 'background 0.1s' }}
           >
             {menu.label}
           </button>

@@ -127,7 +127,17 @@
     "admin_link": "the Administration",
     "customize": "Customize",
     "finish": "Done",
-    "add_widgets": "Add widgets"
+    "add_widgets": "Add widgets",
+    "catalog_title": "Widget library",
+    "add_widgets_desc": "Tap a widget to add it to your dashboard",
+    "all_widgets_shown": "Every available widget is on your dashboard.",
+    "reset": "Reset",
+    "reset_layout": "Reset layout",
+    "reset_title": "Reset the dashboard?",
+    "reset_confirm": "Every widget returns to its default position and size. Your added and removed widgets are restored to the defaults.",
+    "size_small": "Small",
+    "size_medium": "Medium",
+    "size_large": "Large"
   },
   "about": {
     "title": "About Kubuno",
@@ -391,7 +401,18 @@
     "set_clock_digital": "Digital",
     "set_clock_flip": "Flip",
     "set_clock_analog": "Analog",
+    "set_clock_style7": "Style 7 (pink)",
+    "set_clock_roman": "Roman (blue/gold)",
+    "set_clock_gorgy": "Station (yellow)",
+    "set_clock_seven_square": "Style Seven (square)",
+    "set_clock_sapling": "Minimal square",
+    "set_clock_blue_round": "Blue round",
     "set_clock_seconds": "Show seconds",
-    "set_clock_24h": "24-hour format"
+    "set_clock_24h": "24-hour format",
+    "name_profile": "Profile", "desc_profile": "Your avatar, role and storage",
+    "name_quota": "Storage", "desc_quota": "Used vs. available space",
+    "name_clock": "Clock", "desc_clock": "Digital, flip or analog clock",
+    "name_tokens": "API tokens", "desc_tokens": "Active tokens and MCP status",
+    "name_activity": "Recent activity", "desc_activity": "Latest events across your modules"
   }
 }

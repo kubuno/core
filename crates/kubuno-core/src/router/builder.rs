@@ -26,7 +26,10 @@ use crate::{
             oauth_redirect, refresh, register, reset_password, totp_verify,
         },
         health::{health, ready},
-        themes::{create_theme, delete_theme, list_themes},
+        themes::{
+            create_theme, delete_theme, import_theme_zip, list_themes, serve_theme_asset,
+            set_theme_trust,
+        },
         modules::{
             get_module_config, list_modules, module_heartbeat, module_log, publish_event,
             register_module, serve_module_asset, unregister_module,
@@ -37,6 +40,13 @@ use crate::{
             setup_totp, enable_totp, disable_totp,
         },
         api_tokens::{list as list_api_tokens, create as create_api_token, revoke as revoke_api_token},
+        labels::{
+            list as list_labels, create as create_label, update as update_label,
+            delete as delete_label, labels_for_resource, set_resource_labels,
+            browse as browse_labels, list_links as list_label_links, remove_link as remove_label_link,
+            list_shares as list_label_shares, set_shares as set_label_shares,
+            share_targets as label_share_targets,
+        },
         ws::ws_handler,
     },
     modules::proxy::{is_websocket_upgrade, proxy_to_module, proxy_ws_to_module},
@@ -88,9 +98,13 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/docs",         get(crate::openapi::docs))
         // ── Thèmes (public) ──────────────────────────────────────
         .route("/themes", get(list_themes))
+        // Assets d'un thème empaqueté (CSS/JS/polices…), servis en même origine.
+        .route("/themes/:id/*path", get(serve_theme_asset))
         // ── Thèmes admin ─────────────────────────────────────────
-        .route("/admin/themes",      post(create_theme))
-        .route("/admin/themes/:id", delete(delete_theme))
+        .route("/admin/themes",        post(create_theme))
+        .route("/admin/themes/import", post(import_theme_zip))
+        .route("/admin/themes/:id",       delete(delete_theme))
+        .route("/admin/themes/:id/trust", patch(set_theme_trust))
         // ── Modules (public) ─────────────────────────────────────
         .route("/modules", get(list_modules))
         // Paramètres résolus d'un module pour l'utilisateur courant (authentifié).
@@ -113,6 +127,15 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // API tokens personnels
         .route("/me/api-tokens",        get(list_api_tokens).post(create_api_token))
         .route("/me/api-tokens/:id",   delete(revoke_api_token))
+        // Étiquettes transversales (labels reliant des éléments de tous les modules)
+        .route("/labels",               get(list_labels).post(create_label))
+        .route("/labels/browse",        get(browse_labels))
+        .route("/labels/share-targets", get(label_share_targets))
+        .route("/labels/resource",      get(labels_for_resource).put(set_resource_labels))
+        .route("/labels/:id",         patch(update_label).delete(delete_label))
+        .route("/labels/:id/links",     get(list_label_links))
+        .route("/labels/:id/shares",    get(list_label_shares).put(set_label_shares))
+        .route("/labels/:id/links/:link_id", delete(remove_label_link))
         // 2FA / TOTP
         .route("/me/2fa/setup",         post(setup_totp))
         .route("/me/2fa/enable",        post(enable_totp))
@@ -132,6 +155,11 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/admin/oauth-providers/:id", patch(update_oauth_provider).delete(delete_oauth_provider))
         .route("/admin/modules",        get(list_admin_modules))
         .route("/admin/modules/:id",   get(get_admin_module).patch(toggle_module))
+        // ── Marketplace (catalogue distant + installation) ────────
+        .route("/admin/marketplace",            get(crate::handlers::admin::marketplace::list_marketplace))
+        .route("/admin/marketplace/:id/install", post(crate::handlers::admin::marketplace::install_marketplace))
+        .route("/admin/marketplace/:id/status",  get(crate::handlers::admin::marketplace::install_status))
+        .route("/admin/marketplace/:id",         delete(crate::handlers::admin::marketplace::uninstall_marketplace))
         .route("/admin/event-log",      get(list_event_log))
         // ── Groupes d'utilisateurs ────────────────────────────────
         .route("/admin/groups",                          get(list_groups).post(create_group))

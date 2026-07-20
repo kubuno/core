@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, LogOut, UserPlus, X, ExternalLink, ChevronDown, ChevronUp, Shield } from 'lucide-react'
+import { Camera, LogOut, UserPlus, X, ExternalLink, ChevronDown, ChevronUp, Shield, Tag } from 'lucide-react'
 import * as Avatar from '@radix-ui/react-avatar'
 import { useAuthStore } from '../store/authStore'
 import { useLinkedAccountsStore } from '../store/linkedAccountsStore'
@@ -253,6 +253,19 @@ export default function UserPanel({ open, onClose, onAddAccount, anchorRef }: Pr
             </span>
             {t('shell.add_account')}
           </button>
+
+          {/* Cross-module labels: manage and browse everything the user tagged. */}
+          <Link
+            to="/labels"
+            onClick={onClose}
+            className="flex items-center gap-3 px-4 py-3 text-sm text-text-primary
+                       hover:bg-surface-1 transition-colors"
+          >
+            <span className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center shrink-0">
+              <Tag size={16} className="text-text-secondary" />
+            </span>
+            {t('user.labels', { defaultValue: 'Étiquettes' })}
+          </Link>
 
           {/* Administration (admin uniquement) — déplacé depuis la barre latérale */}
           {user.role === 'admin' && (

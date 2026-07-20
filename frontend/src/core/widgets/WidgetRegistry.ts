@@ -22,6 +22,15 @@ export interface WidgetDef {
   order?:     number
   /** Optional per-widget settings, surfaced via the gear icon in edit mode. */
   settings?:  WidgetSettingField[]
+  /** i18n key for a human-friendly name shown in the widget catalog. When a
+   *  module widget omits it, the catalog falls back to the module's own name. */
+  title?:       string
+  /** i18n key for a one-line description shown in the catalog. */
+  description?: string
+  /** Lucide icon name for the catalog card (falls back to the module icon). */
+  icon?:        string
+  /** Accent colour (hex) for the catalog card. */
+  accent?:      string
 }
 
 const widgets: WidgetDef[] = []

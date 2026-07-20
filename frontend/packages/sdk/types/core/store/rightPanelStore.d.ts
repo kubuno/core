@@ -16,6 +16,8 @@ interface RightPanelState {
     unregisterEntry: (moduleId: string) => void;
     togglePanel: (moduleId: string) => void;
     closePanel: () => void;
+    /** Set the open panel directly (used to restore persisted state). */
+    setActive: (moduleId: string | null) => void;
 }
 export declare const useRightPanelStore: import("zustand").UseBoundStore<import("zustand").StoreApi<RightPanelState>>;
 export {};

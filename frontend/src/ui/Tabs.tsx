@@ -67,13 +67,15 @@ export function Tabs<T extends string = string>({
   )
 
   return (
-    <div className={containerCls}>
+    <div className={containerCls} role="tablist">
       {tabs.map(t => {
         const Icon = t.icon
         return (
           <button
             key={t.id}
             type="button"
+            role="tab"
+            aria-selected={active(t.id)}
             onClick={() => onChange(t.id)}
             className={btnCls(t.id)}
           >

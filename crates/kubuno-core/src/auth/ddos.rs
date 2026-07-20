@@ -47,9 +47,23 @@ static ENABLED: AtomicBool = AtomicBool::new(true);
 static MAX_CONCURRENT: AtomicUsize = AtomicUsize::new(1024);
 /// Requêtes par IP et par fenêtre (60 s), toutes routes confondues.
 static RATE_PER_WINDOW: AtomicU32 = AtomicU32::new(600);
+/// Budget par UTILISATEUR authentifié (Bearer valide) quand la fenêtre IP est
+/// dépassée. Une IP de foyer/bureau porte N onglets + daemon desktop + mobile :
+/// le périmètre anti-DDoS reste l'anonyme par IP ; un porteur de JWT valide est
+/// un problème de révocation de session, pas de flood.
+static RATE_USER_PER_WINDOW: AtomicU32 = AtomicU32::new(3000);
 
 const MIN_CONCURRENT: usize = 16;
 const MIN_RATE: u32 = 60;
+
+/// Secret JWT pour la vérification paresseuse (signature seule, pas de DB) dans
+/// le chemin throttlé. Posé une fois au bootstrap.
+static JWT_SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// À appeler une fois au démarrage pour activer le budget par utilisateur.
+pub fn set_jwt_secret(secret: &str) {
+    let _ = JWT_SECRET.set(secret.to_string());
+}
 
 const WINDOW_SECS: u64 = 60;
 /// Plafond du nombre d'IP suivies. Empêche un flood d'IP usurpées de faire
@@ -74,7 +88,8 @@ pub async fn reload_from_db(db: &sqlx::PgPool) {
     use sqlx::Row;
     let rows = sqlx::query(
         "SELECT key, value FROM core.settings \
-         WHERE key IN ('security.ddos_enabled', 'security.ddos_rate_per_min', 'security.ddos_max_concurrent')",
+         WHERE key IN ('security.ddos_enabled', 'security.ddos_rate_per_min', 'security.ddos_max_concurrent', \
+                       'security.rate_user_per_min')",
     )
     .fetch_all(db)
     .await;
@@ -106,6 +121,11 @@ pub async fn reload_from_db(db: &sqlx::PgPool) {
                     MAX_CONCURRENT.store((n as usize).max(MIN_CONCURRENT), Ordering::Relaxed);
                 }
             }
+            "security.rate_user_per_min" => {
+                if let Some(n) = val.as_u64() {
+                    RATE_USER_PER_WINDOW.store((n as u32).max(MIN_RATE), Ordering::Relaxed);
+                }
+            }
             _ => {}
         }
     }
@@ -113,6 +133,7 @@ pub async fn reload_from_db(db: &sqlx::PgPool) {
     tracing::info!(
         enabled = ENABLED.load(Ordering::Relaxed),
         rate_per_min = RATE_PER_WINDOW.load(Ordering::Relaxed),
+        rate_user_per_min = RATE_USER_PER_WINDOW.load(Ordering::Relaxed),
         max_concurrent = MAX_CONCURRENT.load(Ordering::Relaxed),
         "réglages anti-DDoS appliqués",
     );
@@ -184,6 +205,47 @@ fn client_ip(req: &Request<Body>) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// Incrémente la fenêtre `key` et dit si `limit` est dépassée.
+fn window_exceeded(key: String, limit: u32) -> bool {
+    let mut map = GLOBAL_LIMITER.lock().unwrap_or_else(|e| e.into_inner());
+    let now = Instant::now();
+
+    // Nettoyage opportuniste : si la table devient trop grosse, on purge les
+    // fenêtres expirées (et on garde le service fonctionnel même sous flood).
+    if map.len() > MAX_TRACKED_IPS {
+        map.retain(|_, w| now.duration_since(w.started_at).as_secs() < WINDOW_SECS);
+    }
+
+    let entry = map.entry(key).or_insert(Window { count: 0, started_at: now });
+    if now.duration_since(entry.started_at).as_secs() >= WINDOW_SECS {
+        *entry = Window { count: 1, started_at: now };
+        false
+    } else {
+        entry.count += 1;
+        entry.count > limit
+    }
+}
+
+/// Vérification PARESSEUSE du Bearer (signature HMAC + exp, aucune DB) — appelée
+/// seulement quand la fenêtre IP est dépassée, donc le chemin nominal ne paie rien.
+fn bearer_sub(req: &Request<Body>) -> Option<String> {
+    let secret = JWT_SECRET.get()?;
+    let token = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())?
+        .strip_prefix("Bearer ")?;
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+    validation.validate_exp = true;
+    jsonwebtoken::decode::<crate::auth::jwt::AccessClaims>(
+        token,
+        &jsonwebtoken::DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .ok()
+    .map(|d| d.claims.sub.to_string())
+}
+
 pub async fn global_rate_limit(req: Request<Body>, next: Next) -> Response {
     if !ENABLED.load(Ordering::Relaxed) {
         return next.run(req).await;
@@ -197,27 +259,16 @@ pub async fn global_rate_limit(req: Request<Body>, next: Next) -> Response {
     let ip = client_ip(&req);
     let limit = RATE_PER_WINDOW.load(Ordering::Relaxed);
 
-    let exceeded = {
-        let mut map = GLOBAL_LIMITER.lock().unwrap_or_else(|e| e.into_inner());
-        let now = Instant::now();
-
-        // Nettoyage opportuniste : si la table devient trop grosse, on purge les
-        // fenêtres expirées (et on garde le service fonctionnel même sous flood).
-        if map.len() > MAX_TRACKED_IPS {
-            map.retain(|_, w| now.duration_since(w.started_at).as_secs() < WINDOW_SECS);
+    if window_exceeded(ip, limit) {
+        // Fenêtre IP saturée : un utilisateur AUTHENTIFIÉ bascule sur son budget
+        // propre (clé `user:<uuid>`) — une IP de foyer ne s'auto-étrangle plus,
+        // et un flood anonyme reste bloqué au périmètre IP.
+        if let Some(sub) = bearer_sub(&req) {
+            let user_limit = RATE_USER_PER_WINDOW.load(Ordering::Relaxed);
+            if !window_exceeded(format!("user:{sub}"), user_limit) {
+                return next.run(req).await;
+            }
         }
-
-        let entry = map.entry(ip).or_insert(Window { count: 0, started_at: now });
-        if now.duration_since(entry.started_at).as_secs() >= WINDOW_SECS {
-            *entry = Window { count: 1, started_at: now };
-            false
-        } else {
-            entry.count += 1;
-            entry.count > limit
-        }
-    };
-
-    if exceeded {
         return too_busy("RATE_LIMITED", "Trop de requêtes, ralentissez");
     }
     next.run(req).await

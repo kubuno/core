@@ -1,13 +1,14 @@
-import * as Tooltip from '@radix-ui/react-tooltip'
 import { Link, useResolvedPath, useMatch } from 'react-router-dom'
 import type { ReactNode } from 'react'
+import { themed, Tooltip } from '@ui'
 
-// Élément de navigation de barre latérale partagé par les modules.
-// Géré en mode REPLIÉ (icône seule + tooltip) ET DÉPLIÉ (icône + libellé), pour
-// que la nav du module reste la même dans les deux états. Accepte soit `onClick`
-// (bouton), soit `to` (NavLink).
-export function SidebarNavItem({
-  label, icon, active, collapsed = false, onClick, to, end, badge,
+// Sidebar navigation item shared by every module.
+// Handles both the COLLAPSED state (icon only + tooltip) and the EXPANDED one
+// (icon + label), so a module's nav stays identical in both. Always rendered as
+// an <a> tag carrying a real href — `to` → <Link> (href = the route),
+// `onClick` → anchor-button with href '#'. Never a <button>.
+function SidebarNavItemBase({
+  label, icon, active, collapsed = false, onClick, to, end, badge, href = '#',
 }: {
   label: string
   icon: ReactNode
@@ -17,6 +18,8 @@ export function SidebarNavItem({
   to?: string
   end?: boolean
   badge?: number
+  /** href of the action variant (no `to`). Defaults to '#' so it is a real link. */
+  href?: string
 }) {
   // On calcule l'état actif NOUS-MÊMES (au lieu de la render-prop `className` de
   // NavLink). Raison : en mode replié, le nœud est enveloppé dans
@@ -33,13 +36,34 @@ export function SidebarNavItem({
   // replié ou déplié.
   // `text-left` : les variantes <button> héritent du `text-align: center` par défaut
   // du navigateur, qui se propageait au libellé → texte centré. On le force à gauche.
-  const base = `relative flex items-center h-10 rounded-full text-sm text-left transition-colors ${
+  // `cursor-pointer` + `focus-visible` ring: an anchor without href gets neither
+  // for free, and the item must feel clickable on hover and reachable at the
+  // keyboard exactly like a link.
+  const base = `relative flex items-center h-10 rounded-full text-sm text-left transition-colors
+    cursor-pointer no-underline outline-none focus-visible:ring-2 focus-visible:ring-primary ${
     collapsed ? 'justify-center w-10 mx-auto' : 'gap-3 w-full px-3'
   }`
   const cls = (a: boolean) =>
-    `${base} ${a
-      ? 'bg-primary-light text-primary font-medium'
-      : 'text-text-secondary hover:bg-surface-2'}`
+    `${base} ${a ? 'text-primary font-medium' : 'text-text-secondary'}`
+
+  // Hover/active background is applied as an INLINE style, not through a
+  // `hover:bg-*` utility. Module bundles ship their own Tailwind build into the
+  // `kubuno-module` cascade layer, which races the host's `utilities` layer, and
+  // the hover utility ended up never painting inside module sidebars. An inline
+  // style is immune to that race. Same approach as LeftRail, which already
+  // drives its hover from JS for this exact reason.
+  const ACTIVE_BG = 'var(--color-primary-light, #d3e3fd)'
+  const HOVER_BG  = 'color-mix(in srgb, var(--color-primary) 12%, white)'
+  const bgFor = (a: boolean, hovered: boolean) =>
+    a ? ACTIVE_BG : hovered ? HOVER_BG : 'transparent'
+  const hoverHandlers = (a: boolean) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+      e.currentTarget.style.backgroundColor = bgFor(a, true)
+    },
+    onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+      e.currentTarget.style.backgroundColor = bgFor(a, false)
+    },
+  })
 
   const content = (
     <>
@@ -56,33 +80,38 @@ export function SidebarNavItem({
     </>
   )
 
+  // Both variants render an <a> anchor (never a <button>) and both carry a real
+  // href: `to` → React Router <Link> (href = the route); `onClick` → an anchor
+  // acting as a button, href '#' by default (in-page action: category filter,
+  // section toggle…) so the whole sidebar is anchors + spans.
   const node = to != null ? (
-    <Link to={to} aria-label={label} className={cls(isActive)}>
+    <Link to={to} aria-label={label} aria-current={isActive ? 'page' : undefined}
+      onClick={onClick} className={cls(isActive)}
+      style={{ backgroundColor: bgFor(isActive, false) }} {...hoverHandlers(isActive)}>
       {content}
     </Link>
   ) : (
-    <button onClick={onClick} aria-label={label} className={cls(isActive)}>
+    <a
+      href={href}
+      role="button"
+      aria-label={label}
+      // '#' anchors must not push a hash onto the URL nor jump to the top.
+      onClick={e => { if (href === '#') e.preventDefault(); onClick?.() }}
+      // Enter is handled natively by the anchor; only Space needs wiring.
+      onKeyDown={e => { if (e.key === ' ') { e.preventDefault(); onClick?.() } }}
+      className={`${cls(isActive)} cursor-pointer`}
+      style={{ backgroundColor: bgFor(isActive, false) }}
+      {...hoverHandlers(isActive)}
+    >
       {content}
-    </button>
+    </a>
   )
 
   if (!collapsed) return node
 
-  // Replié : tooltip au survol pour retrouver le libellé. Le Provider est requis
-  // par Radix (sinon Tooltip.Root lève et fait planter le rendu).
-  return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>{node}</Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content side="right" sideOffset={8}
-            className="px-2.5 py-1.5 text-xs rounded-md shadow-md select-none z-[60]"
-            style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}>
-            {label}
-            <Tooltip.Arrow style={{ fill: 'var(--color-surface-3)' }} />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
-  )
+  // Collapsed: the label is only reachable through the tooltip.
+  return <Tooltip label={label} side="right">{node}</Tooltip>
 }
+
+// Themeable core shell object: a theme can override the sidebar nav item.
+export const SidebarNavItem = themed('shell.nav-item', SidebarNavItemBase)

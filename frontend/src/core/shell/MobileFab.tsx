@@ -2,6 +2,7 @@ import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { useIsMobile, useIsLandscape } from '@ui'
 import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
 import { Slot, SlotRegistry } from '../slots/SlotRegistry'
 
@@ -16,6 +17,9 @@ export default function MobileFab() {
   const { t: tc } = useTranslation()
   const { pathname } = useLocation()
   const { configs } = useSidebarStore()
+  // Landscape phones have no bottom bar (the nav is a left rail), so the FAB
+  // drops to a normal bottom margin instead of clearing the 56px bar.
+  const landscape = useIsMobile() && useIsLandscape()
 
   const activeConfig = resolveActiveSidebarConfig(configs, pathname)
   // Module gère son propre chrome (éditeurs office/paintsharp) → pas de FAB.
@@ -35,7 +39,7 @@ export default function MobileFab() {
     <div
       data-app-chrome
       className="lg:hidden fixed right-4 z-40"
-      style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}
+      style={{ bottom: landscape ? 'calc(16px + env(safe-area-inset-bottom))' : 'calc(72px + env(safe-area-inset-bottom))' }}
     >
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>

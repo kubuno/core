@@ -7,6 +7,10 @@ export interface LeftRailEntry {
   label:    string
   isActive?: boolean
   onClick:  () => void
+  // Rail entries render as anchors, so a module that navigates should also give
+  // the target path here: the link then behaves like one (status bar, ctrl/middle
+  // click, open in a new tab). Omitted ⇒ '#', for in-place actions only.
+  href?:    string
 }
 
 interface LeftRailState {
