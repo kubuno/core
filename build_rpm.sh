@@ -130,6 +130,7 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/bin \
          %{buildroot}/usr/share/kubuno/frontend \
          %{buildroot}/usr/share/kubuno/migrations \
+         %{buildroot}/usr/share/kubuno/themes \
          %{buildroot}/usr/share/man/man1 \
          %{buildroot}/usr/share/doc/kubuno-core \
          %{buildroot}/etc/kubuno \
@@ -139,6 +140,7 @@ install -m 755 %{_srcdir}/target/release/kubuno       %{buildroot}/usr/bin/kubun
 gzip -c %{_srcdir}/man/kubuno.1 > %{buildroot}/usr/share/man/man1/kubuno.1.gz
 cp -r %{_srcdir}/frontend/dist/. %{buildroot}/usr/share/kubuno/frontend/
 cp %{_srcdir}/migrations/*.sql %{buildroot}/usr/share/kubuno/migrations/
+cp -r %{_srcdir}/themes/. %{buildroot}/usr/share/kubuno/themes/
 install -m 644 %{_srcdir}/config.toml.example %{buildroot}/etc/kubuno/config.toml.example
 install -m 644 %{_sourcedir}/kubuno.service %{buildroot}/usr/lib/systemd/system/kubuno.service
 install -m 644 %{_srcdir}/LICENSE %{buildroot}/usr/share/doc/kubuno-core/LICENSE
@@ -151,6 +153,7 @@ install -m 644 %{_readme} %{buildroot}/usr/share/doc/kubuno-core/README.md
 /usr/bin/kubuno
 /usr/share/kubuno/frontend
 /usr/share/kubuno/migrations
+/usr/share/kubuno/themes
 /usr/share/man/man1/kubuno.1.gz
 /usr/lib/systemd/system/kubuno.service
 %config(noreplace) /etc/kubuno/config.toml.example
@@ -166,6 +169,11 @@ exit 0
 
 %post
 mkdir -p /var/lib/kubuno/files /var/lib/kubuno/themes
+# Sème/rafraîchit les thèmes livrés (les thèmes importés par l'admin, d'autres IDs,
+# ne sont jamais dans /usr/share et restent intacts).
+if [ -d /usr/share/kubuno/themes ]; then
+    cp -r /usr/share/kubuno/themes/. /var/lib/kubuno/themes/ 2>/dev/null || true
+fi
 chown -R kubuno:kubuno /var/lib/kubuno
 chmod 750 /var/lib/kubuno /var/lib/kubuno/themes
 mkdir -p /var/log/kubuno

@@ -88,6 +88,41 @@ Paquet **`.pkg`** (pkgbuild + productbuild) qui :
 
 ---
 
+## Modules — packaging générique
+
+Chaque dépôt module reçoit (via `_tools/deploy_packaging.sh`) trois scripts
+**auto-détectants** (id/version lus dans `Cargo.toml`) + un workflow CI :
+`build_rpm.sh`, `build_windows.sh`, `build_macos.sh`, `.github/workflows/dist.yml`.
+
+Layout installé (miroir du `.deb`, le core découvre le module à l'identique) :
+- binaire + `module.toml` + `frontend/` → dans le dossier `modules/<id>/` du core
+  (`/usr/lib/kubuno/modules/<id>` Linux ; `…\Kubuno\modules\<id>` Windows ;
+  `/usr/local/kubuno/modules/<id>` macOS) ;
+- RPM ajoute aussi les migrations sous `/usr/share/kubuno/modules/<id>/migrations`
+  (référence : au runtime elles sont **embarquées** dans le binaire via `sqlx::migrate!`).
+
+Le module **tourne sans `config.toml`** : le core injecte DB/secret/URL par variables
+d'environnement (`KUBUNO_*`) et crée le CWD/données. Les paquets Windows/macOS ne
+livrent donc pas les migrations et déposent simplement le module dans l'install du core,
+puis redémarrent le service. `build_windows.sh` lit l'emplacement du core dans le
+registre (`HKLM\Software\Kubuno` `InstallLocation`).
+
+> **Pré-requis core** : les modules sur Windows/macOS exigent un core qui localise
+> `config_dir`/`data_dir` des modules de façon portable (réglages
+> `server.modules_config_dir` / `server.modules_data_dir`, défauts FHS Linux,
+> surchargés par les installeurs core Windows/macOS via `KV__SERVER__MODULES_*`).
+> Le core crée ces dossiers avant de lancer chaque module.
+
+Déploiement / build :
+```bash
+bash _tools/deploy_packaging.sh             # pose les scripts dans tous les modules
+bash _tools/deploy_packaging.sh calendar    # ou cibles précises
+cd ../calendar && bash build_rpm.sh         # RPM du module (auto-détecté)
+```
+
+Dépendances système spécifiques gérées automatiquement : `media` → `ffmpeg`,
+`jarvis` → recommande `ollama`.
+
 ## CI — Releases GitHub multi-plateformes
 
 `.github/workflows/dist.yml` construit RPM (ubuntu), Windows (windows-latest) et
