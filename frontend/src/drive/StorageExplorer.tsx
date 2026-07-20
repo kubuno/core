@@ -14,8 +14,11 @@ import {
   Folder as FolderIcon, Upload, ChevronRight, ChevronLeft, ChevronDown, Loader2, Home,
   Star, Trash2, Pencil, Share2, Download, MoreVertical, CloudUpload, Info,
   Image, History, FolderPlus, RefreshCw, Scissors, Copy, ClipboardPaste,
-  Archive, Link, X, ListChecks, CheckSquare,
+  Archive, Link, X, ListChecks, CheckSquare, Package,
+  ArrowUp, List, LayoutGrid, Check,
 } from 'lucide-react'
+import { copyKubunoData } from '../core/registry/DataTransferRegistry'
+import { driveFileEnvelope } from '../core/registry/DriveFileCard'
 import { filesApi, recentApi, formatSize, type Folder, type FileItem } from './api'
 import { useFilesStore } from './store'
 import { useFilesPaintStore } from './filesPaintStore'
@@ -28,9 +31,24 @@ import MoveModal from './MoveModal'
 import ShareModal, { type ShareTarget } from './ShareModal'
 import FileInfoModal, { type InfoTarget } from './FileInfoModal'
 import VersionHistoryModal from './VersionHistoryModal'
-import UploadPanel from './UploadPanel'
-import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, openable, useLongPress } from '@ui'
+import UploadPanelBase from './UploadPanel'
+import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, openable, useLongPress, themed,
+  useIsMobile, isCoarsePointer, MobileSheet, MobileSheetItem, MobileSheetSeparator } from '@ui'
+
+// Themeable Drive objects — a theme can override these (markup/behaviour) while
+// they are untouched by default (`themed` returns the base component when no
+// override is registered). Keys form the `drive.*` part of the theme catalog
+// (cf. THEMES.md). Base components are hoisted function declarations below.
+const FolderCard        = themed('drive.folder-card', FolderCardBase)
+const FileCard          = themed('drive.file-card',   FileCardBase)
+const FileRow           = themed('drive.file-row',    FileRowBase)
+const FolderRow         = themed('drive.folder-row',  FolderRowBase)
+const SortFilterBar     = themed('drive.toolbar',     SortFilterBarBase)
+const StorageBreadcrumb = themed('drive.breadcrumb',  StorageBreadcrumbBase)
+const UploadPanel       = themed('drive.upload-panel', UploadPanelBase)
 import { useImportConflicts } from './useImportConflicts'
+import { useDriveLabels } from './useDriveLabels'
+import { DriveLabelsCtx, LabelDots } from './LabelDots'
 import { useImageCacheStore, bumpAllImageCache, FileTypeRegistry, usePendingDeletionStore, usePendingKind, pendingBoxClass, pendingBoxStyle, type DeletionKind, type PendingItem } from '@kubuno/sdk'
 import { getFileIcon, openWithMenuItem, organiseMenuItem } from './filesShared'
 import { useFilesMediaPlayerStore } from './filesMediaPlayerStore'
@@ -134,6 +152,7 @@ interface ItemMenuHandlers {
   onDownload: () => void
   onCut: () => void
   onCopy: () => void
+  onCopyCard: () => void
   onPaste: () => void
   onCompress: () => void
   onSetColor: (color: string | null) => void
@@ -192,6 +211,8 @@ function buildItemMenuItems(
   if (caps.move || caps.copy || caps.compress) items.push({ type: 'separator' })
   if (caps.move) items.push({ type: 'action', label: tr('ctx.cut'), icon: <Scissors size={14} />, onClick: h.onCut, disabled: isProtected })
   if (caps.copy) items.push({ type: 'action', label: tr('ctx.copy'), icon: <Copy size={14} />, onClick: h.onCopy })
+  // Cross-module copy: JSON envelope pasteable as a rich card in chat, notes…
+  if (isFile) items.push({ type: 'action', label: tr('ctx.copy_card'), icon: <Package size={14} />, onClick: h.onCopyCard })
   if (isFolder && clipboard && (caps.move || caps.copy)) items.push({ type: 'action', label: tr('ctx.paste'), icon: <ClipboardPaste size={14} />, onClick: h.onPaste })
   if (isFile && caps.compress) items.push({ type: 'action', label: tr('ctx.compress'), icon: <Archive size={14} />, onClick: h.onCompress })
 
@@ -215,19 +236,29 @@ function buildItemMenuItems(
   return items
 }
 
+// True while the explorer is in touch multi-selection mode (at least one item
+// selected on a mobile viewport). Cards read it to keep their checkbox visible
+// even when the item itself isn't selected yet, so the whole grid reads as a
+// pickable set — the Google-Drive-style "long-press then tap to add" flow.
+const SelectingCtx = React.createContext(false)
+
 // ── FolderCard ─────────────────────────────────────────────────────────────────
 
-function FolderCard({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop }: {
+function FolderCardBase({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop }: {
   folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
-  onContextMenu: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
+  onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
   onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
 }) {
   const pendingKind = usePendingKind(folder.id)
-  const longPress = useLongPress(onContextMenu)
+  const longPress = useLongPress(onLongPress ?? onContextMenu)
+  // Mobile: folder cards are full-width (one per line), so the name gets a
+  // comfortable single truncated line and a taller tap target.
+  const isMobile = useIsMobile()
+  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={folder.id}
-      className={`group relative flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all cursor-default select-none min-w-0
+      className={`group relative flex items-center ${isMobile ? 'gap-3 px-3 py-3' : 'gap-2.5 px-3 py-2.5'} rounded-xl border transition-all cursor-default select-none min-w-0
         ${isDragTarget ? 'border-primary bg-primary/10 ring-2 ring-primary/20'
           : selected ? 'border-primary ring-2 ring-primary/20 bg-[#c9defa]'
           : preSelected ? 'border-primary/50 bg-[#c9defa]'
@@ -240,12 +271,14 @@ function FolderCard({ folder, isDragTarget, selected, preSelected, focused, canM
       })}
       {...longPress}
       onContextMenu={onContextMenu} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-      <FloatCheckbox selected={selected} onToggle={() => onToggle(folder.id)} className="absolute -top-1.5 -left-1.5 z-10" />
-      <FolderGlyph folder={folder} size={20} className="shrink-0" />
-      <span className="text-sm text-text-primary truncate flex-1">{folder.name}</span>
-      {folder.is_starred && <Star size={12} className="shrink-0 fill-yellow-400 text-yellow-400" />}
-      <button className="shrink-0 p-1 rounded-full hover:bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
-        <MoreVertical size={14} className="text-text-secondary" />
+      <FloatCheckbox selected={selected} onToggle={() => onToggle(folder.id)}
+        className={`absolute -top-1.5 -left-1.5 z-10 ${isMobile && !selected && !selecting ? 'hidden' : ''}`} />
+      <FolderGlyph folder={folder} size={isMobile ? 24 : 20} className="shrink-0" />
+      <span className={`text-text-primary flex-1 min-w-0 ${isMobile ? 'text-[15px] truncate' : 'text-sm truncate'}`}>{folder.name}</span>
+      <LabelDots kind="folder" id={folder.id} size={isMobile ? 12 : 11} />
+      {folder.is_starred && <Star size={isMobile ? 14 : 12} className="shrink-0 fill-yellow-400 text-yellow-400" />}
+      <button className={`shrink-0 rounded-full hover:bg-black/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity ${isMobile ? 'p-1.5' : 'p-1'}`} onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
+        <MoreVertical size={isMobile ? 16 : 14} className="text-text-secondary" />
       </button>
     </div>
   )
@@ -253,10 +286,10 @@ function FolderCard({ folder, isDragTarget, selected, preSelected, focused, canM
 
 // ── FileCard (vue icônes) ────────────────────────────────────────────────────────
 
-function FileCard({ file, thumb, selected, preSelected, focused, canMove, allowVideoPreview, onSelect, onToggle, onContextMenu, onDragStart, onOpen, thumbH = 128, iconScale = 1, dense = false }: {
+function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, allowVideoPreview, onSelect, onToggle, onContextMenu, onLongPress, onDragStart, onOpen, thumbH = 128, iconScale = 1, dense = false }: {
   file: FileItem; thumb: ThumbSpec; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean; allowVideoPreview: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
-  onContextMenu: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onOpen: () => void
+  onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onOpen: () => void
   thumbH?: number; iconScale?: number; dense?: boolean
 }) {
   const pendingKind = usePendingKind(file.id)
@@ -271,7 +304,9 @@ function FileCard({ file, thumb, selected, preSelected, focused, canMove, allowV
     const e = file.name.slice(dot + 1)
     return /^[a-z0-9]{1,5}$/i.test(e) ? e.toUpperCase() : ''
   })()
-  const longPress = useLongPress(onContextMenu)
+  const longPress = useLongPress(onLongPress ?? onContextMenu)
+  const isMobile = useIsMobile()
+  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={file.id}
       className={`group relative rounded-xl border hover:shadow-[0_1px_6px_rgba(0,0,0,0.1)] transition-all min-w-0 select-none cursor-default
@@ -283,13 +318,18 @@ function FileCard({ file, thumb, selected, preSelected, focused, canMove, allowV
         select: (e) => { e.preventDefault(); onSelect(file.id, e) },
         open:   (e) => { e.preventDefault(); onOpen() },
       })}>
-      <FloatCheckbox selected={selected} onToggle={() => onToggle(file.id)} className="absolute -top-1.5 -left-1.5 z-10" />
+      <FloatCheckbox selected={selected} onToggle={() => onToggle(file.id)}
+        className={`absolute -top-1.5 -left-1.5 z-10 ${isMobile && !selected && !selecting ? 'hidden' : ''}`} />
       {/* En-tête : icône de type + nom + étoile + menu */}
-      <div className={`flex items-center gap-2 ${dense ? 'px-2 h-8' : 'px-3 h-10'}`}>
+      <div className={`flex items-center ${isMobile ? 'gap-1.5 px-2 py-1.5 items-start' : `gap-2 ${dense ? 'px-2 h-8' : 'px-3 h-10'}`}`}>
         <span className="shrink-0 flex items-center [&_svg]:w-[18px] [&_svg]:h-[18px]">{getFileIcon(file.mime_type, file.name)}</span>
-        <span className={`${dense ? 'text-xs' : 'text-[13px]'} font-medium text-text-primary truncate flex-1`} title={file.name}>{file.name}</span>
+        <span
+          className={`font-medium text-text-primary flex-1 min-w-0 ${isMobile ? 'text-[13px] leading-tight line-clamp-2 break-words' : `${dense ? 'text-xs' : 'text-[13px]'} truncate`}`}
+          title={file.name}
+        >{file.name}</span>
+        <LabelDots kind="file" id={file.id} size={11} />
         {file.is_starred && <Star size={12} className="shrink-0 fill-yellow-400 text-yellow-400" />}
-        <button className="shrink-0 -mr-1.5 p-1 rounded-full hover:bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
+        <button className="shrink-0 -mr-1 p-1 rounded-full hover:bg-black/10 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
           <MoreVertical size={14} className="text-text-secondary" />
         </button>
       </div>
@@ -340,19 +380,23 @@ function FileCard({ file, thumb, selected, preSelected, focused, canMove, allowV
 // FileRow — vues liste/détails/tuiles/contenu. MÊMES opérations que FileCard
 // (sélection clic/Ctrl/Maj, case à cocher, marquee, glisser, menu, ouverture,
 // curseur clavier) pour que les actions soient identiques quelle que soit la vue.
-function FileRow({ file, thumb, selected, preSelected, focused, canMove, onSelect, onToggle, onContextMenu, onOpen, onDragStart, density = 'normal', hideMeta = false }: {
+function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, onSelect, onToggle, onContextMenu, onLongPress, onOpen, onDragStart, density = 'normal', hideMeta = false }: {
   file: FileItem; thumb: ThumbSpec
   selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
-  onContextMenu: (e: React.MouseEvent) => void; onOpen: () => void; onDragStart?: (e: React.DragEvent) => void
+  onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onOpen: () => void; onDragStart?: (e: React.DragEvent) => void
   density?: 'compact' | 'normal' | 'large'; hideMeta?: boolean
 }) {
-  const { i18n } = useTranslation('drive')
+  const { t, i18n } = useTranslation('drive')
   const pendingKind = usePendingKind(file.id)
   const updated = new Date(file.updated_at).toLocaleDateString(i18n.language, { day: '2-digit', month: 'short', year: 'numeric' })
-  const pad = density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
-  const thumbC = density === 'large' ? 'w-12 h-12' : density === 'compact' ? 'w-6 h-6' : 'w-8 h-8'
-  const longPress = useLongPress(onContextMenu)
+  // Mobile: the date/size columns don't fit next to the name, so they collapse
+  // into a subtitle under it and the row grows to a comfortable tap target.
+  const isMobile = useIsMobile()
+  const pad = isMobile ? 'px-2 py-3' : density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
+  const thumbC = isMobile ? 'w-10 h-10' : density === 'large' ? 'w-12 h-12' : density === 'compact' ? 'w-6 h-6' : 'w-8 h-8'
+  const longPress = useLongPress(onLongPress ?? onContextMenu)
+  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={file.id}
       draggable={canMove} onDragStart={onDragStart}
@@ -362,20 +406,27 @@ function FileRow({ file, thumb, selected, preSelected, focused, canMove, onSelec
       {...longPress}
       {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(file.id, e) }, open: (e) => { e.preventDefault(); onOpen() } })}>
       <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(file.id) }}
-        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : selecting ? 'block opacity-100' : 'hidden lg:block lg:opacity-0 lg:group-hover:opacity-100'}`}>
         <FloatCheckbox selected={selected || !!preSelected} onToggle={() => onToggle(file.id)} />
       </span>
       <div className={`shrink-0 ${thumbC} flex items-center justify-center rounded overflow-hidden bg-surface-2`}>
         <Thumb spec={thumb} file={file} className="w-full h-full object-cover" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-text-primary truncate">{file.name}</p>
-        {density === 'large' && <p className="text-[11px] text-text-tertiary truncate">{file.mime_type} · {formatSize(file.size_bytes)}</p>}
+        <p className={`${isMobile ? 'text-[15px]' : 'text-sm'} text-text-primary truncate`}>{file.name}</p>
+        {isMobile ? (
+          <p className="text-xs text-text-tertiary truncate">
+            {file.updated_at > '1971' && `${t('row.modified')} ${updated} · `}{formatSize(file.size_bytes)}
+          </p>
+        ) : density === 'large' && (
+          <p className="text-[11px] text-text-tertiary truncate">{file.mime_type} · {formatSize(file.size_bytes)}</p>
+        )}
       </div>
-      {!hideMeta && file.updated_at > '1971' && <span className="text-xs text-text-tertiary shrink-0 w-28 text-right">{updated}</span>}
-      {!hideMeta && <span className="text-xs text-text-tertiary shrink-0 w-20 text-right">{formatSize(file.size_bytes)}</span>}
+      {!isMobile && !hideMeta && file.updated_at > '1971' && <span className="text-xs text-text-tertiary shrink-0 w-28 text-right">{updated}</span>}
+      {!isMobile && !hideMeta && <span className="text-xs text-text-tertiary shrink-0 w-20 text-right">{formatSize(file.size_bytes)}</span>}
+      <LabelDots kind="file" id={file.id} size={11} />
       {file.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
-      <button data-no-drag className="shrink-0 p-1.5 rounded-full hover:bg-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
+      <button data-no-drag className="shrink-0 p-2 lg:p-1.5 rounded-full hover:bg-surface-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
         <MoreVertical size={14} className="text-text-secondary" />
       </button>
     </div>
@@ -384,16 +435,20 @@ function FileRow({ file, thumb, selected, preSelected, focused, canMove, onSelec
 
 // FolderRow — pendant de FileRow pour les dossiers (vues non-icônes) : mêmes
 // opérations + cible de dépôt (déplacer DANS le dossier).
-function FolderRow({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, density = 'normal' }: {
+function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop, density = 'normal' }: {
   folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
-  onContextMenu: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void
+  onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void
   onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
   density?: 'compact' | 'normal' | 'large'
 }) {
+  const { t, i18n } = useTranslation('drive')
   const pendingKind = usePendingKind(folder.id)
-  const pad = density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
-  const longPress = useLongPress(onContextMenu)
+  const isMobile = useIsMobile()
+  const updated = new Date(folder.updated_at).toLocaleDateString(i18n.language, { day: '2-digit', month: 'short', year: 'numeric' })
+  const pad = isMobile ? 'px-2 py-3' : density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
+  const longPress = useLongPress(onLongPress ?? onContextMenu)
+  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={folder.id}
       draggable={canMove} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
@@ -403,22 +458,139 @@ function FolderRow({ folder, isDragTarget, selected, preSelected, focused, canMo
       {...longPress}
       {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(folder.id, e) }, open: (e) => { e.preventDefault(); e.stopPropagation(); onOpen() } })}>
       <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(folder.id) }}
-        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : selecting ? 'block opacity-100' : 'hidden lg:block lg:opacity-0 lg:group-hover:opacity-100'}`}>
         <FloatCheckbox selected={selected || !!preSelected} onToggle={() => onToggle(folder.id)} />
       </span>
-      <FolderGlyph folder={folder} size={20} className="shrink-0" />
-      <span className="flex-1 min-w-0 text-sm text-text-primary truncate">{folder.name}</span>
+      <FolderGlyph folder={folder} size={isMobile ? 26 : 20} className="shrink-0" />
+      {isMobile ? (
+        <div className="flex-1 min-w-0">
+          <p className="text-[15px] text-text-primary truncate">{folder.name}</p>
+          <p className="text-xs text-text-tertiary truncate">{t('row.modified')} {updated}</p>
+        </div>
+      ) : (
+        <span className="flex-1 min-w-0 text-sm text-text-primary truncate">{folder.name}</span>
+      )}
+      <LabelDots kind="folder" id={folder.id} size={11} />
       {folder.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
-      <button data-no-drag className="shrink-0 p-1.5 rounded-full hover:bg-surface-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
+      <button data-no-drag className="shrink-0 p-2 lg:p-1.5 rounded-full hover:bg-surface-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
         <MoreVertical size={14} className="text-text-secondary" />
       </button>
     </div>
   )
 }
 
+// ── MobileControlBar (barre de contrôle tactile) ──────────────────────────────
+//
+// Remplace la SortFilterBar sur mobile : la barre de bureau (dropdown de tri,
+// filtre Type, menu « Afficher » à 8 modes) est trop dense pour un pouce. Ici :
+// une puce de tri qui ouvre une feuille, et une bascule liste/grille — les deux
+// seuls réglages qui comptent sur un petit écran.
+
+type SortField = 'name' | 'size' | 'date' | 'type'
+
+/** Sens du tri, formulé selon le champ (« De A à Z » n'a de sens que pour un nom). */
+function sortDirLabels(field: SortField, t: TFunc): { asc: string; desc: string } {
+  if (field === 'name' || field === 'type') {
+    return { asc: t('sort.a_to_z'), desc: t('sort.z_to_a') }
+  }
+  if (field === 'size') {
+    return { asc: t('sort.smallest'), desc: t('sort.largest') }
+  }
+  return { asc: t('sort.oldest'), desc: t('sort.newest') }
+}
+
+type TFunc = (key: string, opts?: Record<string, unknown>) => string
+
+function MobileControlBar({ sortField, sortDir, onSortField, onSortDir, grid, onGrid, t }: {
+  sortField:   SortField
+  sortDir:     'asc' | 'desc'
+  onSortField: (f: SortField) => void
+  onSortDir:   (d: 'asc' | 'desc') => void
+  grid:        boolean
+  onGrid:      (v: boolean) => void
+  t:           TFunc
+}) {
+  const [sheet, setSheet] = useState(false)
+  // Same four criteria as the desktop SortFilterBar — and the same i18n keys.
+  const fields: { value: SortField; label: string }[] = [
+    { value: 'name', label: t('common.name') },
+    { value: 'date', label: t('app.sort_date') },
+    { value: 'size', label: t('common.size') },
+    { value: 'type', label: t('filter.type') },
+  ]
+  const dirs = sortDirLabels(sortField, t)
+  const current = fields.find(f => f.value === sortField)?.label ?? ''
+
+  return (
+    <div className="flex items-center justify-between gap-2 pb-3">
+      {/* Puce de tri : libellé + flèche du sens (tap sur la flèche = inverser). */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <button
+          onClick={() => setSheet(true)}
+          className="flex items-center gap-1.5 h-9 pl-1 pr-2 rounded-full text-[15px] text-text-primary
+                     active:bg-surface-2 transition-colors min-w-0"
+        >
+          <span className="truncate">{current}</span>
+        </button>
+        <button
+          onClick={() => onSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
+          aria-label={sortDir === 'asc' ? dirs.asc : dirs.desc}
+          className="w-8 h-8 shrink-0 rounded-full bg-primary-light text-primary flex items-center justify-center active:scale-95 transition-transform"
+        >
+          <ArrowUp size={17} className={`transition-transform ${sortDir === 'desc' ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {/* Bascule liste/grille — segmentée, l'état actif est plein. */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          onClick={() => onGrid(false)}
+          aria-label={t('view.list')}
+          aria-pressed={!grid}
+          className={`w-14 h-9 rounded-full flex items-center justify-center transition-colors
+                      ${!grid ? 'bg-text-primary text-white' : 'bg-primary-light text-text-secondary'}`}
+        >
+          <List size={18} />
+        </button>
+        <button
+          onClick={() => onGrid(true)}
+          aria-label={t('view.icons_md')}
+          aria-pressed={grid}
+          className={`w-14 h-9 rounded-full flex items-center justify-center transition-colors
+                      ${grid ? 'bg-text-primary text-white' : 'bg-primary-light text-text-secondary'}`}
+        >
+          <LayoutGrid size={18} />
+        </button>
+      </div>
+
+      <MobileSheet open={sheet} onClose={() => setSheet(false)} title={t('sort.by')}>
+        {fields.map(f => (
+          <MobileSheetItem
+            key={f.value}
+            label={f.label}
+            selected={f.value === sortField}
+            icon={f.value === sortField ? <Check size={17} className="text-primary" /> : <span />}
+            onClick={() => { onSortField(f.value); setSheet(false) }}
+          />
+        ))}
+        <MobileSheetSeparator />
+        {(['asc', 'desc'] as const).map(d => (
+          <MobileSheetItem
+            key={d}
+            label={dirs[d]}
+            selected={d === sortDir}
+            icon={d === sortDir ? <Check size={17} className="text-primary" /> : <span />}
+            onClick={() => { onSortDir(d); setSheet(false) }}
+          />
+        ))}
+      </MobileSheet>
+    </div>
+  )
+}
+
 // ── SortFilterBar (dropdown Type, identique à Mon Drive) ─────────────────────────
 
-function SortFilterBar({ sortField, sortDir, typeFilter, onSortField, onSortDir, onTypeFilter, hideType, viewMode, onViewMode, compact, onCompact, showHidden, onShowHidden }: {
+function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField, onSortDir, onTypeFilter, hideType, viewMode, onViewMode, compact, onCompact, showHidden, onShowHidden }: {
   sortField: 'name' | 'size' | 'date' | 'type'; sortDir: 'asc' | 'desc'; typeFilter: string | null
   onSortField: (v: 'name' | 'size' | 'date' | 'type') => void; onSortDir: (v: 'asc' | 'desc') => void
   onTypeFilter: (v: string | null) => void; hideType?: boolean
@@ -553,7 +725,7 @@ function MediaViewer({ files, start, contentOf, onClose }: {
 // page courante, non cliquable). Un bouton déroulant en fin de fil permet de sauter
 // directement dans un SOUS-DOSSIER du dossier courant.
 
-function StorageBreadcrumb({ rootName, crumbs, onNavigate, childFolders, onOpenChild, ariaLabel }: {
+function StorageBreadcrumbBase({ rootName, crumbs, onNavigate, childFolders, onOpenChild, ariaLabel }: {
   rootName: string
   crumbs: Array<{ id: string; name: string }>
   onNavigate: (idx: number) => void            // -1 = racine, sinon index du segment
@@ -642,9 +814,18 @@ export default function StorageExplorer({
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [breadcrumbs, setBreadcrumbs] = useState<Array<{ id: string; name: string }>>([])
   const [viewMode, setViewMode] = useState<ViewMode>('lg')
+  // Mobile n'expose que deux vues (grille 2 colonnes / liste) : les 8 modes du
+  // menu « Afficher » n'ont pas de place — ni d'intérêt — sur un téléphone.
+  const isMobile = useIsMobile()
+  const [mobileGrid, setMobileGrid] = useState(true)
+  const view: ViewMode = isMobile ? (mobileGrid ? 'md' : 'details') : viewMode
   const [compact, setCompact] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Touch multi-selection: on a phone, having ≥1 item selected puts the explorer
+  // in "pick" mode — the header turns into a selection bar and a tap toggles
+  // instead of opening. Desktop keeps click-to-select / double-click-to-open.
+  const mobileSelecting = isMobile && selectedIds.size > 0
   const lastSelectedIdxRef = useRef<number>(-1)
   // Curseur clavier (flèches) — id de l'item focalisé dans la grille/liste.
   const [cursorId, setCursorId] = useState<string | null>(null)
@@ -924,8 +1105,10 @@ export default function StorageExplorer({
     e.preventDefault(); e.stopPropagation()
     // Right-clicking an item that isn't part of the current selection makes it
     // the sole selection; right-clicking within a multi-selection keeps it (so
-    // the menu still acts on the whole group).
-    if (!selectedIds.has(item.id)) {
+    // the menu still acts on the whole group). On touch the kebab (⋮) is a
+    // single-item affordance — selecting the item there would flip the header
+    // into selection mode behind the action sheet, so we skip it.
+    if (!selectedIds.has(item.id) && !(isMobile && isCoarsePointer())) {
       setSelectedIds(new Set([item.id]))
       lastSelectedIdxRef.current = orderedIds.indexOf(item.id)
     }
@@ -1072,10 +1255,16 @@ export default function StorageExplorer({
   }, [orderedIds, cursorId, selectedIds, sortedFolders, filteredFiles]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Rendu ────────────────────────────────────────────────────────────────────
+  // Labels exist only for the LOCAL drive source: remote/module mounts have no
+  // `drive.file`/`drive.folder` identity to attach one to.
+  const labelsOf = useDriveLabels(src.key === 'local')
+
   const isEmpty = !isLoading && folders.length === 0 && filteredFiles.length === 0
   const hideType = (!!acceptedMimeTypes && acceptedMimeTypes.length > 0) || !!fileTypeModuleId
 
   return (
+    <DriveLabelsCtx.Provider value={labelsOf}>
+    <SelectingCtx.Provider value={mobileSelecting}>
     <div className="relative flex flex-col flex-1 min-h-0 overflow-hidden bg-white"
       onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={e => handleDrop(e)}>
       <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileInput} />
@@ -1095,8 +1284,25 @@ export default function StorageExplorer({
         </div>
       )}
 
+      {/* Barre de sélection tactile (mobile) : remplace le fil d'Ariane tant
+          qu'au moins un élément est coché — appui long pour entrer, tap pour
+          (dé)cocher, façon application mobile. */}
+      {mobileSelecting ? (
+        <div className="flex items-center gap-0.5 px-1.5 pt-2 pb-2 flex-shrink-0 border-b border-border bg-[#e8f0fe]">
+          <button onClick={() => setSelectedIds(new Set())} className="p-2.5 rounded-full hover:bg-black/5 text-text-secondary transition-colors" title={t('app.cancel_selection')} aria-label={t('app.cancel_selection')}><X size={20} /></button>
+          <span className="flex-1 min-w-0 text-[17px] font-medium text-text-primary truncate px-1">{t('storage.selected', { count: selectedIds.size })}</span>
+          <button onClick={toggleSelectAll} className="p-2.5 rounded-full hover:bg-black/5 text-text-secondary transition-colors" title={allItemsSelected ? t('app.deselect_all') : t('app.select_all')} aria-label={allItemsSelected ? t('app.deselect_all') : t('app.select_all')}>{allItemsSelected ? <CheckSquare size={20} /> : <ListChecks size={20} />}</button>
+          {[...selectedIds].some(id => itemTypeMap.get(id) === 'file') && (
+            <button onClick={() => { [...selectedIds].forEach(id => { if (itemTypeMap.get(id) === 'file') { const f = files.find(x => x.id === id); if (f) src.download({ id: f.id, type: 'file', name: f.name }) } }) }} className="p-2.5 rounded-full hover:bg-black/5 text-text-secondary transition-colors" title={t('common.download')} aria-label={t('common.download')}><Download size={20} /></button>
+          )}
+          {caps.delete && (
+            <button disabled={hasPlayingInSelection} onClick={() => { scheduleDelete([...selectedIds].map(id => ({ id, type: itemTypeMap.get(id) === 'file' ? 'file' : 'folder' }))); setSelectedIds(new Set()) }} className="p-2.5 rounded-full hover:bg-[#fce8e6] text-danger transition-colors disabled:opacity-40" title={t('common.delete')} aria-label={t('common.delete')}><Trash2 size={20} /></button>
+          )}
+        </div>
+      ) : (
+      <>
       {/* En-tête : titre/fil d'ariane + actions */}
-      <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-2 px-4 sm:px-6 pt-6 pb-3 flex-shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-2 px-4 sm:px-6 pt-3 lg:pt-6 pb-3 flex-shrink-0">
         <StorageBreadcrumb
           rootName={title}
           crumbs={breadcrumbs}
@@ -1122,6 +1328,11 @@ export default function StorageExplorer({
               <button onClick={() => setSelectedIds(new Set())} className="p-1.5 rounded-full hover:bg-surface-2 text-text-tertiary transition-colors" title={t('app.cancel_selection')}><X size={16} /></button>
               <div className="w-px h-5 bg-border" />
             </>
+          ) : isMobile ? (
+            // Sur mobile, « Importer » et « Nouveau dossier » vivent déjà dans le
+            // FAB du shell (slot sidebar-new-actions) — les répéter ici mangerait
+            // la largeur du fil d'Ariane pour rien.
+            null
           ) : (
             <>
               {caps.upload && !hideImport && (
@@ -1139,6 +1350,8 @@ export default function StorageExplorer({
           {toolbarContent && <div className="flex items-center gap-2">{toolbarContent}</div>}
         </div>
       </div>
+      </>
+      )}
 
       {/* Contenu défilable */}
       <div ref={marqueeContainerRef} className="flex-1 min-h-0 overflow-y-auto px-6 pb-6"
@@ -1175,7 +1388,14 @@ export default function StorageExplorer({
           )
         ) : (
           <div className="space-y-6">
-            {files.length > 0 && (
+            {isMobile ? (
+              // La barre de tri/vue reste utile même sans fichier (dossiers seuls).
+              <MobileControlBar
+                sortField={sortField} sortDir={sortDir}
+                onSortField={setSortField} onSortDir={setSortDir}
+                grid={mobileGrid} onGrid={setMobileGrid} t={t}
+              />
+            ) : files.length > 0 && (
               <SortFilterBar sortField={sortField} sortDir={sortDir} typeFilter={typeFilter}
                 onSortField={setSortField} onSortDir={setSortDir} onTypeFilter={setTypeFilter} hideType={hideType}
                 viewMode={viewMode} onViewMode={setViewMode} compact={compact} onCompact={setCompact} showHidden={showHidden} onShowHidden={setShowHidden} />
@@ -1185,18 +1405,30 @@ export default function StorageExplorer({
               <section>
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary mb-2">{t('app.folders')}</h2>
                 {(() => {
-                  const spec = VIEW_SPECS[viewMode]
+                  const spec = VIEW_SPECS[view]
                   // Mêmes opérations dans toutes les vues : carte en icônes, ligne sinon.
                   const common = (folder: Folder) => ({
                     folder, isDragTarget: dragOverFolderId === folder.id,
                     selected: selectedIds.has(folder.id), preSelected: preSelectedIds.has(folder.id), focused: cursorId === folder.id, canMove: caps.move,
-                    onSelect: handleItemSelect, onToggle: handleItemToggle, onOpen: () => navigateTo(folder), onContextMenu: (e: React.MouseEvent) => openMenu(e, 'folder', folder),
+                    onSelect: handleItemSelect, onToggle: handleItemToggle,
+                    onOpen: () => { if (mobileSelecting) { handleItemToggle(folder.id); return } navigateTo(folder) },
+                    onContextMenu: (e: React.MouseEvent) => openMenu(e, 'folder', folder),
+                    // Long-press on touch enters selection mode; the kebab (⋮) and
+                    // desktop right-click keep opening the context menu.
+                    onLongPress: (e: React.MouseEvent) => { if (isMobile && isCoarsePointer()) { handleItemToggle(folder.id); return } openMenu(e, 'folder', folder) },
                     onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: folder.id, type: 'folder', name: folder.name })); if (!selectedIds.has(folder.id)) { setSelectedIds(new Set([folder.id])); lastSelectedIdxRef.current = orderedIds.indexOf(folder.id) } setDraggingItem({ type: 'folder', id: folder.id }) },
                     onDragOver: (e: React.DragEvent) => { if (caps.move) { e.preventDefault(); e.stopPropagation(); setDragOverFolderId(folder.id) } },
                     onDragLeave: () => setDragOverFolderId(null), onDrop: (e: React.DragEvent) => handleDrop(e, folder.id),
                   })
                   if (spec.kind === 'icons') {
-                    return <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">{sortedFolders.map(f => <FolderCard key={f.id} {...common(f)} />)}</div>
+                    // Mobile : dossiers à pleine largeur, un par ligne (une carte
+                    // dossier est une puce horizontale nom+kebab — 2 colonnes
+                    // tronquaient le nom). Desktop : `minmax(200px,…)` auto-fill.
+                    return (
+                      <div className="grid gap-2" style={{ gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(200px,1fr))' }}>
+                        {sortedFolders.map(f => <FolderCard key={f.id} {...common(f)} />)}
+                      </div>
+                    )
                   }
                   const dens = spec.multicol ? 'compact' : (spec.density ?? 'normal')
                   if (spec.kind === 'tiles') {
@@ -1217,19 +1449,21 @@ export default function StorageExplorer({
                   {typeFilter && filteredFiles.length !== files.length && <span className="ml-2 normal-case font-normal text-text-tertiary">— {filteredFiles.length} / {files.length}</span>}
                 </h2>
                 {(() => {
-                  const spec = VIEW_SPECS[viewMode]
+                  const spec = VIEW_SPECS[view]
                   // Props communs → MÊMES opérations (sélection/case/marquee/glisser/
                   // menu/ouverture/curseur) quelle que soit la vue.
                   const common = (file: FileItem) => ({
                     file, thumb: src.thumbnail(file),
                     selected: selectedIds.has(file.id), preSelected: preSelectedIds.has(file.id), focused: cursorId === file.id, canMove: caps.move,
-                    onSelect: handleItemSelect, onToggle: handleItemToggle, onContextMenu: (e: React.MouseEvent) => openMenu(e, 'file', file),
+                    onSelect: handleItemSelect, onToggle: handleItemToggle,
+                    onContextMenu: (e: React.MouseEvent) => openMenu(e, 'file', file),
+                    onLongPress: (e: React.MouseEvent) => { if (isMobile && isCoarsePointer()) { handleItemToggle(file.id); return } openMenu(e, 'file', file) },
                     onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: file.id, type: 'file', name: file.name })); if (!selectedIds.has(file.id)) { setSelectedIds(new Set([file.id])); lastSelectedIdxRef.current = orderedIds.indexOf(file.id) } setDraggingItem({ type: 'file', id: file.id }) },
-                    onOpen: () => openFile(file),
+                    onOpen: () => { if (mobileSelecting) { handleItemToggle(file.id); return } openFile(file) },
                   })
                   if (spec.kind === 'icons') {
                     return (
-                      <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 12 }}>
+                      <div className="grid" style={{ gridTemplateColumns: isMobile ? 'repeat(2,minmax(0,1fr))' : `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 12 }}>
                         {filteredFiles.map(file => {
                           const defaultCard = (
                             <FileCard {...common(file)} allowVideoPreview={caps.thumbnails === 'url'} thumbH={spec.thumbH} iconScale={spec.iconScale} dense={spec.dense} />
@@ -1288,6 +1522,11 @@ export default function StorageExplorer({
             onDownload: () => { src.download(asRef(menu)) },
             onCut: () => { setClipboard({ action: 'cut', type: menu.type, id: menu.item.id, name: menu.item.name }) },
             onCopy: () => { setClipboard({ action: 'copy', type: menu.type, id: menu.item.id, name: menu.item.name }) },
+            onCopyCard: () => {
+              if (menu.type !== 'file') return
+              const f = menu.item as FileItem
+              copyKubunoData(driveFileEnvelope({ id: f.id, name: f.name, size_bytes: f.size_bytes, mime_type: f.mime_type, folder_id: f.folder_id })).catch(() => {})
+            },
             onPaste: () => handlePaste(menu.type === 'folder' ? menu.item.id : effectiveFolderId),
             onCompress: () => { const name = menu.item.name; if (menu.type === 'file') filesApi.compressDownload([menu.item.id], [], name + '.zip'); else filesApi.compressDownload([], [menu.item.id], name + '.zip') },
             onSetColor: (color) => { if (menu.type === 'folder') src.setFolderColor?.(menu.item.id, color).then(invalidate) },
@@ -1337,5 +1576,7 @@ export default function StorageExplorer({
         />
       )}
     </div>
+    </SelectingCtx.Provider>
+    </DriveLabelsCtx.Provider>
   )
 }

@@ -100,6 +100,13 @@ export interface ActivityEntry {
     details: Record<string, unknown>;
     created_at: string;
 }
+/** Activity row of the account-wide feed: the entry plus the item it concerns. */
+export interface ActivityFeedEntry extends ActivityEntry {
+    file_id: string | null;
+    folder_id: string | null;
+    item_name: string | null;
+    mime_type: string | null;
+}
 export interface OwnerInfo {
     id: string;
     display_name: string | null;
@@ -294,6 +301,8 @@ export declare const filesApi: {
     getFolderActivity: (id: string) => Promise<{
         activities: ActivityEntry[];
     }>;
+    /** Activité de tout le compte (accueil Drive, onglet « Activité »). */
+    getUserActivity: (limit?: number) => Promise<ActivityFeedEntry[]>;
     getFileInfoExtra: (id: string) => Promise<InfoExtra>;
     getFolderInfoExtra: (id: string) => Promise<InfoExtra>;
     revokeAccess: (shareId: string) => Promise<void>;

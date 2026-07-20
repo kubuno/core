@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import type { CSSProperties } from 'react';
-import { type PickerTheme } from './ColorPicker';
-export declare function ColorField({ t, C, color, onChange, history, onPickHistory, className, style, width, height }: {
+import { type PickerTheme, type PickerTool } from './ColorPicker';
+export declare function ColorField({ t, C, color, onChange, history, onPickHistory, className, style, width, height, leftTools }: {
     t?: TFunction;
     C?: PickerTheme;
     color: string;
@@ -12,4 +12,5 @@ export declare function ColorField({ t, C, color, onChange, history, onPickHisto
     style?: CSSProperties;
     width?: number;
     height?: number;
+    leftTools?: PickerTool[];
 }): import("react").JSX.Element;

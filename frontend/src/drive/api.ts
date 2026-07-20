@@ -113,6 +113,14 @@ export interface ActivityEntry {
   created_at:   string
 }
 
+/** Activity row of the account-wide feed: the entry plus the item it concerns. */
+export interface ActivityFeedEntry extends ActivityEntry {
+  file_id:   string | null
+  folder_id: string | null
+  item_name: string | null
+  mime_type: string | null
+}
+
 export interface OwnerInfo {
   id:           string
   display_name: string | null
@@ -481,6 +489,12 @@ export const filesApi = {
   getFolderActivity: async (id: string): Promise<{ activities: ActivityEntry[] }> => {
     const r = await api.get<{ activities: ActivityEntry[] }>(`/drive/folders/${id}/activity`)
     return r.data
+  },
+
+  /** Activité de tout le compte (accueil Drive, onglet « Activité »). */
+  getUserActivity: async (limit = 50): Promise<ActivityFeedEntry[]> => {
+    const r = await api.get<{ activities: ActivityFeedEntry[] }>('/drive/activity', { params: { limit } })
+    return r.data.activities
   },
 
   getFileInfoExtra: async (id: string): Promise<InfoExtra> => {

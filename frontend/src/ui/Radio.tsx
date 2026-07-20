@@ -42,7 +42,9 @@ export function Radio({
   variant = 'default', color, disabled = false,
   className, labelClassName,
 }: RadioProps) {
-  const accent = color ?? (variant === 'dark' ? '#007acc' : '#1a73e8')
+  // Default to the theme primary so the accent follows the active theme; an
+  // explicit `color` prop still overrides (e.g. calendar-specific accents).
+  const accent = color ?? (variant === 'dark' ? '#007acc' : 'var(--color-primary)')
   return (
     <label
       className={`inline-flex items-start gap-2 select-none ${className ?? ''}`}

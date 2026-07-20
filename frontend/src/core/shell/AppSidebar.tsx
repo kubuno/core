@@ -49,7 +49,7 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
          ${collapsed ? 'justify-center px-2' : 'px-3'}
          ${isActive
            ? 'bg-primary-light'
-           : 'hover:bg-surface-2'
+           : 'hover:bg-[#e4ecf7]'
          }`
       }
     >
@@ -154,7 +154,7 @@ export default function AppSidebar() {
       data-module={activeConfig?.moduleId}
       data-app-chrome
       className={`
-        fixed left-0 bottom-0 flex flex-col py-3 overflow-hidden
+        fixed left-0 bottom-0 flex flex-col overflow-hidden
         z-50 transition-all duration-200 ease-in-out
         lg:relative lg:translate-x-0 lg:z-auto lg:rounded-xl
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -183,7 +183,12 @@ export default function AppSidebar() {
         <div className="px-3 flex items-center" style={{ height: 72 }}>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <button
+              {/* Anchor, never a <button>: the whole left panel is links. It only
+                  opens a menu, so href='#' + preventDefault. */}
+              <a
+                href="#"
+                role="button"
+                onClick={e => e.preventDefault()}
                 className="flex items-center gap-2 bg-white text-sm font-medium text-text-primary cursor-pointer"
                 style={{
                   padding: '20px 25px',
@@ -195,7 +200,7 @@ export default function AppSidebar() {
                 {/* Icône + multicolore style Google */}
                 <GooglePlusIcon />
                 {newButtonLabel}
-              </button>
+              </a>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
@@ -225,14 +230,17 @@ export default function AppSidebar() {
         <div className="flex justify-center items-center" style={{ height: 72 }}>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <button
+              <a
+                href="#"
+                role="button"
+                onClick={e => e.preventDefault()}
                 className="w-12 h-12 flex items-center justify-center bg-white rounded-full
-                           transition-shadow"
+                           transition-shadow cursor-pointer"
                 style={{ boxShadow: '0 1px 3px rgba(60,64,67,0.3), 0 4px 8px rgba(60,64,67,0.15)' }}
                 aria-label={newButtonLabel}
               >
                 <Plus size={20} className="text-text-secondary" />
-              </button>
+              </a>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
@@ -289,16 +297,18 @@ export default function AppSidebar() {
           « Nouveau ») : il n'y a rien à déplier. */}
       {!forceCollapsed && (
         <div className={`hidden lg:flex pt-1 pb-1 ${collapsed ? 'justify-center' : 'justify-end px-2'}`}>
-          <button
-            onClick={toggleSidebarCollapsed}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+          <a
+            href="#"
+            role="button"
+            onClick={e => { e.preventDefault(); toggleSidebarCollapsed() }}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer"
             style={{ color: '#80868b' }}
             onMouseEnter={(e) => e.currentTarget.style.background = '#f1f3f4'}
             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
             aria-label={collapsed ? tc('shell.expand_sidebar') : tc('shell.collapse_sidebar')}
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
+          </a>
         </div>
       )}
     </aside>

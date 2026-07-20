@@ -1,0 +1,9 @@
+/* Objets du module Drive — reproduction fidèle. Le Drive est rendu sous
+   [data-module="drive"]. Les teintes de sélection sont reproduites ici en
+   variables éditables (par défaut = valeurs actuelles du Drive). */
+[data-module="drive"] {
+  --kbn-drive-card-selected: #ddeafc;   /* tuile fichier sélectionnée */
+  --kbn-drive-folder-selected: #c9defa; /* carte dossier sélectionnée */
+  --kbn-drive-row-selected: #e8f0fe;    /* ligne liste sélectionnée */
+  --kbn-drive-hover: #e4ecf7;           /* survol */
+}

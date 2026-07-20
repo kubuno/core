@@ -12,11 +12,11 @@ interface Props {
 
 export default function DashboardWidget({ title, icon, link, linkLabel = 'Voir tout', children, containerRef }: Props) {
   return (
-    <div ref={containerRef} className="bg-white rounded-xl border border-border overflow-hidden flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-2">
+    <div ref={containerRef} className="bg-[var(--color-surface-card)] rounded-2xl border-[3px] border-[var(--color-surface-card-border)] overflow-hidden flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-surface-card-border)] flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           {icon}
-          <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
+          <h2 className="text-sm font-semibold text-text-primary truncate">{title}</h2>
         </div>
         {link && (
           <Link

@@ -1,0 +1,57 @@
+{
+  "id": "kubuno-foret",
+  "name": "Kubuno Forêt",
+  "color_scheme": "light",
+  "version": "1.0.0",
+  "theme_api_version": 1,
+  "vars": {
+    "--color-primary": "#2e7d5b",
+    "--color-primary-hover": "#246047",
+    "--color-primary-light": "#d9ece3",
+    "--color-white": "#ffffff",
+    "--color-surface-0": "#ffffff",
+    "--color-surface-1": "#f7f8f6",
+    "--color-surface-2": "#eef1ee",
+    "--color-surface-3": "#e4e8e3",
+    "--color-search-bg": "#e8f2ec",
+    "--color-text-primary": "#1f241f",
+    "--color-text-secondary": "#5b635c",
+    "--color-text-tertiary": "#828a83",
+    "--color-text-nav-active": "#173d2b",
+    "--color-border": "#e0e3df",
+    "--color-border-strong": "#bcc2bc",
+    "--color-danger": "#d93025",
+    "--color-danger-light": "#fce8e6",
+    "--color-success": "#1e8e3e",
+    "--color-success-light": "#e6f4ea",
+    "--color-warning": "#f9ab00",
+    "--color-warning-light": "#fef7e0",
+    "--body-bg": "#eef2ee",
+    "--scrollbar-thumb": "#d3d9d2",
+    "--scrollbar-thumb-hover": "#bcc2bc",
+    "--kbn-ws-panel": "#f7f8f6",
+    "--kbn-ws-toolbar": "#eef1ee",
+    "--kbn-ws-border": "#e0e3df",
+    "--kbn-ws-text": "#1f241f",
+    "--kbn-ws-text-dim": "#5c665c",
+    "--kbn-ws-hover": "#eef1ee",
+    "--kbn-ws-active": "#ddebe2",
+    "--kbn-ws-status": "#f7f8f6",
+    "--kbn-office-tabstrip": "#2e7d5b",
+    "--kbn-office-tabstrip-text": "#ffffff",
+    "--kbn-office-strip-hover": "rgba(255, 255, 255, 0.15)",
+    "--kbn-office-tab-active-text": "#2e7d5b",
+    "--kbn-office-item-active-text": "#2e7d5b",
+    "--kbn-office-item-active-bg": "rgba(46, 125, 91, 0.13)",
+    "--kbn-office-file-accent": "#3a9871"
+  },
+  "global": {
+    "css": "global.css",
+    "script": "global.js"
+  },
+  "modules": {
+    "drive": {
+      "css": "modules/drive.css"
+    }
+  }
+}

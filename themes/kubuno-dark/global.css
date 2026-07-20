@@ -1,0 +1,27 @@
+/* Kubuno Dark — variante sombre dérivée du thème « Kubuno (référence) ».
+   L'essentiel du sombre vient des tokens (palette dans theme.json) : comme
+   `--color-white` devient sombre, toutes les surfaces `bg-white` (dialogues,
+   cartes, menus…) passent en sombre automatiquement, et les accents clairs
+   (`--color-primary` bleu clair) portent un texte sombre lisible (via `text-white`
+   qui pointe aussi vers `--color-white`).
+
+   Ce fichier ne corrige que les couleurs codées EN DUR (valeurs arbitraires
+   Tailwind non tokenisées) qui, sinon, resteraient claires sur fond sombre —
+   essentiellement les teintes de sélection/survol des objets du Drive. */
+
+/* Barre de recherche (objet core 'shell.search') — pilule arrondie. */
+:root { --kbn-search-radius: 9999px; }
+
+/* ── Objets du Drive : teintes de sélection/survol codées en dur ────────────
+      Le FileCard/FolderCard/FileRow du Drive fixent des bleus clairs en valeurs
+      arbitraires (`bg-[#ddeafc]`…) indépendantes du thème. On les remappe vers
+      des équivalents sombres. Ciblage par sous-chaîne de classe (ces valeurs
+      n'apparaissent que dans les objets Drive), donc sûr globalement — couvre le
+      vrai Drive ET l'aperçu de thème. */
+[class*="ddeafc"] { background-color: #28415f !important; } /* tuile fichier sélectionnée */
+[class*="c9defa"] { background-color: #28415f !important; } /* carte dossier sélectionnée */
+[class*="e8f0fe"] { background-color: #22344d !important; } /* ligne liste sélectionnée */
+[class*="e4ecf7"]:hover { background-color: #2b2c30 !important; } /* survol */
+[class*="f3f4f5"] { background-color: var(--color-surface-1) !important; } /* dossier au repos */
+[class*="e8eaed"] { border-color: var(--color-border) !important; } /* bordure de carte au repos */
+

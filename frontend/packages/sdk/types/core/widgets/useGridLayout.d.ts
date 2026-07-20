@@ -6,6 +6,7 @@ export declare function useGridLayout(activeModuleIds: Set<string>): {
     resizeWidget: (id: string, newPos: GridPos) => void;
     removeWidget: (id: string) => void;
     addWidget: (id: string) => void;
+    resetLayout: () => void;
     getConfig: (id: string) => Record<string, unknown>;
     setConfig: (id: string, key: string, value: unknown) => void;
 };

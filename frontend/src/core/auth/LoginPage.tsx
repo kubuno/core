@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
+import { authApi } from '../api/auth'
 import { Button, KubunoLogo } from '@ui'
-import LoginAnimation from './LoginAnimation'
+// Membranes WebGL (dégradés par pixel, fallback canvas 2D intégré).
+// Rollback : ré-importer './LoginAnimation' (style fils d'origine).
+import LoginAnimation from './LoginAnimationGL'
+import { animTuning, parseAnimParams } from './animTuning'
 
 function usePublicConfig() {
   return useQuery({
@@ -46,13 +50,17 @@ function useOAuthProviders() {
   })
 }
 
-export default function LoginPage() {
+export default function LoginPage({ initialStep = 'credentials' }: { initialStep?: 'credentials' | 'forgot' }) {
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
-  const [step, setStep] = useState<'credentials' | 'totp'>('credentials')
+  const [step, setStep] = useState<'credentials' | 'totp' | 'forgot'>(initialStep)
   const [totpCode, setTotpCode] = useState('')
+  // Mot de passe oublié — rendu dans le panneau droit du login (au lieu d'une page séparée).
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotSubmitted, setForgotSubmitted] = useState(false)
+  const [forgotLoading, setForgotLoading] = useState(false)
   const { login: doLogin, verifyTotp, isLoading } = useAuthStore()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -60,9 +68,31 @@ export default function LoginPage() {
   const registrationOpen = useRegistrationOpen()
   const defaultModulePath = useDefaultModulePath()
   const { data: oauthProviders } = useOAuthProviders()
+  const { data: publicConfig } = usePublicConfig()
+
+  // L'animation lit ses paramètres depuis le réglage serveur (console admin,
+  // onglet Apparence) exposé dans la config publique.
+  useEffect(() => {
+    const raw = publicConfig?.['appearance.login_animation']
+    if (raw !== undefined) animTuning.set(parseAnimParams(raw))
+  }, [publicConfig])
   // Page d'origine si on a été redirigé ici par une déconnexion (même onglet).
   const from = (location.state as { from?: string } | null)?.from
   const postLoginPath = () => from ?? defaultModulePath ?? '/'
+
+  // `/login` et `/forgot-password` rendent le MÊME composant : React ne le remonte
+  // pas en naviguant (il ne fait que changer la prop). `useState(initialStep)` ne
+  // tenant compte que de la valeur initiale, on synchronise l'étape sur la prop —
+  // sinon il fallait F5 pour voir le changement. (L'étape 'totp', programmatique
+  // depuis 'credentials', n'est pas affectée car initialStep ne change pas alors.)
+  useEffect(() => {
+    setStep(initialStep)
+    setError('')
+    if (initialStep === 'forgot') {
+      setForgotSubmitted(false)
+      setForgotEmail('')
+    }
+  }, [initialStep])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -92,6 +122,19 @@ export default function LoginPage() {
     }
   }
 
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setForgotLoading(true)
+    try {
+      await authApi.forgotPassword(forgotEmail)
+    } catch {
+      // Toujours afficher le succès (pas d'énumération d'email).
+    } finally {
+      setForgotLoading(false)
+      setForgotSubmitted(true)
+    }
+  }
+
   return (
     <div className="min-h-screen flex bg-white">
       {/* Panneau gauche — branding, avec l'animation « Ondes de lumière » en fond */}
@@ -99,9 +142,9 @@ export default function LoginPage() {
         className="hidden lg:flex lg:w-[45%] flex-col justify-center items-center p-12 relative overflow-hidden"
         style={{ background: 'linear-gradient(160deg, #08174d 0%, #03091a 100%)' }}
       >
-        {/* Aurora animée (canvas) — derrière le contenu, décalée vers le bas
+        {/* Drapé 3D animé (canvas) — derrière le contenu, décalé vers le bas
             pour dégager la zone du texte. */}
-        <LoginAnimation preset="A" yShift={0.24} />
+        <LoginAnimation yShift={0.06} />
 
         <div className="relative text-white text-center max-w-sm z-10">
           <div className="flex items-center justify-center gap-3 mb-10">
@@ -112,19 +155,12 @@ export default function LoginPage() {
           <p className="text-blue-100 text-sm leading-relaxed">
             {t('login.subtitle_desc')}
           </p>
-          <div className="mt-12 space-y-4 text-left">
-            {[
-              { label: t('login.feat_storage'),  color: '#4fc3f7' },
-              { label: t('login.feat_modular'),  color: '#81c784' },
-              { label: t('login.feat_oss'),      color: '#ffcc02' },
-            ].map((f) => (
-              <div key={f.label} className="flex items-center gap-3 text-sm text-blue-100">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: f.color }} />
-                {f.label}
-              </div>
-            ))}
-          </div>
         </div>
+
+        {/* Version de l'application — en bas du panneau */}
+        <span className="absolute bottom-4 left-0 right-0 text-center text-xs text-white/45 z-10 select-none">
+          Kubuno v{__APP_VERSION__}
+        </span>
       </div>
 
       {/* Panneau droit — formulaire */}
@@ -194,6 +230,61 @@ export default function LoginPage() {
                   </Button>
                 </div>
               </form>
+            </>
+          ) : step === 'forgot' ? (
+            <>
+              <h1 className="text-2xl font-normal mb-1.5" style={{ color: '#202124' }}>
+                {t('forgot.title')}
+              </h1>
+              {forgotSubmitted ? (
+                <>
+                  <div
+                    className="text-sm px-4 py-3 rounded-md mt-4"
+                    style={{ color: '#1e8e3e', background: '#e6f4ea', border: '1px solid #a8dab5' }}
+                  >
+                    {t('forgot.sent')}
+                  </div>
+                  <div className="mt-6">
+                    <Link to="/login" className="text-sm font-medium hover:underline" style={{ color: '#1a73e8' }}>
+                      {t('forgot.back')}
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm mb-8" style={{ color: '#5f6368' }}>
+                    {t('forgot.intro')}
+                  </p>
+                  <form onSubmit={handleForgotSubmit} className="space-y-5">
+                    <div
+                      className="relative flex items-center rounded-md overflow-hidden transition-all"
+                      style={{ border: '1px solid #dadce0' }}
+                      onFocusCapture={(e) => e.currentTarget.style.borderColor = '#1a73e8'}
+                      onBlurCapture={(e) => e.currentTarget.style.borderColor = '#dadce0'}
+                    >
+                      <input
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        required
+                        autoFocus
+                        autoComplete="email"
+                        placeholder="vous@exemple.com"
+                        className="w-full px-4 py-3.5 text-sm bg-white outline-none text-text-primary
+                                   placeholder:text-text-tertiary"
+                      />
+                    </div>
+                    <Button type="submit" size="lg" loading={forgotLoading} className="w-full">
+                      {t('forgot.submit')}
+                    </Button>
+                  </form>
+                  <div className="mt-6 text-center">
+                    <Link to="/login" className="text-sm font-medium hover:underline" style={{ color: '#1a73e8' }}>
+                      {t('forgot.back')}
+                    </Link>
+                  </div>
+                </>
+              )}
             </>
           ) : (
           <>

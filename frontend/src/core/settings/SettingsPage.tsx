@@ -11,9 +11,9 @@ import { getDateLocale } from '../i18n/dateLocale'
 import { Slot, NotificationRegistry } from '../slots/SlotRegistry'
 import type { Session, ApiToken } from '../types'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Key, Trash2, Copy, Check, Plus, X, ShieldCheck, ShieldOff, Shield, Users, Lock, Clock, User, Laptop, Bell, Palette, Monitor, Smartphone, Download, Apple, Calendar as CalendarIcon, Folder, type LucideIcon } from 'lucide-react'
+import { Key, Trash2, Copy, Check, Plus, X, ShieldCheck, ShieldOff, Shield, Users, Lock, Clock, User, Laptop, Bell, Palette, Monitor, Smartphone, Download, Apple, Calendar as CalendarIcon, Folder, ChevronRight, ArrowLeft, type LucideIcon } from 'lucide-react'
 import * as ReactQRCode from 'react-qr-code'
-import { Button, Input, Dropdown, Textarea, Checkbox } from '@ui'
+import { Button, Input, Dropdown, Textarea, Checkbox, useIsMobile } from '@ui'
 
 // react-qr-code is a CommonJS package: under Vite/rolldown the ESM-interop can
 // nest the actual component under `.default`/`.QRCode` (sometimes several levels
@@ -1219,18 +1219,72 @@ useSidebarStore.getState().register({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Section index (mobile only). The section nav lives in the left panel, which on
+ * a phone is an off-canvas drawer — so a mobile user landing on /settings would
+ * see "Profile" and no hint that six other sections exist. Below `lg`, /settings
+ * (with no ?tab=) becomes a plain list of sections, and picking one drills into
+ * it with a back row. Same URLs, so links and the desktop layout are untouched.
+ */
+function MobileSettingsIndex() {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  return (
+    <div className="pb-2">
+      <h1 className="text-xl font-medium text-text-primary px-1 mb-3">{t('settings.page_title')}</h1>
+      <div className="divide-y divide-border rounded-xl border border-border overflow-hidden bg-white">
+        {SETTINGS_NAV.map(({ id, labelKey, defaultLabel, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => navigate(`/settings?tab=${id}`)}
+            className="w-full flex items-center gap-4 px-4 h-[56px] text-left active:bg-surface-2 transition-colors"
+          >
+            <Icon size={21} className="shrink-0 text-text-secondary" />
+            <span className="flex-1 min-w-0 truncate text-[15px] text-text-primary">
+              {t(labelKey, { defaultValue: defaultLabel })}
+            </span>
+            <ChevronRight size={18} className="shrink-0 text-text-tertiary" />
+          </button>
+        ))}
+      </div>
+      {/* Module-contributed sections stay reachable from the index. */}
+      <div className="mt-4"><Slot name="settings-sections" /></div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const { t } = useTranslation()
   const [params] = useSearchParams()
-  const tab = (params.get('tab') as Tab) || 'profile'
+  const navigate = useNavigate()
+  const isMobile = useIsMobile()
+  const rawTab = params.get('tab')
+  const tab = (rawTab as Tab) || 'profile'
 
   const current = SETTINGS_NAV.find(navItem => navItem.id === tab)
 
+  // Mobile, no section chosen → the index (see MobileSettingsIndex).
+  if (isMobile && !rawTab) return <MobileSettingsIndex />
+
   return (
     <div className="max-w-4xl">
-      <h1 className="text-xl font-medium text-text-primary mb-6">
-        {current ? t(current.labelKey, { defaultValue: current.defaultLabel }) : t('settings.page_title')}
-      </h1>
+      {isMobile ? (
+        <button
+          type="button"
+          onClick={() => navigate('/settings')}
+          className="flex items-center gap-2 -ml-1 mb-4 h-11 pr-3 pl-1 rounded-lg text-text-primary active:bg-surface-2 transition-colors"
+        >
+          <ArrowLeft size={20} className="shrink-0" />
+          <span className="text-lg font-medium truncate">
+            {current ? t(current.labelKey, { defaultValue: current.defaultLabel }) : t('settings.page_title')}
+          </span>
+        </button>
+      ) : (
+        <h1 className="text-xl font-medium text-text-primary mb-6">
+          {current ? t(current.labelKey, { defaultValue: current.defaultLabel }) : t('settings.page_title')}
+        </h1>
+      )}
 
       {tab === 'profile'       && <ProfileTab />}
       {tab === 'notifications' && <NotificationsTab />}
@@ -1240,7 +1294,8 @@ export default function SettingsPage() {
       {tab === 'sessions'      && <SessionsTab />}
       {tab === 'api-tokens'    && <ApiTokensTab />}
 
-      <Slot name="settings-sections" />
+      {/* On mobile these live in the index, not under every section. */}
+      {!isMobile && <Slot name="settings-sections" />}
     </div>
   )
 }

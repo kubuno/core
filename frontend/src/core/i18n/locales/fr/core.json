@@ -127,7 +127,17 @@
     "admin_link": "l'Administration",
     "customize": "Personnaliser",
     "finish": "Terminer",
-    "add_widgets": "Ajouter des widgets"
+    "add_widgets": "Ajouter des widgets",
+    "catalog_title": "Bibliothèque de widgets",
+    "add_widgets_desc": "Touchez un widget pour l'ajouter à votre tableau de bord",
+    "all_widgets_shown": "Tous les widgets disponibles sont sur votre tableau de bord.",
+    "reset": "Réinitialiser",
+    "reset_layout": "Réinitialiser la disposition",
+    "reset_title": "Réinitialiser le tableau de bord ?",
+    "reset_confirm": "Chaque widget retrouve sa position et sa taille par défaut. Vos ajouts et suppressions sont remis aux valeurs par défaut.",
+    "size_small": "Petit",
+    "size_medium": "Moyen",
+    "size_large": "Grand"
   },
   "about": {
     "title": "À propos de Kubuno",
@@ -391,7 +401,18 @@
     "set_clock_digital": "Numérique",
     "set_clock_flip": "À bascule",
     "set_clock_analog": "Analogique",
+    "set_clock_style7": "Style 7 (rose)",
+    "set_clock_roman": "Romaine (bleu/or)",
+    "set_clock_gorgy": "Gare (jaune)",
+    "set_clock_seven_square": "Style Seven (carré)",
+    "set_clock_sapling": "Carré minimaliste",
+    "set_clock_blue_round": "Bleue ronde",
     "set_clock_seconds": "Afficher les secondes",
-    "set_clock_24h": "Format 24 h"
+    "set_clock_24h": "Format 24 h",
+    "name_profile": "Profil", "desc_profile": "Votre avatar, votre rôle et le stockage",
+    "name_quota": "Stockage", "desc_quota": "Espace utilisé et disponible",
+    "name_clock": "Horloge", "desc_clock": "Horloge numérique, à volets ou analogique",
+    "name_tokens": "Jetons API", "desc_tokens": "Jetons actifs et état MCP",
+    "name_activity": "Activité récente", "desc_activity": "Derniers événements de vos modules"
   }
 }

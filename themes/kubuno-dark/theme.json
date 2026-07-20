@@ -1,0 +1,59 @@
+{
+  "id": "kubuno-dark",
+  "name": "Kubuno Dark",
+  "color_scheme": "dark",
+  "version": "1.0.0",
+  "theme_api_version": 1,
+  "vars": {
+    "--color-primary": "#8ab4f8",
+    "--color-primary-hover": "#aecbfa",
+    "--color-primary-light": "#1a3a5c",
+    "--color-white": "#202124",
+    "--color-surface-0": "#202124",
+    "--color-surface-1": "#292a2d",
+    "--color-surface-2": "#35363a",
+    "--color-surface-3": "#444746",
+    "--color-search-bg": "#303134",
+    "--color-text-primary": "#e8eaed",
+    "--color-text-secondary": "#9aa0a6",
+    "--color-text-tertiary": "#80868b",
+    "--color-text-nav-active": "#aecbfa",
+    "--color-border": "#5f6368",
+    "--color-border-strong": "#80868b",
+    "--color-danger": "#f28b82",
+    "--color-danger-light": "#3d1c1c",
+    "--color-success": "#81c995",
+    "--color-success-light": "#1a3a27",
+    "--color-warning": "#fdd663",
+    "--color-warning-light": "#3d3218",
+    "--body-bg": "#17181b",
+    "--scrollbar-thumb": "#5f6368",
+    "--scrollbar-thumb-hover": "#80868b",
+    "--kbn-ws-bg": "#202124",
+    "--kbn-ws-panel": "#292a2d",
+    "--kbn-ws-toolbar": "#35363a",
+    "--kbn-ws-header": "#292a2d",
+    "--kbn-ws-active": "#394457",
+    "--kbn-ws-border": "#5f6368",
+    "--kbn-ws-text": "#e8eaed",
+    "--kbn-ws-text-dim": "#9aa0a6",
+    "--kbn-ws-hover": "rgba(255, 255, 255, 0.08)",
+    "--kbn-ws-topbar": "#292a2d",
+    "--kbn-ws-status": "#292a2d",
+    "--kbn-office-tabstrip": "#17181b",
+    "--kbn-office-tabstrip-text": "#e8eaed",
+    "--kbn-office-strip-hover": "rgba(255, 255, 255, 0.08)",
+    "--kbn-office-tab-active-text": "#8ab4f8",
+    "--kbn-office-item-active-text": "#8ab4f8",
+    "--kbn-office-item-active-bg": "rgba(138, 180, 248, 0.16)"
+  },
+  "global": {
+    "css": "global.css",
+    "script": "global.js"
+  },
+  "modules": {
+    "drive": {
+      "css": "modules/drive.css"
+    }
+  }
+}

@@ -228,6 +228,12 @@ export function useGridLayout(activeModuleIds: Set<string>) {
     })
   }, [])
 
+  /** Wipe the saved layout so every available widget returns to its default,
+   *  auto-placed position (order/size from the registry). */
+  const resetLayout = useCallback(() => {
+    setLayout({ items: [], hidden: [] })
+  }, [])
+
   const getConfig = useCallback(
     (id: string): Record<string, unknown> => layout.config?.[id] ?? {},
     [layout.config],
@@ -240,5 +246,5 @@ export function useGridLayout(activeModuleIds: Set<string>) {
     }))
   }, [])
 
-  return { gridItems, hiddenWidgets, moveWidget, resizeWidget, removeWidget, addWidget, getConfig, setConfig }
+  return { gridItems, hiddenWidgets, moveWidget, resizeWidget, removeWidget, addWidget, resetLayout, getConfig, setConfig }
 }

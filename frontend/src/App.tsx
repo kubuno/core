@@ -8,14 +8,16 @@ import Shell from './core/shell/Shell'
 import { DocumentTitle } from './core/shell/DocumentTitle'
 import LoginPage from './core/auth/LoginPage'
 import RegisterPage from './core/auth/RegisterPage'
-import ForgotPasswordPage from './core/auth/ForgotPasswordPage'
 import OAuthCallback from './core/auth/OAuthCallback'
 import SettingsPage from './core/settings/SettingsPage'
 import AdminPage from './core/admin/AdminPage'
 import HomePage from './core/pages/HomePage'
 import ModulesPage from './core/pages/ModulesPage'
 import AboutPage from './core/pages/AboutPage'
+import LabelsPage from './core/pages/LabelsPage'
 import PromptHost from './core/components/PromptHost'
+import ImagePickerHost from './core/components/ImagePickerHost'
+import LabelPickerHost from './core/components/LabelPickerHost'
 import PendingDeletionHost from './core/components/PendingDeletionHost'
 
 // ── Modules ───────────────────────────────────────────────────────────────────
@@ -97,7 +99,7 @@ export default function App() {
       {/* Pages publiques core — redirigent vers l'accueil si déjà connecté */}
       <Route path="/login"           element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
       <Route path="/register"        element={<PublicOnlyRoute><RegisterPage /></PublicOnlyRoute>} />
-      <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPasswordPage /></PublicOnlyRoute>} />
+      <Route path="/forgot-password" element={<PublicOnlyRoute><LoginPage initialStep="forgot" /></PublicOnlyRoute>} />
       <Route path="/auth/oauth/:provider/callback" element={<OAuthCallback />} />
 
       {/* Pages publiques des modules */}
@@ -114,6 +116,7 @@ export default function App() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="admin"    element={<AdminPage />} />
         <Route path="about"    element={<AboutPage />} />
+        <Route path="labels"   element={<LabelsPage />} />
 
         {/* Routes des modules — enregistrées dynamiquement dans register.ts */}
         {RouteRegistry.getShellRoutes().map(({ path, Component, props = {} }) => (
@@ -126,6 +129,8 @@ export default function App() {
       </Route>
     </Routes>
     <PromptHost />
+    <ImagePickerHost />
+    <LabelPickerHost />
     <PendingDeletionHost />
     </>
   )

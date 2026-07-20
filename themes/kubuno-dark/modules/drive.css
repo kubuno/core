@@ -1,0 +1,11 @@
+/* Objets du module Drive (variante sombre). Le Drive est rendu sous
+   [data-module="drive"]. Teintes de sélection reproduites en variables éditables
+   (équivalents sombres des valeurs par défaut). Les surcharges effectives des
+   classes codées en dur vivent dans global.css (portée globale, couvre aussi
+   l'aperçu de thème). */
+[data-module="drive"] {
+  --kbn-drive-card-selected: #28415f;   /* tuile fichier sélectionnée */
+  --kbn-drive-folder-selected: #28415f; /* carte dossier sélectionnée */
+  --kbn-drive-row-selected: #22344d;    /* ligne liste sélectionnée */
+  --kbn-drive-hover: #2b2c30;           /* survol */
+}

@@ -1,6 +1,24 @@
 export declare const CHART_COLORS: string[];
 /** Octets → chaîne lisible (Ko/Mo/Go…). */
 export declare function fmtBytes(n: number): string;
+export declare function BarChart({ data, color, height, unit, }: {
+    data: {
+        label: string;
+        value: number;
+    }[];
+    color?: string;
+    height?: number;
+    unit?: string;
+}): import("react").JSX.Element;
+export declare function AreaChart({ data, color, height, unit, }: {
+    data: {
+        label: string;
+        value: number;
+    }[];
+    color?: string;
+    height?: number;
+    unit?: string;
+}): import("react").JSX.Element;
 export declare function ProgressRing({ pct, label, value, sub, color, size, }: {
     pct: number;
     label?: string;
@@ -18,23 +36,6 @@ export declare function DonutChart({ data, centerValue, centerLabel, size, }: {
     centerValue?: string;
     centerLabel?: string;
     size?: number;
-}): import("react").JSX.Element;
-export declare function BarChart({ data, color, height, gradient, }: {
-    data: {
-        label: string;
-        value: number;
-    }[];
-    color?: string;
-    height?: number;
-    gradient?: boolean;
-}): import("react").JSX.Element;
-export declare function AreaChart({ data, color, height, }: {
-    data: {
-        label: string;
-        value: number;
-    }[];
-    color?: string;
-    height?: number;
 }): import("react").JSX.Element;
 export declare function HBarList({ items, color, }: {
     items: {

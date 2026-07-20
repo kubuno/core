@@ -7,9 +7,9 @@ import { useState, useRef, useLayoutEffect, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { TFunction } from 'i18next'
 import type { CSSProperties } from 'react'
-import { ColorPicker, useAppPickerTheme, type PickerTheme } from './ColorPicker'
+import { ColorPicker, useAppPickerTheme, type PickerTheme, type PickerTool } from './ColorPicker'
 
-export function ColorField({ t, C, color, onChange, history, onPickHistory, className, style, width = 32, height = 24 }: {
+export function ColorField({ t, C, color, onChange, history, onPickHistory, className, style, width = 32, height = 24, leftTools }: {
   t?: TFunction
   C?: PickerTheme
   color: string
@@ -20,6 +20,8 @@ export function ColorField({ t, C, color, onChange, history, onPickHistory, clas
   style?: CSSProperties
   width?: number
   height?: number
+  // Extra tool buttons injected into the picker's left column (see PickerTool).
+  leftTools?: PickerTool[]
 }) {
   // Sans thème explicite, le picker suit le thème de l'APPLICATION (clair/sombre).
   const appTheme = useAppPickerTheme()
@@ -84,7 +86,7 @@ export function ColorField({ t, C, color, onChange, history, onPickHistory, clas
               visibility: pos ? 'visible' : 'hidden',
             }}
           >
-            <ColorPicker t={t} C={theme} color={color} onChange={onChange} onClose={() => setOpen(false)} history={history} onPickHistory={onPickHistory} />
+            <ColorPicker t={t} C={theme} color={color} onChange={onChange} onClose={() => setOpen(false)} history={history} onPickHistory={onPickHistory} leftTools={leftTools} />
           </div>
         </>,
         document.body,

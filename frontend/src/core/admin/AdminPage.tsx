@@ -9,6 +9,7 @@ import SettingsPanel from './SettingsPanel'
 import ThemesPanel from './ThemesPanel'
 import SpeechToTextPanel from './SpeechToTextPanel'
 import OAuthProvidersPanel from './OAuthProvidersPanel'
+import LoginAnimationPanel from './LoginAnimationPanel'
 import { useAuthStore } from '../store/authStore'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -286,7 +287,7 @@ export default function AdminPage() {
       {tab === 'modules'   && <ModulesPanel />}
       {tab === 'settings'  && <SettingsPanel />}
       {tab === 'sso'       && <OAuthProvidersPanel />}
-      {tab === 'apparence' && <ThemesPanel />}
+      {tab === 'apparence' && <><ThemesPanel /><LoginAnimationPanel /></>}
       {tab === 'speech-to-text' && <SpeechToTextPanel />}
 
       <Slot name="admin-panels" />

@@ -7,6 +7,7 @@ import {
   Tv, Music, Code2, Users, Clapperboard, MailIcon as Mail, Bot,
   Contact, LayoutTemplate, FolderKanban, Briefcase,
   Layers, BarChart3, Zap, Workflow, Sigma,
+  Activity, HardDrive, KeyRound, UserCircle, ShieldCheck, Gauge,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -19,6 +20,7 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   Tv, Music, Code2, Users, Clapperboard, Mail, Bot,
   Contact, LayoutTemplate, FolderKanban, Briefcase,
   Layers, BarChart3, Zap, Workflow, Sigma,
+  Activity, HardDrive, KeyRound, UserCircle, ShieldCheck, Gauge,
 }
 
 export function getIcon(name: string): LucideIcon {

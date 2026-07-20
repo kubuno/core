@@ -20,6 +20,8 @@ interface DropdownProps {
     fontSize?: number;
     className?: string;
     variant?: DropdownVariant;
+    /** Extra styles merged into the trigger button (e.g. to square joined corners). */
+    buttonStyle?: React.CSSProperties;
 }
-export declare function Dropdown({ value, onChange, options, width, dropdownMinWidth, placeholder, disabled, height, fontSize, className, variant, }: DropdownProps): React.JSX.Element;
+export declare function Dropdown({ value, onChange, options, width, dropdownMinWidth, placeholder, disabled, height, fontSize, className, variant, buttonStyle, }: DropdownProps): React.JSX.Element;
 export {};

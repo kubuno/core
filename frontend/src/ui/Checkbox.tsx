@@ -9,7 +9,7 @@ interface CheckboxProps {
   label?: string
   description?: string
   variant?: CheckboxVariant
-  /** Couleur d'accent (coché). Défaut : bleu primaire. Ex. couleur d'un agenda. */
+  /** Accent color (when checked). Defaults to the theme primary. E.g. a calendar color. */
   color?: string
   disabled?: boolean
   className?: string
@@ -45,7 +45,9 @@ export function Checkbox({
   variant = 'default', color, disabled = false,
   className, labelClassName,
 }: CheckboxProps) {
-  const accent = color ?? (variant === 'dark' ? '#007acc' : '#1a73e8')
+  // Default to the theme primary so the accent follows the active theme; an
+  // explicit `color` prop still overrides (e.g. calendar-specific accents).
+  const accent = color ?? (variant === 'dark' ? '#007acc' : 'var(--color-primary)')
   return (
     <label
       className={`inline-flex items-start gap-2 select-none ${className ?? ''}`}

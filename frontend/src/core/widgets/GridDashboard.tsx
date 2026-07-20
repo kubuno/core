@@ -1,8 +1,12 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus } from 'lucide-react'
+import { Plus, RotateCcw } from 'lucide-react'
+import ConfirmDialog from '@ui/ConfirmDialog'
 import { COLS, ROW_H, GAP, type GridPos, type DragState, type ResizeState, type GhostState } from './gridTypes'
 import { useGridLayout } from './useGridLayout'
+import { useConfirm } from '../hooks/useConfirm'
+import { useModulesStore } from '../store/modulesStore'
+import { resolveWidgetPresentation, widgetSizeLabel } from './widgetCatalog'
 import GridWidget from './GridWidget'
 import type { WidgetDef } from './WidgetRegistry'
 
@@ -17,11 +21,23 @@ const MIN_ROW_SPAN = 2
 
 export default function GridDashboard({ allWidgets, activeIds, editMode }: Props) {
   const { t } = useTranslation()
+  const { activeModules } = useModulesStore()
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const {
     gridItems, hiddenWidgets,
-    moveWidget, resizeWidget, removeWidget, addWidget,
+    moveWidget, resizeWidget, removeWidget, addWidget, resetLayout,
     getConfig, setConfig,
   } = useGridLayout(activeIds)
+
+  const handleReset = useCallback(async () => {
+    const ok = await confirm({
+      title:        t('home.reset_title'),
+      message:      t('home.reset_confirm'),
+      confirmLabel: t('home.reset'),
+      variant:      'warning',
+    })
+    if (ok) resetLayout()
+  }, [confirm, resetLayout, t])
 
   const gridRef     = useRef<HTMLDivElement>(null)
   const ghostRef    = useRef<HTMLDivElement>(null)
@@ -43,9 +59,12 @@ export default function GridDashboard({ allWidgets, activeIds, editMode }: Props
   const [ghost, setGhost]       = useState<GhostState | null>(null)
   const [landingId, setLandingId] = useState<string | null>(null)
 
-  // Derive max row from grid items so grid auto-expands
-  const maxRow = gridItems.reduce((m, i) => Math.max(m, i.pos.row + i.pos.rowSpan - 1), 6)
-  const gridRows = maxRow + 2  // spare rows at bottom
+  // The grid hugs its content exactly (no dead space below the last widget).
+  // Spare rows are only added while a drag/resize is in progress, so there's
+  // always a landing zone below the content to drop a widget into.
+  const contentRows = gridItems.reduce((m, i) => Math.max(m, i.pos.row + i.pos.rowSpan - 1), 1)
+  const ghostBottom = ghost ? ghost.row + ghost.rowSpan - 1 : 0
+  const gridRows = Math.max(contentRows, ghostBottom) + (ghost ? 2 : 0)
 
   function getCellWidth(): number {
     if (!gridRef.current) return 80
@@ -265,27 +284,72 @@ export default function GridDashboard({ allWidgets, activeIds, editMode }: Props
         })}
       </div>
 
-      {/* Hidden widgets — add */}
-      {editMode && hiddenWidgets.length > 0 && (
+      {/* Widget catalog (edit mode) */}
+      {editMode && (
         <div className="mt-8">
-          <h2 className="text-sm font-medium text-text-secondary mb-3">{t('home.add_widgets')}</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {hiddenWidgets.map(w => (
-              <button
-                key={w.id}
-                onClick={() => addWidget(w.id)}
-                className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-border
-                           rounded-xl text-text-secondary hover:border-primary hover:text-primary
-                           hover:bg-primary/5 transition-colors text-sm"
-              >
-                <Plus size={18} />
-                <span className="text-center leading-tight capitalize">
-                  {w.id.replace(/-/g, ' ')}
-                </span>
-              </button>
-            ))}
+          <div className="flex items-end justify-between mb-3 gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-text-primary">{t('home.catalog_title')}</h2>
+              <p className="text-xs text-text-tertiary mt-0.5">
+                {hiddenWidgets.length > 0 ? t('home.add_widgets_desc') : t('home.all_widgets_shown')}
+              </p>
+            </div>
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border
+                         text-text-secondary hover:bg-surface-2 hover:text-text-primary transition-colors shrink-0"
+            >
+              <RotateCcw size={13} />
+              {t('home.reset_layout')}
+            </button>
           </div>
+
+          {hiddenWidgets.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {hiddenWidgets.map(w => {
+                const p = resolveWidgetPresentation(w, activeModules, t)
+                const accent = p.accent ?? 'var(--color-primary)'
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => addWidget(w.id)}
+                    className="group flex items-center gap-3 p-3 border border-border rounded-xl bg-surface-0
+                               text-left hover:border-primary hover:shadow-sm transition-all"
+                  >
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: p.accent ? `${p.accent}1a` : 'var(--color-primary-light)', color: accent }}
+                    >
+                      <p.Icon size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-text-primary truncate">{p.title}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-2 text-text-tertiary shrink-0">
+                          {widgetSizeLabel(w.size, t)}
+                        </span>
+                      </div>
+                      {p.description && <p className="text-xs text-text-tertiary truncate mt-0.5">{p.description}</p>}
+                    </div>
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-text-tertiary
+                                     bg-surface-1 group-hover:bg-primary group-hover:text-white transition-colors">
+                      <Plus size={14} />
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-border rounded-xl">
+              <Plus size={20} className="text-text-tertiary mb-1.5" />
+              <p className="text-sm text-text-secondary">{t('home.all_widgets_shown')}</p>
+            </div>
+          )}
         </div>
+      )}
+
+      {confirmState && (
+        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
       )}
     </div>
   )

@@ -101,6 +101,23 @@ export function useIdleLogout() {
     const events: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'wheel']
     events.forEach(e => window.addEventListener(e, onActivity, { passive: true }))
 
+    // 4. Une LECTURE MULTIMÉDIA en cours compte comme de l'activité : regarder un
+    //    film ou écouter de la musique/radio sans toucher la souris ne doit pas
+    //    verrouiller la session. Deux sources complémentaires :
+    //    a) sondage des <audio>/<video> du DOM en lecture (couvre les lecteurs
+    //       vidéo de n'importe quel module, sans aucun contrat) ;
+    //    b) l'événement `kubuno:media-activity` (window), que les modules émettent
+    //       périodiquement pour leurs lecteurs HORS DOM (éléments `new Audio()`,
+    //       ex. lecteur musique/radio et console DJ de media) — contrat léger,
+    //       aucun import croisé.
+    window.addEventListener('kubuno:media-activity', onActivity)
+    const mediaPoll = setInterval(() => {
+      if (cancelled) return
+      const playing = Array.from(document.querySelectorAll<HTMLMediaElement>('audio, video'))
+        .some(m => !m.paused && !m.ended && m.readyState >= 2)
+      if (playing) onActivity()
+    }, 30_000)
+
     // Charger la durée configurée par l'admin (réglage public, clé `config`).
     axios.get<{ config: Record<string, unknown> }>('/api/v1/config')
       .then(r => {
@@ -123,6 +140,8 @@ export function useIdleLogout() {
       if (keepAliveTimer) clearTimeout(keepAliveTimer)
       if (bc) { bc.onmessage = null; bc.close() }
       events.forEach(e => window.removeEventListener(e, onActivity))
+      window.removeEventListener('kubuno:media-activity', onActivity)
+      clearInterval(mediaPoll)
     }
   }, [user, logout, refreshToken])
 }

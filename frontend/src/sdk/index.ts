@@ -13,6 +13,12 @@ export * from '../core/registry/FileTypeRegistry'
 export * from '../core/registry/ModuleServiceRegistry'
 export * from '../core/registry/FaviconRegistry'
 export * from '../core/registry/ExtensionRegistry'
+export * from '../core/registry/DataTransferRegistry'
+export { DataCardView } from '../core/registry/DataCardView'
+// Cross-module labels: imperative picker + typed API (labels live in the core).
+export { openLabelPicker, resourceKeyOf } from '../core/store/labelPickerStore'
+export { labelsApi } from '../core/api/labels'
+export type { CoreLabel, LabelBrowseItem } from '../core/api/labels'
 export * from '../core/registry/CollapseSidebarRegistry'
 export * from '../core/registry/calendarOverlay'
 export * from '../core/slots/SlotRegistry'
@@ -53,12 +59,22 @@ export { useDebouncedAutosave } from '../core/hooks/useAutosave'
 export { formatSize } from '../core/utils/format'
 export { useDraggable } from '../core/hooks/useDraggable'
 export { prompt } from '../core/store/promptStore'
+// Image picker — THE way to insert or upload an image anywhere in the app.
+export { openImagePicker } from '../core/store/imagePickerStore'
+export type { ImagePickResult, ImagePickerOptions } from '../core/store/imagePickerStore'
+// Modules add their own source tab (e.g. photos) here.
+export { ImageSourceRegistry } from '../core/registry/ImageSourceRegistry'
+export type { ImageSource, ImageSourceProps } from '../core/registry/ImageSourceRegistry'
 export { default as DashboardWidget } from '../core/widgets/DashboardWidget'
 export { default as PdfViewerModal } from '../core/components/PdfViewerModal'
 export { useWidgetSize, WidgetSizeContext } from '../core/widgets/WidgetSizeContext'
 export { useWsStore } from '../core/store/wsStore'
 export { getDateLocale } from '../core/i18n/dateLocale'
 export { getIcon, ICON_MAP } from '../core/utils/iconMap'
+// Registre d'override de composants (thèmes "skins") — un module peut enregistrer
+// ses propres clés thématisables et/ou des overrides ; les scripts de thème
+// reçoivent ce registre via l'API de thème au chargement.
+export { ComponentRegistry, ThemeScopeContext, ThemePreviewContext, themed } from '../ui/themeRegistry'
 export type { User } from '../core/types'
 // Dictée vocale partagée (barre de recherche du core + modules type Jarvis) :
 // hook + toast éditable centré, branché sur le backend STT auto-hébergé.

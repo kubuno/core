@@ -3,9 +3,9 @@
 // sliders (RGB/HSV/HSL/CMYK/Gray) + harmony schemes + hex + swatches + history.
 // Promoted out of PaintSharp so EVERY module can use it (not just the creative suite).
 // `t` and `C` are optional: omit them outside PaintSharp to get sensible defaults.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TFunction } from 'i18next'
-import { Square, Triangle, Circle } from 'lucide-react'
+import { Square, Triangle, Circle, Pipette } from 'lucide-react'
 import {
   hexToRgb, rgbToHex, rgbToHsv, hsvToRgb, rgbToHsl, hslToRgb, rgbToCmyk, cmykToRgb,
 } from './color'
@@ -14,6 +14,18 @@ export type PickerTheme = {
   accent: string; border: string; text: string; textDim: string; toolbar: string
   surface?: string   // fond des champs/contrôles internes (défaut sombre)
   title?:   string   // couleur du titre de l'en-tête (défaut sombre)
+}
+
+// Extension point: an extra circular button appended to the left tool column
+// (below the SV-shape toggles + eyedropper). Lets a consuming module — e.g.
+// PaintSharp's Apex adding a "no fill" option — extend the picker without the
+// core knowing about module-specific concepts.
+export type PickerTool = {
+  id: string
+  icon: ReactNode
+  title: string
+  active?: boolean
+  onClick: () => void
 }
 
 // Thème sombre par défaut — correspond au chrome des éditeurs PaintSharp.
@@ -73,6 +85,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   layer_harmony_split:  'Complémentaires divisées',
   layer_harmony_mono:   'Monochrome',
   layer_color_recent:   'Récemment utilisées',
+  layer_color_eyedropper: 'Pipette',
   layer_color_cancel:   'Annuler',
   layer_color_confirm:  'Ajouter',
 }
@@ -89,6 +102,66 @@ export function harmonyColors(scheme: Scheme, h: number, s: number, v: number): 
     case 'split':  return [at(0), at(150), at(210)]
     case 'mono':   return [[h,s,Math.max(0.2,v*0.45)],[h,s,v],[h,Math.max(0.12,s*0.45),Math.min(1,v+0.15)]]
   }
+}
+
+// Relative hue angles (degrees from the base hue) that define each scheme's
+// geometry — reused to draw the selector glyphs so the icon matches the result.
+const HARMONY_ANGLES: Record<Scheme, number[]> = {
+  comp:   [0, 180],
+  analog: [-30, 0, 30],
+  triad:  [0, 120, 240],
+  tetrad: [0, 90, 180, 270],
+  split:  [0, 150, 210],
+  mono:   [], // rendered specially: dots along a single radius
+}
+
+// Coolorus-style harmony glyph: a hue-ring outline with the scheme's marker dots
+// placed at their true angles and joined by the harmony polygon (the shape that
+// defines the relationship). `mono` shows graduated dots along a single radius.
+// `comp` (2 points) is a diameter; `analog` an open arc; the rest closed polygons.
+function HarmonyIcon({ scheme, size = 20, color = 'currentColor' }: {
+  scheme: Scheme; size?: number; color?: string
+}) {
+  const c = size / 2, R = size / 2 - 3, dot = Math.max(1.6, size * 0.095)
+  const pt = (a: number): [number, number] =>
+    [c + R * Math.sin(a * Math.PI / 180), c - R * Math.cos(a * Math.PI / 180)]
+  // Analogous hues sit only ±30° apart — too cramped to read at 20px, so the glyph
+  // spreads them wider (illustrative only; the real harmony still uses HARMONY_ANGLES).
+  const iconAngles = scheme === 'analog' ? [-48, 0, 48] : HARMONY_ANGLES[scheme]
+  const pts = iconAngles.map(pt)
+  const poly = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none"
+         strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+      <circle cx={c} cy={c} r={R} stroke={color} strokeOpacity={0.3} strokeWidth={1} />
+      {scheme === 'mono' ? (
+        <>
+          <line x1={c} y1={c + R} x2={c} y2={c - R} stroke={color} strokeOpacity={0.45} strokeWidth={1.2} />
+          {[-1, -0.33, 0.33, 1].map((f, i) => (
+            <circle key={i} cx={c} cy={c - R * f} r={i === 3 ? dot * 1.25 : dot}
+                    fill={color} fillOpacity={0.45 + 0.18 * (i + 1)} />
+          ))}
+        </>
+      ) : (
+        <>
+          {pts.length === 2 ? (
+            <line x1={pts[0][0]} y1={pts[0][1]} x2={pts[1][0]} y2={pts[1][1]}
+                  stroke={color} strokeOpacity={0.55} strokeWidth={1.2} />
+          ) : scheme === 'analog' ? (
+            // Adjacent hues → an arc riding the hue ring between the outer two dots.
+            <path d={`M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)} A${R},${R} 0 0 1 ${pts[2][0].toFixed(1)},${pts[2][1].toFixed(1)}`}
+                  stroke={color} strokeOpacity={0.55} strokeWidth={1.2} fill="none" />
+          ) : (
+            <polygon points={poly} stroke={color} strokeOpacity={0.55} strokeWidth={1.2}
+                     fill={color} fillOpacity={0.14} />
+          )}
+          {pts.map(([x, y], i) => (
+            <circle key={i} cx={x} cy={y} r={i === 0 ? dot * 1.3 : dot} fill={color} />
+          ))}
+        </>
+      )}
+    </svg>
+  )
 }
 
 type SvShape = 'square' | 'triangle' | 'circle'
@@ -151,7 +224,20 @@ function SvArea({ size, h, s, v, shape, onChange }: {
   const [hxp,hyp]=handlePos()
   return (
     <div className="absolute" style={{ left:(212-size)/2, top:(212-size)/2, width:size, height:size }}>
-      <canvas ref={canRef} onPointerDown={e=>{drag.current=true;upd(e)}}
+      <canvas ref={canRef} tabIndex={0} role="slider"
+              aria-label="Saturation / valeur"
+              aria-valuetext={`S ${Math.round(s*100)}%, V ${Math.round(v*100)}%`}
+              onPointerDown={e=>{drag.current=true;upd(e)}}
+              onKeyDown={e=>{
+                const st=e.shiftKey?0.1:0.02, cl=(x:number)=>Math.max(0,Math.min(1,x))
+                if(e.key==='ArrowLeft') onChange(cl(s-st),v)
+                else if(e.key==='ArrowRight') onChange(cl(s+st),v)
+                else if(e.key==='ArrowUp') onChange(s,cl(v+st))
+                else if(e.key==='ArrowDown') onChange(s,cl(v-st))
+                else return
+                e.preventDefault()
+              }}
+              className="focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               style={{ width:size, height:size, cursor:'crosshair', borderRadius: shape==='circle'?'50%':2 }} />
       <div className="absolute rounded-full pointer-events-none"
            style={{ width:11, height:11, border:'2px solid #fff', boxShadow:'0 0 0 1px rgba(0,0,0,.5)', left:hxp-5.5, top:hyp-5.5 }} />
@@ -170,7 +256,17 @@ function ColorChan({ label, value, max, track, onInput, C }: {
   return (
     <div className="flex items-center gap-2">
       <span className="text-[10px] w-3 text-center" style={{ color:C.textDim }}>{label}</span>
-      <div ref={ref} onPointerDown={e=>{drag.current=true;upd(e)}} className="relative flex-1 h-3 cursor-pointer"
+      <div ref={ref} tabIndex={0} role="slider"
+           aria-label={label} aria-valuemin={0} aria-valuemax={Math.round(max)} aria-valuenow={Math.round(value)}
+           onPointerDown={e=>{drag.current=true;upd(e)}}
+           onKeyDown={e=>{
+             const st=e.shiftKey?10:1
+             if(e.key==='ArrowLeft'||e.key==='ArrowDown') onInput(Math.max(0,value-st))
+             else if(e.key==='ArrowRight'||e.key==='ArrowUp') onInput(Math.min(max,value+st))
+             else return
+             e.preventDefault()
+           }}
+           className="relative flex-1 h-3 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
            style={{ background:track, border:`1px solid ${C.border}`, borderRadius:2 }}>
         <div className="absolute top-[-2px] bottom-[-2px] pointer-events-none"
              style={{ width:3, background:'#fff', boxShadow:'0 0 0 1px rgba(0,0,0,.6)', left:`calc(${(value/max)*100}% - 1.5px)`, borderRadius:2 }} />
@@ -185,13 +281,15 @@ function ColorChan({ label, value, max, track, onInput, C }: {
 
 // Coolorus-inspired colour picker: hue ring + central SV square + multi-model
 // sliders (RGB/HSV/HSL/CMYK/Gray) + hex + swatches.
-export function ColorPicker({ t, color, onChange, onClose, C: CProp = DEFAULT_PICKER_THEME, history = [], onPickHistory, onConfirm, onCancel, confirmLabel, cancelLabel }: {
+export function ColorPicker({ t, color, onChange, onClose, C: CProp = DEFAULT_PICKER_THEME, history = [], onPickHistory, onConfirm, onCancel, confirmLabel, cancelLabel, leftTools = [] }: {
   t?: TFunction; color: string; onChange: (hex:string)=>void; onClose: ()=>void
   C?: PickerTheme
   history?: string[]; onPickHistory?: (hex:string)=>void
   // Pied de page optionnel (Annuler / Ajouter). Fourni p.ex. par ColorSwatchPicker
   // pour que le picker « Personnalisé » confirme ou annule, et revienne à la grille.
   onConfirm?: (hex:string)=>void; onCancel?: ()=>void; confirmLabel?: string; cancelLabel?: string
+  // Boutons circulaires supplémentaires ajoutés en bas de la colonne de gauche.
+  leftTools?: PickerTool[]
 }) {
   // Normalise le thème : `surface`/`title` absents (ex. thème PaintSharp) → défauts sombres.
   const C = { ...DEFAULT_PICKER_THEME, ...CProp } as Required<PickerTheme>
@@ -210,6 +308,15 @@ export function ColorPicker({ t, color, onChange, onClose, C: CProp = DEFAULT_PI
 
   const setHSV = (nh:number, ns:number, nv:number) => { setH(nh); setS(ns); setV(nv); onChange(rgbToHex(...hsvToRgb(nh,ns,nv) as [number,number,number])) }
   const setRgb = (r:number,g:number,b:number) => { const [nh,ns,nv] = rgbToHsv(r,g,b); setHSV(nh,ns,nv) }
+
+  // Screen colour picker (Chromium EyeDropper API). Rendered only where supported.
+  const hasEyeDropper = typeof window !== 'undefined' && 'EyeDropper' in window
+  const pickEyedropper = async () => {
+    const ED = (window as unknown as { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper
+    if (!ED) return
+    try { const res = await new ED().open(); const [rr,gg,bb] = hexToRgb(res.sRGBHex); setRgb(rr,gg,bb) }
+    catch { /* cancelled by the user */ }
+  }
 
   const SIZE = 212, RING = 22
   const wheelRef = useRef<HTMLDivElement>(null); const dragHue = useRef(false)
@@ -258,57 +365,108 @@ export function ColorPicker({ t, color, onChange, onClose, C: CProp = DEFAULT_PI
 
   const SWATCHES = ['#000000','#ffffff','#e84a4a','#f9ab00','#f4d03f','#1e8e3e','#16a085','#4a90e8','#2c3e50','#9b51e0','#ff7eb6','#7f8c8d']
   const MODES: typeof mode[] = ['RGB','HSV','HSL','CMYK','GRAY']
+  const SCHEMES: { key: Scheme; label: string }[] = [
+    { key:'comp',   label:'layer_harmony_comp' },
+    { key:'analog', label:'layer_harmony_analog' },
+    { key:'triad',  label:'layer_harmony_triad' },
+    { key:'tetrad', label:'layer_harmony_tetrad' },
+    { key:'split',  label:'layer_harmony_split' },
+    { key:'mono',   label:'layer_harmony_mono' },
+  ]
 
   return (
-    <div className="shadow-2xl p-3" style={{ width:236, background:C.toolbar, border:`1px solid ${C.border}`, borderRadius:4 }}
+    <div className="shadow-2xl p-3" style={{ width:312, background:C.toolbar, border:`1px solid ${C.border}`, borderRadius:4 }}
          onPointerDown={e => e.stopPropagation()}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] font-medium" style={{ color:C.title }}>{tr('layer_color_picker')}</span>
         <button onClick={onClose} className="text-[11px] px-1 rounded hover:bg-white/10" style={{ color:C.textDim }}>✕</button>
       </div>
 
-      {/* Hue ring + inscribed SV square */}
-      <div className="relative mx-auto" style={{ width:SIZE, height:SIZE }}>
-        <div ref={wheelRef} onPointerDown={e=>{dragHue.current=true;updHue(e)}}
-             className="absolute inset-0 rounded-full cursor-pointer"
-             style={{ background:'conic-gradient(#f00 0deg,#ff0 60deg,#0f0 120deg,#0ff 180deg,#00f 240deg,#f0f 300deg,#f00 360deg)' }} />
-        <div className="absolute rounded-full" style={{ inset:RING, background:C.toolbar }} />
-        {/* hue handle */}
-        <div className="absolute rounded-full pointer-events-none"
-             style={{ width:14, height:14, border:'2px solid #fff', boxShadow:'0 0 0 1px rgba(0,0,0,.6)', background:hueHex, left:hxp-7, top:hyp-7 }} />
-        {/* harmony markers on the ring */}
-        {harm.slice(1).map((c, i) => {
-          const a=c[0]*Math.PI/180, mx=SIZE/2+ringR*Math.sin(a), my=SIZE/2-ringR*Math.cos(a)
-          return <div key={i} className="absolute rounded-full pointer-events-none"
-                      style={{ width:10, height:10, border:'2px solid rgba(255,255,255,.85)', background:rgbToHex(...hsvToRgb(c[0],c[1],c[2]) as [number,number,number]), left:mx-5, top:my-5 }} />
-        })}
-        {/* SV area (square / triangle / circle) */}
-        <SvArea size={svSize} h={h} s={s} v={v} shape={svShape} onChange={(ns,nv)=>setHSV(h,ns,nv)} />
+      {/* SV-shape column (left) + hue ring/SV area (centre) + harmony column (right) */}
+      <div className="flex items-start gap-1.5 justify-center">
+        {/* SV area shape selector + screen eyedropper — vertical column of circular
+            buttons (mirrors the harmony column on the right), top-aligned. */}
+        <div className="flex flex-col gap-1" style={{ height:SIZE }}>
+          {(['square','triangle','circle'] as SvShape[]).map(sh => {
+            const active = svShape===sh
+            return (
+              <button key={sh} onClick={()=>setSvShape(sh)} title={sh} aria-pressed={active}
+                      className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+                      style={{ background: active?C.accent:C.surface,
+                               color: active?'#fff':C.textDim, border:`1px solid ${active?C.accent:C.border}` }}>
+                {sh==='square' ? <Square size={15}/> : sh==='triangle' ? <Triangle size={15}/> : <Circle size={15}/>}
+              </button>
+            )
+          })}
+          {hasEyeDropper && (
+            <button onClick={pickEyedropper} title={tr('layer_color_eyedropper')}
+                    aria-label={tr('layer_color_eyedropper')}
+                    className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+                    style={{ background:C.surface, color:C.textDim, border:`1px solid ${C.border}` }}
+                    onMouseEnter={e=>{ e.currentTarget.style.color=C.accent; e.currentTarget.style.borderColor=C.accent }}
+                    onMouseLeave={e=>{ e.currentTarget.style.color=C.textDim; e.currentTarget.style.borderColor=C.border }}>
+              <Pipette size={14} />
+            </button>
+          )}
+          {/* Module-provided extra tools (e.g. Apex "no fill"). */}
+          {leftTools.map(tool => (
+            <button key={tool.id} onClick={tool.onClick} title={tool.title}
+                    aria-label={tool.title} aria-pressed={tool.active ?? undefined}
+                    className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+                    style={{ background: tool.active?C.accent:C.surface,
+                             color: tool.active?'#fff':C.textDim, border:`1px solid ${tool.active?C.accent:C.border}` }}>
+              {tool.icon}
+            </button>
+          ))}
+        </div>
+
+        <div className="relative" style={{ width:SIZE, height:SIZE }}>
+          <div ref={wheelRef} tabIndex={0} role="slider"
+               aria-label={tr('layer_color_picker')} aria-valuemin={0} aria-valuemax={360} aria-valuenow={Math.round(h)}
+               onPointerDown={e=>{dragHue.current=true;updHue(e)}}
+               onKeyDown={e=>{
+                 const st=e.shiftKey?10:1
+                 if(e.key==='ArrowLeft'||e.key==='ArrowDown') setHSV((h-st+360)%360,s,v)
+                 else if(e.key==='ArrowRight'||e.key==='ArrowUp') setHSV((h+st)%360,s,v)
+                 else return
+                 e.preventDefault()
+               }}
+               className="absolute inset-0 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+               style={{ background:'conic-gradient(#f00 0deg,#ff0 60deg,#0f0 120deg,#0ff 180deg,#00f 240deg,#f0f 300deg,#f00 360deg)' }} />
+          <div className="absolute rounded-full" style={{ inset:RING, background:C.toolbar }} />
+          {/* hue handle */}
+          <div className="absolute rounded-full pointer-events-none"
+               style={{ width:14, height:14, border:'2px solid #fff', boxShadow:'0 0 0 1px rgba(0,0,0,.6)', background:hueHex, left:hxp-7, top:hyp-7 }} />
+          {/* harmony markers on the ring */}
+          {harm.slice(1).map((c, i) => {
+            const a=c[0]*Math.PI/180, mx=SIZE/2+ringR*Math.sin(a), my=SIZE/2-ringR*Math.cos(a)
+            return <div key={i} className="absolute rounded-full pointer-events-none"
+                        style={{ width:10, height:10, border:'2px solid rgba(255,255,255,.85)', background:rgbToHex(...hsvToRgb(c[0],c[1],c[2]) as [number,number,number]), left:mx-5, top:my-5 }} />
+          })}
+          {/* SV area (square / triangle / circle) */}
+          <SvArea size={svSize} h={h} s={s} v={v} shape={svShape} onChange={(ns,nv)=>setHSV(h,ns,nv)} />
+        </div>
+
+        {/* Harmony scheme selector — vertical column of circular icon buttons
+            (replaces the old <select>). 6×32px + 5×4px gaps = 212px = wheel height. */}
+        <div className="flex flex-col gap-1 justify-between" style={{ height:SIZE }}>
+          {SCHEMES.map(sc => {
+            const active = scheme===sc.key
+            return (
+              <button key={sc.key} onClick={()=>setScheme(sc.key)} title={tr(sc.label)}
+                      aria-label={tr(sc.label)} aria-pressed={active}
+                      className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+                      style={{ background: active?C.accent:C.surface,
+                               color: active?'#fff':C.textDim, border:`1px solid ${active?C.accent:C.border}` }}>
+                <HarmonyIcon scheme={sc.key} size={20} />
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Shape toggle + harmony scheme selector */}
-      <div className="flex items-center gap-1 mt-2">
-        {(['square','triangle','circle'] as SvShape[]).map(sh => (
-          <button key={sh} onClick={()=>setSvShape(sh)} title={sh}
-                  className="w-6 h-6 flex items-center justify-center"
-                  style={{ borderRadius:3, background: svShape===sh?C.accent:C.surface, color: svShape===sh?'#fff':C.textDim, border:`1px solid ${C.border}` }}>
-            {sh==='square' ? <Square size={12}/> : sh==='triangle' ? <Triangle size={12}/> : <Circle size={12}/>}
-          </button>
-        ))}
-        <div style={{ width:1, height:16, background:C.border, margin:'0 2px' }} />
-        <select value={scheme} onChange={e=>setScheme(e.target.value as Scheme)}
-                className="flex-1 h-6 text-[10px] px-1 outline-none"
-                style={{ background:C.surface, color:C.text, border:`1px solid ${C.border}`, borderRadius:3 }}>
-          <option value="comp">{tr('layer_harmony_comp')}</option>
-          <option value="analog">{tr('layer_harmony_analog')}</option>
-          <option value="triad">{tr('layer_harmony_triad')}</option>
-          <option value="tetrad">{tr('layer_harmony_tetrad')}</option>
-          <option value="split">{tr('layer_harmony_split')}</option>
-          <option value="mono">{tr('layer_harmony_mono')}</option>
-        </select>
-      </div>
       {/* Harmony swatches */}
-      <div className="flex gap-1 mt-1.5">
+      <div className="flex gap-1 mt-2.5">
         {harm.map((c, i) => { const hx=rgbToHex(...hsvToRgb(c[0],c[1],c[2]) as [number,number,number])
           return <button key={i} onClick={()=>setHSV(c[0],c[1],c[2])} title={hx}
                          className="flex-1 h-6" style={{ background:hx, borderRadius:3, border:`1px solid ${C.border}` }} /> })}
@@ -319,7 +477,9 @@ export function ColorPicker({ t, color, onChange, onClose, C: CProp = DEFAULT_PI
         <div style={{ width:28, height:24, background:hex, border:`1px solid ${C.border}`, borderRadius:2, flexShrink:0 }} />
         <span className="text-[10px]" style={{ color:C.textDim }}>#</span>
         <input value={hex.replace('#','').toUpperCase()}
-               onChange={e=>{ const val='#'+e.target.value.trim(); if(/^#[0-9a-fA-F]{6}$/.test(val)){ const [rr,gg,bb]=hexToRgb(val); setRgb(rr,gg,bb) } }}
+               onChange={e=>{ let v=e.target.value.trim().replace(/^#/,'')
+                 if(/^[0-9a-fA-F]{3}$/.test(v)) v=v.split('').map(c=>c+c).join('')  // #abc → #aabbcc
+                 if(/^[0-9a-fA-F]{6}$/.test(v)){ const [rr,gg,bb]=hexToRgb('#'+v); setRgb(rr,gg,bb) } }}
                className="flex-1 h-6 text-[11px] px-2 outline-none font-mono uppercase"
                style={{ background:C.surface, border:`1px solid ${C.border}`, color:C.text, borderRadius:2 }} />
       </div>

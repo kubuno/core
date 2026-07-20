@@ -25,6 +25,8 @@ interface DropdownProps {
   fontSize?: number
   className?: string
   variant?: DropdownVariant
+  /** Extra styles merged into the trigger button (e.g. to square joined corners). */
+  buttonStyle?: React.CSSProperties
 }
 
 interface DropdownPos { top: number; left: number; minWidth: number }
@@ -64,7 +66,7 @@ export function Dropdown({
   width, dropdownMinWidth,
   placeholder, disabled = false,
   height = 36, fontSize = 14,
-  className, variant = 'default',
+  className, variant = 'default', buttonStyle,
 }: DropdownProps) {
   const [open, setOpen]  = useState(false)
   const [pos,  setPos]   = useState<DropdownPos | null>(null)
@@ -134,6 +136,7 @@ export function Dropdown({
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.5 : 1,
           transition: 'background 0.1s',
+          ...buttonStyle,
         }}
         onMouseEnter={e => { if (!open && !disabled) (e.currentTarget as HTMLElement).style.background = t.hoverBg }}
         onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = '' }}

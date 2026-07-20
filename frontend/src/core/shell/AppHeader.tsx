@@ -19,7 +19,7 @@ export default function AppHeader() {
   return (
     <header
       data-app-chrome
-      className="relative flex-shrink-0 h-16 z-50 flex items-center px-1 gap-0"
+      className="relative flex-shrink-0 h-16 z-50 flex items-center gap-0"
       style={{ background: 'var(--body-bg)' }}
     >
       {/* Zone logo — même largeur que la sidebar sur desktop pour aligner la recherche */}

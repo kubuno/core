@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react'
 
 // Pointer-aware activation helpers.
@@ -18,6 +18,54 @@ export function isCoarsePointer(): boolean {
     (window.matchMedia('(pointer: coarse)').matches ||
       window.matchMedia('(hover: none)').matches)
   )
+}
+
+/** Viewport width below which the shell switches to its mobile layout. Mirrors
+ *  Tailwind's `lg` breakpoint, which the shell chrome (MobileNav, MobileFab,
+ *  off-canvas sidebar) already keys off, so JS and CSS never disagree. */
+export const MOBILE_MAX_WIDTH = 1023
+
+/** True while the viewport is narrower than the `lg` breakpoint. Re-renders on
+ *  resize / orientation change. Use it when a mobile layout differs in
+ *  STRUCTURE (different components, sheets instead of popovers) and cannot be
+ *  expressed with `lg:` utility variants alone. */
+export function useIsMobile(): boolean {
+  const query = `(max-width: ${MOBILE_MAX_WIDTH}px)`
+  const [mobile, setMobile] = useState(
+    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : false,
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia(query)
+    const onChange = (e: MediaQueryListEvent) => setMobile(e.matches)
+    setMobile(mql.matches)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [query])
+  return mobile
+}
+
+/** True while the viewport is wider than it is tall. Combined with
+ *  {@link useIsMobile} it detects a phone/tablet held in landscape, where the
+ *  bottom nav is better placed as a vertical left rail. Re-renders on rotation. */
+export function useIsLandscape(): boolean {
+  const query = '(orientation: landscape)'
+  const [landscape, setLandscape] = useState(
+    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : true,
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia(query)
+    const onChange = (e: MediaQueryListEvent) => setLandscape(e.matches)
+    setLandscape(mql.matches)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+  return landscape
 }
 
 type AnyMouseEvent = { stopPropagation(): void; preventDefault(): void }

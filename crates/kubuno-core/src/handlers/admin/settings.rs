@@ -14,8 +14,12 @@ pub async fn get_settings(
     State(state): State<AppState>,
     _admin: AdminUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Module-owned settings (module_id set) are managed in their module's admin
+    // view (Modules → module → settings); listing them here too was flooding the
+    // general Settings tab with duplicates.
     let rows = sqlx::query(
-        "SELECT key, value, category, label, description, is_public FROM core.settings ORDER BY category, key"
+        "SELECT key, value, category, label, description, is_public FROM core.settings \
+         WHERE module_id IS NULL ORDER BY category, key"
     )
     .fetch_all(&state.db)
     .await?;

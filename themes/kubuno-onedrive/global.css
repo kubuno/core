@@ -1,0 +1,147 @@
+/* ============================================================================
+   Kubuno — theme "OneDrive". Microsoft 365 / OneDrive look, built on the Fluent
+   Design System: a OneDrive-blue suite header over a light neutral body, the
+   Fluent blue accent (#0078d4), Segoe UI typography, small corners, flat
+   controls with a Fluent focus underline, and soft "depth" elevation shadows.
+   Pure CSS — applied globally by the host, no scripts.
+   ============================================================================ */
+
+/* Fluent-tinted text selection. */
+::selection { background: color-mix(in srgb, var(--color-primary) 24%, transparent); }
+
+/* ── Thin neutral scrollbars ─────────────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 3px solid transparent; border-radius: 8px; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── Flat Fluent buttons ──────────────────────────────────────────────────
+      Primary: solid accent, no gloss, darkens on hover. Secondary (light):
+      white with a crisp neutral border, the Fluent DefaultButton. */
+button.bg-primary, button.bg-danger { background-image: none !important; box-shadow: none !important; }
+button.bg-primary:hover { background-color: var(--color-primary-hover) !important; }
+button.bg-primary:active { background-color: #005a9e !important; }
+button.bg-danger:active { filter: brightness(.92); }
+button.bg-white {
+  background-image: none !important;
+  border: 1px solid var(--color-border-strong);
+  box-shadow: none !important;
+}
+button.bg-white:hover { background-color: var(--color-surface-2) !important; }
+button.bg-white:active { background-color: var(--color-surface-3) !important; }
+
+/* ── Text fields: Fluent focus border + animated bottom underline ─────────── */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]),
+textarea, select { border-radius: var(--radius-md); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]):focus,
+textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  /* Fluent's 2px accent underline on focus. */
+  box-shadow: inset 0 -2px 0 0 var(--color-primary);
+}
+/* Fluent focus indicator: a dark "focus rectangle" offset off the control, so it
+   reads cleanly over any button colour (blue, red, white) — unlike an accent ring
+   that clashes on the red danger button. */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [role="tab"]:focus-visible,
+input:focus-visible, [role="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-text-primary);
+  outline-offset: 2px;
+}
+
+/* ── Fluent checkboxes & radios: crisp 1px neutral border (darker than the stock
+      light grey), accent fill when checked. ─────────────────────────────────── */
+input[type="checkbox"], input[type="radio"] { border-width: 1px !important; }
+input[type="checkbox"]:not(:checked), input[type="radio"]:not(:checked) {
+  border-color: var(--color-text-secondary) !important;
+}
+input[type="checkbox"]:not(:checked):hover, input[type="radio"]:not(:checked):hover {
+  border-color: var(--color-text-primary) !important;
+}
+
+/* ── Selection: soft Fluent blue tint, dark text (OneDrive list selection) ──
+      Unlike the Finder/Numix themes, OneDrive does NOT invert to a solid accent
+      capsule — the selected row keeps a light blue wash. That is exactly what
+      the `bg-primary-light` token already renders once it is the Fluent
+      `themeLighter` blue (set in theme.json), so no colour override is needed;
+      we only add the Fluent left "rail" accent on selected shell-panel rows. */
+[data-app-chrome] [class*="bg-primary-light"][class*="rounded"] {
+  box-shadow: inset 2px 0 0 var(--color-primary);
+}
+
+/* ── Soft Fluent "depth" elevation shadows on floating surfaces ────────────── */
+.shadow-lg { box-shadow: 0 1.6px 3.6px rgba(0,0,0,.13), 0 0.3px 0.9px rgba(0,0,0,.11) !important; }
+.shadow-xl { box-shadow: 0 6.4px 14.4px rgba(0,0,0,.13), 0 1.2px 3.6px rgba(0,0,0,.11) !important; }
+
+/* ============================================================================
+   OneDrive-blue suite header — the signature. The shell top bar is the <header>
+   carrying `data-app-chrome` (module-internal headers do not have it, so they
+   stay untouched). It becomes OneDrive blue with white contents and a light
+   search box.
+   ============================================================================ */
+header[data-app-chrome] {
+  background: var(--color-headerbar) !important;
+  border-bottom: 1px solid var(--color-headerbar-2) !important;
+  /* Subtle Fluent elevation so the suite header floats above the body. */
+  box-shadow: 0 1.6px 3.6px rgba(0,0,0,.18), 0 0.3px 0.9px rgba(0,0,0,.12) !important;
+  z-index: 60;
+}
+/* White icons / text on the blue bar (Tailwind text utilities set explicit
+   colours, so they are overridden rather than inherited). */
+header[data-app-chrome] .text-text-primary,
+header[data-app-chrome] .text-text-secondary,
+header[data-app-chrome] .text-text-tertiary { color: #ffffff !important; }
+header[data-app-chrome] button:hover,
+header[data-app-chrome] a:hover { background-color: rgba(255,255,255,.16) !important; }
+
+/* Search box on the blue bar: a light Microsoft-365-style field with dark text.
+   The magnifier icon and any text INSIDE the search container are re-darkened
+   (the blanket white rule above would otherwise hide them on the light field). */
+header[data-app-chrome] input[type="search"] {
+  background: #ffffff !important;
+  color: #323130 !important;
+  border: 1px solid transparent !important;
+  border-radius: 4px !important;
+}
+header[data-app-chrome] input[type="search"]::placeholder { color: #605e5c !important; }
+header[data-app-chrome] input[type="search"]:focus {
+  background: #ffffff !important;
+  border-color: var(--color-headerbar-2) !important;
+  box-shadow: none !important;
+}
+header[data-app-chrome] [class*="max-w-2xl"] svg,
+header[data-app-chrome] [class*="max-w-2xl"] .text-text-tertiary,
+header[data-app-chrome] [class*="max-w-2xl"] .text-text-secondary { color: #605e5c !important; }
+
+/* ============================================================================
+   Floating windows & dialogs — Fluent surfaces.
+   Light, flat, small corners, a clean light title bar (no coloured chrome) and
+   a soft Fluent depth shadow. Targets the FloatingWindow used by
+   Confirm/ConflictDialog too.
+   ============================================================================ */
+[role="dialog"] {
+  border-radius: var(--radius-xl) !important;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 12.8px 28.8px rgba(0,0,0,.18), 0 2.4px 7.2px rgba(0,0,0,.12) !important;
+}
+[role="dialog"] > .cursor-move {
+  background: var(--color-surface-0) !important;
+  border-bottom: 1px solid var(--color-border);
+  padding: 10px 14px;
+  border-top-left-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-xl);
+}
+[role="dialog"] > .cursor-move > .flex-1 { font-weight: 600; font-size: 15px; }
+/* Close button: neutral Fluent command button with a hover wash. */
+[role="dialog"] > .cursor-move > button:last-child {
+  border-radius: 4px;
+}
+[role="dialog"] > .cursor-move > button:last-child:hover {
+  background: var(--color-surface-2) !important;
+}
+

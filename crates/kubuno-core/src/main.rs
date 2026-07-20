@@ -71,6 +71,7 @@ async fn main() -> Result<()> {
     // Réglages anti-DDoS : amorce env puis source de vérité = core.settings
     // (pilotables à chaud depuis le panneau d'administration).
     kubuno_core::auth::ddos::seed_from_env();
+    kubuno_core::auth::ddos::set_jwt_secret(&settings.auth.jwt_secret);
     kubuno_core::auth::ddos::reload_from_db(&pool).await;
 
     // Seed : compte administrateur initial

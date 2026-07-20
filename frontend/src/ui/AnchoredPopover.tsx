@@ -5,6 +5,7 @@
 // it. Position is measured from the anchor and clamped to the viewport on every edge.
 import { useState, useRef, useLayoutEffect, useEffect, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { usePortalHost } from './portalHost'
 
 export function AnchoredPopover({
   anchorRef, open, onClose, children, gap = 4, align = 'left',
@@ -20,17 +21,27 @@ export function AnchoredPopover({
   // null until measured → render hidden for one frame so we can read the true size.
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
 
+  // When scoped to a bounded portal host, mount into it and position with
+  // `absolute` in the host's coordinate space (subtract its origin, clamp to its
+  // box) instead of viewport-relative `fixed`.
+  const { host, scoped } = usePortalHost()
+  const posCls = scoped ? 'absolute' : 'fixed'
+
   const reposition = () => {
     const a = anchorRef.current, p = popRef.current
     if (!a || !p) return
     const r = a.getBoundingClientRect()
     const PW = p.offsetWidth || 232, PH = p.offsetHeight || 300
-    const M = 8, vw = window.innerWidth, vh = window.innerHeight
+    const M = 8
+    // Coordinate space: the viewport, or the bounded host when scoped.
+    const b = scoped && host ? host.getBoundingClientRect() : null
+    const ox = b ? b.left : 0, oy = b ? b.top : 0
+    const vw = b ? b.width : window.innerWidth, vh = b ? b.height : window.innerHeight
     // Below the anchor by default; flip above if it would go off the bottom.
-    let top = r.bottom + gap
-    if (top + PH > vh - M) top = r.top - PH - gap
+    let top = (r.bottom - oy) + gap
+    if (top + PH > vh - M) top = (r.top - oy) - PH - gap
     if (top < M) top = M
-    let left = align === 'right' ? r.right - PW : r.left
+    let left = align === 'right' ? (r.right - ox) - PW : (r.left - ox)
     if (left + PW > vw - M) left = vw - PW - M
     if (left < M) left = M
     setPos({ left, top })
@@ -53,12 +64,12 @@ export function AnchoredPopover({
   if (!open) return null
   return createPortal(
     <>
-      <div className="fixed inset-0" style={{ zIndex: 199 }} onMouseDown={onClose} />
-      <div ref={popRef} className="fixed"
+      <div className={`${posCls} inset-0`} style={{ zIndex: 199 }} onMouseDown={onClose} />
+      <div ref={popRef} className={posCls}
            style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, zIndex: 200, visibility: pos ? 'visible' : 'hidden' }}>
         {children}
       </div>
     </>,
-    document.body,
+    host ?? document.body,
   )
 }

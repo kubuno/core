@@ -20,7 +20,7 @@ export function MenuBar({ menus, C }: {
         <div key={m.label} className="relative" style={{ zIndex:50 }}>
           <button onClick={() => setOpen(open === i ? null : i)}
                   onMouseEnter={() => { if (open !== null) setOpen(i) }}
-                  className="px-2.5 h-6 rounded-sm"
+                  className="px-2.5 h-6 rounded-sm whitespace-nowrap"
                   style={{ color:C.text, background: open===i ? C.active : 'transparent' }}>
             {m.label}
           </button>
@@ -32,12 +32,12 @@ export function MenuBar({ menus, C }: {
               ) : (
                 <button key={j} disabled={it.disabled}
                         onClick={() => { setOpen(null); it.onClick?.() }}
-                        className="flex items-center justify-between w-full px-3 h-7 text-left text-[12px] disabled:opacity-35"
+                        className="flex items-center justify-between w-full px-3 h-7 text-left text-[12px] whitespace-nowrap disabled:opacity-35"
                         style={{ color:C.text, background:'transparent' }}
                         onMouseEnter={e => { if(!it.disabled)(e.currentTarget as HTMLElement).style.background = C.active }}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                  <span>{it.label}</span>
-                  {it.shortcut && <span className="ml-8 text-[10px]" style={{ color:C.textDim }}>{it.shortcut}</span>}
+                  <span className="whitespace-nowrap">{it.label}</span>
+                  {it.shortcut && <span className="ml-8 text-[10px] whitespace-nowrap" style={{ color:C.textDim }}>{it.shortcut}</span>}
                 </button>
               ))}
             </div>

@@ -22,6 +22,21 @@ pub struct ServerSettings {
     pub internal_secret: String,
     /// Répertoire contenant les sous-dossiers de chaque module installé.
     pub modules_dir:     String,
+    /// Répertoire parent des configurations par module (`<dir>/<module_id>/config.toml`).
+    /// Sert aussi de répertoire de travail (CWD) du processus module. Défaut FHS Linux ;
+    /// surchargeable (Windows/macOS) via `KV__SERVER__MODULES_CONFIG_DIR`.
+    #[serde(default = "default_modules_config_dir")]
+    pub modules_config_dir: String,
+    /// Répertoire parent des données par module (`<dir>/<module_id>/`). Défaut FHS Linux ;
+    /// surchargeable via `KV__SERVER__MODULES_DATA_DIR`.
+    #[serde(default = "default_modules_data_dir")]
+    pub modules_data_dir:   String,
+    /// Répertoire des modules installés depuis la **marketplace** à l'exécution.
+    /// Distinct de `modules_dir` (paquets système, souvent en lecture seule pour le
+    /// service) : il doit être INSCRIPTIBLE par le core (défaut sous `/var/lib/kubuno`,
+    /// propriété de l'utilisateur du service). Scanné EN PLUS de `modules_dir`.
+    #[serde(default = "default_modules_install_dir")]
+    pub modules_install_dir: String,
     /// Répertoire contenant les fichiers de thèmes JSON.
     pub themes_dir:      String,
     /// Répertoire des composants WASM local-first téléchargeables (documents-core.wasm,
@@ -43,6 +58,18 @@ pub struct ServerSettings {
 
 fn default_wasm_dir() -> String {
     "/var/lib/kubuno/wasm".to_string()
+}
+
+fn default_modules_config_dir() -> String {
+    "/etc/kubuno/modules".to_string()
+}
+
+fn default_modules_data_dir() -> String {
+    "/var/lib/kubuno/modules".to_string()
+}
+
+fn default_modules_install_dir() -> String {
+    "/var/lib/kubuno/modules-store".to_string()
 }
 
 /// Configuration HTTPS / TLS native.

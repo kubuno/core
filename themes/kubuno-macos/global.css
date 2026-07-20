@@ -1,0 +1,168 @@
+/* ============================================================================
+   Kubuno — theme "macOS" (refined). System (SF) typography, Aqua controls,
+   blue focus glow, Finder-style selection, green switches, vibrancy and soft
+   shadows. Pure CSS — applied globally by the host, no scripts required.
+   ============================================================================ */
+
+/* SF-like text rendering + slightly tighter display tracking. */
+html, body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+h1, h2, h3, h4 { letter-spacing: -0.014em; }
+
+/* macOS-tinted text selection. */
+::selection { background: color-mix(in srgb, var(--color-primary) 26%, transparent); }
+
+/* ── Thin, rounded, overlay-style scrollbars ─────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 3px solid transparent; border-radius: 9999px; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── "Aqua" push buttons: vertical gloss, hairline top highlight, soft shadow ─ */
+button.bg-primary, button.bg-danger {
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.30);
+}
+button.bg-primary {
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--color-primary) 82%, #fff) 0%,
+    var(--color-primary) 52%,
+    color-mix(in srgb, var(--color-primary) 90%, #000) 100%);
+}
+button.bg-danger {
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--color-danger) 82%, #fff) 0%,
+    var(--color-danger) 52%,
+    color-mix(in srgb, var(--color-danger) 90%, #000) 100%);
+}
+button.bg-white {
+  border-radius: 8px;
+  background-image: linear-gradient(180deg, #ffffff, #f2f2f5);
+  box-shadow: 0 1px 1.5px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.75);
+}
+button.bg-primary:hover, button.bg-danger:hover { filter: brightness(1.05); }
+button.bg-white:hover { filter: brightness(.99); }
+button.bg-primary:active, button.bg-danger:active, button.bg-white:active {
+  filter: brightness(.93); transform: translateY(.5px);
+}
+
+/* ── Text fields: macOS rounding + blue focus glow ───────────────────────── */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]),
+textarea, select { border-radius: 8px; }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]):focus,
+textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+/* Keyboard focus ring (macOS blue) for buttons, links, tabs. */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [role="tab"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+/* ── Finder-style selection (generalised to ALL left/right panels) ─────────
+      The active/selected item — design-system active tint `bg-primary-light` —
+      becomes a solid accent capsule with WHITE content: strong, readable
+      contrast, unmistakably macOS. Two reaches:
+        • `[data-app-chrome] [class*="bg-primary-light"]` — ANY selected row inside a
+          shell chrome panel (every module's left/right panel lives here),
+          regardless of its corner radius;
+        • `.rounded-full.bg-primary-light` — pill-shaped nav items anywhere
+          else (admin / settings sidebars). */
+[data-app-chrome] [class*="bg-primary-light"],
+.rounded-full.bg-primary-light { background-color: var(--color-primary) !important; }
+[data-app-chrome] [class*="bg-primary-light"],
+[data-app-chrome] [class*="bg-primary-light"] *,
+.rounded-full.bg-primary-light,
+.rounded-full.bg-primary-light * { color: #ffffff !important; }
+
+/* ── Switches: green when on, like macOS ─────────────────────────────────── */
+.peer:checked ~ .peer-checked\:bg-primary {
+  background-color: var(--color-success) !important;
+  border-color: color-mix(in srgb, var(--color-success) 72%, #000) !important;
+}
+
+/* ── Vibrancy on already-blurred materials (panels/menus that opt into blur) ─
+      Scoped to NAMED blur utilities only. The `:not([class*="backdrop-blur-["])`
+      guard excludes arbitrary-value blurs like the modal scrim's
+      `backdrop-blur-[1px]`: amplifying that subtle scrim to a 20px material is
+      wrong, and a heavy backdrop-filter inside a rounded `overflow:hidden` box
+      hits a Chrome bug where the filter region is NOT clipped to the parent's
+      radius → square corners poke out of the rounded preview tiles. */
+[class*="backdrop-blur"]:not([class*="backdrop-blur-["]) {
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* ── Soft, wide macOS drop shadows on floating surfaces ──────────────────── */
+.shadow-lg { box-shadow: 0 10px 30px rgba(0,0,0,.13), 0 2px 6px rgba(0,0,0,.07) !important; }
+.shadow-xl { box-shadow: 0 16px 48px rgba(0,0,0,.16), 0 3px 10px rgba(0,0,0,.08) !important; }
+
+/* ============================================================================
+   Floating windows & dialogs — macOS window chrome.
+   Translucent title bar with traffic-light controls (close is live; minimize &
+   zoom are decorative), centred title, hairline border, deep soft shadow and
+   11px corners. Targets the FloatingWindow used by Confirm/ConflictDialog too.
+   ============================================================================ */
+[role="dialog"] {
+  border-radius: 11px !important;
+  border: 0.5px solid rgba(0,0,0,.14);
+  box-shadow: 0 18px 50px rgba(0,0,0,.22), 0 3px 10px rgba(0,0,0,.12) !important;
+}
+
+/* Title bar: translucent material, centred title. */
+[role="dialog"] > .cursor-move {
+  position: relative;
+  justify-content: center;
+  padding: 9px 16px;
+  background: color-mix(in srgb, var(--color-surface-1) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  /* Round the title bar's own top corners. Chrome clips a backdrop-filter to the
+     element's OWN radius but NOT to an ancestor's `overflow:hidden` radius, so
+     without this the blurred bar shows square corners atop the rounded window. */
+  border-top-left-radius: 11px;
+  border-top-right-radius: 11px;
+}
+[role="dialog"] > .cursor-move > .flex-1 {
+  flex: 0 1 auto;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+/* Close button → red traffic light at far left; minimize/zoom faked alongside. */
+[role="dialog"] > .cursor-move > button:last-child {
+  position: absolute !important;
+  left: 14px; top: 50%; transform: translateY(-50%);
+  width: 12px !important; height: 12px !important;
+  min-width: 0; padding: 0 !important; margin: 0 !important;
+  border-radius: 50% !important;
+  background: #ff5f57 !important;
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.16);
+}
+[role="dialog"] > .cursor-move > button:last-child:hover { background: #ff5f57 !important; filter: brightness(.96); }
+[role="dialog"] > .cursor-move > button:last-child::before,
+[role="dialog"] > .cursor-move > button:last-child::after {
+  content: ""; position: absolute; top: 0; width: 12px; height: 12px;
+  border-radius: 50%; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.16);
+}
+[role="dialog"] > .cursor-move > button:last-child::before { left: 16px; background: #febc2e; } /* minimize */
+[role="dialog"] > .cursor-move > button:last-child::after  { left: 32px; background: #28c840; } /* zoom */
+
+/* The × glyph stays hidden until the title bar is hovered (macOS behaviour). */
+[role="dialog"] > .cursor-move > button:last-child > svg {
+  width: 8px !important; height: 8px !important;
+  opacity: 0; color: rgba(0,0,0,.55); transition: opacity .12s;
+  position: relative; z-index: 1;
+}
+[role="dialog"] > .cursor-move:hover > button:last-child > svg { opacity: 1; }
+

@@ -1,0 +1,131 @@
+/* ============================================================================
+   Kubuno — theme "Numix". Inspired by the Numix GTK/icon project:
+   a dark charcoal header bar over a light body, the signature Numix red accent
+   (#d64937), a flat design language (no gradients, minimal shadows) and small,
+   nearly-square corners. Pure CSS — applied globally by the host, no scripts.
+   ============================================================================ */
+
+/* Subtle macOS-style smoothing is NOT wanted here — Numix is a crisp, flat GTK
+   look. Tinted text selection in the accent colour. */
+::selection { background: color-mix(in srgb, var(--color-primary) 26%, transparent); }
+
+/* ── Flat, thin scrollbars ───────────────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 3px solid transparent; border-radius: 6px; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── Flat buttons: solid fill, no gloss/gradient, hairline definition ──────── */
+button.bg-primary, button.bg-danger {
+  background-image: none !important;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.16);
+}
+button.bg-primary:hover { background-color: var(--color-primary-hover) !important; }
+button.bg-primary:active, button.bg-danger:active { filter: brightness(.93); }
+/* Secondary (light) buttons: flat with a crisp 1px border, GTK-style. */
+button.bg-white {
+  background-image: none !important;
+  border: 1px solid var(--color-border-strong);
+  box-shadow: none !important;
+}
+button.bg-white:hover { background-color: var(--color-surface-1) !important; }
+button.bg-white:active { background-color: var(--color-surface-2) !important; }
+
+/* ── Text fields: square corners, flat accent focus ring ──────────────────── */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]),
+textarea, select { border-radius: var(--radius-md); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="search"]):focus,
+textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [role="tab"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+/* ── Selection (generalised to ALL left/right panels) ──────────────────────
+      The active/selected item — `bg-primary-light` — becomes a solid Numix-red
+      capsule with WHITE content (the Numix list-selection look). Same two reaches
+      as the other themes: inside any shell chrome panel, and pill nav items. */
+[data-app-chrome] [class*="bg-primary-light"],
+.rounded-full.bg-primary-light { background-color: var(--color-primary) !important; }
+[data-app-chrome] [class*="bg-primary-light"],
+[data-app-chrome] [class*="bg-primary-light"] *,
+.rounded-full.bg-primary-light,
+.rounded-full.bg-primary-light * { color: #ffffff !important; }
+
+/* ── Flatter shadows on floating surfaces (Numix is low-elevation) ─────────── */
+.shadow-lg { box-shadow: 0 2px 8px rgba(0,0,0,.12) !important; }
+.shadow-xl { box-shadow: 0 5px 16px rgba(0,0,0,.18) !important; }
+
+/* ============================================================================
+   Dark header bar — the Numix signature. The shell top bar is the <header> that
+   carries `data-app-chrome` (a stable hook; module-internal headers do not have
+   it, so they stay untouched). It becomes charcoal with light contents and a
+   translucent dark search field.
+   ============================================================================ */
+header[data-app-chrome] {
+  background: var(--color-headerbar) !important;
+  border-bottom: 1px solid #1c1c1e !important;
+  box-shadow: none !important;
+}
+/* Light icons / text on the dark bar (Tailwind text utilities set explicit
+   colours, so they must be overridden rather than inherited). */
+header[data-app-chrome] .text-text-primary,
+header[data-app-chrome] .text-text-secondary,
+header[data-app-chrome] .text-text-tertiary { color: #e7e7e7 !important; }
+header[data-app-chrome] button:hover,
+header[data-app-chrome] a:hover { background-color: rgba(255,255,255,.12) !important; }
+
+/* Search field on the dark bar: translucent, square-ish, light text. */
+header[data-app-chrome] input[type="search"] {
+  background: rgba(255,255,255,.10) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+  border-radius: 5px !important;
+}
+header[data-app-chrome] input[type="search"]::placeholder { color: rgba(255,255,255,.55) !important; }
+header[data-app-chrome] input[type="search"]:focus {
+  background: rgba(255,255,255,.16) !important;
+  border-color: rgba(255,255,255,.28) !important;
+  box-shadow: none !important;
+}
+
+/* ============================================================================
+   Floating windows & dialogs — Numix window chrome.
+   Dark header bar (matching the top bar), light body, flat low shadow, small
+   4px corners, a plain (non-traffic-light) close button. Targets the
+   FloatingWindow used by Confirm/ConflictDialog too.
+   ============================================================================ */
+[role="dialog"] {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid rgba(0,0,0,.18);
+  box-shadow: 0 8px 28px rgba(0,0,0,.26), 0 2px 8px rgba(0,0,0,.14) !important;
+}
+[role="dialog"] > .cursor-move {
+  background: var(--color-headerbar) !important;
+  border-bottom: 1px solid #1c1c1e !important;
+  padding: 8px 12px;
+  /* Round the title bar's own top corners so it matches the window radius. */
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+}
+[role="dialog"] > .cursor-move,
+[role="dialog"] > .cursor-move * { color: #ececec !important; }
+/* Close button: flat light glyph with a hover wash (no traffic lights). */
+[role="dialog"] > .cursor-move > button:last-child {
+  color: #d0d0d0 !important;
+  border-radius: 3px;
+}
+[role="dialog"] > .cursor-move > button:last-child:hover {
+  background: rgba(255,255,255,.14) !important;
+  color: #ffffff !important;
+}
+
