@@ -1,6 +1,6 @@
 [package]
 name        = "kubuno-seccomp"
-version     = "0.1.0-alpha"
+version     = "0.1.1"
 edition     = "2021"
 description = "Auto-sandbox seccomp partagé : interdit l'exécution de processus aux modules qui n'en ont pas besoin"
 license     = "AGPL-3.0"
