@@ -5,6 +5,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # ── Config ──────────────────────────────────────────────────────────────────
 VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+
+# Git-derived build identifier: <commit-count>.g<short-hash>[.dirty.<UTC stamp>]
+# Traceable to the exact commit, monotonic across builds, machine-independent.
+# Shared by every package produced in this run.
+GIT_COMMIT="$(git rev-parse --short=7 HEAD 2>/dev/null || echo unknown)"
+GIT_COUNT="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+BUILD_ID="${GIT_COUNT}.g${GIT_COMMIT}"
+[ -n "$(git status --porcelain 2>/dev/null)" ] && BUILD_ID="${BUILD_ID}.dirty.$(date -u +%Y%m%d%H%M%S)"
 DIST_DIR="${DIST_DIR:-dist}"
 STATE_DIR=".build_state"
 mkdir -p "$DIST_DIR" "$STATE_DIR"
@@ -586,18 +594,16 @@ declare -A BUILT_NUMS=()
 
 for comp in "${BUILD_TARGETS[@]}"; do
   pkg="kubuno-${comp}"
-  old_num=$(get_build_num "$comp")
-  new_num=$((old_num + 1))
 
   echo ""
   purge_old_debs "$pkg"
 
-  build_deb "$pkg" "" "setup_${comp}" "$new_num"
+  build_deb "$pkg" "" "setup_${comp}" "$BUILD_ID"
 
   read -ra src <<< "$(get_sources "$comp")"
   current_hash=$(compute_hash "${src[@]}")
-  save_state "$comp" "$new_num" "$current_hash"
-  BUILT_NUMS[$comp]=$new_num
+  save_state "$comp" "$BUILD_ID" "$current_hash"
+  BUILT_NUMS[$comp]=$BUILD_ID
 done
 
 # ── Résumé ───────────────────────────────────────────────────────────────────
