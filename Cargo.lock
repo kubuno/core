@@ -1711,7 +1711,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-mcp"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "serde",
@@ -1721,7 +1721,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-seccomp"
-version = "0.1.0-alpha"
+version = "0.1.1"
 dependencies = [
  "libc",
  "tracing",
@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-storage"
-version = "0.1.0-alpha"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
