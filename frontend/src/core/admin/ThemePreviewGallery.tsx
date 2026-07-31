@@ -50,7 +50,7 @@ function MockFileCard({ name = 'Rapport.pdf', ext = 'PDF', selected = false }) {
     >
       <div className="flex items-center gap-2 px-3 h-10">
         <FileText size={18} className="shrink-0 text-text-secondary" />
-        <span className="text-[13px] font-medium text-text-primary truncate flex-1">{name}</span>
+        <span className="text-xs font-medium text-text-primary truncate flex-1">{name}</span>
         <Star size={12} className="shrink-0 fill-yellow-400 text-yellow-400" />
         <MoreVertical size={14} className="shrink-0 text-text-secondary opacity-0 group-hover:opacity-100" />
       </div>
@@ -69,7 +69,7 @@ function MockFileCard({ name = 'Rapport.pdf', ext = 'PDF', selected = false }) {
       >
         <span
           className="block font-semibold uppercase"
-          style={{ fontSize: '9px', lineHeight: 1, padding: '2px 5px', letterSpacing: '0.04em',
+          style={{ fontSize: '10px', lineHeight: 1, padding: '2px 5px', letterSpacing: '0.04em',
             borderRadius: '6px', color: 'var(--color-text-secondary)' }}
         >
           {ext}
@@ -224,16 +224,16 @@ function MockRibbon() {
     <div className="rounded-lg overflow-hidden border" style={{ borderColor: 'var(--kbn-ws-border, #dadce0)' }}>
       {/* Tab strip (per-app tone, theme-overridable) */}
       <div className="flex items-end gap-1 px-2 pt-1.5" style={{ height: 34, background: 'var(--kbn-office-tabstrip, #1557b0)' }}>
-        <div className="px-3.5 h-[26px] flex items-center text-[12px] font-semibold rounded-t-lg"
+        <div className="px-3.5 h-[26px] flex items-center text-xs font-semibold rounded-t-lg"
           style={{ background: 'var(--kbn-office-file-accent, #3f7dd0)', color: 'var(--kbn-office-file-accent-text, #fff)' }}>
           Fichier
         </div>
-        <div className="px-3.5 h-[26px] flex items-center text-[12px] font-medium rounded-t-lg"
+        <div className="px-3.5 h-[26px] flex items-center text-xs font-medium rounded-t-lg"
           style={{ background: 'var(--kbn-ws-bg, #ffffff)', color: 'var(--kbn-office-tab-active-text, #1557b0)' }}>
           Accueil
         </div>
         {['Insertion', 'Mise en page', 'Affichage'].map((l) => (
-          <div key={l} className="px-3.5 h-[26px] flex items-center text-[12px] font-medium rounded-t-lg"
+          <div key={l} className="px-3.5 h-[26px] flex items-center text-xs font-medium rounded-t-lg"
             style={{ color: 'var(--kbn-office-tabstrip-text, #ffffff)' }}>
             {l}
           </div>
@@ -252,11 +252,11 @@ function MockRibbon() {
         <div className="flex flex-col justify-between px-2 py-1">
           <div className="flex items-stretch gap-0.5 flex-1">
             <div className="flex flex-col justify-center gap-0.5">
-              {smallBtn(<span className="font-bold text-[13px]">G</span>, 'Gras', true)}
-              {smallBtn(<span className="italic text-[13px]">I</span>, 'Italique')}
+              {smallBtn(<span className="font-bold text-xs">G</span>, 'Gras', true)}
+              {smallBtn(<span className="italic text-xs">I</span>, 'Italique')}
             </div>
             <div className="flex flex-col justify-center gap-0.5">
-              {smallBtn(<span className="underline text-[13px]">S</span>, 'Souligné')}
+              {smallBtn(<span className="underline text-xs">S</span>, 'Souligné')}
               {smallBtn(<FileText size={13} />, 'Styles')}
             </div>
           </div>

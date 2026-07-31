@@ -488,7 +488,7 @@ export function ColorPicker({ t, color, onChange, onClose, C: CProp = DEFAULT_PI
       <div className="flex mt-2.5 mb-1.5" style={{ borderBottom:`1px solid ${C.border}` }}>
         {MODES.map(md => (
           <button key={md} onClick={()=>setMode(md)}
-                  className="px-1.5 py-0.5 text-[9px] font-medium"
+                  className="px-1.5 py-0.5 text-[10px] font-medium"
                   style={{ color: mode===md ? C.accent : C.textDim, borderBottom: mode===md ? `2px solid ${C.accent}` : '2px solid transparent' }}>
             {md}
           </button>
@@ -512,7 +512,7 @@ export function ColorPicker({ t, color, onChange, onClose, C: CProp = DEFAULT_PI
       {/* Recently used colours (last 30) */}
       {history.length > 0 && (
         <div className="mt-3 pt-2" style={{ borderTop:`1px solid ${C.border}` }}>
-          <div className="text-[9px] uppercase tracking-wide mb-1.5" style={{ color:C.textDim }}>{tr('layer_color_recent')}</div>
+          <div className="text-[10px] uppercase tracking-wide mb-1.5" style={{ color:C.textDim }}>{tr('layer_color_recent')}</div>
           <div className="grid gap-1" style={{ gridTemplateColumns:'repeat(10, 1fr)' }}>
             {history.slice(0,30).map((c,i) => (
               <button key={c+i} title={c}

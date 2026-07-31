@@ -250,6 +250,7 @@ export const filesApi = {
     trashed?: boolean,
     recent?: boolean,
     folderPathPrefix?: string,
+    opts?: { limit?: number; offset?: number },
   ): Promise<{ files: FileItem[] }> => {
     const r = await api.get<{ files: FileItem[] }>('/drive/', {
       params: {
@@ -258,6 +259,8 @@ export const filesApi = {
         ...(trashed           ? { trashed: true }                             : {}),
         ...(recent            ? { recent: true }                              : {}),
         ...(folderPathPrefix  ? { folder_path_prefix: folderPathPrefix }      : {}),
+        ...(opts?.limit  != null ? { limit:  opts.limit }  : {}),
+        ...(opts?.offset != null ? { offset: opts.offset } : {}),
       },
     })
     return r.data

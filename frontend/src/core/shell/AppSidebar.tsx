@@ -1,8 +1,9 @@
+import { useCallback, useRef, useState } from 'react'
 import { useLocation, NavLink, Link } from 'react-router-dom'
-import { KubunoLogo } from '@ui'
+import { KubunoLogo, useIsMobile } from '@ui'
 import { useTranslation } from 'react-i18next'
 import {
-  Home, Star, Trash2, Plus, Clock, ChevronLeft, ChevronRight,
+  Home, Star, Trash2, Plus, Clock, GripVertical,
   Cloud, Image, Calendar, MessageSquare, FileText, CheckSquare,
   BookOpen, Music, Video, Code, FolderOpen, Share2,
   // Icônes utilisées par les modules (PaintSharp, Office, etc.) — sinon fallback Cloud
@@ -93,9 +94,36 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
 export default function AppSidebar() {
   const { t: tc } = useTranslation()
   const { sidebarItems } = useModulesStore()
-  const { sidebarOpen, sidebarCollapsed, toggleSidebarCollapsed, headerHidden } = useUiStore()
+  const { sidebarOpen, sidebarCollapsed, sidebarWidth, setSidebarWidth, headerHidden } = useUiStore()
   const { configs } = useSidebarStore()
   const { pathname } = useLocation()
+  const isMobile = useIsMobile()
+
+  // Horizontal resize (desktop, expanded only). Tracked in a ref during the drag so
+  // pointer moves don't re-render on every frame; the store (and its per-module
+  // persistence) is written continuously so the width survives a reload mid-drag too.
+  const [dragging, setDragging] = useState(false)
+  const dragStart = useRef<{ x: number; w: number } | null>(null)
+
+  const onResizeDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    dragStart.current = { x: e.clientX, w: useUiStore.getState().sidebarWidth }
+    setDragging(true)
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  }, [])
+
+  const onResizeMove = useCallback((e: React.PointerEvent) => {
+    const s = dragStart.current
+    if (!s) return
+    setSidebarWidth(s.w + (e.clientX - s.x))   // store clamps to [MIN, MAX]
+  }, [setSidebarWidth])
+
+  const endResize = useCallback((e: React.PointerEvent) => {
+    if (!dragStart.current) return
+    dragStart.current = null
+    setDragging(false)
+    ;(e.target as Element).releasePointerCapture?.(e.pointerId)
+  }, [])
 
   const activeConfig = resolveActiveSidebarConfig(configs, pathname)
 
@@ -149,19 +177,32 @@ export default function AppSidebar() {
   const forceCollapsed = bodyEmpty && showNewButton
   const collapsed = sidebarCollapsed || forceCollapsed
 
+  // Resize only when expanded AND on desktop (mobile is a full-width drawer).
+  const resizable = !collapsed && !isMobile
+  // Inline width overrides the `w-64` class only in that case; collapsed keeps the
+  // `w-16` rail and mobile keeps the `w-64` drawer.
+  const widthStyle = resizable ? { width: sidebarWidth } : undefined
+
   return (
+    // Conteneur : l'aside clippe son contenu (pas de scrollbar horizontale), et la
+    // poignée de redimensionnement vit EN DEHORS de lui, dans la gouttière à droite →
+    // elle ne recouvre plus la scrollbar du corps de module. `contents` en mobile pour
+    // rester neutre (l'aside est un tiroir `fixed`) ; boîte flex positionnée en desktop
+    // (largeur = celle de l'aside → `left-full` = son bord droit).
+    <div className="contents lg:relative lg:flex lg:flex-shrink-0">
     <aside
       data-module={activeConfig?.moduleId}
+      data-app-sidebar
       data-app-chrome
       className={`
-        fixed left-0 bottom-0 flex flex-col overflow-hidden
-        z-50 transition-all duration-200 ease-in-out
+        fixed left-0 bottom-0 flex flex-col overflow-x-hidden overflow-y-hidden
+        z-50 ${dragging ? '' : 'transition-all duration-200 ease-in-out'}
         lg:relative lg:translate-x-0 lg:z-auto lg:rounded-xl
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         ${collapsed ? 'w-16' : 'w-64'}
         top-16 lg:top-auto
       `}
-      style={{ background: 'var(--body-bg)' }}
+      style={{ background: 'var(--body-bg)', ...widthStyle }}
     >
       {/* ── Logo Kubuno — affiché ici quand l'AppHeader global est masqué (sous-module
              à barre de titre), pour qu'il reste en place en haut à gauche. ── */}
@@ -197,8 +238,7 @@ export default function AppSidebar() {
                   boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
                 }}
               >
-                {/* Icône + multicolore style Google */}
-                <GooglePlusIcon />
+                <PlusIcon />
                 {newButtonLabel}
               </a>
             </DropdownMenu.Trigger>
@@ -292,40 +332,49 @@ export default function AppSidebar() {
 
       {/* Lien Administration déplacé dans le menu du compte (UserPanel). */}
 
-      {/* ── Bouton collapse desktop ────────────────────────────────────── */}
-      {/* Masqué quand le panneau est forcé en mode enroulé (vide + bouton
-          « Nouveau ») : il n'y a rien à déplier. */}
-      {!forceCollapsed && (
-        <div className={`hidden lg:flex pt-1 pb-1 ${collapsed ? 'justify-center' : 'justify-end px-2'}`}>
-          <a
-            href="#"
-            role="button"
-            onClick={e => { e.preventDefault(); toggleSidebarCollapsed() }}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer"
-            style={{ color: '#80868b' }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#f1f3f4'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-            aria-label={collapsed ? tc('shell.expand_sidebar') : tc('shell.collapse_sidebar')}
-          >
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </a>
-        </div>
-      )}
+      {/* Le repli desktop est désormais piloté par le hamburger de l'en-tête
+          (AppHeader), placé avant le logo façon Gmail. */}
     </aside>
+
+    {/* Poignée de redimensionnement — DANS LA GOUTTIÈRE, à droite du bord (hors de
+        l'aside) : sa zone de préhension démarre au bord droit et s'étend vers la
+        droite, donc elle ne recouvre plus la scrollbar du corps de module. Style
+        « office » : pastille à grip qui se MATÉRIALISE à l'approche de la souris. */}
+    {resizable && (
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={tc('shell.resize_sidebar', { defaultValue: 'Redimensionner le panneau' })}
+        onPointerDown={onResizeDown}
+        onPointerMove={onResizeMove}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+        className="hidden lg:block absolute top-0 left-full h-full w-3 z-[60] cursor-col-resize group"
+      >
+        {/* Trait vertical — discret au repos, teinté au survol/glissement. */}
+        <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors
+                        ${dragging ? 'bg-primary' : 'bg-transparent group-hover:bg-border'}`} />
+        {/* Pastille à grip (façon office) — invisible au repos, apparaît à l'approche. */}
+        <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center
+                        h-9 w-3.5 rounded-full bg-surface-0 border shadow-sm transition
+                        ${dragging
+                          ? 'opacity-100 bg-primary-light text-primary border-primary/40'
+                          : 'opacity-0 group-hover:opacity-100 text-text-tertiary border-border'}`}>
+          <GripVertical size={13} />
+        </div>
+      </div>
+    )}
+    </div>
   )
 }
 
-/* Icône + avec les 4 couleurs Google */
-function GooglePlusIcon() {
+/* Plus sign for the "New" button. `currentColor` on purpose: the icon then follows the
+ * button's own text colour, including on tinted or dark shells. */
+function PlusIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <line x1="10" y1="2" x2="10" y2="18" stroke="#1a73e8" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="2"  y1="10" x2="18" y2="10" stroke="#34a853" strokeWidth="2.5" strokeLinecap="round" />
-      {/* Quart haut-gauche rouge, quart bas-droit jaune */}
-      <line x1="10" y1="2" x2="10" y2="10"  stroke="#d93025" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="2"  y1="10" x2="10" y2="10" stroke="#d93025" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="10" y1="10" x2="10" y2="18" stroke="#34a853" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="10" y1="10" x2="18" y2="10" stroke="#f9ab00" strokeWidth="2.5" strokeLinecap="round" />
+      <line x1="10" y1="2"  x2="10" y2="18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <line x1="2"  y1="10" x2="18" y2="10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
     </svg>
   )
 }

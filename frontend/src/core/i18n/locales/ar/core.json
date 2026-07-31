@@ -7,7 +7,17 @@
     "close": "إغلاق",
     "search": "بحث",
     "loading": "جارٍ التحميل…",
-    "back": "رجوع"
+    "back": "رجوع",
+    "done": "تم"
+  },
+  "textmenu": {
+    "undo": "تراجع",
+    "redo": "إعادة",
+    "cut": "قص",
+    "copy": "نسخ",
+    "paste": "لصق",
+    "paste_plain": "لصق بدون تنسيق",
+    "select_all": "تحديد الكل"
   },
   "header": {
     "notifications": "الإشعارات",
@@ -69,7 +79,8 @@
     "move": "نقل",
     "open": "فتح",
     "widget_settings": "تهيئة الأداة",
-    "widget_remove": "إزالة"
+    "widget_remove": "إزالة",
+    "resize_sidebar": "تغيير حجم اللوحة"
   },
   "register": {
     "title": "إنشاء حساب",
@@ -375,5 +386,26 @@
     "set_clock_analog": "تناظري",
     "set_clock_seconds": "إظهار الثواني",
     "set_clock_24h": "نظام 24 ساعة"
+  },
+  "settingsmenu": {
+    "settings": "الإعدادات",
+    "trash": "المهملات",
+    "appearance": "المظهر",
+    "print": "طباعة",
+    "addons": "تنزيل الإضافات"
+  },
+  "appearance": {
+    "title": "المظهر",
+    "light": "فاتح",
+    "dark": "داكن",
+    "system": "الوضع الافتراضي للجهاز",
+    "scheme": "نظام الألوان",
+    "density": "كثافة المعلومات",
+    "scheme_modern": "عصري",
+    "scheme_classic": "كلاسيكي",
+    "scheme_high-contrast": "تباين عالٍ",
+    "density_responsive": "متجاوب",
+    "density_comfortable": "مريح",
+    "density_compact": "مضغوط"
   }
 }

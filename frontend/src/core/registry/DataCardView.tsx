@@ -17,10 +17,12 @@ import { Package, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   DataTransferRegistry, copyKubunoData, readKubunoData, parseKubunoData,
   isKubunoDataEnvelope, kubunoDataToHtml,
-  type DataCardProps, type DataCardRenderer,
+  type DataCardProps, type DataCardRenderer, type KubunoDataEnvelope,
 } from './DataTransferRegistry'
 import { ModuleServiceRegistry } from './ModuleServiceRegistry'
 import { openLabelPicker } from '../store/labelPickerStore'
+import { openClipboardPane, pushClipboard } from '../store/clipboardStore'
+import { clipboardApi } from '../api/clipboard'
 // Side effect: registers the `drive.file` card renderer at chunk load.
 import './DriveFileCard'
 
@@ -71,8 +73,21 @@ export function DataCardView({ envelope }: DataCardProps) {
 // through `ModuleServiceRegistry.get('core', …)` — no vendored helpers and no
 // dependency on the published npm type surface. Runs when the shared chunk
 // loads, i.e. before any module's register().
+/**
+ * Copy + record. Every cross-module copy lands in the ROAMING HISTORY, so it
+ * survives a reload, reaches the other tabs and the user's other devices, and
+ * can be pasted from the clipboard pane. The history push is fire-and-forget:
+ * the system clipboard write is what the user is waiting for.
+ */
+async function copyKubunoDataWithHistory(envelope: KubunoDataEnvelope): Promise<boolean> {
+  const ok = await copyKubunoData(envelope)
+  void pushClipboard(envelope)
+  return ok
+}
+
 ModuleServiceRegistry.publish('core', {
-  copyKubunoData,
+  // Modules keep calling `copyKubunoData`: the history comes for free.
+  copyKubunoData: copyKubunoDataWithHistory,
   readKubunoData,
   parseKubunoData,
   isKubunoDataEnvelope,
@@ -84,4 +99,9 @@ ModuleServiceRegistry.publish('core', {
   // Cross-module labels: modules pass the SAME envelope they copy to the
   // clipboard — the picker links it to the user's labels (/labels to browse).
   openLabelPicker,
+  // Roaming clipboard history (see api/clipboard.ts): record a clip, show the
+  // pane (resolves with the envelope the user picked), or read it directly.
+  pushClipboard,
+  openClipboardPane,
+  listClipboard: (limit?: number) => clipboardApi.list(limit),
 })

@@ -156,9 +156,12 @@ export function localSource(opts: LocalSourceOpts = {}): StorageSource {
       return { id: null, name: rootName }
     },
     async list(parentId) {
+      // Fetch a generous page so client-side windowing has the whole directory to
+      // reveal progressively (the backend caps at 1000). Larger directories would
+      // need real server-side pagination.
       const [{ folders }, { files }] = await Promise.all([
         filesApi.listFolders(parentId),
-        filesApi.listFiles(parentId),
+        filesApi.listFiles(parentId, undefined, undefined, undefined, undefined, { limit: 1000 }),
       ])
       return { folders, files }
     },

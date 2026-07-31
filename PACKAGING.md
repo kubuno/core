@@ -121,7 +121,7 @@ cd ../calendar && bash build_rpm.sh         # RPM du module (auto-détecté)
 ```
 
 Dépendances système spécifiques gérées automatiquement : `media` → `ffmpeg`,
-`jarvis` → recommande `ollama`.
+`assistant` → recommande `ollama`.
 
 ## CI — Releases GitHub multi-plateformes
 

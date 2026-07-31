@@ -156,7 +156,7 @@ pub async fn mcp_endpoint(
     dispatch(&state, user_id, body).await
 }
 
-/// POST /internal/mcp — variante interne pour les modules de confiance (ex. jarvis)
+/// POST /internal/mcp — internal variant for trusted modules (e.g. the assistant module)
 /// agissant au nom d'un utilisateur. Auth : `x-internal-secret` (extracteur
 /// `InternalRequest`) + identité via l'en-tête `x-kubuno-user-id`, au lieu d'un
 /// token API personnel (que l'assistant ne possède pas en cours de conversation).

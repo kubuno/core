@@ -56,4 +56,107 @@
   --body-bg:               #f1f4f8;
   --scrollbar-thumb:       #dadce0;
   --scrollbar-thumb-hover: #bdc1c6;
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+   * ÉCHELLES — source unique pour tout ce qui était jusqu'ici écrit en dur.
+   *
+   * Préfixe `--kb-` volontaire : réutiliser les espaces de noms Tailwind
+   * (`--text-*`, `--spacing-*`, `--blur-*`, `--shadow-*`) redéfinirait le sens
+   * d'utilitaires déjà employés dans les 24 modules. Ces tokens se consomment
+   * donc via `var()`, y compris — et surtout — depuis les styles inline en JS,
+   * qui sont la principale source de dérive (`fontSize: 13`, `blur(24px)`…).
+   * ═══════════════════════════════════════════════════════════════════════════ */
+
+  /* ── Translucidité ────────────────────────────────────── */
+  --kb-white-04: rgb(255 255 255 / 4%);
+  --kb-white-08: rgb(255 255 255 / 8%);
+  --kb-white-12: rgb(255 255 255 / 12%);
+  --kb-white-16: rgb(255 255 255 / 16%);
+  --kb-white-32: rgb(255 255 255 / 32%);
+  --kb-white-48: rgb(255 255 255 / 48%);
+  --kb-white-64: rgb(255 255 255 / 64%);
+  --kb-white-72: rgb(255 255 255 / 72%);
+  --kb-white-80: rgb(255 255 255 / 80%);
+  --kb-white-88: rgb(255 255 255 / 88%);
+  --kb-white-96: rgb(255 255 255 / 96%);
+  --kb-black-04: rgb(0 0 0 / 4%);
+  --kb-black-08: rgb(0 0 0 / 8%);
+  --kb-black-12: rgb(0 0 0 / 12%);
+  --kb-black-16: rgb(0 0 0 / 16%);
+  --kb-black-32: rgb(0 0 0 / 32%);
+  --kb-black-48: rgb(0 0 0 / 48%);
+  --kb-black-64: rgb(0 0 0 / 64%);
+  --kb-black-72: rgb(0 0 0 / 72%);
+  --kb-black-80: rgb(0 0 0 / 80%);
+
+  /* ── Flou ─────────────────────────────────────────────── */
+  --kb-blur-xs:  8px;
+  --kb-blur-sm: 16px;
+  /* Pas d'alias sémantique : 24 est un échelon brut de l'échelle de référence,
+     utilisé tel quel par les surfaces flottantes. */
+  --kb-blur-24: 24px;
+  --kb-blur-md: 32px;
+  --kb-blur-lg: 64px;
+
+  /* ── Ombres ───────────────────────────────────────────── */
+  /* Niveaux 1-4 : élévation croissante, discrète (alpha 12-16 %). */
+  --kb-shadow-1: 0 1px 6px  var(--kb-black-12);
+  --kb-shadow-2: 0 2px 8px  var(--kb-black-16);
+  --kb-shadow-3: 0 4px 12px var(--kb-black-16);
+  --kb-shadow-4: 0 6px 16px var(--kb-black-16);
+  /* Panneaux flottants : rampe multi-couches — l'ombre s'étale et s'affaiblit
+     progressivement au lieu d'une seule passe large, ce qui la rend plus douce. */
+  --kb-shadow-float:
+    0 2px 6px   rgb(0 0 0 / 8%),
+    0 8px 10px  rgb(0 0 0 / 6%),
+    0 18px 14px rgb(0 0 0 / 4%),
+    0 32px 18px rgb(0 0 0 / 2%);
+  --kb-shadow-float-dark:
+    0 2px 6px   rgb(0 0 0 / 28%),
+    0 8px 10px  rgb(0 0 0 / 22%),
+    0 18px 14px rgb(0 0 0 / 16%),
+    0 32px 18px rgb(0 0 0 / 10%);
+
+  /* ── Surfaces flottantes (menus, sélecteurs, popovers) ─── */
+  /* Le fond DOIT rester translucide : une couleur opaque désactive le flou.
+     Il est aussi légèrement TEINTÉ et non blanc pur : sur une interface claire,
+     du blanc flouté derrière un voile blanc reste du blanc — le panneau serait
+     indiscernable d'un aplat opaque. La teinte froide, le liseré interne clair
+     (--kb-float-highlight) et le grain (voir `.kb-frost-layer` dans index.css) sont ce qui fait lire
+     la surface comme du verre, exactement comme l'Acrylic de Windows 11. */
+  --kb-float-surface:        rgb(244 246 251 / 70%);
+  --kb-float-surface-dark:   rgb(44 44 44 / 72%);
+  /* Liseré interne : arête supérieure éclairée, comme une tranche de verre. */
+  --kb-float-highlight:      inset 0 1px 0 rgb(255 255 255 / 75%);
+  --kb-float-highlight-dark: inset 0 1px 0 rgb(255 255 255 / 10%);
+  --kb-float-border:         var(--kb-black-08);
+  --kb-float-border-dark:    var(--kb-white-12);
+  /* Filtre COMPLET en un seul token : un `var()` imbriqué dans `blur()` était
+     rejeté au parsing une fois la règle passée par Lightning CSS (déclaration
+     absente de la CSSOM, propriété calculée à `none`). Substituer la valeur
+     entière contourne le problème et reste tokenisé. */
+  --kb-float-filter:         blur(var(--kb-blur-24)) saturate(180%);
+  --kb-float-radius:         10px;
+
+  /* ── Tailles de texte ─────────────────────────────────── */
+  /* Échelle du projet ; 14px est le corps par défaut. */
+  --kb-text-micro:   10px;  /* pastilles, compteurs */
+  --kb-text-meta:    11px;  /* métadonnées, légendes */
+  --kb-text-body:    14px;  /* corps : libellés, champs, menus, onglets */
+  --kb-text-heading: 16px;  /* en-têtes de section, titres de carte */
+  --kb-text-title:   18px;
+  --kb-text-page:    22px;  /* titre de page (h1) */
+
+  /* ── Espacement ───────────────────────────────────────── */
+  --kb-space-2:   2px;
+  --kb-space-4:   4px;
+  --kb-space-8:   8px;
+  --kb-space-12: 12px;
+  --kb-space-16: 16px;
+  --kb-space-20: 20px;
+  --kb-space-24: 24px;
+  --kb-space-32: 32px;
+  --kb-space-40: 40px;
+  --kb-space-48: 48px;
+  --kb-space-64: 64px;
 }

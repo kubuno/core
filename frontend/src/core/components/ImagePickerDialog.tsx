@@ -31,13 +31,14 @@ function FromUrl({ onPick }: ImageSourceProps) {
 }
 
 /* ── Source: upload from this device ─────────────────────────────────────── */
-function FromUpload({ onPick }: ImageSourceProps) {
+function FromUpload({ onPick, multiple }: ImageSourceProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
 
   const take = (files: FileList | null) => {
-    const file = files?.[0]
-    if (file && file.type.startsWith('image/')) onPick({ kind: 'file', file })
+    const images = [...(files ?? [])].filter(f => f.type.startsWith('image/'))
+    if (!images.length) return
+    onPick(multiple ? images.map(file => ({ kind: 'file' as const, file })) : { kind: 'file', file: images[0] })
   }
 
   return (
@@ -49,11 +50,13 @@ function FromUpload({ onPick }: ImageSourceProps) {
       style={{ borderColor: over ? 'var(--color-primary)' : 'var(--color-border)',
                background: over ? 'var(--color-primary-light)' : 'transparent' }}
     >
-      <input ref={inputRef} type="file" accept="image/*" className="hidden"
+      <input ref={inputRef} type="file" accept="image/*" multiple={multiple} className="hidden"
         onChange={e => { take(e.target.files); e.target.value = '' }} />
       <ImageIcon size={44} className="text-text-tertiary" />
       <Button variant="primary" onClick={() => inputRef.current?.click()}>Parcourir</Button>
-      <p className="text-sm text-text-tertiary">ou faites glisser un fichier ici</p>
+      <p className="text-xs text-text-tertiary">
+        {multiple ? 'ou faites glisser des fichiers ici' : 'ou faites glisser un fichier ici'}
+      </p>
     </div>
   )
 }
@@ -99,10 +102,11 @@ function FromWebcam({ onPick }: ImageSourceProps) {
 }
 
 /* ── The dialog ──────────────────────────────────────────────────────────── */
-export default function ImagePickerDialog({ title = 'Insérer une image', exclude = [], onPick, onCancel }: {
+export default function ImagePickerDialog({ title = 'Insérer une image', exclude = [], multiple = false, onPick, onCancel }: {
   title?: string
   exclude?: string[]
-  onPick: (r: ImagePickResult) => void
+  multiple?: boolean
+  onPick: (r: ImagePickResult | ImagePickResult[]) => void
   onCancel: () => void
 }) {
   // Module-contributed sources, re-read whenever one registers.
@@ -177,7 +181,7 @@ export default function ImagePickerDialog({ title = 'Insérer une image', exclud
           </nav>
 
           <div className="flex-1 min-w-0 overflow-y-auto px-6 py-4 pb-6">
-            {Current ? <Current onPick={onPick} query={query} /> : null}
+            {Current ? <Current onPick={onPick} query={query} multiple={multiple} /> : null}
           </div>
         </div>
       </div>

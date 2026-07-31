@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { LayoutGrid, Pencil } from 'lucide-react'
@@ -11,6 +11,12 @@ import { api } from '../api/client'
 import type { User } from '../types'
 
 const FAV_KEY = 'kubuno-waffle-favorites'
+
+/** La carte blanche accueille une grille 3×3 : au-delà, la dernière tuile en sort. */
+const FAV_MAX = 9
+
+/** Tronque à FAV_MAX — insérer une 10e tuile évince celle qui est en dernier. */
+const capFavorites = (ids: string[]) => ids.slice(0, FAV_MAX)
 
 /** Favoris stockés côté serveur dans les préférences de l'utilisateur. */
 function favsFromUser(user: User | null): string[] | null {
@@ -32,9 +38,9 @@ function loadFav(): string[] {
 //   'all' = dragging an item from the all-apps section (add to favorites)
 type DragSource = 'fav' | 'all'
 
-interface Props { allApps: WaffleApp[]; compact?: boolean; dark?: boolean }
+interface Props { allApps: WaffleApp[]; compact?: boolean; dark?: boolean; fab?: boolean; onOpenChange?: (open: boolean) => void }
 
-export default function WaffleMenu({ allApps, compact = false, dark = false }: Props) {
+export default function WaffleMenu({ allApps, compact = false, dark = false, fab = false, onOpenChange }: Props) {
   const { t }      = useTranslation()
   const user       = useAuthStore(s => s.user)
   const updateUser = useAuthStore(s => s.updateUser)
@@ -67,6 +73,70 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
   const draftApps  = draft.map(id => allApps.find(a => a.id === id)).filter(Boolean) as WaffleApp[]
   const displayed  = editing ? draftApps : favApps
 
+  /* Défilement automatique quand la tuile glissée approche d'un bord du panneau.
+   *
+   * Attaché via une REF DE RAPPEL et non un `useEffect` : plusieurs instances de ce
+   * composant coexistent (barre du haut, bouton flottant mobile) et le panneau est monté
+   * dans un portail Radix, si bien qu'un effet pouvait s'exécuter alors que la ref était
+   * encore nulle. La ref de rappel se déclenche exactement quand le nœud apparaît.
+   *
+   * Écouteur NATIF en phase de CAPTURE : les tuiles de favoris appellent
+   * `stopPropagation()` sur leur `dragover`, ce qui empêcherait un handler d'ancêtre de
+   * se déclencher au-dessus de la carte — donc au bord haut, là où on en a besoin.
+   *
+   * La vitesse est mémorisée et rejouée en boucle d'animation : `dragover` ne se
+   * déclenche que sur mouvement, or il faut continuer à défiler quand le pointeur reste
+   * immobile contre le bord. */
+  const autoScrollOff = useRef<(() => void) | null>(null)
+  const scrollAreaRef = useCallback((el: HTMLDivElement | null) => {
+    autoScrollOff.current?.()
+    autoScrollOff.current = null
+    if (!el) return
+
+    /* Bande sensible large, avec une vitesse PLANCHER : une rampe partant de zéro
+     * rendait les trois quarts de la bande inopérants — à 60px du bord on obtenait 1px
+     * par image, invisible — et il fallait coller au bord pour que ça bouge. */
+    const ZONE = 120  // hauteur de la bande sensible, en px
+    const MIN  = 6    // vitesse au bord extérieur de la bande, en px par image
+    const MAX  = 28   // vitesse contre le bord du panneau
+    let vy = 0
+    let raf: number | null = null
+
+    const stop = () => {
+      if (raf !== null) cancelAnimationFrame(raf)
+      raf = null
+      vy = 0
+    }
+    const step = () => {
+      if (!vy) { stop(); return }
+      el.scrollTop += vy
+      raf = requestAnimationFrame(step)
+    }
+    const onDragOver = (e: DragEvent) => {
+      const r = el.getBoundingClientRect()
+      // sur un panneau court, deux bandes de 120px se recouvriraient
+      const zone = Math.min(ZONE, r.height * 0.35)
+      const speed = (d: number) => MIN + (MAX - MIN) * (1 - Math.max(d, 0) / zone)
+      const top = e.clientY - r.top
+      const bottom = r.bottom - e.clientY
+      if (top < zone)         vy = -speed(top)
+      else if (bottom < zone)  vy =  speed(bottom)
+      else                     vy = 0
+      if (vy && raf === null) raf = requestAnimationFrame(step)
+      else if (!vy) stop()
+    }
+
+    el.addEventListener('dragover', onDragOver, true)
+    el.addEventListener('drop', stop, true)
+    document.addEventListener('dragend', stop, true)
+    autoScrollOff.current = () => {
+      stop()
+      el.removeEventListener('dragover', onDragOver, true)
+      el.removeEventListener('drop', stop, true)
+      document.removeEventListener('dragend', stop, true)
+    }
+  }, [])
+
   // ── Edit controls ──────────────────────────────────────────────────────────
 
   const startEdit = (e: React.MouseEvent) => {
@@ -89,7 +159,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
   }
 
   const toggleDraft = (id: string) =>
-    setDraft(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+    setDraft(prev => prev.includes(id) ? prev.filter(x => x !== id) : capFavorites([...prev, id]))
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
 
@@ -166,7 +236,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
         const ti = arr.indexOf(toId)
         if (ti < 0) return [...arr, fromId]
         arr.splice(ti, 0, fromId)
-        return arr
+        return capFavorites(arr)
       })
     }
     resetDrag()
@@ -179,7 +249,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
     if (!fromId) { resetDrag(); return }
 
     if (dragSrc === 'all') {
-      setDraft(prev => prev.includes(fromId) ? prev : [...prev, fromId])
+      setDraft(prev => prev.includes(fromId) ? prev : capFavorites([...prev, fromId]))
     }
     resetDrag()
   }
@@ -255,7 +325,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
         onDragStart={e => onAllDragStart(e, app.id)}
         onDragEnd={resetDrag}
         onClick={() => toggleDraft(app.id)}
-        className={`flex flex-col items-center gap-2 p-3 rounded-xl select-none
+        className={`flex flex-col items-center gap-2 px-2 py-4 rounded-[16px] select-none
                     hover:bg-white/60 cursor-grab active:cursor-grabbing transition-colors
                     ${dragId === app.id ? 'opacity-40' : ''}`}
       >
@@ -266,7 +336,9 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
       <DropdownMenu.Item key={app.id} asChild>
         <Link
           to={launchTarget(app)}
-          className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-white/70 transition-colors outline-none"
+          draggable={false}
+          className="flex flex-col items-center gap-2 px-2 py-4 rounded-[16px] select-none
+                     hover:bg-black/[0.06] transition-colors outline-none"
         >
           <app.Icon size={48} className="text-text-secondary" />
           <span className="text-xs text-text-secondary text-center leading-tight">{app.label}</span>
@@ -278,73 +350,101 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
   return (
     <DropdownMenu.Root
       open={open}
-      onOpenChange={v => { setOpen(v); if (!v) setEditing(false) }}
+      onOpenChange={v => { setOpen(v); if (!v) setEditing(false); onOpenChange?.(v) }}
     >
       <DropdownMenu.Trigger asChild>
-        <button
-          className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-full flex items-center justify-center transition-colors focus:outline-none ${
-            dark ? 'text-white/75 hover:bg-white/15 data-[state=open]:bg-white/15' : 'text-text-secondary hover:bg-surface-3 data-[state=open]:bg-surface-3'}`}
-          aria-label={t('header.apps')}
-        >
-          <LayoutGrid size={compact ? 18 : 20} />
-        </button>
+        {fab ? (
+          // Mobile floating action button variant: the app launcher lives
+          // bottom-right (positioned by the parent) as the primary blue FAB.
+          <button
+            aria-label={t('header.apps')}
+            className="w-14 h-14 rounded-2xl bg-primary text-white flex items-center justify-center
+                       shadow-[0_4px_14px_rgba(26,115,232,0.45)] active:scale-95 transition-transform focus:outline-none"
+          >
+            <LayoutGrid size={26} />
+          </button>
+        ) : (
+          <button
+            className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-full flex items-center justify-center transition-colors focus:outline-none ${
+              dark ? 'text-white/75 hover:bg-white/15 data-[state=open]:bg-white/15' : 'text-text-secondary hover:bg-surface-3 data-[state=open]:bg-surface-3'}`}
+            aria-label={t('header.apps')}
+          >
+            <LayoutGrid size={compact ? 18 : 20} />
+          </button>
+        )}
       </DropdownMenu.Trigger>
 
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="end"
-          sideOffset={4}
+          side={fab ? 'top' : 'bottom'}
+          sideOffset={fab ? 10 : 4}
+          collisionPadding={{ top: 12, right: 8, bottom: 12, left: 8 }}
           onEscapeKeyDown={e => { if (editing) { e.preventDefault(); cancel() } }}
           onPointerDownOutside={e => { if (editing) e.preventDefault() }}
           onFocusOutside={e => { if (editing) e.preventDefault() }}
-          className="w-[340px] rounded-2xl border border-border shadow-xl z-[9999] overflow-hidden flex flex-col"
-          style={{ background: '#f1f3f4', maxHeight: 'calc(100vh - 80px)' }}
+          // rayon explicite : l'échelle globale ramène `rounded-2xl` à 8px, trop anguleux
+          // pour ce panneau — exception assumée, alignée sur la référence visuelle
+          className={`w-[360px] max-w-[calc(100vw-16px)] rounded-[28px] z-[9999] overflow-hidden flex flex-col ${fab ? '' : 'border border-border'}`}
+          // Fixed 580px cap, but never taller than the space Radix actually has (which
+          // accounts for the trigger side + collision padding): on a short viewport the
+          // available height wins, so the panel still cannot overflow. The header stays
+          // pinned and the body scrolls instead of « Favoris » being clipped off-screen.
+          style={{
+            background: '#E9EEF6',
+            boxShadow: '0 4px 8px 3px rgba(0,0,0,.15),0 1px 3px rgba(0,0,0,.3)',
+            // 580px en consultation ; en modification on rend la pleine hauteur
+            // disponible, le glisser-déposer ayant besoin de voir les deux zones.
+            maxHeight: editing
+              ? 'var(--radix-dropdown-menu-content-available-height, calc(100vh - 80px))'
+              : 'min(580px, var(--radix-dropdown-menu-content-available-height, calc(100vh - 80px)))',
+          }}
         >
-          {/* ── Header ─────────────────────────────────────────────────────── */}
-          {editing ? (
-            <div className="px-3 pt-3 pb-2 flex-shrink-0" style={{ background: '#f1f3f4' }}>
-              <div className="flex items-center justify-between">
-                <Button variant="ghost" size="sm" onClick={cancel}>
-                  {t('common.cancel')}
-                </Button>
-                <Button variant="primary" size="sm" onClick={confirm}>
-                  {t('shell.ok')}
-                </Button>
-              </div>
-              <p className="text-xs text-text-tertiary text-center mt-2 mb-1">
-                {t('shell.drag_apps')}
-              </p>
-            </div>
-          ) : (
-            <div
-              className="flex items-center justify-between px-4 pt-4 pb-3 flex-shrink-0"
-              style={{ background: '#f1f3f4' }}
-            >
-              <span className="text-sm font-semibold text-text-primary">{t('shell.favorites')}</span>
-              <button
-                onClick={startEdit}
-                className="w-8 h-8 rounded-full flex items-center justify-center bg-white
-                           hover:bg-surface-2 text-text-secondary shadow-sm border border-border
-                           transition-colors"
-              >
-                <Pencil size={14} />
-              </button>
-            </div>
-          )}
-
           {/* ── Scrollable body ────────────────────────────────────────────── */}
-          <div className="overflow-y-auto flex-1">
+          {/* `scrollbar-gutter: stable both-edges` : la barre de défilement est prise
+              sur une gouttière réservée des DEUX côtés, présente ou non. Sans ça elle
+              rogne le contenu à droite seulement et la marge de la carte devient
+              asymétrique dès que la liste défile. */}
+          <div ref={scrollAreaRef} className="kb-inset-scroll overflow-y-auto flex-1" style={{ scrollbarGutter: 'stable both-edges' }}>
 
-            {/* ── Favorites card (white) ───────────────────────────────────── */}
+            {/* ── Favorites card (white) ───────────────────────────────────────
+                The header lives INSIDE this card — the white surface covers the
+                « Favoris » title and its edit button, the tinted panel background
+                only showing as a margin around the card and below it. */}
             <div
-              className={`mx-3 mb-2 bg-white rounded-2xl overflow-hidden transition-colors
-                ${editing && favZoneOver && dragSrc === 'all'
-                    ? 'ring-2 ring-primary bg-primary/5'
-                    : ''}`}
+              className="mx-1 mt-3 mb-2 bg-white rounded-[20px] overflow-hidden"
               onDragOver={editing ? onFavContainerDragOver : undefined}
               onDragLeave={editing ? onFavContainerDragLeave : undefined}
               onDrop={editing ? onFavContainerDrop : undefined}
             >
+              {/* ── Header, on the white surface ──────────────────────────── */}
+              {editing ? (
+                <div className="px-4 pt-4 pb-1">
+                  <div className="flex items-center justify-between">
+                    <Button variant="ghost" onClick={cancel} className="rounded-full px-5 bg-surface-2 hover:bg-surface-3">
+                      {t('common.cancel')}
+                    </Button>
+                    <Button variant="primary" onClick={confirm} className="rounded-full px-6">
+                      {t('shell.ok')}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-text-secondary text-center mt-3">
+                    {t('shell.drag_apps')}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between px-5 pt-4 pb-1">
+                  <span className="text-base font-semibold text-text-primary">{t('shell.favorites')}</span>
+                  <button
+                    onClick={startEdit}
+                    className="w-10 h-10 rounded-full flex items-center justify-center
+                               bg-surface-2 hover:bg-surface-3 text-text-secondary transition-colors"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                </div>
+              )}
+
               {favZonePlaceholder ? (
                 /* Empty drop zone — visible only in edit mode with no favorites */
                 <div
@@ -357,7 +457,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
                   {t('shell.drag_here')}
                 </div>
               ) : (
-                <div className="grid grid-cols-3 p-3 gap-1">
+                <div className="grid grid-cols-3 p-4 gap-1">
                   {displayed.map(app => (
                     editing ? (
                       <div
@@ -368,14 +468,18 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
                         onDragOver={e => onFavItemDragOver(e, app.id)}
                         onDrop={e => onFavItemDrop(e, app.id)}
                         onClick={() => toggleDraft(app.id)}
-                        className={`flex flex-col items-center gap-2 p-3 rounded-xl select-none
+                        className={`relative flex flex-col items-center gap-2 px-2 py-4 rounded-[16px] select-none
                                     cursor-grab active:cursor-grabbing transition-colors
-                                    ${dragId === app.id
-                                        ? 'opacity-40'
-                                        : favDropOver === app.id && dragSrc === 'fav'
-                                            ? 'bg-primary/10 ring-1 ring-primary'
-                                            : 'hover:bg-surface-1'}`}
+                                    ${dragId === app.id ? 'opacity-40' : 'hover:bg-black/[0.06]'}`}
                       >
+                        {/* Tiret d'insertion : la tuile se posera AVANT celle-ci, le
+                            trait se place donc dans la gouttière de gauche. */}
+                        {favDropOver === app.id && dragId !== app.id && (
+                          <span
+                            aria-hidden
+                            className="absolute -left-0.5 top-3 bottom-3 w-[3px] rounded-full bg-text-secondary"
+                          />
+                        )}
                         <app.Icon size={48} className="text-text-secondary" />
                         <span className="text-xs text-text-secondary text-center leading-tight">
                           {app.label}
@@ -385,8 +489,9 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
                       <DropdownMenu.Item key={app.id} asChild>
                         <Link
                           to={launchTarget(app)}
-                          className="flex flex-col items-center gap-2 p-3 rounded-xl
-                                     hover:bg-surface-1 transition-colors outline-none"
+                          draggable={false}
+                          className="flex flex-col items-center gap-2 px-2 py-4 rounded-[16px] select-none
+                                     hover:bg-black/[0.06] transition-colors outline-none"
                         >
                           <app.Icon size={48} className="text-text-secondary" />
                           <span className="text-xs text-text-secondary text-center leading-tight">
@@ -402,7 +507,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
 
             {/* ── All apps (gray) — only non-favorites shown ────────────── */}
             <div
-              className={`pb-3 rounded-b-2xl transition-colors
+              className={`pb-4 rounded-b-[28px] transition-colors
                 ${editing && allZoneOver && dragSrc === 'fav'
                     ? 'bg-danger/5 ring-2 ring-inset ring-danger/30'
                     : ''}`}
@@ -418,7 +523,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
                 <>
                   {/* Apps autonomes — triées alphabétiquement */}
                   {standaloneApps.length > 0 && (
-                    <div className="grid grid-cols-3 px-3 gap-1">
+                    <div className="grid grid-cols-3 px-5 gap-1">
                       {standaloneApps.map(renderAllAppCell)}
                     </div>
                   )}
@@ -426,10 +531,10 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
                   {/* Sous-modules — regroupés par module (en-tête), triés alpha */}
                   {moduleGroups.map(group => (
                     <div key={group.moduleId} className="mt-1">
-                      <div className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+                      <div className="px-5 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
                         {group.label}
                       </div>
-                      <div className="grid grid-cols-3 px-3 gap-1">
+                      <div className="grid grid-cols-3 px-5 gap-1">
                         {group.apps.map(renderAllAppCell)}
                       </div>
                     </div>
@@ -437,6 +542,24 @@ export default function WaffleMenu({ allApps, compact = false, dark = false }: P
                 </>
               )}
             </div>
+
+            {/* ── Marketplace ────────────────────────────────────────────────
+                Pied de panneau, après tous les modules. Réservé aux admins :
+                installer un module passe par l'espace d'administration, un autre
+                rôle ne récolterait qu'un refus. Masqué en mode modification, où
+                le panneau sert au glisser-déposer. */}
+            {!editing && user?.role === 'admin' && (
+              <DropdownMenu.Item asChild>
+                <Link
+                  to="/admin?tab=marketplace"
+                  className="mx-5 mt-3 mb-4 flex items-center justify-center rounded-full
+                             border border-border px-4 py-2.5 text-center text-xs text-primary
+                             hover:bg-black/[0.04] transition-colors outline-none"
+                >
+                  {t('shell.more_modules')}
+                </Link>
+              </DropdownMenu.Item>
+            )}
 
           </div>
         </DropdownMenu.Content>

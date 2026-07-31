@@ -7,7 +7,17 @@
     "close": "Закрыть",
     "search": "Поиск",
     "loading": "Загрузка…",
-    "back": "Назад"
+    "back": "Назад",
+    "done": "Готово"
+  },
+  "textmenu": {
+    "undo": "Отменить",
+    "redo": "Повторить",
+    "cut": "Вырезать",
+    "copy": "Копировать",
+    "paste": "Вставить",
+    "paste_plain": "Вставить без форматирования",
+    "select_all": "Выделить всё"
   },
   "header": {
     "notifications": "Уведомления",
@@ -69,7 +79,8 @@
     "move": "Переместить",
     "open": "Открыть",
     "widget_settings": "Настроить виджет",
-    "widget_remove": "Удалить"
+    "widget_remove": "Удалить",
+    "resize_sidebar": "Изменить размер панели"
   },
   "register": {
     "title": "Создать аккаунт",
@@ -375,5 +386,26 @@
     "set_clock_analog": "Аналоговые",
     "set_clock_seconds": "Показывать секунды",
     "set_clock_24h": "24-часовой формат"
+  },
+  "settingsmenu": {
+    "settings": "Настройки",
+    "trash": "Корзина",
+    "appearance": "Оформление",
+    "print": "Печать",
+    "addons": "Загрузить дополнения"
+  },
+  "appearance": {
+    "title": "Оформление",
+    "light": "Светлая",
+    "dark": "Тёмная",
+    "system": "Как на устройстве",
+    "scheme": "Цветовая схема",
+    "density": "Плотность информации",
+    "scheme_modern": "Современная",
+    "scheme_classic": "Классическая",
+    "scheme_high-contrast": "Высокий контраст",
+    "density_responsive": "Адаптивная",
+    "density_comfortable": "Комфортная",
+    "density_compact": "Компактная"
   }
 }

@@ -28,6 +28,70 @@ pub fn module_disk_dir(settings: &crate::config::Settings, id: &str) -> std::pat
     }
 }
 
+/// Jeton de cache-busting du bundle UI d'un module = hash court du CONTENU de
+/// `entry.js`. `entry.js`/`entry.css` ont un nom FIXE (le host les charge sans
+/// connaître de hash) et sont servis en `no-store` — mais iOS Safari resert un
+/// module ES périmé depuis son cache indexé par URL tant que l'URL reste stable.
+/// On suffixe donc `?v=<hash>` : l'URL change dès que le contenu change (bust
+/// précis, sans faux positif comme un mtime préservé). Renvoie `None` si le
+/// fichier n'existe pas (module sans UI).
+///
+/// Le hash n'est recalculé que lorsque le fichier change : cache mémoire clé
+/// `(mtime, size)`. Les appels `/api/v1/modules` suivants ne font qu'un `stat`.
+fn frontend_entry_version(path: &std::path::Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::sync::{LazyLock, Mutex};
+
+    // path -> (mtime_secs, size, hash) ; évite de re-hasher un fichier inchangé.
+    static CACHE: LazyLock<Mutex<HashMap<std::path::PathBuf, (u64, u64, String)>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let size = meta.len();
+
+    if let Ok(cache) = CACHE.lock() {
+        if let Some((m, s, h)) = cache.get(path) {
+            if *m == mtime && *s == size {
+                return Some(h.clone());
+            }
+        }
+    }
+
+    // Cache miss : lecture + hash hors verrou (ne pas bloquer les autres modules).
+    let bytes = std::fs::read(path).ok()?;
+    let digest = Sha256::digest(&bytes);
+    let hash: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
+
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.insert(path.to_path_buf(), (mtime, size, hash.clone()));
+    }
+    Some(hash)
+}
+
+/// Réécrit l'URL content-hashée de l'entrée UI (`entry-<hash>.js` /
+/// `entry-<hash>.css`) vers le vrai nom de fichier sur disque (`entry.js` /
+/// `entry.css`). Le `<hash>` DOIT être hexadécimal → aucune collision avec un
+/// éventuel vrai fichier `entry-*.js`. Tout autre chemin (chunks, assets…) passe
+/// inchangé. Sûr vis-à-vis de la traversée : la sortie est toujours `entry.{ext}`.
+fn resolve_entry_alias(asset_path: &str) -> std::borrow::Cow<'_, str> {
+    for ext in [".js", ".css"] {
+        if let Some(rest) = asset_path.strip_suffix(ext) {
+            if let Some(hash) = rest.strip_prefix("entry-") {
+                if !hash.is_empty() && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return std::borrow::Cow::Owned(format!("entry{ext}"));
+                }
+            }
+        }
+    }
+    std::borrow::Cow::Borrowed(asset_path)
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/modules",
@@ -48,9 +112,18 @@ pub async fn list_modules(
             let entry = module_disk_dir(&state.settings, &i.module_id)
                 .join("frontend")
                 .join("entry.js");
-            let frontend_entry = entry
-                .is_file()
-                .then(|| format!("/modules/{}/entry.js", i.module_id));
+            // Cache-busting du point d'entrée UI du module : le hash du CONTENU
+            // est mis DANS le nom (`entry-<hash>.js`), comme les chunks partagés
+            // du core (`/shared/kubuno-shared-<hash>.js`) — pas de `?v=`. Sur
+            // disque le fichier reste `entry.js` (le module l'émet à nom fixe,
+            // sans connaître de hash) : `serve_module_asset` réécrit l'alias
+            // hashé vers le vrai fichier. URL content-addressed → servie
+            // `immutable` ET busted à chaque changement (nom d'URL différent, ce
+            // qui casse aussi le cache iOS Safari indexé par URL). Le host dérive
+            // le CSS avec le même hash (voir loadRemoteModules.ts). Sans rebuild
+            // des modules ; les chunks internes sont déjà hashés.
+            let frontend_entry = frontend_entry_version(&entry)
+                .map(|v| format!("/modules/{}/entry-{}.js", i.module_id, v));
             json!({
                 "module_id": i.module_id,
                 "base_url": i.base_url,
@@ -88,9 +161,13 @@ pub async fn serve_module_asset(
         return Err(AppError::NotFound("asset".into()));
     }
 
+    // Le host demande l'entrée UI sous un nom content-hashé `entry-<hash>.js` /
+    // `entry-<hash>.css` (cache-busting, cf. `list_modules`) ; sur disque le
+    // fichier s'appelle `entry.js` / `entry.css`. On réécrit l'alias hashé.
+    let real_asset = resolve_entry_alias(&asset_path);
     let full = module_disk_dir(&state.settings, &module_id)
         .join("frontend")
-        .join(&asset_path);
+        .join(real_asset.as_ref());
 
     let data = tokio::fs::read(&full)
         .await

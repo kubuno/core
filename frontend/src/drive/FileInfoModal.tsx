@@ -53,7 +53,7 @@ function fileIcon(mimeType: string, name?: string) {
   return <File size={48} className="text-text-tertiary" />
 }
 
-function mimeLabel(mimeType: string, name: string | undefined, t: TF): string {
+export function mimeLabel(mimeType: string, name: string | undefined, t: TF): string {
   const ext = (name ?? '').split('.').pop()?.toLowerCase()
   if (mimeType.startsWith('image/'))  return t('info.mime_image')
   if (mimeType.startsWith('video/'))  return t('info.mime_video')

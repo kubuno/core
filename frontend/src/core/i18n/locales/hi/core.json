@@ -7,7 +7,17 @@
     "close": "बंद करें",
     "search": "खोजें",
     "loading": "लोड हो रहा है…",
-    "back": "वापस"
+    "back": "वापस",
+    "done": "हो गया"
+  },
+  "textmenu": {
+    "undo": "पूर्ववत करें",
+    "redo": "फिर करें",
+    "cut": "काटें",
+    "copy": "कॉपी करें",
+    "paste": "चिपकाएँ",
+    "paste_plain": "बिना फ़ॉर्मैटिंग चिपकाएँ",
+    "select_all": "सभी चुनें"
   },
   "header": {
     "notifications": "सूचनाएँ",
@@ -69,7 +79,8 @@
     "move": "ले जाएँ",
     "open": "खोलें",
     "widget_settings": "विजेट कॉन्फ़िगर करें",
-    "widget_remove": "हटाएँ"
+    "widget_remove": "हटाएँ",
+    "resize_sidebar": "पैनल का आकार बदलें"
   },
   "register": {
     "title": "खाता बनाएँ",
@@ -375,5 +386,26 @@
     "set_clock_analog": "एनालॉग",
     "set_clock_seconds": "सेकंड दिखाएँ",
     "set_clock_24h": "24-घंटे प्रारूप"
+  },
+  "settingsmenu": {
+    "settings": "सेटिंग",
+    "trash": "रद्दी",
+    "appearance": "रूप",
+    "print": "प्रिंट करें",
+    "addons": "ऐड-ऑन डाउनलोड करें"
+  },
+  "appearance": {
+    "title": "रूप",
+    "light": "हल्का",
+    "dark": "गहरा",
+    "system": "डिवाइस डिफ़ॉल्ट",
+    "scheme": "रंग योजना",
+    "density": "जानकारी घनत्व",
+    "scheme_modern": "आधुनिक",
+    "scheme_classic": "क्लासिक",
+    "scheme_high-contrast": "उच्च कंट्रास्ट",
+    "density_responsive": "रिस्पॉन्सिव",
+    "density_comfortable": "आरामदेह",
+    "density_compact": "सघन"
   }
 }

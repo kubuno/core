@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { pickImageFile } from '../store/imagePickerStore'
 import { useLocation } from 'react-router-dom'
 import { Search, X, Camera, Mic } from 'lucide-react'
 import { useSearchStore, resolveSearchConfig } from '../store/searchStore'
@@ -39,10 +40,11 @@ function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; comp
   const { pathname } = useLocation()
   const [filterOpen, setFilterOpen] = useState(false)
   const [focused,    setFocused]    = useState(false)
-  const [query,      setQuery]      = useState('')
+  // The query lives in the store so modules can seed it (URL-restored searches).
+  const query    = useSearchStore(s => s.query)
+  const setQuery = useSearchStore(s => s.setQuery)
   const containerRef  = useRef<HTMLDivElement>(null)
   const inputRef      = useRef<HTMLInputElement>(null)
-  const imgPickRef    = useRef<HTMLInputElement>(null)
 
   const config = resolveSearchConfig(configs, pathname)
 
@@ -54,11 +56,18 @@ function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; comp
   // Voice dictation (shared hook): live transcript fills the search field.
   const voice = useVoiceDictation({ getSeed: () => '', onText: handleChange })
 
+  // Clear the field when switching between modules — but not on the initial
+  // mount, so a query seeded from the URL (F5-restored search) survives. A
+  // module keeps ownership of its query while its own routes stay active.
+  const prevModuleRef = useRef<string | undefined>(undefined)
   useEffect(() => {
+    const prev = prevModuleRef.current
+    prevModuleRef.current = config?.moduleId
+    if (prev === undefined || prev === config?.moduleId) return
     setQuery('')
     setFilterOpen(false)
     config?.onSearch?.('')
-  }, [config?.moduleId])
+  }, [config?.moduleId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!filterOpen && !voice.listening) return
@@ -72,7 +81,13 @@ function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; comp
     return () => document.removeEventListener('mousedown', handler)
   }, [filterOpen, voice.listening]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (config?.SearchComponent) return <config.SearchComponent />
+  /* Un module peut remplacer tout le composant, mais PAS la taille du champ : sa sortie
+   * est enveloppée dans `.kb-search`, dont la règle CSS (index.css, non-layered) impose
+   * la taille au champ et à ses calques superposés. Un `text-*` posé par un module y
+   * perdrait de toute façon, les utilitaires vivant dans une couche de cascade. */
+  if (config?.SearchComponent) return (
+    <div className="kb-search contents"><config.SearchComponent /></div>
+  )
 
   const placeholder = config?.placeholderKey
     ? t(config.placeholderKey)
@@ -99,7 +114,7 @@ function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; comp
         onChange={e => handleChange(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        className={`flex-1 bg-transparent text-sm outline-none min-w-0 ${
+        className={`flex-1 bg-transparent outline-none min-w-0 ${
           dark ? 'text-white placeholder:text-white/40' : 'text-text-primary placeholder:text-text-tertiary'}`}
       />
 
@@ -132,15 +147,9 @@ function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; comp
         )}
         {config?.onImageSearch && (
           <>
-            <input
-              ref={imgPickRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={e => { const f = e.target.files?.[0]; if (f) config.onImageSearch!(f); e.target.value = '' }}
-            />
             <button
-              onClick={() => imgPickRef.current?.click()}
+              onClick={() => { void pickImageFile({ title: t('shell.search_by_image', { defaultValue: 'Rechercher des images similaires' }) })
+                .then(f => { if (f) config.onImageSearch!(f) }) }}
               aria-label={t('shell.search_by_image', { defaultValue: 'Rechercher des images similaires' })}
               title={t('shell.search_by_image', { defaultValue: 'Rechercher des images similaires' })}
               className={`${fltBtn} flex items-center justify-center rounded-full transition-colors
@@ -166,7 +175,7 @@ function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; comp
   )
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className="kb-search relative w-full">
 
       {/* Toast d'écoute vocale — centré à l'écran, fourni par le hook partagé.
           Rendu DANS containerRef pour que le clic dessus ne compte pas comme un

@@ -32,6 +32,18 @@
   --font-family-sans: "Roboto Flex", "DM Sans", Inter, system-ui, sans-serif !important;
 }
 
+/* Buttons are NEVER bold — project-wide rule. Colour and fill carry the
+ * hierarchy of an action; weight does not. Applied here rather than only in
+ * `@ui`'s Button because the 18 module bundles ship their own hand-rolled
+ * buttons (chips, toolbars, tabs) with `font-medium`/`font-semibold` baked in,
+ * and their CSS loads AFTER the host's — only `!important` reaches them all
+ * without a rebuild.
+ * Scoped to the button element itself: a child element that is deliberately
+ * bold (a badge, a count) keeps its own weight. */
+button {
+  font-weight: var(--font-weight-normal, 400) !important;
+}
+
 /* Corner-radius scale, same mechanism as the weight override above: every
  * module bundle ships its own copy of theme.css and re-declares these at :root,
  * and module CSS is loaded AFTER the host's — so a plain declaration here would
@@ -54,6 +66,134 @@
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* La sidebar gauche ne montre JAMAIS de scrollbar horizontale — y compris de façon
+ * fugace pendant l'animation du hamburger. Un conteneur de module en `overflow-y-auto`
+ * hérite d'un `overflow-x: auto` calculé : quand la sidebar se replie, son contenu
+ * (largeur figée) déborde la boîte qui rétrécit et une barre horizontale clignote.
+ * On borne donc en X les conteneurs à défilement VERTICAL de la sidebar. Ciblé sur ces
+ * utilitaires (déjà scrollables en Y) pour ne pas transformer un `overflow-y: visible`
+ * en `auto`. Non-layered → bat l'utilitaire Tailwind équivalent. */
+[data-app-sidebar] .overflow-y-auto,
+[data-app-sidebar] .overflow-y-scroll,
+[data-app-sidebar] .overflow-auto,
+[data-app-sidebar] .overflow-scroll { overflow-x: hidden; }
+
+/* Mode recherche des éditeurs à ruban : quand la barre de recherche est affichée
+ * (`data-ws-search="open"` posé par WorkspaceShell), on rend la bande d'onglets du ruban
+ * (`[data-ribbon-tabs]`) INVISIBLE — mais on PRÉSERVE la hauteur qu'elle occupe
+ * (`visibility:hidden`, pas `display:none`) pour ne pas faire remonter le contenu du ruban.
+ * Règle globale (le ruban vit dans le bundle du module, ce marqueur dans le host). */
+[data-ws-search="open"] [data-ribbon-tabs] { visibility: hidden; }
+
+/* Barre de recherche principale — la taille du champ appartient au CORE.
+ * Un module peut remplacer tout le composant de recherche (SearchConfig.SearchComponent) ;
+ * il ne doit pas pour autant en changer la taille. Cette règle est NON-LAYERED, donc elle
+ * bat un `text-sm`/`text-xs` posé par un module, dont les utilitaires vivent dans une
+ * couche de cascade. `input` ET les calques superposés (fantôme de complétion du mail)
+ * héritent, sans quoi la suggestion se décalerait d'un pixel à l'autre.
+ * 16px a un effet de bord bienvenu : à partir de cette taille, iOS ne zoome plus à la
+ * prise de focus — cf. le garde-fou `@media (pointer: coarse)` plus bas. */
+.kb-search { font-size: 16px; }
+.kb-search input,
+.kb-search textarea { font-size: inherit; }
+
+/* Barre de défilement fine et ENCASTRÉE (waffle menu). `::-webkit-scrollbar-track`
+ * accepte une marge : c'est elle qui fait démarrer le rail sous le coin arrondi du
+ * panneau et l'arrêter avant le coin bas, au lieu de courir d'un bord à l'autre.
+ * La largeur réduite à 8px se combine à `scrollbar-gutter: stable both-edges` : la
+ * gouttière réservée de chaque côté vaut alors 8px, d'où une marge de carte de 4px
+ * pour retomber sur 12px visuels, identiques à gauche et à droite. */
+.kb-inset-scroll::-webkit-scrollbar { width: 8px; }
+.kb-inset-scroll::-webkit-scrollbar-track { background: transparent; margin: 14px 0; }
+.kb-inset-scroll::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 22%);
+  border-radius: 999px;
+}
+.kb-inset-scroll::-webkit-scrollbar-thumb:hover { background: rgb(0 0 0 / 34%); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * `.kb-frosted` — frosted-glass floating surface (menus, popovers, select panels).
+ * Unlayered on purpose, and a CSS class rather than a JS helper: every module can
+ * use it immediately, with no `@kubuno/ui` release and no version bump.
+ *
+ * Three things are NOT obvious here:
+ *
+ * 1. The blurred layer OVERFLOWS the panel by more than the blur radius. A
+ *    `backdrop-filter` on the panel itself clips the backdrop to its own box BEFORE
+ *    blurring, so within one radius of each edge the kernel runs out of samples and
+ *    flattens — a pale ring where the panel reads as opaque.
+ * 2. It is trimmed back with `mask`, NOT `overflow`/`clip-path`: Chrome applies those
+ *    two BEFORE filters, which throws the extra samples away again (measured).
+ *    The mask is assembled from 6 layers (4 corners + a cross) because a single mask
+ *    image cannot hold a fixed-radius rounded rectangle at an arbitrary size.
+ *    Careful: in `mask-position`, `100%` means "box minus image", hence the plain
+ *    `--kb-frost-pad` offset on the far edges rather than pad + radius.
+ * 3. Blur alone is INVISIBLE on a light UI — blurring white gives white. The tint,
+ *    the inner top highlight and the grain are what make it read as glass.
+ *
+ * 4. The blurred layer is a REAL child element, not a `::before`: measured in Chrome
+ *    150, `backdrop-filter` on the pseudo-element simply does not composite here —
+ *    the panel came out translucent but perfectly sharp. A real element works.
+ *
+ * Usage: `.kb-frosted` on the panel + `<div class="kb-frost-layer">` as its FIRST
+ * child; sibling content is lifted above it automatically. Add `.kb-frosted-dark`
+ * for dark editors. The panel must carry NO clipping of its own.
+ * ───────────────────────────────────────────────────────────────────────────── */
+.kb-frosted {
+  --kb-frost-pad: 72px;
+  --kb-frost-r: var(--kb-float-radius);
+  /* NO `position` here. This rule is unlayered, so it would beat the panel's own
+   * `fixed`/`absolute` Tailwind utility (utilities live in a cascade layer) and drop the
+   * menu back into normal flow — it then renders off-screen. The panel must therefore
+   * already be positioned, which every consumer is; the layer anchors to it. */
+  border: 1px solid var(--kb-float-border);
+  border-radius: var(--kb-float-radius);
+  box-shadow: var(--kb-float-highlight), var(--kb-shadow-float);
+}
+.kb-frost-layer {
+  position: absolute;
+  inset: calc(-1 * var(--kb-frost-pad, 72px));
+  z-index: 0;
+  pointer-events: none;
+  background-color: var(--kb-float-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='0.42'/%3E%3C/svg%3E");
+  background-blend-mode: soft-light;
+  /* Pas de ligne `-webkit-` ici : Lightning CSS la réordonnait devant la propriété
+     standard et Chrome rejetait alors la déclaration entière (absente de la CSSOM,
+     calculée à `none`). Mesuré. Le prix est le flou perdu sur Safari < 18. */
+  backdrop-filter: var(--kb-float-filter);
+  mask-image:
+    radial-gradient(circle var(--kb-frost-r) at var(--kb-frost-r) var(--kb-frost-r), #000 99%, transparent 100%),
+    radial-gradient(circle var(--kb-frost-r) at 0 var(--kb-frost-r), #000 99%, transparent 100%),
+    radial-gradient(circle var(--kb-frost-r) at var(--kb-frost-r) 0, #000 99%, transparent 100%),
+    radial-gradient(circle var(--kb-frost-r) at 0 0, #000 99%, transparent 100%),
+    linear-gradient(#000 0 0),
+    linear-gradient(#000 0 0);
+  mask-position:
+    var(--kb-frost-pad) var(--kb-frost-pad),
+    calc(100% - var(--kb-frost-pad)) var(--kb-frost-pad),
+    var(--kb-frost-pad) calc(100% - var(--kb-frost-pad)),
+    calc(100% - var(--kb-frost-pad)) calc(100% - var(--kb-frost-pad)),
+    var(--kb-frost-pad) calc(var(--kb-frost-pad) + var(--kb-frost-r)),
+    calc(var(--kb-frost-pad) + var(--kb-frost-r)) var(--kb-frost-pad);
+  mask-size:
+    var(--kb-frost-r) var(--kb-frost-r),
+    var(--kb-frost-r) var(--kb-frost-r),
+    var(--kb-frost-r) var(--kb-frost-r),
+    var(--kb-frost-r) var(--kb-frost-r),
+    calc(100% - 2 * var(--kb-frost-pad)) calc(100% - 2 * (var(--kb-frost-pad) + var(--kb-frost-r))),
+    calc(100% - 2 * (var(--kb-frost-pad) + var(--kb-frost-r))) calc(100% - 2 * var(--kb-frost-pad));
+  mask-repeat: no-repeat;
+}
+.kb-frosted > *:not(.kb-frost-layer) { position: relative; z-index: 1; }
+
+/* Dark editors (paintsharp, workspace shells). */
+.kb-frosted-dark {
+  border-color: var(--kb-float-border-dark);
+  box-shadow: var(--kb-float-highlight-dark), var(--kb-shadow-float-dark);
+}
+.kb-frosted-dark > .kb-frost-layer { background-color: var(--kb-float-surface-dark); }
+
 button, input, textarea, select {
   font-family: var(--font-family-sans);
 }
@@ -61,6 +201,8 @@ button, input, textarea, select {
 body {
   margin: 0;
   font-family: var(--font-family-sans);
+  /* Project-wide default text size. Anything without an explicit text-* utility
+   * inherits it — Dropdown, MenuDropdown, Tooltip and most module markup do. */
   font-size: 14px;
   font-weight: 400;
   color: var(--color-text-primary);
@@ -78,10 +220,17 @@ body {
  * like forms that rely on document scroll). The shell itself uses `100dvh`
  * (see Shell.tsx) so it matches the visible viewport even when the browser
  * address bar is shown — that removes the residual vertical document scroll. */
-html, body {
+html {
   overscroll-behavior: none;
   overflow-x: hidden;
 }
+
+/* NOT on `body`: `overflow-x: hidden` there makes the browser compute
+ * `overflow-y: auto`, turning the body into a scroll container that has
+ * nothing to scroll. With `overscroll-behavior: none` on top, it swallowed the
+ * wheel instead of chaining to the document — public form pages, which rely on
+ * document scroll, would not scroll at all. `html` alone blocks the rubber-band
+ * and the horizontal drag just as well. */
 
 :root {
   color-scheme: light;
@@ -146,12 +295,28 @@ html, body {
 /* 3. Safe-area (encoche / barre d'accueil iOS). `viewport-fit=cover` (index.html)
  *    active env(safe-area-inset-*). On réserve, sous la barre de navigation
  *    mobile fixe, sa hauteur PLUS l'inset bas ; la MobileNav elle-même est
- *    rembourrée du même inset (cf. MobileNav.tsx). */
+ *    rembourrée du même inset (cf. MobileNav.tsx). CONDITIONNEL : le Shell pose
+ *    `data-has-bottom-nav` seulement quand une barre est réellement rendue
+ *    (module avec mobileTabs, portrait, pas d'éditeur immersif) — sinon aucune
+ *    bande vide n'est réservée (plus de barre générique ; les éditeurs
+ *    immersifs gèrent leur propre dégagement). */
 @media (max-width: 1023px) {
-  [data-app-body] {
+  [data-app-body][data-has-bottom-nav] {
     padding-bottom: calc(3.5rem + env(safe-area-inset-bottom)) !important;
   }
 }
+
+/* Dictée vocale mobile active : le panneau de dictée REMPLACE la chrome du bas
+ * (ruban de l'éditeur, waffle FAB…, tous marqués [data-app-chrome]) — façon Word.
+ * Hors @layer → priorité sur les z-index/portails des modules. */
+body[data-kb-dictating] [data-app-chrome] { display: none !important; }
+/* Espace réservé sous le document pour que le texte dicté reste visible au-dessus
+ * du panneau (≈ hauteur du panneau + poignée). */
+body[data-kb-dictating] [data-doc-scroll] { padding-bottom: 15rem !important; }
+/* ⚠️ iOS Safari : neutralise le calque composité permanent du contenu (pincement)
+ * pendant la dictée — sinon il passe DEVANT le panneau `position: fixed` et le
+ * blanc du document bave par-dessus. Le pincement n'a pas lieu pendant la dictée. */
+body[data-kb-dictating] [data-doc-scroll] > * { will-change: auto !important; }
 
 /* Scrollbars fines, style Google */
 ::-webkit-scrollbar {
@@ -217,3 +382,19 @@ html, body {
    than inline so both the host and runtime-loaded modules share one definition. */
 @keyframes kb-sheet-up   { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes kb-sheet-fade { from { opacity: 0; }                 to { opacity: 1; } }
+
+/* iOS Safari auto-zooms the whole page when a focused editable renders under
+   16px — and never zooms back out on blur, leaving the layout wider than the
+   screen (reported on iPhone XR via the mail reply composer, whose quote body
+   autofocuses). Clamp editable font sizes to 16px on iOS phones only:
+   `-webkit-touch-callout` is implemented by iOS WebKit alone, so desktop and
+   Android keep their compact 13-14px fields. Unlayered rule → wins over the
+   layered Tailwind utilities of both host and module bundles. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 1023px) {
+    input, select, textarea, [contenteditable='true'], [contenteditable=''] {
+      font-size: max(16px, 1em) !important;
+    }
+  }
+}
+

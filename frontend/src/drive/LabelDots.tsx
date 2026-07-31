@@ -34,7 +34,7 @@ export function LabelDots({ kind, id, size = 10, className = '' }: {
         <LabelIcon key={l.id} size={size} style={{ color: l.color }} />
       ))}
       {labels.length > MAX && (
-        <span className="text-[9px] leading-none text-text-tertiary">+{labels.length - MAX}</span>
+        <span className="text-[10px] leading-none text-text-tertiary">+{labels.length - MAX}</span>
       )}
     </span>
   )

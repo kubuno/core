@@ -131,7 +131,7 @@ export function GradientPicker({ t, value, onChange, onClose, C: CProp }: {
       {/* Angle (linear only) */}
       {grad.type === 'linear' && (
         <label className="flex items-center gap-2 mb-2">
-          <span className="text-[9px] uppercase flex-shrink-0" style={{ color: C.textDim, width: 48 }}>{tr('gradient_angle')}</span>
+          <span className="text-[10px] uppercase flex-shrink-0" style={{ color: C.textDim, width: 48 }}>{tr('gradient_angle')}</span>
           <RangeSlider min={0} max={360} className="flex-1" value={grad.angle}
                        onChange={angle => patch({ angle })}
                        accent={C.accent} trackColor={C.border} aria-label={tr('gradient_angle')} />
@@ -150,7 +150,7 @@ export function GradientPicker({ t, value, onChange, onClose, C: CProp }: {
                         color={selStop.color}
                         onChange={hex => patchStop(grad.stops.indexOf(selStop), { color: hex })} />
             <label className="flex items-center gap-1 flex-1">
-              <span className="text-[9px] uppercase" style={{ color: C.textDim }}>{tr('gradient_position')}</span>
+              <span className="text-[10px] uppercase" style={{ color: C.textDim }}>{tr('gradient_position')}</span>
               <input type="number" min={0} max={100} value={Math.round(selStop.position * 100)}
                      onChange={e => patchStop(grad.stops.indexOf(selStop), { position: Math.max(0, Math.min(1, Number(e.target.value) / 100)) })}
                      className="w-12 px-1.5 py-0.5 text-[11px] outline-none"
@@ -163,7 +163,7 @@ export function GradientPicker({ t, value, onChange, onClose, C: CProp }: {
             )}
           </div>
           <label className="flex items-center gap-2">
-            <span className="text-[9px] uppercase flex-shrink-0" style={{ color: C.textDim, width: 48 }}>{tr('gradient_opacity')}</span>
+            <span className="text-[10px] uppercase flex-shrink-0" style={{ color: C.textDim, width: 48 }}>{tr('gradient_opacity')}</span>
             <RangeSlider min={0} max={100} className="flex-1" value={selStop.opacity}
                          onChange={opacity => patchStop(grad.stops.indexOf(selStop), { opacity })}
                          accent={C.accent} trackColor={C.border} aria-label={tr('gradient_opacity')} />

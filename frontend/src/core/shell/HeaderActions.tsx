@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
-  Bell, Settings, HelpCircle, Info, BookOpen, Calendar, PhoneMissed, type LucideIcon,
+  Bell, HelpCircle, Info, BookOpen, Calendar, PhoneMissed, type LucideIcon,
 } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Avatar from '@radix-ui/react-avatar'
@@ -11,11 +11,12 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { useNotificationStore } from '../store/notificationStore'
-import { Slot, SlotRegistry, ModuleSettingsRegistry } from '../slots/SlotRegistry'
+import { Slot, SlotRegistry } from '../slots/SlotRegistry'
 import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
 import UserPanel from './UserPanel'
 import AddAccountModal from '../components/AddAccountModal'
 import WaffleMenu from './WaffleMenu'
+import SettingsMenu from './SettingsMenu'
 
 const NOTIF_ICONS: Record<string, LucideIcon> = { Calendar, PhoneMissed }
 
@@ -23,7 +24,7 @@ const NOTIF_ICONS: Record<string, LucideIcon> = { Calendar, PhoneMissed }
 // avatar). Extrait de l'AppHeader pour être réutilisable : l'AppHeader global le
 // rend, mais les sous-modules à barre de titre le rendent AUSSI dans leur barre
 // (mode `compact`) après avoir masqué l'AppHeader — gain de hauteur verticale.
-export default function HeaderActions({ compact = false, dark = false }: { compact?: boolean; dark?: boolean }) {
+export default function HeaderActions({ compact = false, dark = false, minimal = false }: { compact?: boolean; dark?: boolean; minimal?: boolean }) {
   const { t } = useTranslation()
   const { user } = useAuthStore()
   const { activeModules } = useModulesStore()
@@ -33,10 +34,6 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
   const navigate = useNavigate()
   const pathname = useLocation().pathname
   const isHome = pathname === '/'
-  // Per-user settings of the module the user is currently inside (e.g. /photos/… →
-  // /photos/settings). Falls back to the global settings page when the current
-  // module has no per-user settings page registered.
-  const moduleSettingsRoute = ModuleSettingsRegistry.getRoute(pathname.split('/')[1], activeIds)
   const [panelOpen, setPanelOpen]           = useState(false)
   const [addAccountOpen, setAddAccountOpen] = useState(false)
   const avatarBtnRef = useRef<HTMLButtonElement>(null)
@@ -65,8 +62,11 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
 
   return (
     <div className="flex items-center gap-0 flex-shrink-0">
+      {/* `minimal` : mode recherche — on ne garde que le gaufrier + l'avatar (façon
+          Google Agenda), et on masque notifications / réglages / aide / slots. */}
+      {!minimal && (<>
       <Slot name="header-actions-right" />
-      <Slot name="topbar-actions" />
+      <Slot name="topbar-actions" dark={dark} compact={compact} />
 
       {/* Notifications */}
       <DropdownMenu.Root>
@@ -122,16 +122,14 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
 
-      {/* Paramètres — masqué sur la page d'accueil. <button> (et non <Link>) pour être
-          homogène avec les autres icônes d'en-tête (même cercle de survol/focus). */}
+      {/* Menu Paramètres (⚙) — dropdown façon Google : Paramètres, Corbeille (si le
+          module supprime), Apparence, Imprimer, + items du module, Modules
+          complémentaires. Masqué sur l'accueil. Un module peut fournir son propre
+          bouton via l'override `topbar-settings`. */}
       {isHome ? null : SettingsButtonOverride ? (
         <SettingsButtonOverride compact={compact} dark={dark} />
       ) : (
-        <button onClick={() => navigate(moduleSettingsRoute ?? '/settings')}
-          className={btn}
-          aria-label={t('header.settings')}>
-          <Settings size={ico} />
-        </button>
+        <SettingsMenu triggerClassName={btn} iconSize={ico} ariaLabel={t('header.settings')} />
       )}
 
       {/* Aide — masquée sur mobile (place à la recherche ; « À propos » reste
@@ -164,6 +162,7 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      </>)}
 
       {/* Grille d'apps : masquée sur mobile — la barre de navigation du bas
           (« Modules ») remplit ce rôle et la page /modules liste tout. */}
@@ -180,7 +179,7 @@ export default function HeaderActions({ compact = false, dark = false }: { compa
           {user?.avatar_url ? (
             <Avatar.Image src={user.avatar_url} alt={user.display_name ?? user.username} className="w-full h-full object-cover" />
           ) : null}
-          <Avatar.Fallback className={`text-white font-medium ${compact ? 'text-xs' : 'text-sm'}`}>{initials}</Avatar.Fallback>
+          <Avatar.Fallback className={`text-white font-medium ${compact ? 'text-sm' : 'text-sm'}`}>{initials}</Avatar.Fallback>
         </Avatar.Root>
       </button>
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { FloatingWindow } from './FloatingWindow'
+import { pickImageFile } from '../core/store/imagePickerStore'
 import { Button, RangeSlider } from './index'
 import { ZoomIn, ZoomOut, ImagePlus, ImageOff } from 'lucide-react'
 
@@ -21,7 +22,6 @@ interface Props {
 
 export default function AvatarCropModal({ initialSrc, initialCrop, saving, onCancel, onSave }: Props) {
   const imgRef     = useRef<HTMLImageElement | null>(null)
-  const fileRef    = useRef<HTMLInputElement | null>(null)
   const objUrlRef  = useRef<string | null>(null)   // object URL interne à révoquer
   const origFileRef = useRef<File | null>(null)     // fichier importé cette session (original à conserver)
 
@@ -81,15 +81,13 @@ export default function AvatarCropModal({ initialSrc, initialCrop, saving, onCan
 
   useEffect(() => { if (nat) setOff(o => clamp(o.x, o.y)) }, [zoom, nat, clamp])
 
-  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const useFile = (file: File | null) => {
     if (!file) return
     if (objUrlRef.current) URL.revokeObjectURL(objUrlRef.current)
     const url = URL.createObjectURL(file)
     objUrlRef.current = url
     origFileRef.current = file   // conserver l'original pour le serveur
     setSrc(url)
-    if (fileRef.current) fileRef.current.value = ''
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -145,7 +143,7 @@ export default function AvatarCropModal({ initialSrc, initialCrop, saving, onCan
           {!nat && (
             <button
               type="button"
-              onClick={() => fileRef.current?.click()}
+              onClick={() => { void pickImageFile({ title: 'Photo de profil' }).then(useFile) }}
               className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-text-tertiary hover:text-primary transition-colors"
             >
               {loadError ? <ImageOff size={36} /> : <ImagePlus size={36} />}
@@ -170,10 +168,9 @@ export default function AvatarCropModal({ initialSrc, initialCrop, saving, onCan
         )}
 
         {/* Import (toujours dispo) */}
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickFile} />
         <button
           type="button"
-          onClick={() => fileRef.current?.click()}
+          onClick={() => { void pickImageFile({ title: 'Photo de profil' }).then(useFile) }}
           className="flex items-center gap-1.5 text-sm text-primary hover:text-primary-hover transition-colors"
         >
           <ImagePlus size={15} /> Importer une autre image

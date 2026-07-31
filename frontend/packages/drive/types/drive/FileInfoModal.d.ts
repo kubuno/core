@@ -15,6 +15,8 @@ export interface FileInfoExtraTarget {
     name: string;
 }
 export declare const FileInfoExtraContext: import("react").Context<FileInfoExtraTarget | null>;
+type TF = (key: string, opts?: Record<string, unknown>) => string;
+export declare function mimeLabel(mimeType: string, name: string | undefined, t: TF): string;
 interface Props {
     target: InfoTarget | null;
     onClose: () => void;

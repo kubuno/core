@@ -44,7 +44,17 @@ interface FloatingWindowProps {
   resizable?:    boolean           // défaut : false
   backdrop?:     boolean           // défaut : false — overlay semi-transparent
   className?:    string            // classes CSS additionnelles sur la fenêtre
+  /**
+   * Marge intérieure du contenu, en px (défaut : 20). Le contenu d'une fenêtre ne
+   * doit jamais toucher ses bords ; les rares fenêtres « pleine largeur » (aperçu,
+   * liste qui doit affleurer, contenu déjà encadré) passent `padding={0}` et gèrent
+   * leur propre respiration.
+   */
+  padding?:      number
 }
+
+/** Marge intérieure par défaut du contenu d'une fenêtre volante, en px. */
+export const WINDOW_PADDING = 20
 
 export function FloatingWindow({
   title,
@@ -60,6 +70,7 @@ export function FloatingWindow({
   resizable     = false,
   backdrop      = false,
   className     = '',
+  padding,
 }: FloatingWindowProps) {
   const windowRef = useRef<HTMLDivElement>(null)
   const [zIndex, setZIndex] = useState(() => useWindowZStore.getState().next())
@@ -400,8 +411,13 @@ export function FloatingWindow({
           </button>
         </div>
 
-        {/* Contenu */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* Contenu — marge intérieure par défaut : sans elle, chaque module devait
+            y penser, et le contenu finissait collé aux bords (constaté sur les
+            dialogues d'office). Neutralisable par `padding={0}`. */}
+        <div
+          className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          style={{ padding: padding ?? WINDOW_PADDING }}
+        >
           {children}
         </div>
       </div>

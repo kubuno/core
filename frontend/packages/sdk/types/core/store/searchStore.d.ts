@@ -10,9 +10,12 @@ export interface SearchConfig {
         onClose: () => void;
     }>;
     onImageSearch?: (file: File) => void;
+    inline?: boolean;
 }
 interface SearchState {
     configs: SearchConfig[];
+    query: string;
+    setQuery: (q: string) => void;
     register: (config: SearchConfig) => void;
     unregister: (moduleId: string) => void;
 }

@@ -13,7 +13,7 @@ import type { Session, ApiToken } from '../types'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Key, Trash2, Copy, Check, Plus, X, ShieldCheck, ShieldOff, Shield, Users, Lock, Clock, User, Laptop, Bell, Palette, Monitor, Smartphone, Download, Apple, Calendar as CalendarIcon, Folder, ChevronRight, ArrowLeft, type LucideIcon } from 'lucide-react'
 import * as ReactQRCode from 'react-qr-code'
-import { Button, Input, Dropdown, Textarea, Checkbox, useIsMobile } from '@ui'
+import { Button, Input, Dropdown, Textarea, Checkbox, useIsMobile, useSaveShortcut } from '@ui'
 
 // react-qr-code is a CommonJS package: under Vite/rolldown the ESM-interop can
 // nest the actual component under `.default`/`.QRCode` (sometimes several levels
@@ -881,6 +881,8 @@ function NotificationsTab() {
       setSaved(true); setTimeout(() => setSaved(false), 2200)
     } finally { setBusy(false) }
   }
+
+  useSaveShortcut(() => { void save() }, !busy)
 
   return (
     <div className="max-w-3xl space-y-8">

@@ -14,12 +14,13 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 // rounded-md is FIXED — border radius is never overridable
 const BASE = [
-  'inline-flex items-center justify-center font-medium select-none',
+  'inline-flex items-center justify-center select-none',
   'transition-colors rounded-md',
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
   'disabled:opacity-50 disabled:cursor-not-allowed',
 ].join(' ')
 
+// Buttons are never bold: colour and fill carry the hierarchy, weight does not.
 const VARIANT: Record<ButtonVariant, string> = {
   primary:   'bg-primary text-white hover:bg-primary-hover active:bg-primary-hover',
   secondary: 'bg-white border border-border text-text-primary hover:bg-surface-1 active:bg-surface-2',

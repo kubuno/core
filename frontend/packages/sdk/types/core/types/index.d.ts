@@ -10,11 +10,18 @@ export interface User {
     is_active: boolean;
     email_verified: boolean;
     oauth_provider: string | null;
+    org_unit_id: string | null;
     preferences: Record<string, unknown>;
     created_at: string;
     updated_at: string;
     last_login_at: string | null;
     totp_enabled: boolean;
+}
+export interface OrgUnit {
+    id: string;
+    name: string;
+    parent_id: string | null;
+    description: string | null;
 }
 export interface Session {
     id: string;

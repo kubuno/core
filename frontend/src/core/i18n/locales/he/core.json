@@ -7,7 +7,17 @@
     "close": "סגירה",
     "search": "חיפוש",
     "loading": "טוען…",
-    "back": "חזרה"
+    "back": "חזרה",
+    "done": "סיום"
+  },
+  "textmenu": {
+    "undo": "בטל",
+    "redo": "בצע שוב",
+    "cut": "גזור",
+    "copy": "העתק",
+    "paste": "הדבק",
+    "paste_plain": "הדבק בלי עיצוב",
+    "select_all": "בחר הכול"
   },
   "header": {
     "notifications": "התראות",
@@ -69,7 +79,8 @@
     "move": "העבר",
     "open": "פתח",
     "widget_settings": "הגדרת widget",
-    "widget_remove": "הסר"
+    "widget_remove": "הסר",
+    "resize_sidebar": "שינוי גודל הפאנל"
   },
   "register": {
     "title": "יצירת חשבון",
@@ -375,5 +386,26 @@
     "set_clock_analog": "אנלוגי",
     "set_clock_seconds": "הצג שניות",
     "set_clock_24h": "תבנית 24 שעות"
+  },
+  "settingsmenu": {
+    "settings": "הגדרות",
+    "trash": "אשפה",
+    "appearance": "מראה",
+    "print": "הדפסה",
+    "addons": "הורדת תוספים"
+  },
+  "appearance": {
+    "title": "מראה",
+    "light": "בהיר",
+    "dark": "כהה",
+    "system": "ברירת המחדל של המכשיר",
+    "scheme": "ערכת צבעים",
+    "density": "צפיפות מידע",
+    "scheme_modern": "מודרני",
+    "scheme_classic": "קלאסי",
+    "scheme_high-contrast": "ניגודיות גבוהה",
+    "density_responsive": "מותאם",
+    "density_comfortable": "נוח",
+    "density_compact": "קומפקטי"
   }
 }

@@ -12,6 +12,9 @@ use crate::{
                 create_oauth_provider, delete_oauth_provider, list_oauth_providers,
                 update_oauth_provider,
             },
+            org_units::{
+                create_org_unit, delete_org_unit, list_org_units, update_org_unit,
+            },
             settings::{
                 get_admin_module, get_settings, list_admin_modules, list_event_log, public_config,
                 toggle_module, update_settings,
@@ -127,6 +130,12 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // API tokens personnels
         .route("/me/api-tokens",        get(list_api_tokens).post(create_api_token))
         .route("/me/api-tokens/:id",   delete(revoke_api_token))
+        // Historique du presse-papiers (par utilisateur, tous modules confondus)
+        .route("/clipboard",     get(crate::handlers::clipboard::list)
+                                 .post(crate::handlers::clipboard::push)
+                               .delete(crate::handlers::clipboard::clear))
+        .route("/clipboard/:id", patch(crate::handlers::clipboard::update)
+                               .delete(crate::handlers::clipboard::delete))
         // Étiquettes transversales (labels reliant des éléments de tous les modules)
         .route("/labels",               get(list_labels).post(create_label))
         .route("/labels/browse",        get(browse_labels))
@@ -162,6 +171,8 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/admin/marketplace/:id",         delete(crate::handlers::admin::marketplace::uninstall_marketplace))
         .route("/admin/event-log",      get(list_event_log))
         // ── Groupes d'utilisateurs ────────────────────────────────
+        .route("/admin/org-units",     get(list_org_units).post(create_org_unit))
+        .route("/admin/org-units/:id", patch(update_org_unit).delete(delete_org_unit))
         .route("/admin/groups",                          get(list_groups).post(create_group))
         .route("/admin/groups/:id",                     get(get_group).patch(update_group).delete(delete_group))
         .route("/admin/groups/:id/members",             post(add_member))
@@ -186,7 +197,7 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/modules/:id/unregister",  post(unregister_module))
         .route("/modules/:id/log",         post(module_log))
         .route("/events/publish",           post(publish_event))
-        // Passerelle MCP interne : l'assistant (jarvis) liste/exécute les outils
+        // Internal MCP gateway: the assistant module lists/executes tools
         // des modules au nom d'un utilisateur (identité via en-tête, pas de token API).
         .route("/mcp",                      post(crate::handlers::mcp::internal_mcp_endpoint))
         // Montages distants centralisés (le module drive proxifie vers ici).
@@ -350,12 +361,20 @@ async fn module_proxy_middleware(
 }
 
 /// Cache-Control :
-///   - /assets/* (noms hashés par Vite) → immutable 1 an
-///   - tout le reste (index.html, routes SPA, API) → no-store
+///   - assets content-hashés (URL change à chaque changement de contenu) →
+///     immutable 1 an : `/assets/*`, `/shared/*` (host), et côté modules
+///     `/modules/<id>/entry-<hash>.{js,css}` + `/modules/<id>/chunks/*`
+///   - tout le reste (index.html, routes SPA, API, entry non hashé, assets
+///     modules non hashés) → no-store
+///
+/// Le content-hash dans le NOM est ce qui permet le cache long : l'URL change
+/// dès que le contenu change. C'est aussi ce qui empêche iOS Safari de resservir
+/// un module ES périmé (son cache est indexé par URL et ignore `no-store` tant
+/// que l'URL reste stable).
 async fn cache_control_middleware(req: Request<Body>, next: Next) -> Response {
     let path = req.uri().path().to_owned();
     let mut response = next.run(req).await;
-    let value = if path.starts_with("/assets/") {
+    let value = if is_content_hashed_asset(&path) {
         "public, max-age=31536000, immutable"
     } else {
         "no-store"
@@ -364,6 +383,32 @@ async fn cache_control_middleware(req: Request<Body>, next: Next) -> Response {
         response.headers_mut().insert(axum::http::header::CACHE_CONTROL, v);
     }
     response
+}
+
+/// Vrai si le chemin désigne un asset dont le NOM contient un content-hash (donc
+/// URL stable ⇔ contenu stable → cachable `immutable`).
+fn is_content_hashed_asset(path: &str) -> bool {
+    if path.starts_with("/assets/") || path.starts_with("/shared/") {
+        return true;
+    }
+    // Bundles des modules : entrée content-hashée + chunks internes hashés.
+    if path.starts_with("/modules/") {
+        if path.contains("/chunks/") {
+            return true;
+        }
+        if let Some(file) = path.rsplit('/').next() {
+            for ext in [".js", ".css"] {
+                if let Some(rest) = file.strip_suffix(ext) {
+                    if let Some(hash) = rest.strip_prefix("entry-") {
+                        if !hash.is_empty() && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 fn rewrite_uri_strip_prefix(uri: &Uri, prefix: &str) -> Uri {

@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Search, Check } from 'lucide-react'
+import { Search, Check } from 'lucide-react'
+import { CaretDown } from './CaretDown'
 import { dedupeFontFamilies } from './fontFamily'
 
 export interface FontPickerProps {
@@ -223,7 +224,7 @@ export function FontPicker({
       >
         {/* Empty value (e.g. mixed-font selection) → show the greyed placeholder. */}
         <span className="truncate flex-1 text-left" style={value ? undefined : { color: P.ter }}>{value || placeholder}</span>
-        <ChevronDown size={14} style={{ color: P.sec, flexShrink: 0, transition: 'transform 0.12s', transform: open ? 'rotate(180deg)' : undefined }} />
+        <CaretDown size={11} color={P.sec} />
       </button>
 
       {open && pos && createPortal(
@@ -244,7 +245,7 @@ export function FontPicker({
               ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); setHi(0) }} onKeyDown={onKey}
               placeholder="Rechercher une police…" aria-label="Rechercher une police"
               aria-controls={listId} aria-autocomplete="list"
-              className="flex-1 outline-none bg-transparent" style={{ color: P.text, fontSize: 13 }}
+              className="flex-1 outline-none bg-transparent" style={{ color: P.text, fontSize: 12 }}
             />
             {query && (
               <button type="button" onClick={() => { setQuery(''); setHi(0); searchRef.current?.focus() }}
@@ -256,7 +257,7 @@ export function FontPicker({
           <div ref={listRef} id={listId} role="listbox" aria-activedescendant={options[hi] ? `${listId}-opt-${hi}` : undefined}
             style={{ maxHeight: 340, overflowY: 'auto', padding: '4px 0' }}>
             {options.length === 0 && (
-              <div className="px-4 py-6 text-center" style={{ color: P.ter, fontSize: 13 }}>
+              <div className="px-4 py-6 text-center" style={{ color: P.ter, fontSize: 12 }}>
                 Aucune police pour « {q} »
               </div>
             )}

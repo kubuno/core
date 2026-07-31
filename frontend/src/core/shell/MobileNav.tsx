@@ -1,6 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Home, Grid, Settings, type LucideIcon } from 'lucide-react'
 import { useSidebarStore, resolveActiveSidebarConfig, type MobileNavTab } from '../store/sidebarStore'
 
 /**
@@ -11,28 +10,24 @@ import { useSidebarStore, resolveActiveSidebarConfig, type MobileNavTab } from '
  *    (mirrors the Google Drive tablet/landscape layout).
  *
  * Destinations come from the active module's `mobileTabs` (Drive: Home /
- * Starred / Shared / Files) and fall back to the shell's generic ones. Modules
- * never render their own bar — that would stack two of them.
+ * Starred / Shared / Files). NO fallback: outside a module that declares tabs
+ * there is no bar at all (the drawer + waffle FAB carry the navigation) — a
+ * generic Home/Modules/Settings bar was pure clutter. Modules never render
+ * their own bar — that would stack two of them.
  */
 export default function MobileNav({ variant = 'bottom' }: { variant?: 'bottom' | 'rail' }) {
-  const { t } = useTranslation()
-  const { t: tn } = useTranslation('nav')
   const { pathname } = useLocation()
   const configs = useSidebarStore(s => s.configs)
 
   const active = resolveActiveSidebarConfig(configs, pathname)
-  // Modules that own their whole chrome (office/paintsharp editors) get no bar.
-  const tabs = active?.hideSidebar ? undefined : active?.mobileTabs
+  // Modules that own their whole chrome (office/paintsharp editors) get no bar
+  // at all — same rule as AppSidebar (an immersive editor registers a
+  // most-specific config with hideSidebar).
+  if (active?.hideSidebar) return null
+  const tabs = active?.mobileTabs
+  if (!tabs?.length) return null
 
-  const generic: { to: string; end?: boolean; Icon: LucideIcon; label: string }[] = [
-    { to: '/', end: true, Icon: Home, label: tn('home', { defaultValue: 'Accueil' }) },
-    { to: '/modules', Icon: Grid, label: tn('modules', { defaultValue: 'Modules' }) },
-    { to: '/settings', Icon: Settings, label: t('user.settings') },
-  ]
-
-  const items = tabs?.length
-    ? tabs.map(tab => <NavItem key={tab.id} tab={tab} rail={variant === 'rail'} />)
-    : generic.map(g => <NavItem key={g.to} tab={{ id: g.to, path: g.to, end: g.end, Icon: g.Icon, label: g.label }} rail={variant === 'rail'} />)
+  const items = tabs.map(tab => <NavItem key={tab.id} tab={tab} rail={variant === 'rail'} />)
 
   if (variant === 'rail') {
     // Rendered in the shell's flex flow (left of the module area) only when the

@@ -10,8 +10,15 @@ const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8'),
 ) as { version: string }
 
-// Nom de chunk -> noms de fichiers stables (sans hash) pour les modules partagés
-// ciblés par l'import map. Tout le reste garde un hash de cache normal.
+// Chunks partagés ciblés par l'import map du host (@ui/@kubuno/*/vendors).
+// Ils sont émis sous `shared/` mais AVEC un content-hash dans le nom, comme le
+// reste des assets : le plugin import map lit le fileName réel (hashé) et l'app
+// host + les modules pointent tous vers la MÊME URL hashée → instance unique
+// préservée. Le hash rend l'URL différente à chaque changement de contenu, ce
+// qui casse le cache mémoire/bfcache d'iOS Safari (indexé par URL, qui ignore
+// `no-store` tant que l'URL est stable) — source des contenus périmés sur iPhone.
+// Contrepartie : l'import map inline change de hash → le core relit
+// `importmap.sha256` au (re)démarrage, ce que fait tout déploiement frontend.
 const SHARED_CHUNK = (name: string | undefined) =>
   name === 'kubuno-shared' || name === 'drive-shared' || (name?.startsWith('vendor-') ?? false)
 
@@ -77,10 +84,10 @@ export default defineConfig({
           return undefined
         },
         entryFileNames(chunk: { name?: string }) {
-          return SHARED_CHUNK(chunk.name) ? 'shared/[name].js' : 'assets/[name]-[hash].js'
+          return SHARED_CHUNK(chunk.name) ? 'shared/[name]-[hash].js' : 'assets/[name]-[hash].js'
         },
         chunkFileNames(chunk: { name?: string }) {
-          return SHARED_CHUNK(chunk.name) ? 'shared/[name].js' : 'assets/[name]-[hash].js'
+          return SHARED_CHUNK(chunk.name) ? 'shared/[name]-[hash].js' : 'assets/[name]-[hash].js'
         },
       },
     },

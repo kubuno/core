@@ -1,71 +1,75 @@
+import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { Plus } from 'lucide-react'
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useIsMobile, useIsLandscape } from '@ui'
 import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
-import { Slot, SlotRegistry } from '../slots/SlotRegistry'
+import { useModulesStore } from '../store/modulesStore'
+import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
+import WaffleMenu from './WaffleMenu'
 
 /**
- * Floating action button (mobile only). On desktop the "New" action lives in the
- * sidebar; on mobile that sidebar is an off-canvas drawer, so the primary create
- * action would be two taps away and hidden. This FAB surfaces the exact same
- * create actions (the active module's `NewActions` component or its
- * `sidebar-new-actions` slot) bottom-right, above the MobileNav.
+ * Floating action button (mobile only). On desktop the app launcher (waffle
+ * menu) lives in the header; on mobile that header has no room for it and the
+ * per-module bottom nav can't switch apps, so this FAB surfaces the waffle
+ * app-launcher bottom-right, above the MobileNav. The module's "New" create
+ * actions stay reachable through the off-canvas sidebar drawer.
  */
 export default function MobileFab() {
-  const { t: tc } = useTranslation()
   const { pathname } = useLocation()
   const { configs } = useSidebarStore()
+  const { activeModules } = useModulesStore()
   // Landscape phones have no bottom bar (the nav is a left rail), so the FAB
   // drops to a normal bottom margin instead of clearing the 56px bar.
-  const landscape = useIsMobile() && useIsLandscape()
+  // ⚠️ Call BOTH hooks unconditionally — `useIsMobile() && useIsLandscape()`
+  // short-circuits the second hook on desktop, so crossing the mobile
+  // breakpoint changes the hook count → React #310.
+  const isMobileVp = useIsMobile()
+  const isLandscapeVp = useIsLandscape()
+  const landscape = isMobileVp && isLandscapeVp
+  // The launcher's open state (from Radix). Backdrop + FAB z-index follow it
+  // directly — no animation, so both flip instantly.
+  // (declared before the early returns to keep hook order stable.)
+  const [open, setOpen] = useState(false)
 
   const activeConfig = resolveActiveSidebarConfig(configs, pathname)
-  // Module gère son propre chrome (éditeurs office/paintsharp) → pas de FAB.
-  if (activeConfig?.hideSidebar) return null
-  const hasSlotActions = activeConfig != null &&
-    SlotRegistry.getSlot('sidebar-new-actions')
-      .some((entry) => entry.moduleId === activeConfig.moduleId)
-  const showNewButton = !!(activeConfig?.NewActions || hasSlotActions)
-  if (!showNewButton) return null
+  // Le lanceur d'apps est GLOBAL : il reste visible même dans les éditeurs
+  // immersifs (hideSidebar masque la nav basse et le tiroir, pas le waffle).
+  // Dans ces éditeurs, une barre de commandes occupe souvent le bord bas
+  // (ruban mobile Office) : en paysage on garde alors la surélévation.
+  const immersive = !!activeConfig?.hideSidebar
 
-  const NewActionsComponent = activeConfig?.NewActions ?? null
-  const label = activeConfig?.newButtonLabelKey
-    ? tc(activeConfig.newButtonLabelKey)
-    : (activeConfig?.newButtonLabel ?? tc('shell.new'))
+  // Toutes les apps du waffle (mêmes données que la grille d'apps de l'en-tête) :
+  // on rattache moduleId/moduleLabel pour le regroupement des sous-modules.
+  const allWaffleApps = activeModules.flatMap((m) => {
+    const entry = WaffleAppRegistry.get(m.module_id)
+    return entry ? entry.apps.map(a => ({ ...a, moduleId: entry.moduleId, moduleLabel: entry.label })) : []
+  })
+  if (allWaffleApps.length === 0) return null
 
   return (
-    <div
-      data-app-chrome
-      className="lg:hidden fixed right-4 z-40"
-      style={{ bottom: landscape ? 'calc(16px + env(safe-area-inset-bottom))' : 'calc(72px + env(safe-area-inset-bottom))' }}
-    >
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <button
-            aria-label={label}
-            className="w-14 h-14 rounded-2xl bg-primary text-white flex items-center justify-center
-                       shadow-[0_4px_14px_rgba(26,115,232,0.45)] active:scale-95 transition-transform"
-          >
-            <Plus size={26} />
-          </button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            side="top"
-            align="end"
-            sideOffset={10}
-            className="min-w-56 bg-white rounded-xl border border-border shadow-xl py-1 z-[60]"
-          >
-            {NewActionsComponent ? (
-              <NewActionsComponent />
-            ) : (
-              <Slot name="sidebar-new-actions" />
-            )}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-    </div>
+    <>
+      {/* When the launcher is open, blur/dim everything behind it so only the
+          panel and this FAB stay sharp. z-[9998] sits below the FAB wrapper
+          (z-[9999]) and the panel Content (z-[9999], portaled) → both stay
+          clear; everything else (topbar, list, bottom nav) is behind → blurred.
+          Tapping it dismisses via Radix's outside-pointer handling. */}
+      {open && (
+        // Blur + dim behind the launcher. The filter is set INLINE (not via a
+        // CSS class) because the CSS minifier strips the standard
+        // `backdrop-filter` and keeps only `-webkit-backdrop-filter`, which
+        // modern Chrome no longer honours on its own → dim-but-no-blur.
+        <div aria-hidden data-app-chrome className="lg:hidden fixed inset-0 z-[9998]"
+          style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', backgroundColor: 'rgba(0,0,0,0.1)' }} />
+      )}
+      {/* z-[44] fermé : AU-DESSUS des overlays plein-module des éditeurs (backstage
+          Office, z-40 — sinon le lanceur global disparaît sur leurs pages d'accueil)
+          mais SOUS leurs barres/palettes de commandes (z-45+). */}
+      <div
+        data-app-chrome
+        className={`lg:hidden fixed right-4 ${open ? 'z-[9999]' : 'z-[44]'}`}
+        style={{ bottom: landscape && !immersive ? 'calc(16px + env(safe-area-inset-bottom))' : 'calc(72px + env(safe-area-inset-bottom))' }}
+      >
+        <WaffleMenu allApps={allWaffleApps} fab onOpenChange={setOpen} />
+      </div>
+    </>
   )
 }

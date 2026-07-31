@@ -117,6 +117,7 @@ pub struct UpdateUserAdminDto {
     pub quota_bytes: Option<i64>,
     pub is_active:   Option<bool>,
     pub display_name: Option<String>,
+    pub org_unit_id: Option<Uuid>,
 }
 
 pub async fn update_user(
@@ -130,14 +131,16 @@ pub async fn update_user(
            SET role        = COALESCE($1, role),
                quota_bytes = COALESCE($2, quota_bytes),
                is_active   = COALESCE($3, is_active),
-               display_name = COALESCE($4, display_name)
-           WHERE id = $5
+               display_name = COALESCE($4, display_name),
+               org_unit_id = COALESCE($5, org_unit_id)
+           WHERE id = $6
            RETURNING *"#,
     )
     .bind(dto.role.as_deref())
     .bind(dto.quota_bytes)
     .bind(dto.is_active)
     .bind(dto.display_name.as_deref())
+    .bind(dto.org_unit_id)
     .bind(id)
     .fetch_optional(&state.db)
     .await?

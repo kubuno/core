@@ -1,8 +1,8 @@
 /**
- * Floating action button (mobile only). On desktop the "New" action lives in the
- * sidebar; on mobile that sidebar is an off-canvas drawer, so the primary create
- * action would be two taps away and hidden. This FAB surfaces the exact same
- * create actions (the active module's `NewActions` component or its
- * `sidebar-new-actions` slot) bottom-right, above the MobileNav.
+ * Floating action button (mobile only). On desktop the app launcher (waffle
+ * menu) lives in the header; on mobile that header has no room for it and the
+ * per-module bottom nav can't switch apps, so this FAB surfaces the waffle
+ * app-launcher bottom-right, above the MobileNav. The module's "New" create
+ * actions stay reachable through the off-canvas sidebar drawer.
  */
 export default function MobileFab(): import("react").JSX.Element | null;

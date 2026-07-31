@@ -26,9 +26,12 @@ interface MarketModule {
   removable:         boolean
 }
 
-/** Panneau Marketplace : parcourir le catalogue distant et installer des modules. */
-export default function MarketplacePanel({ onBack }: { onBack: () => void }) {
+/** Panneau Marketplace : parcourir le catalogue distant et installer des modules.
+ *  `related` (id du module courant) → filtre par défaut sur les modules similaires
+ *  ou complémentaires (même catégorie ou tags partagés), avec repli « tout voir ». */
+export default function MarketplacePanel({ onBack, related }: { onBack: () => void; related?: string | null }) {
   const { t } = useTranslation()
+  const [showAll, setShowAll] = useState(false)
   const qc = useQueryClient()
   const [okMsg, setOkMsg] = useState<string | null>(null)
   const [errMsg, setErrMsg] = useState<string | null>(null)
@@ -93,7 +96,14 @@ export default function MarketplacePanel({ onBack }: { onBack: () => void }) {
     onSettled: () => setBusy(null),
   })
 
-  const categories = [...new Set((data ?? []).map((m) => m.category || 'Autres'))]
+  // Related = modules sharing the current module's category or any tag (itself excluded).
+  const self = related ? (data ?? []).find((m) => m.id === related) : undefined
+  const isRelated = (m: MarketModule) =>
+    m.id !== self!.id && ((!!self!.category && m.category === self!.category)
+      || m.tags.some((tg) => self!.tags.includes(tg)))
+  const relatedActive = !!self && !showAll
+  const visible = relatedActive ? (data ?? []).filter(isRelated) : (data ?? [])
+  const categories = [...new Set(visible.map((m) => m.category || 'Autres'))]
 
   return (
     <div>
@@ -131,11 +141,30 @@ export default function MarketplacePanel({ onBack }: { onBack: () => void }) {
       {isLoading && <p className="text-sm text-text-tertiary">{t('admin.mk_loading', { defaultValue: 'Chargement du catalogue…' })}</p>}
       {isError && <p className="text-sm text-danger">{t('admin.mk_catalog_error', { defaultValue: 'Catalogue indisponible (connexion à kubuno.com requise).' })}</p>}
 
+      {/* Bandeau filtre « complémentaires » : contexte + repli vers tout le catalogue. */}
+      {self && (
+        <div className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-primary-light px-4 py-2.5">
+          <span className="text-sm text-text-primary">
+            {relatedActive
+              ? t('admin.mk_related_on', { defaultValue: 'Modules complémentaires à « {{name}} »', name: self.name })
+              : t('admin.mk_related_off', { defaultValue: 'Tout le catalogue' })}
+          </span>
+          <button onClick={() => setShowAll((v) => !v)} className="text-sm font-medium text-primary hover:text-primary-hover flex-shrink-0">
+            {relatedActive
+              ? t('admin.mk_related_showall', { defaultValue: 'Voir tout le catalogue' })
+              : t('admin.mk_related_only', { defaultValue: 'Voir les complémentaires' })}
+          </button>
+        </div>
+      )}
+      {relatedActive && visible.length === 0 && (
+        <p className="text-sm text-text-tertiary">{t('admin.mk_related_empty', { defaultValue: 'Aucun module complémentaire trouvé.' })}</p>
+      )}
+
       {categories.map((cat) => (
         <div key={cat} className="mb-6">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary mb-2">{cat}</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(data ?? []).filter((m) => (m.category || 'Autres') === cat).map((mod) => {
+            {visible.filter((m) => (m.category || 'Autres') === cat).map((mod) => {
               const upToDate = mod.installed && mod.installed_version === mod.version
               const canUpdate = mod.installed && mod.installed_version !== mod.version
               const isBusy = busy === mod.id

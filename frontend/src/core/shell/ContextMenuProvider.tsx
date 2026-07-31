@@ -1,4 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { MENU_ATTR, useMenuDismiss } from '../../ui/useMenuDismiss'
+import { findTextTarget } from '../../ui/textFieldMenu'
 import { Slot, SlotRegistry } from '../slots/SlotRegistry'
 import { useModulesStore } from '../store/modulesStore'
 
@@ -21,17 +23,17 @@ export function ContextMenuItem({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-3 w-full px-3 py-2 text-sm
-                 text-text-primary hover:bg-surface-1 cursor-pointer outline-none text-left"
+      className="group flex items-center gap-3 w-full px-2.5 py-1.5 text-sm rounded-md
+                 text-text-primary hover:bg-primary hover:text-white cursor-pointer outline-none text-left"
     >
-      {icon && <span className="text-text-secondary">{icon}</span>}
+      {icon && <span className="text-primary group-hover:text-white">{icon}</span>}
       {label}
     </button>
   )
 }
 
 export function ContextMenuSeparator() {
-  return <div className="my-1 h-px bg-border mx-2" />
+  return <div className="my-[5px] h-px mx-1.5" style={{ background: 'var(--kb-black-12)' }} />
 }
 
 export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
@@ -46,7 +48,13 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
 
   const close = useCallback(() => setMenu(m => ({ ...m, visible: false })), [])
 
+  useMenuDismiss(menu.visible, close)
+
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    /* A text entry area owns its own default menu (TextFieldMenuHost). Bail out before
+     * touching the event: `stopPropagation` here would keep it from ever reaching the
+     * document-level listener that opens the field menu. */
+    if (findTextTarget(e.target)) return
     if (!hasItems) return   // no items → let the browser default (or just ignore)
     e.preventDefault()
     e.stopPropagation()
@@ -63,17 +71,18 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!menu.visible) return
-    const onMouse = (e: MouseEvent) => {
+    const onMouse = (e: Event) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) close()
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     const onScroll = () => close()
-    document.addEventListener('mousedown', onMouse)
-    document.addEventListener('keydown', onKey)
+    // `pointerdown`, pas `mousedown` : un déclencheur Radix appelle `preventDefault()`
+    // sur pointerdown, ce qui SUPPRIME le mousedown de compatibilité — le menu ouvert
+    // ne voyait alors jamais le clic et restait affiché. Capture pour passer devant
+    // tout composant qui stoppe la propagation.
+    document.addEventListener('pointerdown', onMouse, true)
     window.addEventListener('scroll', onScroll, true)
     return () => {
-      document.removeEventListener('mousedown', onMouse)
-      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onMouse, true)
       window.removeEventListener('scroll', onScroll, true)
     }
   }, [menu.visible, close])
@@ -94,11 +103,16 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
       {menu.visible && hasItems && (
         <div
           ref={menuRef}
-          className="fixed z-[200] bg-white border border-border rounded-[5px] shadow-lg py-1 min-w-[200px]"
+          {...{ [MENU_ATTR]: '' }}
+          className="kb-frosted fixed z-[200] min-w-[200px]"
           style={{ left: x, top: y }}
           onContextMenu={e => e.preventDefault()}
         >
-          <Slot name="context-menu-items" />
+          <div className="kb-frost-layer" aria-hidden />
+          {/* side padding forms the gutter the highlight pill is inset by */}
+          <div style={{ padding: 5 }}>
+            <Slot name="context-menu-items" />
+          </div>
         </div>
       )}
     </Ctx.Provider>

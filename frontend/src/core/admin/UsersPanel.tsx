@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { formatDistanceToNow } from 'date-fns'
@@ -315,7 +316,10 @@ function UserSessionsModal({ user, onClose }: { user: User; onClose: () => void 
 
 export default function UsersPanel() {
   const { t } = useTranslation()
-  const [search, setSearch] = useState('')
+  // Seed the list search from the URL (?q=), so the admin search bar can
+  // deep-link to a filtered user list.
+  const [params] = useSearchParams()
+  const [search, setSearch] = useState(params.get('q') ?? '')
   const [page, setPage] = useState(0)
   const [showCreate, setShowCreate] = useState(false)
   const [editUser, setEditUser] = useState<User | null>(null)

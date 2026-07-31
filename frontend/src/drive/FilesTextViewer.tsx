@@ -156,7 +156,7 @@ export default function FilesTextViewer({ name, load, onClose }: Props) {
             {t('txtview.empty', { defaultValue: 'Fichier vide.' })}
           </div>
         ) : (
-          <div className="flex flex-1 min-h-0 overflow-auto bg-white font-mono text-[13px] leading-5">
+          <div className="flex flex-1 min-h-0 overflow-auto bg-white font-mono text-xs leading-5">
             {!wrap && (
               <pre className="select-none text-right text-text-tertiary px-3 py-3 bg-surface-1 border-r border-border sticky left-0">
                 {gutter}

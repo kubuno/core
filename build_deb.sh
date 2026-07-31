@@ -21,7 +21,7 @@ mkdir -p "$DIST_DIR" "$STATE_DIR"
 ALL_COMPONENTS=(
   core
   drive calendar photos notes office paintsharp forms
-  chat contacts jarvis mail code media keestore maps flow tasks
+  chat contacts assistant mail code media keestore maps flow tasks
 )
 
 # ── Aide ─────────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ Composants disponibles:
   forms             Module formulaires
   chat              Module messagerie chiffrée
   contacts          Module carnet d'adresses
-  jarvis            Module assistant IA
+  assistant            Module assistant IA
   mail              Module messagerie IMAP/SMTP
   code              Module IDE web
   media             Module Watch & Listen
@@ -462,13 +462,13 @@ setup_contacts() {
         "avatars" "temp"
 }
 
-setup_jarvis() {
+setup_assistant() {
     local PKG_DIR="$1"
     local PACKAGE="$2"
-    local MODULE="jarvis"
+    local MODULE="assistant"
 
     setup_module "$PKG_DIR" "$PACKAGE" "$MODULE" \
-        "Kubuno Jarvis — assistant IA multi-modèles"
+        "Kubuno Assistant — assistant IA multi-modèles"
 
     # Recommends: ollama (pas de hard-dep)
     sed -i "s/^Depends:/Recommends: ollama\nDepends:/" \

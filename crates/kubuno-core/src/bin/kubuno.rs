@@ -120,9 +120,9 @@ fn cli() -> Command {
              \n\
              COMMANDES MODULES (exemples)\n\
              \n\
-             jarvis:models      Lister les modèles LLM disponibles\n\
-             jarvis:providers   Afficher les fournisseurs LLM configurés\n\
-             jarvis:agents      Lister les agents Jarvis\n\
+             assistant:models      Lister les modèles LLM disponibles\n\
+             assistant:providers   Afficher les fournisseurs LLM configurés\n\
+             assistant:agents      Lister les agents de l'assistant\n\
              files:quota        Afficher les quotas de stockage\n\
              \n\
              Toute commande de la forme <module>:<cmd> est routée vers le binaire\n\

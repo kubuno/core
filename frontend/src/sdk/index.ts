@@ -20,6 +20,7 @@ export { openLabelPicker, resourceKeyOf } from '../core/store/labelPickerStore'
 export { labelsApi } from '../core/api/labels'
 export type { CoreLabel, LabelBrowseItem } from '../core/api/labels'
 export * from '../core/registry/CollapseSidebarRegistry'
+export * from '../core/registry/ModuleMenuRegistry'
 export * from '../core/registry/calendarOverlay'
 export * from '../core/slots/SlotRegistry'
 export * from '../core/widgets/WidgetRegistry'
@@ -60,10 +61,16 @@ export { formatSize } from '../core/utils/format'
 export { useDraggable } from '../core/hooks/useDraggable'
 export { prompt } from '../core/store/promptStore'
 // Image picker — THE way to insert or upload an image anywhere in the app.
-export { openImagePicker } from '../core/store/imagePickerStore'
+export { openImagePicker, openImagePickerMany, pickImageFile, pickImageFiles } from '../core/store/imagePickerStore'
 export type { ImagePickResult, ImagePickerOptions } from '../core/store/imagePickerStore'
 // Modules add their own source tab (e.g. photos) here.
 export { ImageSourceRegistry } from '../core/registry/ImageSourceRegistry'
+// Sharing — THE way to share anything; modules add sections via ShareRegistry.
+export { openShare, useShareStore } from '../core/store/shareStore'
+export type { ShareApi, ShareOptions, ShareRecipient, ShareCollaborator } from '../core/store/shareStore'
+export { ShareRegistry, ShareRecipientKinds } from '../core/registry/ShareRegistry'
+export type { ShareRecipientKind } from '../core/registry/ShareRegistry'
+export type { ShareSection, ShareSectionProps, ShareTarget } from '../core/registry/ShareRegistry'
 export type { ImageSource, ImageSourceProps } from '../core/registry/ImageSourceRegistry'
 export { default as DashboardWidget } from '../core/widgets/DashboardWidget'
 export { default as PdfViewerModal } from '../core/components/PdfViewerModal'
@@ -76,10 +83,15 @@ export { getIcon, ICON_MAP } from '../core/utils/iconMap'
 // reçoivent ce registre via l'API de thème au chargement.
 export { ComponentRegistry, ThemeScopeContext, ThemePreviewContext, themed } from '../ui/themeRegistry'
 export type { User } from '../core/types'
-// Dictée vocale partagée (barre de recherche du core + modules type Jarvis) :
+// Shared voice dictation (core search bar + assistant-style modules):
 // hook + toast éditable centré, branché sur le backend STT auto-hébergé.
 export { useVoiceDictation } from '../core/shell/useVoiceDictation'
 export type { VoiceDictation, UseVoiceDictationOptions } from '../core/shell/useVoiceDictation'
+// Session STT bas niveau (streaming micro → backend auto-hébergé) : pour les
+// modules qui veulent piloter leur PROPRE UI de dictée (ex. panneau façon Word
+// d'Office insérant en direct dans le document).
+export { startVoiceSession } from '../core/shell/voiceStt'
+export type { VoiceSession, VoiceCallbacks, VoiceErrorCode } from '../core/shell/voiceStt'
 
 /**
  * Version de contrat du SDK. À incrémenter UNIQUEMENT sur un changement cassant

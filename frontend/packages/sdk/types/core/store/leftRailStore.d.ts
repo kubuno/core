@@ -8,6 +8,7 @@ export interface LeftRailEntry {
     label: string;
     isActive?: boolean;
     onClick: () => void;
+    href?: string;
 }
 interface LeftRailState {
     entries: LeftRailEntry[];

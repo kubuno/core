@@ -22,6 +22,7 @@ pub struct User {
     pub oauth_provider: Option<String>,
     pub oauth_id:       Option<String>,
     pub preferences:    serde_json::Value,
+    pub org_unit_id:    Option<Uuid>,
     pub created_at:     DateTime<Utc>,
     pub updated_at:     DateTime<Utc>,
     pub last_login_at:  Option<DateTime<Utc>>,

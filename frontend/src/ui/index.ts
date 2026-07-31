@@ -17,6 +17,7 @@ import { Badge as BaseBadge } from './Badge'
 import { Input as BaseInput } from './Input'
 import { NumberInput as BaseNumberInput } from './NumberInput'
 import { Textarea as BaseTextarea } from './Textarea'
+import { Editable as BaseEditable } from './Editable'
 import { RichText as BaseRichText } from './RichText'
 import { Checkbox as BaseCheckbox } from './Checkbox'
 import { Radio as BaseRadio } from './Radio'
@@ -53,6 +54,7 @@ export const Badge = t('ui.Badge', BaseBadge)
 export const Input = t('ui.Input', BaseInput)
 export const NumberInput = t('ui.NumberInput', BaseNumberInput)
 export const Textarea = t('ui.Textarea', BaseTextarea)
+export const Editable = t('ui.Editable', BaseEditable)
 export const RichText = t('ui.RichText', BaseRichText)
 export const Checkbox = t('ui.Checkbox', BaseCheckbox)
 export const Radio = t('ui.Radio', BaseRadio)
@@ -85,8 +87,10 @@ export const ConfirmDialog = t('ui.ConfirmDialog', BaseConfirmDialog)
 export const ConflictDialog = t('ui.ConflictDialog', BaseConflictDialog)
 
 // ── Raw exports: hooks, utilities, types (not components) ──
+export { CaretDown } from './CaretDown'
 export { RollingNumber } from './RangeSlider'
 export type { RangeSliderProps } from './RangeSlider'
+export type { EditableProps } from './Editable'
 export type { DropdownOption } from './Dropdown'
 export type { AccordionItemDef, AccordionProps } from './Accordion'
 export type { FontPickerProps } from './FontPicker'
@@ -116,4 +120,5 @@ export {
 export { gradientToCss, rgbaFromHex, DEFAULT_GRADIENT } from './gradient'
 export type { Gradient, GradientStop } from './gradient'
 export { isCoarsePointer, openable, useLongPress, useIsMobile, useIsLandscape, MOBILE_MAX_WIDTH } from './interaction'
+export { useSaveShortcut } from './useSaveShortcut'
 export { MobileSheet, MobileSheetItem, MobileSheetSeparator } from './MobileSheet'

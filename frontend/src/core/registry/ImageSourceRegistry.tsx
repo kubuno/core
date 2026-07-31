@@ -9,11 +9,15 @@ import type { ComponentType, ReactNode } from 'react'
  * gains it only when that module is installed. No cross-module import: the
  * module hands over a component, the core renders it.
  */
+type Picked = { kind: 'url'; url: string } | { kind: 'file'; file: File }
+
 export interface ImageSourceProps {
-  /** Call with the chosen image; the dialog closes and resolves. */
-  onPick: (result: { kind: 'url'; url: string } | { kind: 'file'; file: File }) => void
+  /** Call with the chosen image(s); the dialog closes and resolves. */
+  onPick: (result: Picked | Picked[]) => void
   /** Live text from the dialog's own search box (empty unless `searchable`). */
   query: string
+  /** True when the caller accepts several images; sources may ignore it. */
+  multiple: boolean
 }
 
 export interface ImageSource {

@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Folder as FolderIcon, Upload, ChevronRight, ChevronLeft, ChevronDown, Loader2, Home,
+  Folder as FolderIcon, Upload, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Loader2, Home,
   Star, Trash2, Pencil, Share2, Download, MoreVertical, CloudUpload, Info,
   Image, History, FolderPlus, RefreshCw, Scissors, Copy, ClipboardPaste,
   Archive, Link, X, ListChecks, CheckSquare, Package,
@@ -29,11 +29,11 @@ import BatchRenameModal, { type BatchRenameItem } from './BatchRenameModal'
 import { useBatchRenameStore } from './batchRenameStore'
 import MoveModal from './MoveModal'
 import ShareModal, { type ShareTarget } from './ShareModal'
-import FileInfoModal, { type InfoTarget } from './FileInfoModal'
+import FileInfoModal, { mimeLabel, type InfoTarget } from './FileInfoModal'
 import VersionHistoryModal from './VersionHistoryModal'
 import UploadPanelBase from './UploadPanel'
 import { FloatCheckbox, Button, Dropdown, MenuDropdown, ConfirmDialog, type MenuItem, openable, useLongPress, themed,
-  useIsMobile, isCoarsePointer, MobileSheet, MobileSheetItem, MobileSheetSeparator } from '@ui'
+  useIsMobile, isCoarsePointer, MobileSheet, MobileSheetItem, MobileSheetSeparator, Spinner } from '@ui'
 
 // Themeable Drive objects — a theme can override these (markup/behaviour) while
 // they are untouched by default (`themed` returns the base component when no
@@ -260,7 +260,7 @@ function FolderCardBase({ folder, isDragTarget, selected, preSelected, focused, 
     <div data-selectable-id={folder.id}
       className={`group relative flex items-center ${isMobile ? 'gap-3 px-3 py-3' : 'gap-2.5 px-3 py-2.5'} rounded-xl border transition-all cursor-default select-none min-w-0
         ${isDragTarget ? 'border-primary bg-primary/10 ring-2 ring-primary/20'
-          : selected ? 'border-primary ring-2 ring-primary/20 bg-[#c9defa]'
+          : selected ? 'border-primary ring-2 ring-primary ring-inset bg-[#c9defa]'
           : preSelected ? 'border-primary/50 bg-[#c9defa]'
           : focused ? 'border-primary/60 ring-2 ring-primary/20 bg-[#f3f4f5]'
           : 'border-[#e8eaed] bg-[#f3f4f5] hover:border-border hover:bg-[#e4ecf7] hover:shadow-sm'} ${pendingBoxClass(pendingKind)}`}
@@ -310,7 +310,7 @@ function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, al
   return (
     <div data-selectable-id={file.id}
       className={`group relative rounded-xl border hover:shadow-[0_1px_6px_rgba(0,0,0,0.1)] transition-all min-w-0 select-none cursor-default
-        ${selected ? 'border-primary ring-2 ring-primary/20 bg-[#ddeafc]' : preSelected ? 'border-primary/50 bg-[#ddeafc]' : focused ? 'border-primary/60 ring-2 ring-primary/20 bg-surface-1' : 'border-[#e8eaed] bg-surface-1 hover:border-border hover:bg-[#e4ecf7]'} ${pendingBoxClass(pendingKind)}`}
+        ${selected ? 'border-primary ring-2 ring-primary ring-inset bg-[#ddeafc]' : preSelected ? 'border-primary/50 bg-[#ddeafc]' : focused ? 'border-primary/60 ring-2 ring-primary/20 bg-surface-1' : 'border-[#e8eaed] bg-surface-1 hover:border-border hover:bg-[#e4ecf7]'} ${pendingBoxClass(pendingKind)}`}
       style={pendingBoxStyle(pendingKind)} draggable={canMove}
       onContextMenu={onContextMenu} onDragStart={onDragStart}
       {...longPress}
@@ -324,7 +324,7 @@ function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, al
       <div className={`flex items-center ${isMobile ? 'gap-1.5 px-2 py-1.5 items-start' : `gap-2 ${dense ? 'px-2 h-8' : 'px-3 h-10'}`}`}>
         <span className="shrink-0 flex items-center [&_svg]:w-[18px] [&_svg]:h-[18px]">{getFileIcon(file.mime_type, file.name)}</span>
         <span
-          className={`font-medium text-text-primary flex-1 min-w-0 ${isMobile ? 'text-[13px] leading-tight line-clamp-2 break-words' : `${dense ? 'text-xs' : 'text-[13px]'} truncate`}`}
+          className={`text-text-primary flex-1 min-w-0 ${isMobile ? 'text-sm leading-tight line-clamp-2 break-words' : `${dense ? 'text-xs' : 'text-sm'} truncate`}`}
           title={file.name}
         >{file.name}</span>
         <LabelDots kind="file" id={file.id} size={11} />
@@ -363,7 +363,7 @@ function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, al
           <span
             className="block font-semibold uppercase"
             style={{
-              fontSize: '9px', lineHeight: 1, padding: '2px 5px', letterSpacing: '0.04em',
+              fontSize: '10px', lineHeight: 1, padding: '2px 5px', letterSpacing: '0.04em',
               borderRadius: '6px', color: 'var(--color-text-secondary)',
             }}
           >
@@ -380,12 +380,185 @@ function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, al
 // FileRow — vues liste/détails/tuiles/contenu. MÊMES opérations que FileCard
 // (sélection clic/Ctrl/Maj, case à cocher, marquee, glisser, menu, ouverture,
 // curseur clavier) pour que les actions soient identiques quelle que soit la vue.
-function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, onSelect, onToggle, onContextMenu, onLongPress, onOpen, onDragStart, density = 'normal', hideMeta = false }: {
+// ── Details view (table) ──────────────────────────────────────────────────────
+// Windows-Explorer-like table for the « details » view mode: a header row with
+// sortable columns (Name / Modified / Type / Size) whose date/type/size widths
+// are resizable by dragging the separators (persisted in localStorage); the
+// name column takes the remaining space.
+const VIEW_MODES_KEY = 'kubuno:drive:view-modes'
+const DETAILS_KEY = 'kubuno:drive:details'
+type DetailsSortField = 'name' | 'size' | 'date' | 'type' | 'created'
+
+// Optional (toggleable) columns of the details table, in display order. « Nom »
+// is always shown first and is not part of this list.
+type DetailsColKey = 'labels' | 'date' | 'type' | 'size' | 'created'
+const DETAILS_COL_ORDER: DetailsColKey[] = ['labels', 'date', 'type', 'size', 'created']
+// Per-column → sort field (a header click sorts by it). Columns absent here
+// (e.g. « Étiquettes ») aren't sortable.
+const DETAILS_COL_SORT: Partial<Record<DetailsColKey, DetailsSortField>> = { date: 'date', type: 'type', size: 'size', created: 'created' }
+
+// Details-view settings remembered PER FOLDER: column widths + which columns
+// are visible.
+type DetailsSettings = { widths: Record<DetailsColKey, number>; visible: Record<DetailsColKey, boolean> }
+const DETAILS_DEFAULT: DetailsSettings = {
+  widths: { labels: 120, date: 180, type: 170, size: 96, created: 170 },
+  visible: { labels: true, date: true, type: true, size: true, created: false },
+}
+// What a row needs to render its detail cells: the ordered visible columns and
+// their widths.
+type DetailsColsView = { order: DetailsColKey[]; widths: Record<DetailsColKey, number> }
+
+function mergeDetails(d?: Partial<DetailsSettings>): DetailsSettings {
+  return {
+    widths: { ...DETAILS_DEFAULT.widths, ...(d?.widths ?? {}) },
+    visible: { ...DETAILS_DEFAULT.visible, ...(d?.visible ?? {}) },
+  }
+}
+
+function detailsColLabel(key: DetailsColKey, t: TFunc): string {
+  switch (key) {
+    case 'labels':  return t('details.col_labels', { defaultValue: 'Étiquettes' })
+    case 'date':    return t('info.field_modified')
+    case 'type':    return t('info.field_type')
+    case 'size':    return t('common.size')
+    case 'created': return t('details.col_created', { defaultValue: 'Date de création' })
+  }
+}
+function longDate(iso: string, lng: string): string {
+  return new Date(iso).toLocaleString(lng, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function fileCellText(key: DetailsColKey, file: FileItem, t: TFunc, lng: string): string {
+  switch (key) {
+    case 'labels':  return '' // rendered as <LabelDots>, not text
+    case 'date':    return file.updated_at > '1971' ? longDate(file.updated_at, lng) : ''
+    case 'created': return file.created_at > '1971' ? longDate(file.created_at, lng) : ''
+    case 'type':    return mimeLabel(file.mime_type, file.name, t)
+    case 'size':    return formatSize(file.size_bytes)
+  }
+}
+function folderCellText(key: DetailsColKey, folder: Folder, t: TFunc, lng: string): string {
+  switch (key) {
+    case 'labels':  return '' // rendered as <LabelDots>, not text
+    case 'date':    return folder.updated_at > '1971' ? longDate(folder.updated_at, lng) : ''
+    case 'created': return folder.created_at > '1971' ? longDate(folder.created_at, lng) : ''
+    case 'type':    return t('info.type_folder')
+    case 'size':    return ''
+  }
+}
+
+function DetailsHeader({ details, onDetails, sortField, sortDir, onSortField, onSortDir, onHeaderMenu }: {
+  details: DetailsSettings
+  onDetails: (updater: (s: DetailsSettings) => DetailsSettings) => void
+  sortField: DetailsSortField; sortDir: 'asc' | 'desc'
+  onSortField: (f: DetailsSortField) => void; onSortDir: (d: 'asc' | 'desc') => void
+  onHeaderMenu: (e: React.MouseEvent) => void
+}) {
+  const { t } = useTranslation('drive')
+  const visible = DETAILS_COL_ORDER.filter(k => details.visible[k])
+  const sortBy = (f: DetailsSortField) => {
+    if (sortField === f) onSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    else { onSortField(f); onSortDir(f === 'date' || f === 'size' || f === 'created' ? 'desc' : 'asc') }
+  }
+  const arrow = (f: DetailsSortField) => sortField === f
+    ? (sortDir === 'asc' ? <ChevronUp size={12} className="shrink-0" /> : <ChevronDown size={12} className="shrink-0" />)
+    : null
+  // Each column is resized by dragging its OWN left border (drag left → wider).
+  // The « Nom » column is flexible and absorbs the difference.
+  const startResize = (key: DetailsColKey) => (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    const startX = e.clientX
+    const startW = details.widths[key]
+    const onMove = (ev: PointerEvent) => {
+      const w = Math.max(64, Math.min(480, startW - (ev.clientX - startX)))
+      onDetails(s => (s.widths[key] === w ? s : { ...s, widths: { ...s.widths, [key]: w } }))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+  // Left-edge grip: the visible 1px divider sits at the column's left border.
+  const grip = (key: DetailsColKey) => (
+    <span onPointerDown={startResize(key)} onClick={e => e.stopPropagation()}
+      className="absolute -left-2 top-0 bottom-0 w-3 cursor-col-resize flex justify-center items-center group/grip z-10">
+      <span className="w-px h-4 bg-border group-hover/grip:bg-border-strong" />
+    </span>
+  )
+  const cell = 'shrink-0 flex items-center gap-1 text-left text-xs text-text-secondary hover:text-text-primary py-1.5'
+  return (
+    <div onContextMenu={onHeaderMenu}
+      className="flex items-center gap-3 pl-[19px] pr-4 border-b border-border bg-white select-none">
+      <span className="shrink-0 w-5" />
+      <span className="shrink-0 w-8" />
+      <button onClick={() => sortBy('name')} className={`flex-1 min-w-0 ${cell}`}>
+        <span className="truncate">{t('common.name')}</span>{arrow('name')}
+      </button>
+      {visible.map(key => {
+        const sortF = DETAILS_COL_SORT[key]
+        // Non-sortable columns (e.g. « Étiquettes ») render as a plain header.
+        if (!sortF) {
+          return (
+            <span key={key} style={{ width: details.widths[key] }} className={`relative ${cell} cursor-default`}>
+              <span className="truncate">{detailsColLabel(key, t)}</span>
+              {grip(key)}
+            </span>
+          )
+        }
+        return (
+          <button key={key} onClick={() => sortBy(sortF)} style={{ width: details.widths[key] }}
+            className={`relative ${key === 'size' ? 'justify-end' : ''} ${cell}`}>
+            <span className="truncate">{detailsColLabel(key, t)}</span>{arrow(sortF)}
+            {grip(key)}
+          </button>
+        )
+      })}
+      <span className="shrink-0 w-[26px]" />
+    </div>
+  )
+}
+
+// Selection border for stacked rows, drawn as per-side inset box-shadows so
+// adjacent selected rows collapse their shared edge to a single 2px line: a row
+// whose previous sibling is also selected (`mergeTop`) omits its TOP edge — the
+// row above already draws that junction with its bottom edge. Non-adjacent edges
+// stay 2px (matching a focused <Input>).
+const SEL_RING_COLOR = 'var(--color-primary, #1a73e8)'
+// Selected row = 2px inset ring drawn with box-shadow (no border). A contiguous
+// run of selected rows reads as ONE clean frame with NO internal horizontal
+// lines: a row omits its TOP edge when the previous sibling is selected
+// (`mergeTop`) and its BOTTOM edge when the next sibling is selected
+// (`mergeBottom`). Left/right are always drawn; the block's outer top/bottom keep
+// their 2px edge.
+function selectionRingShadow(mergeTop?: boolean, mergeBottom?: boolean): string {
+  const c = SEL_RING_COLOR
+  const parts = [`inset 2px 0 0 0 ${c}`, `inset -2px 0 0 0 ${c}`] // left, right
+  if (!mergeTop)    parts.push(`inset 0 2px 0 0 ${c}`)  // top
+  if (!mergeBottom) parts.push(`inset 0 -2px 0 0 ${c}`) // bottom
+  return parts.join(', ')
+}
+/** Per-state row accent, drawn entirely with inset box-shadow (no border, so no
+ *  layout shift and no border+shadow doubling). */
+function rowAccentShadow(s: { selected?: boolean; preSelected?: boolean; focused?: boolean; dragTarget?: boolean; mergeTop?: boolean; mergeBottom?: boolean }): string | undefined {
+  if (s.dragTarget)   return 'inset 3px 0 0 0 var(--color-primary, #1a73e8)'
+  if (s.selected)     return selectionRingShadow(s.mergeTop, s.mergeBottom)
+  if (s.preSelected)  return 'inset 3px 0 0 0 rgba(26,115,232,0.5)'
+  if (s.focused)      return 'inset 3px 0 0 0 rgba(26,115,232,0.4)'
+  return undefined
+}
+/** Merge the pending-state style with a row accent box-shadow (kept if both). */
+function withRowShadow(base: React.CSSProperties | undefined, shadow?: string): React.CSSProperties | undefined {
+  if (!shadow) return base
+  return { ...base, boxShadow: [base?.boxShadow, shadow].filter(Boolean).join(', ') }
+}
+
+function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onToggle, onContextMenu, onLongPress, onOpen, onDragStart, density = 'normal', hideMeta = false, cols }: {
   file: FileItem; thumb: ThumbSpec
-  selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
+  selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean; mergeTop?: boolean; mergeBottom?: boolean; zebra?: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onOpen: () => void; onDragStart?: (e: React.DragEvent) => void
-  density?: 'compact' | 'normal' | 'large'; hideMeta?: boolean
+  density?: 'compact' | 'normal' | 'large'; hideMeta?: boolean; cols?: DetailsColsView
 }) {
   const { t, i18n } = useTranslation('drive')
   const pendingKind = usePendingKind(file.id)
@@ -400,9 +573,9 @@ function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, onS
   return (
     <div data-selectable-id={file.id}
       draggable={canMove} onDragStart={onDragStart}
-      className={`group relative flex items-center gap-3 ${pad} transition-colors cursor-default select-none border-l-[3px]
-        ${selected ? 'bg-[#e8f0fe] border-primary' : preSelected ? 'bg-[#e8f0fe] border-primary/50' : focused ? 'bg-surface-1 border-primary/40' : 'bg-white border-transparent hover:bg-surface-1'} ${pendingBoxClass(pendingKind)}`}
-      style={pendingBoxStyle(pendingKind)} onContextMenu={onContextMenu}
+      className={`group relative flex items-center gap-3 ${pad} transition-colors cursor-default select-none
+        ${selected ? 'bg-[#e8f0fe]' : preSelected ? 'bg-[#e8f0fe]' : focused ? 'bg-surface-1' : zebra ? 'bg-[#fdfdfc] hover:bg-surface-2' : 'bg-white hover:bg-surface-1'} ${pendingBoxClass(pendingKind)}`}
+      style={withRowShadow(pendingBoxStyle(pendingKind), rowAccentShadow({ selected, preSelected, focused, mergeTop, mergeBottom }))} onContextMenu={onContextMenu}
       {...longPress}
       {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(file.id, e) }, open: (e) => { e.preventDefault(); onOpen() } })}>
       <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(file.id) }}
@@ -412,6 +585,17 @@ function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, onS
       <div className={`shrink-0 ${thumbC} flex items-center justify-center rounded overflow-hidden bg-surface-2`}>
         <Thumb spec={thumb} file={file} className="w-full h-full object-cover" />
       </div>
+      {cols && !isMobile ? (<>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <p className="text-xs text-text-primary truncate">{file.name}</p>
+          {file.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
+        </div>
+        {cols.order.map(key => (
+          key === 'labels'
+            ? <span key={key} className="shrink-0 flex items-center overflow-hidden" style={{ width: cols.widths[key] }}><LabelDots kind="file" id={file.id} size={13} /></span>
+            : <span key={key} className={`text-xs text-text-tertiary shrink-0 truncate ${key === 'size' ? 'text-right' : ''}`} style={{ width: cols.widths[key] }}>{fileCellText(key, file, t, i18n.language)}</span>
+        ))}
+      </>) : (<>
       <div className="flex-1 min-w-0">
         <p className={`${isMobile ? 'text-[15px]' : 'text-sm'} text-text-primary truncate`}>{file.name}</p>
         {isMobile ? (
@@ -426,6 +610,7 @@ function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, onS
       {!isMobile && !hideMeta && <span className="text-xs text-text-tertiary shrink-0 w-20 text-right">{formatSize(file.size_bytes)}</span>}
       <LabelDots kind="file" id={file.id} size={11} />
       {file.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
+      </>)}
       <button data-no-drag className="shrink-0 p-2 lg:p-1.5 rounded-full hover:bg-surface-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
         <MoreVertical size={14} className="text-text-secondary" />
       </button>
@@ -435,12 +620,12 @@ function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, onS
 
 // FolderRow — pendant de FileRow pour les dossiers (vues non-icônes) : mêmes
 // opérations + cible de dépôt (déplacer DANS le dossier).
-function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop, density = 'normal' }: {
-  folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
+function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop, density = 'normal', cols }: {
+  folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean; mergeTop?: boolean; mergeBottom?: boolean; zebra?: boolean
   onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void
   onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
-  density?: 'compact' | 'normal' | 'large'
+  density?: 'compact' | 'normal' | 'large'; cols?: DetailsColsView
 }) {
   const { t, i18n } = useTranslation('drive')
   const pendingKind = usePendingKind(folder.id)
@@ -452,15 +637,28 @@ function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, c
   return (
     <div data-selectable-id={folder.id}
       draggable={canMove} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
-      className={`group relative flex items-center gap-3 ${pad} transition-colors cursor-default select-none border-l-[3px]
-        ${isDragTarget ? 'bg-primary/10 border-primary' : selected ? 'bg-[#e8f0fe] border-primary' : preSelected ? 'bg-[#e8f0fe] border-primary/50' : focused ? 'bg-surface-1 border-primary/40' : 'bg-white border-transparent hover:bg-surface-1'} ${pendingBoxClass(pendingKind)}`}
-      style={pendingBoxStyle(pendingKind)} onContextMenu={onContextMenu}
+      className={`group relative flex items-center gap-3 ${pad} transition-colors cursor-default select-none
+        ${isDragTarget ? 'bg-primary/10' : selected ? 'bg-[#e8f0fe]' : preSelected ? 'bg-[#e8f0fe]' : focused ? 'bg-surface-1' : zebra ? 'bg-[#fdfdfc] hover:bg-surface-2' : 'bg-white hover:bg-surface-1'} ${pendingBoxClass(pendingKind)}`}
+      style={withRowShadow(pendingBoxStyle(pendingKind), rowAccentShadow({ dragTarget: isDragTarget, selected, preSelected, focused, mergeTop, mergeBottom }))} onContextMenu={onContextMenu}
       {...longPress}
       {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(folder.id, e) }, open: (e) => { e.preventDefault(); e.stopPropagation(); onOpen() } })}>
       <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(folder.id) }}
         className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : selecting ? 'block opacity-100' : 'hidden lg:block lg:opacity-0 lg:group-hover:opacity-100'}`}>
         <FloatCheckbox selected={selected || !!preSelected} onToggle={() => onToggle(folder.id)} />
       </span>
+      {cols && !isMobile ? (<>
+        {/* Glyph wrapped in a w-8 box so the name column lines up with file rows. */}
+        <div className="shrink-0 w-8 flex items-center justify-center"><FolderGlyph folder={folder} size={20} /></div>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <span className="text-xs text-text-primary truncate">{folder.name}</span>
+          {folder.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
+        </div>
+        {cols.order.map(key => (
+          key === 'labels'
+            ? <span key={key} className="shrink-0 flex items-center overflow-hidden" style={{ width: cols.widths[key] }}><LabelDots kind="folder" id={folder.id} size={13} /></span>
+            : <span key={key} className={`text-xs text-text-tertiary shrink-0 truncate ${key === 'size' ? 'text-right' : ''}`} style={{ width: cols.widths[key] }}>{folderCellText(key, folder, t, i18n.language)}</span>
+        ))}
+      </>) : (<>
       <FolderGlyph folder={folder} size={isMobile ? 26 : 20} className="shrink-0" />
       {isMobile ? (
         <div className="flex-1 min-w-0">
@@ -472,6 +670,7 @@ function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, c
       )}
       <LabelDots kind="folder" id={folder.id} size={11} />
       {folder.is_starred && <Star size={13} className="shrink-0 fill-yellow-400 text-yellow-400" />}
+      </>)}
       <button data-no-drag className="shrink-0 p-2 lg:p-1.5 rounded-full hover:bg-surface-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); onContextMenu(e) }}>
         <MoreVertical size={14} className="text-text-secondary" />
       </button>
@@ -486,7 +685,7 @@ function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, c
 // une puce de tri qui ouvre une feuille, et une bascule liste/grille — les deux
 // seuls réglages qui comptent sur un petit écran.
 
-type SortField = 'name' | 'size' | 'date' | 'type'
+type SortField = 'name' | 'size' | 'date' | 'type' | 'created'
 
 /** Sens du tri, formulé selon le champ (« De A à Z » n'a de sens que pour un nom). */
 function sortDirLabels(field: SortField, t: TFunc): { asc: string; desc: string } {
@@ -591,8 +790,8 @@ function MobileControlBar({ sortField, sortDir, onSortField, onSortDir, grid, on
 // ── SortFilterBar (dropdown Type, identique à Mon Drive) ─────────────────────────
 
 function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField, onSortDir, onTypeFilter, hideType, viewMode, onViewMode, compact, onCompact, showHidden, onShowHidden }: {
-  sortField: 'name' | 'size' | 'date' | 'type'; sortDir: 'asc' | 'desc'; typeFilter: string | null
-  onSortField: (v: 'name' | 'size' | 'date' | 'type') => void; onSortDir: (v: 'asc' | 'desc') => void
+  sortField: SortField; sortDir: 'asc' | 'desc'; typeFilter: string | null
+  onSortField: (v: SortField) => void; onSortDir: (v: 'asc' | 'desc') => void
   onTypeFilter: (v: string | null) => void; hideType?: boolean
   viewMode: ViewMode; onViewMode: (v: ViewMode) => void; compact: boolean; onCompact: (v: boolean) => void
   showHidden: boolean; onShowHidden: (v: boolean) => void
@@ -601,6 +800,9 @@ function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField, onSort
   const SORT_OPTIONS = [
     { value: 'date', label: t('app.sort_date') }, { value: 'name', label: t('common.name') },
     { value: 'size', label: t('common.size') }, { value: 'type', label: t('filter.type') },
+    // « Date de création » is only ever selected from the details-table header,
+    // but it must have a label so the sort chip doesn't show the raw key.
+    { value: 'created', label: t('details.col_created', { defaultValue: 'Date de création' }) },
   ]
   const TYPE_OPTIONS = [
     { value: '', label: t('app.ft_all') }, { value: 'image', label: t('app.ft_images') },
@@ -790,7 +992,7 @@ export default function StorageExplorer({
   hideImport, importMenuItems, renderFileCard, emptyState, acceptedMimeTypes,
   fileTypeModuleId, onExternalDrop, pathParam, onRegisterActions,
 }: StorageExplorerProps) {
-  const { t } = useTranslation('drive')
+  const { t, i18n } = useTranslation('drive')
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
@@ -819,6 +1021,29 @@ export default function StorageExplorer({
   const isMobile = useIsMobile()
   const [mobileGrid, setMobileGrid] = useState(true)
   const view: ViewMode = isMobile ? (mobileGrid ? 'md' : 'details') : viewMode
+  // Per-folder view memory: each directory remembers the view mode that was
+  // active the last time it was displayed (localStorage map keyed by
+  // source + folder id). Mobile is excluded — it has its own grid/list toggle
+  // and must not clobber the desktop preference.
+  const viewModesRef = useRef<Record<string, ViewMode> | null>(null)
+  const loadViewModes = () => {
+    if (!viewModesRef.current) {
+      try { viewModesRef.current = JSON.parse(localStorage.getItem(VIEW_MODES_KEY) ?? '{}') as Record<string, ViewMode> }
+      catch { viewModesRef.current = {} }
+    }
+    return viewModesRef.current
+  }
+  // Details-table settings (column widths + visibility) — remembered PER FOLDER.
+  const detailsStoreRef = useRef<Record<string, DetailsSettings> | null>(null)
+  const loadDetailsStore = () => {
+    if (!detailsStoreRef.current) {
+      try { detailsStoreRef.current = JSON.parse(localStorage.getItem(DETAILS_KEY) ?? '{}') as Record<string, DetailsSettings> }
+      catch { detailsStoreRef.current = {} }
+    }
+    return detailsStoreRef.current
+  }
+  const [details, setDetails] = useState<DetailsSettings>(DETAILS_DEFAULT)
+  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null)
   const [compact, setCompact] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -836,7 +1061,7 @@ export default function StorageExplorer({
   const { containerRef: marqueeContainerRef, marqueeStyle, preSelectedIds,
     onPointerDown: onMarqueeDown, onPointerMove: onMarqueeMove, onPointerUp: onMarqueeUp, onPointerCancel: onMarqueeCancel } = useMarqueeSelection(handleMarqueeSelect)
 
-  const [sortField, setSortField] = useState<'name' | 'size' | 'date' | 'type'>('date')
+  const [sortField, setSortField] = useState<'name' | 'size' | 'date' | 'type' | 'created'>('date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
 
@@ -867,6 +1092,40 @@ export default function StorageExplorer({
   })
   const effectiveFolderId = currentFolderId ?? root?.id ?? null
   const rootResolved = root !== undefined && root !== null
+
+  // Stable per-folder key. The virtual root has no id (effectiveFolderId is
+  // null there) → « root » so the top level is remembered like any folder.
+  const dirKey = `${src.key}:${effectiveFolderId ?? 'root'}`
+  // Restore the folder's remembered view mode AND details settings when
+  // entering it (read-only — writes happen in the change/persist helpers below,
+  // so restore and persist never race). Unseen folders fall back to defaults.
+  useEffect(() => {
+    if (isMobile) return
+    const vm = loadViewModes()[dirKey]
+    setViewMode(vm && VIEW_SPECS[vm] ? vm : 'lg')
+    setDetails(mergeDetails(loadDetailsStore()[dirKey]))
+  }, [dirKey, isMobile]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Changing the view records it against the current folder immediately.
+  const changeViewMode = useCallback((m: ViewMode) => {
+    setViewMode(m)
+    if (isMobile) return
+    const map = loadViewModes()
+    map[dirKey] = m
+    try { localStorage.setItem(VIEW_MODES_KEY, JSON.stringify(map)) } catch { /* private mode / quota */ }
+  }, [isMobile, dirKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Persist details settings against the current folder.
+  const persistDetails = useCallback((updater: (s: DetailsSettings) => DetailsSettings) => {
+    setDetails(prev => {
+      const next = updater(prev)
+      if (next === prev) return prev
+      if (!isMobile) {
+        const store = loadDetailsStore()
+        store[dirKey] = next
+        try { localStorage.setItem(DETAILS_KEY, JSON.stringify(store)) } catch { /* private mode / quota */ }
+      }
+      return next
+    })
+  }, [isMobile, dirKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data, isLoading: listLoading } = useQuery({
     queryKey: ['explorer', src.key, effectiveFolderId],
@@ -917,15 +1176,63 @@ export default function StorageExplorer({
       if (sortField === 'name') cmp = a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' })
       else if (sortField === 'size') cmp = a.size_bytes - b.size_bytes
       else if (sortField === 'date') cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+      else if (sortField === 'created') cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       else if (sortField === 'type') cmp = a.mime_type.localeCompare(b.mime_type)
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [files, typeFilter, sortField, sortDir, showHidden])
 
-  const sortedFolders = useMemo(() => [...folders].sort((a, b) => sortDir === 'asc' ? a.name.localeCompare(b.name, 'fr') : b.name.localeCompare(a.name, 'fr')), [folders, sortDir])
+  const sortedFolders = useMemo(() => [...folders].sort((a, b) => {
+    // Folders follow the date/created sort when active; size/type fall back to name.
+    const cmp = sortField === 'date'
+      ? new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+      : sortField === 'created'
+      ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      : a.name.localeCompare(b.name, 'fr')
+    return sortDir === 'asc' ? cmp : -cmp
+  }), [folders, sortField, sortDir])
   const orderedIds = useMemo(() => [...sortedFolders.map(f => f.id), ...filteredFiles.map(f => f.id)], [sortedFolders, filteredFiles])
   const allItemsSelected = orderedIds.length > 0 && orderedIds.every(id => selectedIds.has(id))
   const toggleSelectAll = () => allItemsSelected ? setSelectedIds(new Set()) : setSelectedIds(new Set(orderedIds))
+
+  // ── Progressive loading (client windowing) ─────────────────────────────────
+  // Only the top window of the ordered list (folders first, then files) is
+  // mounted; it grows as the sentinel at the bottom enters view — first to fill
+  // the visible area, then as the user scrolls. Purely client-side, so it applies
+  // to every source uniformly. Selection/keyboard logic keeps using the full
+  // ordered list above (selection is id-based, unaffected by what is mounted).
+  const WINDOW_BATCH = 30
+  const [visibleCount, setVisibleCount] = useState(WINDOW_BATCH)
+  // Restart the window from the top whenever the ordered content changes identity
+  // (folder navigation, sort or filter change).
+  useEffect(() => { setVisibleCount(WINDOW_BATCH) }, [dirKey, sortField, sortDir, typeFilter, showHidden])
+  const totalItems = sortedFolders.length + filteredFiles.length
+  const hasMore = visibleCount < totalItems
+  const visibleFolders = useMemo(() => sortedFolders.slice(0, visibleCount), [sortedFolders, visibleCount])
+  const visibleFiles = useMemo(
+    () => filteredFiles.slice(0, Math.max(0, visibleCount - sortedFolders.length)),
+    [filteredFiles, sortedFolders.length, visibleCount],
+  )
+
+  const loadSentinelRef = useRef<HTMLDivElement | null>(null)
+  const [sentinelVisible, setSentinelVisible] = useState(false)
+  useEffect(() => {
+    const el = loadSentinelRef.current
+    if (!el) { setSentinelVisible(false); return }
+    const io = new IntersectionObserver(
+      ([entry]) => setSentinelVisible(entry.isIntersecting),
+      { root: marqueeContainerRef.current, rootMargin: '600px 0px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore, isLoading, rootResolved]) // eslint-disable-line react-hooks/exhaustive-deps
+  // While the sentinel sits inside the viewport (area not yet full, or the scroll
+  // reached the bottom), grow the window — filling first, then on scroll.
+  useEffect(() => {
+    if (!sentinelVisible || !hasMore) return
+    const id = requestAnimationFrame(() => setVisibleCount(c => c + WINDOW_BATCH))
+    return () => cancelAnimationFrame(id)
+  }, [sentinelVisible, hasMore, visibleCount])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1262,6 +1569,75 @@ export default function StorageExplorer({
   const isEmpty = !isLoading && folders.length === 0 && filteredFiles.length === 0
   const hideType = (!!acceptedMimeTypes && acceptedMimeTypes.length > 0) || !!fileTypeModuleId
 
+  // Ordered visible columns + widths → what the detail rows render.
+  const detailsView: DetailsColsView = useMemo(
+    () => ({ order: DETAILS_COL_ORDER.filter(k => details.visible[k]), widths: details.widths }),
+    [details],
+  )
+  // « Ajuster la taille de toutes les colonnes » — fit each visible column to
+  // the widest cell it holds (header label + every folder/file value), measured
+  // with a canvas at the row font.
+  const autoFitCols = useCallback(() => {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.font = '12px "Google Sans", Inter, system-ui, sans-serif'
+    const w = (s: string) => ctx.measureText(s).width
+    const lng = i18n.language
+    persistDetails(s => {
+      const widths = { ...s.widths }
+      for (const key of DETAILS_COL_ORDER) {
+        if (!s.visible[key]) continue
+        if (key === 'labels') continue // no text cells; keep its width
+        let max = w(detailsColLabel(key, t)) + 26 // label + sort-arrow room
+        for (const f of sortedFolders) max = Math.max(max, w(folderCellText(key, f, t, lng)) + 20)
+        for (const f of filteredFiles) max = Math.max(max, w(fileCellText(key, f, t, lng)) + 20)
+        widths[key] = Math.max(64, Math.min(480, Math.ceil(max)))
+      }
+      return { ...s, widths }
+    })
+  }, [t, i18n.language, sortedFolders, filteredFiles, persistDetails])
+  // Header right-click menu: toggle optional columns + auto-fit.
+  const headerMenuItems = useMemo<MenuItem[]>(() => {
+    const items: MenuItem[] = [
+      { type: 'action', label: t('details.fit_all', { defaultValue: 'Ajuster la taille de toutes les colonnes' }), onClick: autoFitCols },
+      { type: 'separator' },
+      { type: 'action', label: t('common.name'), checked: true, disabled: true, onClick: () => {} },
+    ]
+    for (const key of DETAILS_COL_ORDER) {
+      items.push({
+        type: 'action', label: detailsColLabel(key, t), checked: details.visible[key],
+        onClick: () => persistDetails(s => ({ ...s, visible: { ...s.visible, [key]: !s.visible[key] } })),
+      })
+    }
+    return items
+  }, [t, details.visible, autoFitCols, persistDetails])
+
+  // Shared row props — the SAME operations (selection/checkbox/marquee/drag/
+  // menu/open/cursor) in every view, including the details table.
+  const folderRowProps = (folder: Folder) => ({
+    folder, isDragTarget: dragOverFolderId === folder.id,
+    selected: selectedIds.has(folder.id), preSelected: preSelectedIds.has(folder.id), focused: cursorId === folder.id, canMove: caps.move,
+    onSelect: handleItemSelect, onToggle: handleItemToggle,
+    onOpen: () => { if (mobileSelecting) { handleItemToggle(folder.id); return } navigateTo(folder) },
+    onContextMenu: (e: React.MouseEvent) => openMenu(e, 'folder', folder),
+    // Long-press on touch enters selection mode; the kebab (⋮) and
+    // desktop right-click keep opening the context menu.
+    onLongPress: (e: React.MouseEvent) => { if (isMobile && isCoarsePointer()) { handleItemToggle(folder.id); return } openMenu(e, 'folder', folder) },
+    onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: folder.id, type: 'folder', name: folder.name })); if (!selectedIds.has(folder.id)) { setSelectedIds(new Set([folder.id])); lastSelectedIdxRef.current = orderedIds.indexOf(folder.id) } setDraggingItem({ type: 'folder', id: folder.id }) },
+    onDragOver: (e: React.DragEvent) => { if (caps.move) { e.preventDefault(); e.stopPropagation(); setDragOverFolderId(folder.id) } },
+    onDragLeave: () => setDragOverFolderId(null), onDrop: (e: React.DragEvent) => handleDrop(e, folder.id),
+  })
+  const fileRowProps = (file: FileItem) => ({
+    file, thumb: src.thumbnail(file),
+    selected: selectedIds.has(file.id), preSelected: preSelectedIds.has(file.id), focused: cursorId === file.id, canMove: caps.move,
+    onSelect: handleItemSelect, onToggle: handleItemToggle,
+    onContextMenu: (e: React.MouseEvent) => openMenu(e, 'file', file),
+    onLongPress: (e: React.MouseEvent) => { if (isMobile && isCoarsePointer()) { handleItemToggle(file.id); return } openMenu(e, 'file', file) },
+    onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: file.id, type: 'file', name: file.name })); if (!selectedIds.has(file.id)) { setSelectedIds(new Set([file.id])); lastSelectedIdxRef.current = orderedIds.indexOf(file.id) } setDraggingItem({ type: 'file', id: file.id }) },
+    onOpen: () => { if (mobileSelecting) { handleItemToggle(file.id); return } openFile(file) },
+  })
+
   return (
     <DriveLabelsCtx.Provider value={labelsOf}>
     <SelectingCtx.Provider value={mobileSelecting}>
@@ -1290,7 +1666,7 @@ export default function StorageExplorer({
       {mobileSelecting ? (
         <div className="flex items-center gap-0.5 px-1.5 pt-2 pb-2 flex-shrink-0 border-b border-border bg-[#e8f0fe]">
           <button onClick={() => setSelectedIds(new Set())} className="p-2.5 rounded-full hover:bg-black/5 text-text-secondary transition-colors" title={t('app.cancel_selection')} aria-label={t('app.cancel_selection')}><X size={20} /></button>
-          <span className="flex-1 min-w-0 text-[17px] font-medium text-text-primary truncate px-1">{t('storage.selected', { count: selectedIds.size })}</span>
+          <span className="flex-1 min-w-0 text-base font-medium text-text-primary truncate px-1">{t('storage.selected', { count: selectedIds.size })}</span>
           <button onClick={toggleSelectAll} className="p-2.5 rounded-full hover:bg-black/5 text-text-secondary transition-colors" title={allItemsSelected ? t('app.deselect_all') : t('app.select_all')} aria-label={allItemsSelected ? t('app.deselect_all') : t('app.select_all')}>{allItemsSelected ? <CheckSquare size={20} /> : <ListChecks size={20} />}</button>
           {[...selectedIds].some(id => itemTypeMap.get(id) === 'file') && (
             <button onClick={() => { [...selectedIds].forEach(id => { if (itemTypeMap.get(id) === 'file') { const f = files.find(x => x.id === id); if (f) src.download({ id: f.id, type: 'file', name: f.name }) } }) }} className="p-2.5 rounded-full hover:bg-black/5 text-text-secondary transition-colors" title={t('common.download')} aria-label={t('common.download')}><Download size={20} /></button>
@@ -1387,7 +1763,8 @@ export default function StorageExplorer({
             </div>
           )
         ) : (
-          <div className="space-y-6">
+          // Details table sits flush under the sort bar (no vertical gap).
+          <div className={!isMobile && view === 'details' ? undefined : 'space-y-6'}>
             {isMobile ? (
               // La barre de tri/vue reste utile même sans fichier (dossiers seuls).
               <MobileControlBar
@@ -1398,51 +1775,58 @@ export default function StorageExplorer({
             ) : files.length > 0 && (
               <SortFilterBar sortField={sortField} sortDir={sortDir} typeFilter={typeFilter}
                 onSortField={setSortField} onSortDir={setSortDir} onTypeFilter={setTypeFilter} hideType={hideType}
-                viewMode={viewMode} onViewMode={setViewMode} compact={compact} onCompact={setCompact} showHidden={showHidden} onShowHidden={setShowHidden} />
+                viewMode={viewMode} onViewMode={changeViewMode} compact={compact} onCompact={setCompact} showHidden={showHidden} onShowHidden={setShowHidden} />
             )}
 
+            {!isMobile && view === 'details' ? (
+              // « Details » view: a single Windows-Explorer-like table (folders
+              // first, then files) under a sortable, resizable column header.
+              // Full-bleed: no frame, and -mx-6 cancels the scroll container's
+              // horizontal padding so rows stretch edge to edge.
+              <section className="-mx-6">
+                <DetailsHeader details={details} onDetails={persistDetails}
+                  sortField={sortField} sortDir={sortDir} onSortField={setSortField} onSortDir={setSortDir}
+                  onHeaderMenu={e => { e.preventDefault(); e.stopPropagation(); setHeaderMenu({ x: e.clientX, y: e.clientY }) }} />
+                <div>
+                  {visibleFolders.map((f, i) => <FolderRow key={f.id} {...folderRowProps(f)} cols={detailsView} zebra={i % 2 === 0}
+                    mergeTop={i > 0 && selectedIds.has(visibleFolders[i - 1].id)}
+                    mergeBottom={i < visibleFolders.length - 1 ? selectedIds.has(visibleFolders[i + 1].id) : (visibleFiles.length > 0 && selectedIds.has(visibleFiles[0].id))} />)}
+                  {visibleFiles.map((file, i) => <FileRow key={file.id} {...fileRowProps(file)} cols={detailsView} zebra={(visibleFolders.length + i) % 2 === 0}
+                    mergeTop={i > 0 ? selectedIds.has(visibleFiles[i - 1].id) : (visibleFolders.length > 0 && selectedIds.has(visibleFolders[visibleFolders.length - 1].id))}
+                    mergeBottom={i < visibleFiles.length - 1 && selectedIds.has(visibleFiles[i + 1].id)} />)}
+                </div>
+              </section>
+            ) : (<>
             {sortedFolders.length > 0 && (
               <section>
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary mb-2">{t('app.folders')}</h2>
                 {(() => {
                   const spec = VIEW_SPECS[view]
                   // Mêmes opérations dans toutes les vues : carte en icônes, ligne sinon.
-                  const common = (folder: Folder) => ({
-                    folder, isDragTarget: dragOverFolderId === folder.id,
-                    selected: selectedIds.has(folder.id), preSelected: preSelectedIds.has(folder.id), focused: cursorId === folder.id, canMove: caps.move,
-                    onSelect: handleItemSelect, onToggle: handleItemToggle,
-                    onOpen: () => { if (mobileSelecting) { handleItemToggle(folder.id); return } navigateTo(folder) },
-                    onContextMenu: (e: React.MouseEvent) => openMenu(e, 'folder', folder),
-                    // Long-press on touch enters selection mode; the kebab (⋮) and
-                    // desktop right-click keep opening the context menu.
-                    onLongPress: (e: React.MouseEvent) => { if (isMobile && isCoarsePointer()) { handleItemToggle(folder.id); return } openMenu(e, 'folder', folder) },
-                    onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: folder.id, type: 'folder', name: folder.name })); if (!selectedIds.has(folder.id)) { setSelectedIds(new Set([folder.id])); lastSelectedIdxRef.current = orderedIds.indexOf(folder.id) } setDraggingItem({ type: 'folder', id: folder.id }) },
-                    onDragOver: (e: React.DragEvent) => { if (caps.move) { e.preventDefault(); e.stopPropagation(); setDragOverFolderId(folder.id) } },
-                    onDragLeave: () => setDragOverFolderId(null), onDrop: (e: React.DragEvent) => handleDrop(e, folder.id),
-                  })
+                  const common = folderRowProps
                   if (spec.kind === 'icons') {
                     // Mobile : dossiers à pleine largeur, un par ligne (une carte
                     // dossier est une puce horizontale nom+kebab — 2 colonnes
                     // tronquaient le nom). Desktop : `minmax(200px,…)` auto-fill.
                     return (
                       <div className="grid gap-2" style={{ gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(200px,1fr))' }}>
-                        {sortedFolders.map(f => <FolderCard key={f.id} {...common(f)} />)}
+                        {visibleFolders.map(f => <FolderCard key={f.id} {...common(f)} />)}
                       </div>
                     )
                   }
                   const dens = spec.multicol ? 'compact' : (spec.density ?? 'normal')
                   if (spec.kind === 'tiles') {
-                    return <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 10 }}>{sortedFolders.map(f => <div key={f.id} className="border border-border rounded-lg overflow-hidden bg-white"><FolderRow {...common(f)} density="normal" /></div>)}</div>
+                    return <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 10 }}>{visibleFolders.map(f => <div key={f.id} className="border border-border rounded-lg overflow-hidden bg-white"><FolderRow {...common(f)} density="normal" /></div>)}</div>
                   }
                   if (spec.multicol) {
-                    return <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 2 }}>{sortedFolders.map(f => <FolderRow key={f.id} {...common(f)} density="compact" />)}</div>
+                    return <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 2 }}>{visibleFolders.map(f => <FolderRow key={f.id} {...common(f)} density="compact" />)}</div>
                   }
-                  return <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">{sortedFolders.map(f => <FolderRow key={f.id} {...common(f)} density={dens} />)}</div>
+                  return <div className="rounded-xl border border-border overflow-hidden">{visibleFolders.map((f, i) => <FolderRow key={f.id} {...common(f)} density={dens} zebra={i % 2 === 0} mergeTop={i > 0 && selectedIds.has(visibleFolders[i - 1].id)} mergeBottom={i < visibleFolders.length - 1 && selectedIds.has(visibleFolders[i + 1].id)} />)}</div>
                 })()}
               </section>
             )}
 
-            {filteredFiles.length > 0 && (
+            {visibleFiles.length > 0 && (
               <section>
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary mb-2">
                   {t('app.files')}
@@ -1452,19 +1836,11 @@ export default function StorageExplorer({
                   const spec = VIEW_SPECS[view]
                   // Props communs → MÊMES opérations (sélection/case/marquee/glisser/
                   // menu/ouverture/curseur) quelle que soit la vue.
-                  const common = (file: FileItem) => ({
-                    file, thumb: src.thumbnail(file),
-                    selected: selectedIds.has(file.id), preSelected: preSelectedIds.has(file.id), focused: cursorId === file.id, canMove: caps.move,
-                    onSelect: handleItemSelect, onToggle: handleItemToggle,
-                    onContextMenu: (e: React.MouseEvent) => openMenu(e, 'file', file),
-                    onLongPress: (e: React.MouseEvent) => { if (isMobile && isCoarsePointer()) { handleItemToggle(file.id); return } openMenu(e, 'file', file) },
-                    onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: file.id, type: 'file', name: file.name })); if (!selectedIds.has(file.id)) { setSelectedIds(new Set([file.id])); lastSelectedIdxRef.current = orderedIds.indexOf(file.id) } setDraggingItem({ type: 'file', id: file.id }) },
-                    onOpen: () => { if (mobileSelecting) { handleItemToggle(file.id); return } openFile(file) },
-                  })
+                  const common = fileRowProps
                   if (spec.kind === 'icons') {
                     return (
                       <div className="grid" style={{ gridTemplateColumns: isMobile ? 'repeat(2,minmax(0,1fr))' : `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 12 }}>
-                        {filteredFiles.map(file => {
+                        {visibleFiles.map(file => {
                           const defaultCard = (
                             <FileCard {...common(file)} allowVideoPreview={caps.thumbnails === 'url'} thumbH={spec.thumbH} iconScale={spec.iconScale} dense={spec.dense} />
                           )
@@ -1476,7 +1852,7 @@ export default function StorageExplorer({
                   if (spec.kind === 'tiles') {
                     return (
                       <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 10 }}>
-                        {filteredFiles.map(file => (
+                        {visibleFiles.map(file => (
                           <div key={file.id} className="border border-border rounded-lg overflow-hidden bg-white hover:border-border-strong transition-colors">
                             <FileRow {...common(file)} hideMeta />
                           </div>
@@ -1487,17 +1863,26 @@ export default function StorageExplorer({
                   if (spec.multicol) {
                     return (
                       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 2 }}>
-                        {filteredFiles.map(file => <FileRow key={file.id} {...common(file)} density="compact" hideMeta />)}
+                        {visibleFiles.map(file => <FileRow key={file.id} {...common(file)} density="compact" hideMeta />)}
                       </div>
                     )
                   }
                   return (
-                    <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">
-                      {filteredFiles.map(file => <FileRow key={file.id} {...common(file)} density={spec.density} />)}
+                    <div className="rounded-xl border border-border overflow-hidden">
+                      {visibleFiles.map((file, i) => <FileRow key={file.id} {...common(file)} density={spec.density} zebra={i % 2 === 0} mergeTop={i > 0 && selectedIds.has(visibleFiles[i - 1].id)} mergeBottom={i < visibleFiles.length - 1 && selectedIds.has(visibleFiles[i + 1].id)} />)}
                     </div>
                   )
                 })()}
               </section>
+            )}
+            </>)}
+            {/* Progressive-loading sentinel: entering view grows the window — first
+                to fill the visible area, then as the user scrolls. The ring spins
+                while more items remain to be mounted. */}
+            {hasMore && (
+              <div ref={loadSentinelRef} className="flex justify-center py-8">
+                <Spinner size="lg" label={t('common.loading')} />
+              </div>
             )}
           </div>
         )}
@@ -1545,6 +1930,11 @@ export default function StorageExplorer({
             ...(caps.mkdir ? [{ type: 'action' as const, label: t('newfolder.title'), icon: <FolderPlus size={14} />, onClick: openNewFolder }] : []),
             { type: 'action' as const, label: t('actions.refresh'), icon: <RefreshCw size={14} />, onClick: () => { bumpAllImageCache(); invalidate() } },
           ]} />
+      )}
+
+      {headerMenu && (
+        <MenuDropdown pos={{ top: headerMenu.y, left: headerMenu.x, minWidth: 240 }} onClose={() => setHeaderMenu(null)}
+          items={headerMenuItems} />
       )}
 
       {/* Modales locales (gardées montées ; déclenchées seulement si richModals) */}

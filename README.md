@@ -76,7 +76,7 @@ Each app lives in its **own repository** (`kubuno/<module>`) and ships its own p
 | Photos | `kubuno/photos` | Photo gallery |
 | Office | `kubuno/office` | Office suite (docs, sheets, slides…) |
 | Forum | `kubuno/forum` | Discussion boards (categories, forums, topics, posts) |
-| Chat, Contacts, Notes, Tasks, Maps, Forms, Flow, Code, Media, KeeStore, PaintSharp, Jarvis | `kubuno/<id>` | … |
+| Chat, Contacts, Notes, Tasks, Maps, Forms, Flow, Code, Media, KeeStore, PaintSharp, Assistant | `kubuno/<id>` | … |
 
 ## 🐳 Install with Docker
 

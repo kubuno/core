@@ -2,7 +2,8 @@
 // par thème. Déplacée depuis `paintsharp/ui/MenuBar` pour être partagée par toutes les
 // applications avancées (Office + PaintSharp). L'hôte fournit la liste des menus, chacun
 // avec ses items (ou des séparateurs 'sep').
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
+import { MENU_ATTR, useMenuDismiss } from '../../../ui/useMenuDismiss'
 
 export type MenuItem = { label: string; onClick?: () => void; disabled?: boolean; shortcut?: string } | 'sep'
 type MenuTheme = { header: string; panel: string; border: string; active: string; text: string; textDim: string }
@@ -12,6 +13,8 @@ export function MenuBar({ menus, C }: {
   C: MenuTheme
 }) {
   const [open, setOpen] = useState<number | null>(null)
+  const close = useCallback(() => setOpen(null), [])
+  useMenuDismiss(open !== null, close)
   return (
     <div className="flex items-center px-1 flex-shrink-0 relative select-none"
          style={{ height:24, background:C.header, borderBottom:`1px solid ${C.border}`, fontSize:12, zIndex:60 }}>
@@ -25,21 +28,23 @@ export function MenuBar({ menus, C }: {
             {m.label}
           </button>
           {open === i && (
-            <div className="absolute left-0 top-full py-1 min-w-48"
-                 style={{ background:C.panel, border:`1px solid ${C.border}`, boxShadow:'0 8px 24px rgba(0,0,0,.45)', zIndex:50 }}>
+            <div {...{ [MENU_ATTR]: '' }} className="kb-frosted kb-frosted-dark absolute left-0 top-full min-w-48" style={{ zIndex:50 }}>
+              <div className="kb-frost-layer" aria-hidden />
+              <div style={{ padding:5 }}>
               {m.items.map((it, j) => it === 'sep' ? (
-                <div key={j} style={{ height:1, background:C.border, margin:'4px 6px' }} />
+                <div key={j} style={{ height:1, background:C.border, margin:'5px 6px' }} />
               ) : (
                 <button key={j} disabled={it.disabled}
                         onClick={() => { setOpen(null); it.onClick?.() }}
-                        className="flex items-center justify-between w-full px-3 h-7 text-left text-[12px] whitespace-nowrap disabled:opacity-35"
-                        style={{ color:C.text, background:'transparent' }}
+                        className="flex items-center justify-between w-full px-2.5 h-7 text-left text-xs whitespace-nowrap disabled:opacity-35"
+                        style={{ color:C.text, background:'transparent', borderRadius:6 }}
                         onMouseEnter={e => { if(!it.disabled)(e.currentTarget as HTMLElement).style.background = C.active }}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
                   <span className="whitespace-nowrap">{it.label}</span>
-                  {it.shortcut && <span className="ml-8 text-[10px] whitespace-nowrap" style={{ color:C.textDim }}>{it.shortcut}</span>}
+                  {it.shortcut && <span className="ml-8 whitespace-nowrap" style={{ color:C.textDim }}>{it.shortcut}</span>}
                 </button>
               ))}
+              </div>
             </div>
           )}
         </div>

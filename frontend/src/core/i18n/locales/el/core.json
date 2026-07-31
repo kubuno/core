@@ -7,7 +7,17 @@
     "close": "Κλείσιμο",
     "search": "Αναζήτηση",
     "loading": "Φόρτωση…",
-    "back": "Πίσω"
+    "back": "Πίσω",
+    "done": "Τέλος"
+  },
+  "textmenu": {
+    "undo": "Αναίρεση",
+    "redo": "Επανάληψη",
+    "cut": "Αποκοπή",
+    "copy": "Αντιγραφή",
+    "paste": "Επικόλληση",
+    "paste_plain": "Επικόλληση χωρίς μορφοποίηση",
+    "select_all": "Επιλογή όλων"
   },
   "header": {
     "notifications": "Ειδοποιήσεις",
@@ -69,7 +79,8 @@
     "move": "Μετακίνηση",
     "open": "Άνοιγμα",
     "widget_settings": "Ρύθμιση widget",
-    "widget_remove": "Αφαίρεση"
+    "widget_remove": "Αφαίρεση",
+    "resize_sidebar": "Αλλαγή μεγέθους πίνακα"
   },
   "register": {
     "title": "Δημιουργία λογαριασμού",
@@ -375,5 +386,26 @@
     "set_clock_analog": "Αναλογικό",
     "set_clock_seconds": "Εμφάνιση δευτερολέπτων",
     "set_clock_24h": "Μορφή 24 ωρών"
+  },
+  "settingsmenu": {
+    "settings": "Ρυθμίσεις",
+    "trash": "Κάδος",
+    "appearance": "Εμφάνιση",
+    "print": "Εκτύπωση",
+    "addons": "Λήψη πρόσθετων"
+  },
+  "appearance": {
+    "title": "Εμφάνιση",
+    "light": "Φωτεινό",
+    "dark": "Σκοτεινό",
+    "system": "Προεπιλογή συσκευής",
+    "scheme": "Χρωματικός συνδυασμός",
+    "density": "Πυκνότητα πληροφοριών",
+    "scheme_modern": "Μοντέρνο",
+    "scheme_classic": "Κλασικό",
+    "scheme_high-contrast": "Υψηλή αντίθεση",
+    "density_responsive": "Προσαρμοστική",
+    "density_comfortable": "Άνετη",
+    "density_compact": "Συμπαγής"
   }
 }

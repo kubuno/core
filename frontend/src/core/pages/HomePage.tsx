@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { LayoutDashboard, Pencil, Check } from 'lucide-react'
@@ -6,11 +6,12 @@ import { format } from 'date-fns'
 import { enUS, fr, es, pt, it, de, el, ru, ar, he, hi, zhCN, ja, type Locale } from 'date-fns/locale'
 import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
+import { useToolbarStore } from '../store/toolbarStore'
 import { WidgetRegistry } from '../widgets/WidgetRegistry'
 import GridDashboard from '../widgets/GridDashboard'
 import { useFavoriteApps } from '../hooks/useFavoriteApps'
 import { appNavMemory } from '../store/appNavMemory'
-import { Button } from '@ui'
+import { Button, useIsMobile } from '@ui'
 
 const DATE_LOCALES: Record<string, Locale> = {
   en: enUS, fr, es, pt, it, de, el, ru, ar, he, hi, zh: zhCN, ja,
@@ -25,6 +26,15 @@ export default function HomePage() {
 
   const [editMode, setEditMode] = useState(false)
   const favApps = useFavoriteApps()
+  const isMobile = useIsMobile()
+
+  // Ask the shell to inset the module area content by 24px on the home route
+  // (route '/' only — `resolveToolbarConfig` matches it exactly, not sub-routes).
+  useEffect(() => {
+    const { register, unregister } = useToolbarStore.getState()
+    register({ moduleId: 'home', routePrefix: '/', padding: 24 })
+    return () => unregister('home')
+  }, [])
 
   const name = user?.display_name?.split(' ')[0] ?? user?.username ?? t('home.you')
 
@@ -60,8 +70,9 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Favourite apps — quick launch (from the waffle launcher favourites) */}
-        {!editMode && favApps.length > 0 && (
+        {/* Favourite apps — quick launch (from the waffle launcher favourites).
+            Hidden on mobile (the waffle/app launcher covers it there). */}
+        {!editMode && !isMobile && favApps.length > 0 && (
           <div className="flex-1 min-w-0 flex items-center justify-center gap-1.5 overflow-x-auto no-scrollbar">
             {favApps.map(app => (
               <Link

@@ -18,6 +18,7 @@ export type SlotName =
   | 'sidebar-storage'
   | 'help-menu-items'
   | 'header-search'
+  | 'header-leading'
   | 'header-actions-right'
   | 'sidebar-footer'
   | 'module-toolbar'
@@ -181,9 +182,15 @@ export const NotificationRegistry = {
 interface SlotProps {
   name: SlotName
   fallback?: React.ReactNode
+  /* Contexte de rendu transmis aux contributions des modules — notamment `dark`,
+   * pour qu'un bouton de la topbar s'adapte aux barres teintées des applications à
+   * ruban au lieu d'y afficher du texte sombre illisible. Un module qui ignore ces
+   * props n'en souffre pas. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [prop: string]: any
 }
 
-export function Slot({ name, fallback }: SlotProps) {
+export function Slot({ name, fallback, ...ctx }: SlotProps) {
   const activeModules = useModulesStore(s => s.activeModules)
   const activeIds = new Set(activeModules.map(m => m.module_id))
 
@@ -192,7 +199,7 @@ export function Slot({ name, fallback }: SlotProps) {
   return (
     <>
       {entries.map(({ moduleId, Component }) => (
-        <Component key={moduleId} />
+        <Component key={moduleId} {...ctx} />
       ))}
     </>
   )

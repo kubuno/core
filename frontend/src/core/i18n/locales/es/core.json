@@ -7,7 +7,17 @@
     "close": "Cerrar",
     "search": "Buscar",
     "loading": "Cargando…",
-    "back": "Atrás"
+    "back": "Atrás",
+    "done": "Listo"
+  },
+  "textmenu": {
+    "undo": "Deshacer",
+    "redo": "Rehacer",
+    "cut": "Cortar",
+    "copy": "Copiar",
+    "paste": "Pegar",
+    "paste_plain": "Pegar sin formato",
+    "select_all": "Seleccionar todo"
   },
   "header": {
     "notifications": "Notificaciones",
@@ -69,7 +79,8 @@
     "move": "Mover",
     "open": "Abrir",
     "widget_settings": "Configurar widget",
-    "widget_remove": "Quitar"
+    "widget_remove": "Quitar",
+    "resize_sidebar": "Redimensionar el panel"
   },
   "register": {
     "title": "Crear una cuenta",
@@ -375,5 +386,26 @@
     "set_clock_analog": "Analógico",
     "set_clock_seconds": "Mostrar segundos",
     "set_clock_24h": "Formato 24 h"
+  },
+  "settingsmenu": {
+    "settings": "Configuración",
+    "trash": "Papelera",
+    "appearance": "Apariencia",
+    "print": "Imprimir",
+    "addons": "Descargar complementos"
+  },
+  "appearance": {
+    "title": "Apariencia",
+    "light": "Claro",
+    "dark": "Oscuro",
+    "system": "Predeterminado del dispositivo",
+    "scheme": "Combinación de colores",
+    "density": "Densidad de información",
+    "scheme_modern": "Moderno",
+    "scheme_classic": "Clásico",
+    "scheme_high-contrast": "Alto contraste",
+    "density_responsive": "Adaptable",
+    "density_comfortable": "Cómoda",
+    "density_compact": "Compacta"
   }
 }

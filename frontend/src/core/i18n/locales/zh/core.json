@@ -7,7 +7,17 @@
     "close": "关闭",
     "search": "搜索",
     "loading": "加载中…",
-    "back": "返回"
+    "back": "返回",
+    "done": "完成"
+  },
+  "textmenu": {
+    "undo": "撤销",
+    "redo": "重做",
+    "cut": "剪切",
+    "copy": "复制",
+    "paste": "粘贴",
+    "paste_plain": "粘贴为无格式文本",
+    "select_all": "全选"
   },
   "header": {
     "notifications": "通知",
@@ -69,7 +79,8 @@
     "move": "移动",
     "open": "打开",
     "widget_settings": "配置小组件",
-    "widget_remove": "移除"
+    "widget_remove": "移除",
+    "resize_sidebar": "调整面板大小"
   },
   "register": {
     "title": "创建账户",
@@ -375,5 +386,26 @@
     "set_clock_analog": "指针",
     "set_clock_seconds": "显示秒",
     "set_clock_24h": "24 小时制"
+  },
+  "settingsmenu": {
+    "settings": "设置",
+    "trash": "回收站",
+    "appearance": "外观",
+    "print": "打印",
+    "addons": "获取插件"
+  },
+  "appearance": {
+    "title": "外观",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "设备默认",
+    "scheme": "配色方案",
+    "density": "信息密度",
+    "scheme_modern": "现代",
+    "scheme_classic": "经典",
+    "scheme_high-contrast": "高对比度",
+    "density_responsive": "自适应",
+    "density_comfortable": "舒适",
+    "density_compact": "紧凑"
   }
 }

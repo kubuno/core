@@ -41,8 +41,12 @@ async function loadOne(m: ActiveModule): Promise<boolean> {
   const entry = m.frontend_entry as string
 
   try {
-    // Feuille de style du module (best-effort), injectée avant le JS.
-    const cssHref = entry.replace(/entry\.js(\?.*)?$/, 'entry.css')
+    // Feuille de style du module (best-effort), injectée avant le JS. L'entrée
+    // est content-hashée par le core (`entry-<hash>.js`) ; on dérive le CSS en
+    // gardant le MÊME hash (`entry-<hash>.css`) — le core réécrit vers le vrai
+    // entry.css. Sinon iOS resert un CSS périmé. (Le `(\?.*)?` couvre encore
+    // l'ancien format `?v=` par sécurité pendant une transition.)
+    const cssHref = entry.replace(/\.js(\?.*)?$/, '.css$1')
     if (cssHref !== entry && !document.querySelector(`link[data-kbmod="${m.module_id}"]`)) {
       const link = document.createElement('link')
       link.rel = 'stylesheet'

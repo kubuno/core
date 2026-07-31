@@ -6,11 +6,19 @@
 
 const KEY = 'kubuno.panelPrefs.v1'
 
+/* Left sidebar width bounds (desktop, expanded only).
+ * MIN = the historical width (`lg:w-64`) and the default. MAX stays close to the
+ * content: a navigation panel rarely needs more, and going far beyond would just add
+ * blank space. The user can drag between the two; the choice is remembered per app. */
+export const SIDEBAR_WIDTH = { MIN: 256, MAX: 360, DEFAULT: 256 } as const
+
 export interface AppPanelPrefs {
   /** Left sidebar collapsed. */
   left?: boolean
   /** Right panel: id of the open module panel, or `null` when closed. */
   right?: string | null
+  /** Left sidebar width in px (expanded state), clamped to SIDEBAR_WIDTH bounds. */
+  width?: number
 }
 
 type Store = Record<string, AppPanelPrefs>
@@ -48,6 +56,11 @@ export const panelPrefs = {
   setRight(appId: string, moduleId: string | null): void {
     const s = read()
     s[appId] = { ...s[appId], right: moduleId }
+    write(s)
+  },
+  setWidth(appId: string, width: number): void {
+    const s = read()
+    s[appId] = { ...s[appId], width }
     write(s)
   },
 }

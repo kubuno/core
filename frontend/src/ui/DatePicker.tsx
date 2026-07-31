@@ -590,7 +590,7 @@ export function DatePicker({
   // ── Render helpers ─────────────────────────────────────────────────────────
   const hasValue    = mode === 'daterange' ? !!(startValue || endValue) : !!value
   const showClear   = clearable && hasValue && !disabled && !readOnly
-  const triggerH    = size === 'sm' ? 'h-7 text-xs' : 'h-9 text-sm'
+  const triggerH    = size === 'sm' ? 'h-7 text-sm' : 'h-9 text-sm'
   const triggerIcon = mode === 'time' ? <Clock size={14} /> : <Calendar size={14} />
 
   const defaultPH = {

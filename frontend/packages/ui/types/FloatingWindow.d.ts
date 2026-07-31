@@ -28,6 +28,15 @@ interface FloatingWindowProps {
     resizable?: boolean;
     backdrop?: boolean;
     className?: string;
+    /**
+     * Marge intérieure du contenu, en px (défaut : 20). Le contenu d'une fenêtre ne
+     * doit jamais toucher ses bords ; les rares fenêtres « pleine largeur » (aperçu,
+     * liste qui doit affleurer, contenu déjà encadré) passent `padding={0}` et gèrent
+     * leur propre respiration.
+     */
+    padding?: number;
 }
-export declare function FloatingWindow({ title, icon, children, titleActions, popout, onClose, defaultWidth, defaultHeight, minWidth, minHeight, resizable, backdrop, className, }: FloatingWindowProps): import("react").ReactPortal | null;
+/** Marge intérieure par défaut du contenu d'une fenêtre volante, en px. */
+export declare const WINDOW_PADDING = 20;
+export declare function FloatingWindow({ title, icon, children, titleActions, popout, onClose, defaultWidth, defaultHeight, minWidth, minHeight, resizable, backdrop, className, padding, }: FloatingWindowProps): import("react").ReactPortal | null;
 export {};

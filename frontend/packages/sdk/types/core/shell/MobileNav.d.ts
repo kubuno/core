@@ -6,9 +6,11 @@
  *    (mirrors the Google Drive tablet/landscape layout).
  *
  * Destinations come from the active module's `mobileTabs` (Drive: Home /
- * Starred / Shared / Files) and fall back to the shell's generic ones. Modules
- * never render their own bar — that would stack two of them.
+ * Starred / Shared / Files). NO fallback: outside a module that declares tabs
+ * there is no bar at all (the drawer + waffle FAB carry the navigation) — a
+ * generic Home/Modules/Settings bar was pure clutter. Modules never render
+ * their own bar — that would stack two of them.
  */
 export default function MobileNav({ variant }: {
     variant?: 'bottom' | 'rail';
-}): import("react").JSX.Element;
+}): import("react").JSX.Element | null;

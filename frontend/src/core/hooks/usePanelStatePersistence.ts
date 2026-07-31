@@ -4,7 +4,7 @@ import { useUiStore } from '../store/uiStore'
 import { useRightPanelStore } from '../store/rightPanelStore'
 import { useModulesStore } from '../store/modulesStore'
 import { CollapseSidebarRegistry } from '../registry/CollapseSidebarRegistry'
-import { panelPrefs, appIdFromPath } from '../store/panelPrefs'
+import { panelPrefs, appIdFromPath, SIDEBAR_WIDTH } from '../store/panelPrefs'
 
 /**
  * Persist the expanded/collapsed state of the left and right panels per
@@ -40,6 +40,7 @@ export function usePanelStatePersistence(): void {
     const prefs = panelPrefs.get(app)
     applying.current = true
     useUiStore.getState().setSidebarCollapsed(prefs.left ?? collapseByDefault)
+    useUiStore.getState().setSidebarWidth(prefs.width ?? SIDEBAR_WIDTH.DEFAULT)
     useRightPanelStore.getState().setActive(prefs.right ?? null)
     applying.current = false
   }, [pathname, loadedVersion])
@@ -51,6 +52,11 @@ export function usePanelStatePersistence(): void {
       if (applying.current || !currentApp.current) return
       panelPrefs.setLeft(currentApp.current, state.sidebarCollapsed)
     })
+    const unsubWidth = useUiStore.subscribe((state, prev) => {
+      if (state.sidebarWidth === prev.sidebarWidth) return
+      if (applying.current || !currentApp.current) return
+      panelPrefs.setWidth(currentApp.current, state.sidebarWidth)
+    })
     const unsubRight = useRightPanelStore.subscribe((state, prev) => {
       if (state.activeModuleId === prev.activeModuleId) return
       if (applying.current || !currentApp.current) return
@@ -58,6 +64,7 @@ export function usePanelStatePersistence(): void {
     })
     return () => {
       unsubLeft()
+      unsubWidth()
       unsubRight()
     }
   }, [])

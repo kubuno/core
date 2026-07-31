@@ -22,16 +22,28 @@ export interface SearchConfig {
   // Recherche par image : si défini, la SearchBar affiche un bouton appareil photo
   // qui ouvre un sélecteur d'image et appelle ce callback (images similaires).
   onImageSearch?: (file: File) => void
+  // Opt-out du système loupe → mode recherche : à `true`, le module conserve la
+  // barre de recherche INLINE permanente dans l'en-tête (ancienne méthode), au lieu
+  // de la loupe qui déploie le mode recherche plein en-tête. Ex : mail.
+  inline?: boolean
 }
 
 interface SearchState {
   configs:   SearchConfig[]
+  // Current text of the shell search field (controlled). Modules can seed it
+  // (e.g. restoring a search from the URL after a refresh) via setQuery — this
+  // only updates the field; running the search stays the caller's job.
+  query:     string
+  setQuery:  (q: string) => void
   register:  (config: SearchConfig) => void
   unregister: (moduleId: string) => void
 }
 
 export const useSearchStore = create<SearchState>((set) => ({
   configs: [],
+  query:   '',
+
+  setQuery: (query) => set({ query }),
 
   register: (config) =>
     set((s) => ({

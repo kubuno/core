@@ -1,5 +1,5 @@
 // Reusable voice-dictation hook + centered toast UI, shared by the core search
-// bar and by modules (e.g. Jarvis) through @kubuno/sdk. It streams mic audio to
+// bar and by modules (e.g. Assistant) through @kubuno/sdk. It streams mic audio to
 // the self-hosted STT backend and renders a centered, EDITABLE toast:
 //   • the transcript appears in a textarea the user can edit at any time;
 //   • dictated words are inserted at the caret position (IME-like composition);

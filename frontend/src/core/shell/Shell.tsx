@@ -11,6 +11,7 @@ import MobileNav from './MobileNav'
 import MobileFab from './MobileFab'
 import { useIsMobile, useIsLandscape } from '@ui'
 import { useUiStore } from '../store/uiStore'
+import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
 import { Slot } from '../slots/SlotRegistry'
 import { useIdleLogout } from '../hooks/useIdleLogout'
 import { usePanelStatePersistence } from '../hooks/usePanelStatePersistence'
@@ -37,7 +38,19 @@ export default function Shell() {
 
   // Téléphone en paysage : la barre de navigation du bas devient un rail
   // vertical à gauche (une barre du bas mangerait la hauteur déjà réduite).
-  const mobileLandscape = useIsMobile() && useIsLandscape()
+  // ⚠️ Appeler les DEUX hooks inconditionnellement : `useIsMobile() && useIsLandscape()`
+  // court-circuiterait `useIsLandscape` sur desktop → au franchissement du seuil
+  // mobile le nombre de hooks change → React #310 (hooks rendus en plus/moins).
+  const isMobileVp = useIsMobile()
+  const isLandscapeVp = useIsLandscape()
+  const mobileLandscape = isMobileVp && isLandscapeVp
+
+  // La barre de navigation basse n'existe que si le module actif déclare des
+  // mobileTabs (plus de barre générique Accueil/Modules/Paramètres) — le
+  // padding bas n'est réservé que dans ce cas.
+  const sidebarConfigs = useSidebarStore(s => s.configs)
+  const activeSidebarCfg = resolveActiveSidebarConfig(sidebarConfigs, location.pathname)
+  const hasBottomNav = !activeSidebarCfg?.hideSidebar && !!activeSidebarCfg?.mobileTabs?.length
 
   useEffect(() => { closeSidebar() }, [location.pathname, closeSidebar])
 
@@ -52,7 +65,10 @@ export default function Shell() {
       {/* Corps : fond #f1f4f8 visible entre les zones comme séparateur. La marge
           basse mobile réserve la place de la barre de navigation fixe (sauf en
           paysage, où la nav passe à gauche, dans le flux). */}
-      <div data-app-body className={`flex flex-1 overflow-hidden gap-1 lg:pb-1 ${mobileLandscape ? '' : 'pb-14'}`}>
+      {/* data-has-bottom-nav : index.css réserve la hauteur de la barre + safe-area
+          (règle !important) uniquement quand cet attribut est présent. */}
+      <div data-app-body data-has-bottom-nav={!mobileLandscape && hasBottomNav ? '' : undefined}
+           className="flex flex-1 overflow-hidden gap-1 lg:pb-1">
         {/* Overlay mobile */}
         {sidebarOpen && (
           <div

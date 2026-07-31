@@ -199,7 +199,10 @@ export declare const filesApi: {
     setFolderColor: (id: string, color: string | null) => Promise<{
         folder: Folder;
     }>;
-    listFiles: (folderId?: string | null, starred?: boolean, trashed?: boolean, recent?: boolean, folderPathPrefix?: string) => Promise<{
+    listFiles: (folderId?: string | null, starred?: boolean, trashed?: boolean, recent?: boolean, folderPathPrefix?: string, opts?: {
+        limit?: number;
+        offset?: number;
+    }) => Promise<{
         files: FileItem[];
     }>;
     searchFiles: (q: string, filters: FilesSearchFilters, opts?: {

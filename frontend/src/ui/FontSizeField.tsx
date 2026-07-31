@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown } from 'lucide-react'
+import { CaretDown } from './CaretDown'
 import { FontPicker, FONT_UI_THEME } from './FontPicker'
 
 export interface FontSizeFieldProps {
@@ -125,7 +125,7 @@ function SizeCombo({
         <button type="button" tabIndex={-1} disabled={disabled} onMouseDown={e => e.preventDefault()} onClick={openList}
           aria-label="Choisir une taille" aria-haspopup="listbox" aria-expanded={open}
           className="flex items-center justify-center" style={{ width: 18, height: '100%', flexShrink: 0, cursor: disabled ? 'not-allowed' : 'pointer' }}>
-          <ChevronDown size={13} style={{ color: P.sec }} />
+          <CaretDown size={10} color={P.sec} />
         </button>
       </div>
 

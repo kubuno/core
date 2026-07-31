@@ -17,8 +17,11 @@ import AboutPage from './core/pages/AboutPage'
 import LabelsPage from './core/pages/LabelsPage'
 import PromptHost from './core/components/PromptHost'
 import ImagePickerHost from './core/components/ImagePickerHost'
+import ShareHost from './core/components/ShareHost'
 import LabelPickerHost from './core/components/LabelPickerHost'
+import ClipboardPaneHost from './core/components/ClipboardPaneHost'
 import PendingDeletionHost from './core/components/PendingDeletionHost'
+import { TextFieldMenuHost } from './core/shell/TextFieldMenuHost'
 
 // ── Modules ───────────────────────────────────────────────────────────────────
 // Le host ne nomme AUCUN module : ils sont chargés à l'exécution depuis le
@@ -130,8 +133,11 @@ export default function App() {
     </Routes>
     <PromptHost />
     <ImagePickerHost />
+    <ShareHost />
     <LabelPickerHost />
+    <ClipboardPaneHost />
     <PendingDeletionHost />
+    <TextFieldMenuHost />
     </>
   )
 }

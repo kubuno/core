@@ -36,7 +36,7 @@ const SKIN: Record<CheckboxVariant, string> = {
 }
 
 const LBL: Record<CheckboxVariant, { label: string; desc: string }> = {
-  default: { label: 'text-sm text-[#202124]', desc: 'text-xs text-[#5f6368]' },
+  default: { label: 'text-sm text-[#202124]', desc: 'text-sm text-[#5f6368]' },
   dark:    { label: 'text-xs text-[#cccccc]', desc: 'text-[11px] text-[#808080]' },
 }
 

@@ -7,7 +7,17 @@
     "close": "閉じる",
     "search": "検索",
     "loading": "読み込み中…",
-    "back": "戻る"
+    "back": "戻る",
+    "done": "完了"
+  },
+  "textmenu": {
+    "undo": "元に戻す",
+    "redo": "やり直し",
+    "cut": "切り取り",
+    "copy": "コピー",
+    "paste": "貼り付け",
+    "paste_plain": "書式なしで貼り付け",
+    "select_all": "すべて選択"
   },
   "header": {
     "notifications": "通知",
@@ -69,7 +79,8 @@
     "move": "移動",
     "open": "開く",
     "widget_settings": "ウィジェットを設定",
-    "widget_remove": "削除"
+    "widget_remove": "削除",
+    "resize_sidebar": "パネルのサイズを変更"
   },
   "register": {
     "title": "アカウントを作成",
@@ -375,5 +386,26 @@
     "set_clock_analog": "アナログ",
     "set_clock_seconds": "秒を表示",
     "set_clock_24h": "24時間表示"
+  },
+  "settingsmenu": {
+    "settings": "設定",
+    "trash": "ゴミ箱",
+    "appearance": "表示",
+    "print": "印刷",
+    "addons": "アドオンを入手"
+  },
+  "appearance": {
+    "title": "表示",
+    "light": "ライト",
+    "dark": "ダーク",
+    "system": "デバイスの既定",
+    "scheme": "配色",
+    "density": "情報密度",
+    "scheme_modern": "モダン",
+    "scheme_classic": "クラシック",
+    "scheme_high-contrast": "ハイコントラスト",
+    "density_responsive": "レスポンシブ",
+    "density_comfortable": "ゆったり",
+    "density_compact": "コンパクト"
   }
 }

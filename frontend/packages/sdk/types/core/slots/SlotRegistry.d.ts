@@ -1,5 +1,5 @@
 import React from 'react';
-export type SlotName = 'sidebar-new-actions' | 'topbar-actions' | 'settings-sections' | 'admin-panels' | 'search-providers' | 'user-menu-items' | 'dashboard-widgets' | 'dashboard-stats-cards' | 'context-menu-items' | 'sidebar-storage' | 'help-menu-items' | 'header-search' | 'header-actions-right' | 'sidebar-footer' | 'module-toolbar' | 'left-rail-icons' | 'right-rail-icons' | 'app-dialogs' | 'global-services' | (string & Record<never, never>);
+export type SlotName = 'sidebar-new-actions' | 'topbar-actions' | 'settings-sections' | 'admin-panels' | 'search-providers' | 'user-menu-items' | 'dashboard-widgets' | 'dashboard-stats-cards' | 'context-menu-items' | 'sidebar-storage' | 'help-menu-items' | 'header-search' | 'header-leading' | 'header-actions-right' | 'sidebar-footer' | 'module-toolbar' | 'left-rail-icons' | 'right-rail-icons' | 'app-dialogs' | 'global-services' | (string & Record<never, never>);
 interface SlotEntry {
     moduleId: string;
     Component: React.ComponentType;
@@ -59,6 +59,7 @@ export declare const NotificationRegistry: {
 interface SlotProps {
     name: SlotName;
     fallback?: React.ReactNode;
+    [prop: string]: any;
 }
-export declare function Slot({ name, fallback }: SlotProps): React.JSX.Element;
+export declare function Slot({ name, fallback, ...ctx }: SlotProps): React.JSX.Element;
 export {};

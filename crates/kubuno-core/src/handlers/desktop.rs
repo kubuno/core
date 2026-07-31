@@ -24,7 +24,7 @@ use crate::{auth::middleware::AuthUser, errors::AppError, state::AppState};
 
 /// Allow-list of servable components. Restricting to known names removes any path
 /// traversal surface — `:name` can never escape `wasm_dir`.
-const COMPONENTS: &[&str] = &["documents-core.wasm", "drive-core.wasm", "notes-core.wasm", "tasks-core.wasm", "keestore-core.wasm", "jarvis-core.wasm", "contacts-core.wasm", "wiki-core.wasm", "calendar-core.wasm"];
+const COMPONENTS: &[&str] = &["documents-core.wasm", "drive-core.wasm", "notes-core.wasm", "tasks-core.wasm", "keestore-core.wasm", "assistant-core.wasm", "contacts-core.wasm", "wiki-core.wasm", "calendar-core.wasm"];
 
 /// Request/response frame ABI implemented by the current WASM artifacts. The desktop
 /// daemon refuses to hot-swap a component whose `abi` it does not implement, so bump

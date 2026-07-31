@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod api_tokens;
 pub mod auth;
+pub mod clipboard;
 pub mod desktop;
 pub mod health;
 pub mod labels;

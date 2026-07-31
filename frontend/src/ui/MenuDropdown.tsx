@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { MENU_ATTR, useMenuDismiss } from './useMenuDismiss'
 
 /** True on touch devices (no precise pointer) → render menus as bottom sheets. */
 function useCoarsePointer(): boolean {
@@ -28,20 +29,29 @@ export type MenuTheme = 'light' | 'dark'
 
 interface MenuPalette {
   bg: string; text: string; sep: string; label: string
-  hover: string; accent: string; shortcut: string; danger: string; shadow: string
+  hover: string; hoverText: string; accent: string; shortcut: string; danger: string
+  border: string; shadow: string
+  /** Bottom sheet (touch): opaque — it has no backdrop-filter, only a dim scrim. */
+  sheetBg: string
 }
+
+/* Translucent menu surfaces: the panel lets the content underneath show through,
+ * blurred and saturated (see ./backdrop). `bg` must therefore stay partially
+ * transparent — an opaque colour would silently disable the effect. */
 
 const PALETTES: Record<MenuTheme, MenuPalette> = {
   light: {
-    bg: '#fff', text: '#202124', sep: '#e0e0e0', label: '#5f6368',
-    hover: 'rgba(0,0,0,0.06)', accent: '#1a73e8', shortcut: '#5f6368', danger: '#d93025',
-    shadow: '0 2px 6px 2px rgba(0,0,0,.15),0 1px 2px rgba(0,0,0,.3)',
+    bg: 'var(--kb-float-surface)', text: '#202124', sep: 'var(--kb-black-12)', label: '#5f6368',
+    hover: '#1a73e8', hoverText: '#fff', accent: '#1a73e8', shortcut: '#5f6368', danger: '#d93025',
+    border: 'var(--kb-float-border)', sheetBg: '#fff',
+    shadow: 'var(--kb-float-highlight), var(--kb-shadow-float)',
   },
   dark: {
     // Aligné sur le thème forge C (éditeurs WebGL paintsharp).
-    bg: '#323232', text: '#d6d6d6', sep: '#212121', label: '#8e8e8e',
-    hover: '#454545', accent: '#5a9bdc', shortcut: '#8e8e8e', danger: '#e84a4a',
-    shadow: '0 6px 24px rgba(0,0,0,.5)',
+    bg: 'var(--kb-float-surface-dark)', text: '#d6d6d6', sep: 'var(--kb-white-12)', label: '#8e8e8e',
+    hover: '#5a9bdc', hoverText: '#fff', accent: '#5a9bdc', shortcut: '#8e8e8e', danger: '#e84a4a',
+    border: 'var(--kb-float-border-dark)', sheetBg: '#323232',
+    shadow: 'var(--kb-float-highlight-dark), var(--kb-shadow-float-dark)',
   },
 }
 
@@ -59,17 +69,31 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
   const minWidth = pos.minWidth ?? minWidthProp
   const c = PALETTES[theme]
   const ref = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const isCoarse = useCoarsePointer()
   // Bottom-sheet submenu drill-in (touch has no hover-cascade).
   const [drill, setDrill] = useState<{ label: string; items: MenuItem[] } | null>(null)
+  // Highlight is an accent-filled pill: icon and shortcut must recolour with the
+  // row, so the hovered row is tracked in state rather than mutated in the DOM.
+  const [hovered, setHovered] = useState<number | null>(null)
 
+  // Clic extérieur : le test porte sur `[data-kb-menu]` et non sur `ref.contains`, sinon
+  // un clic dans un sous-menu — porté dans `document.body` — fermerait le menu parent.
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    const handler = (e: Event) => {
+      const t = e.target
+      const el = t instanceof Element ? t : (t as Node | null)?.parentElement ?? null
+      if (!el?.closest(`[${MENU_ATTR}]`)) onClose()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    // `pointerdown`, pas `mousedown` : un déclencheur Radix appelle `preventDefault()`
+    // sur pointerdown, ce qui SUPPRIME le mousedown de compatibilité — le menu ouvert
+    // ne voyait alors jamais le clic et restait affiché. Capture pour passer devant
+    // tout composant qui stoppe la propagation.
+    document.addEventListener('pointerdown', handler, true)
+    return () => document.removeEventListener('pointerdown', handler, true)
   }, [onClose])
+
+  useMenuDismiss(true, onClose)
 
   // Garde le menu TOUJOURS entièrement visible : on le ramène à l'intérieur du
   // viewport s'il déborde, et on borne sa hauteur (défilement interne) s'il est
@@ -83,9 +107,10 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
       const vh = window.innerHeight
       // Borne la hauteur (et la largeur) pour un menu plus grand que l'écran :
       // il défile à l'intérieur plutôt que de déborder hors de la zone visible.
-      el.style.maxHeight = `${vh - 2 * M}px`
+      // Le défilement est porté par la couche de contenu, pas par le panneau : celui-ci
+      // doit rester sans rognage, sinon la couche floutée débordante serait tronquée.
+      if (scrollRef.current) scrollRef.current.style.maxHeight = `${vh - 2 * M - 2}px`
       el.style.maxWidth  = `${vw - 2 * M}px`
-      el.style.overflowY = 'auto'
       // Repart de l'ancre demandée avant de mesurer → re-clamp idempotent.
       el.style.left = `${pos.left}px`
       el.style.top  = `${pos.top}px`
@@ -117,9 +142,10 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
         <div
           ref={ref}
           onMouseDown={e => e.stopPropagation()}
+          {...{ [MENU_ATTR]: '' }}
           className="fixed left-0 right-0 bottom-0 z-[9999]"
           style={{
-            background: c.bg, color: c.text,
+            background: c.sheetBg, color: c.text,
             borderTopLeftRadius: 16, borderTopRightRadius: 16,
             maxHeight: '78vh', overflowY: 'auto',
             paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
@@ -144,7 +170,7 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
           {shown.map((item, i) => {
             if (item.type === 'separator') return <div key={i} style={{ background: c.sep, height: 1, margin: '4px 0' }} />
             if (item.type === 'label') return (
-              <div key={i} style={{ padding: '8px 20px 4px', fontSize: 12, color: c.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.text}</div>
+              <div key={i} style={{ padding: '8px 20px 4px', fontSize: 'var(--kb-text-body)', color: c.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.text}</div>
             )
             if (item.type === 'custom') return <React.Fragment key={i}>{item.render(onClose)}</React.Fragment>
             if (item.type === 'submenu') return (
@@ -176,68 +202,79 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
     <div
       ref={ref}
       onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-      style={{
-        position: 'fixed',
-        top: pos.top,
-        left: pos.left,
-        minWidth,
-        zIndex: 9999,
-        background: c.bg,
-        borderRadius: 4,
-        padding: '4px 0',
-        boxShadow: c.shadow,
-      }}
+      {...{ [MENU_ATTR]: '' }}
+      className={theme === 'dark' ? 'kb-frosted kb-frosted-dark' : 'kb-frosted'}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth, zIndex: 9999 }}
     >
+      <div className="kb-frost-layer" aria-hidden />
+      <div
+        ref={scrollRef}
+        // side padding forms the gutter the highlight pill is inset by
+        style={{ padding: 5, overflowY: 'auto', overflowX: 'hidden' }}
+      >
       {items.map((item, i) => {
         if (item.type === 'separator') {
-          return <div key={i} style={{ background: c.sep, height: 1, margin: '4px 0' }} />
+          return <div key={i} style={{ background: c.sep, height: 1, margin: '5px 6px' }} />
         }
         if (item.type === 'label') {
           return (
             <div
               key={i}
-              style={{ padding: '4px 16px', fontSize: 11, color: c.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+              style={{ padding: '4px 10px', fontSize: 'var(--kb-text-meta)', color: c.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}
             >
               {item.text}
             </div>
           )
         }
         if (item.type === 'submenu') {
-          return <SubmenuItem key={i} item={item} onClose={onClose} theme={theme} />
+          return <SubmenuItem key={i} item={item} onClose={onClose} theme={theme}
+                                index={i} hovered={hovered} setHovered={setHovered} />
         }
         if (item.type === 'custom') {
           return <React.Fragment key={i}>{item.render(onClose)}</React.Fragment>
         }
-        const fg = item.danger ? c.danger : c.text
+        const on = hovered === i && !item.disabled
+        const fg = on ? c.hoverText : item.danger ? c.danger : c.text
         return (
           <button
             key={i}
             disabled={item.disabled}
             onClick={() => { item.onClick(); onClose() }}
-            className="w-full flex items-center gap-2 text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ padding: '6px 24px 6px 16px', fontSize: 13, color: fg, lineHeight: '20px' }}
-            onMouseEnter={e => { if (!item.disabled) (e.currentTarget as HTMLElement).style.background = c.hover }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(h => (h === i ? null : h))}
+            className="w-full flex items-center gap-2 text-left disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              padding: '5px 12px 5px 10px', fontSize: 'var(--kb-text-body)', color: fg, lineHeight: '20px',
+              borderRadius: 6, background: on ? c.hover : 'transparent',
+            }}
           >
-            <span style={{ width: 20, flexShrink: 0, color: item.danger ? c.danger : c.accent, fontSize: 14, display: 'inline-flex', alignItems: 'center' }}>
+            <span style={{ width: 20, flexShrink: 0, color: on ? c.hoverText : item.danger ? c.danger : c.accent, fontSize: 14, display: 'inline-flex', alignItems: 'center' }}>
               {item.checked ? '✓' : item.icon ? item.icon : ''}
             </span>
             <span className="flex-1">{item.label}</span>
             {item.shortcut && (
-              <span style={{ color: c.shortcut, fontSize: 12, marginLeft: 24, flexShrink: 0, fontFamily: 'monospace' }}>
+              <span style={{ color: on ? c.hoverText : c.shortcut, fontSize: 'var(--kb-text-body)', marginLeft: 24, flexShrink: 0, opacity: on ? 0.85 : 1 }}>
                 {item.shortcut}
               </span>
             )}
           </button>
         )
       })}
+      </div>
     </div>,
     document.body,
   )
 }
 
 /** Élément de menu ouvrant un sous-menu en cascade vers la droite (au survol). */
-function SubmenuItem({ item, onClose, theme }: { item: Extract<MenuItem, { type: 'submenu' }>; onClose: () => void; theme: MenuTheme }) {
+function SubmenuItem({ item, onClose, theme, index, hovered, setHovered }: {
+  item: Extract<MenuItem, { type: 'submenu' }>
+  onClose: () => void
+  theme: MenuTheme
+  index: number
+  hovered: number | null
+  setHovered: React.Dispatch<React.SetStateAction<number | null>>
+}) {
   const [pos, setPos] = React.useState<MenuDropdownPos | null>(null)
   const c = PALETTES[theme]
   const btnRef   = useRef<HTMLButtonElement>(null)
@@ -260,17 +297,31 @@ function SubmenuItem({ item, onClose, theme }: { item: Extract<MenuItem, { type:
     closeTmr.current = setTimeout(() => setPos(null), 180)
   }
 
+  // Le panneau du sous-menu s'attarde 180 ms pour laisser traverser en diagonale, mais la
+  // SURBRILLANCE ne doit pas s'attarder avec lui : sinon, en passant à une ligne voisine,
+  // deux lignes restaient allumées en même temps. Elle suit donc le pointeur, sauf quand
+  // celui-ci est entré dans le sous-menu — auquel cas aucune ligne du parent n'est
+  // survolée et on garde la ligne d'origine allumée, comme le fait macOS.
+  const on = hovered === index || (pos !== null && hovered === null)
+
   return (
-    <div onMouseEnter={openNow} onMouseLeave={scheduleClose} style={{ position: 'relative' }}>
+    <div
+      onMouseEnter={() => { setHovered(index); openNow() }}
+      onMouseLeave={() => { setHovered(h => (h === index ? null : h)); scheduleClose() }}
+      style={{ position: 'relative' }}
+    >
       <button
         ref={btnRef}
         disabled={item.disabled}
-        className="w-full flex items-center gap-2 text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        style={{ padding: '6px 24px 6px 16px', fontSize: 13, color: c.text, lineHeight: '20px', background: pos ? c.hover : '' }}
+        className="w-full flex items-center gap-2 text-left disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{
+          padding: '5px 12px 5px 10px', fontSize: 'var(--kb-text-body)', color: on ? c.hoverText : c.text, lineHeight: '20px',
+          borderRadius: 6, background: on ? c.hover : 'transparent',
+        }}
       >
-        <span style={{ width: 20, flexShrink: 0, color: c.accent, fontSize: 14, display: 'inline-flex', alignItems: 'center' }}>{item.icon ?? ''}</span>
+        <span style={{ width: 20, flexShrink: 0, color: on ? c.hoverText : c.accent, fontSize: 14, display: 'inline-flex', alignItems: 'center' }}>{item.icon ?? ''}</span>
         <span className="flex-1">{item.label}</span>
-        <span style={{ color: c.label, fontSize: 12, marginLeft: 24, flexShrink: 0 }}>▸</span>
+        <span style={{ color: on ? c.hoverText : c.label, fontSize: 'var(--kb-text-body)', marginLeft: 24, flexShrink: 0 }}>▸</span>
       </button>
       {pos && (
         <div onMouseEnter={openNow} onMouseLeave={scheduleClose}>

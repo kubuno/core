@@ -13,6 +13,7 @@ export default function ImagePickerHost() {
     <ImagePickerDialog
       title={current.title}
       exclude={current.exclude}
+      multiple={current.multiple}
       onPick={pick}
       onCancel={cancel}
     />
