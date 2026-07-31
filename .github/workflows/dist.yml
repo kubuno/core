@@ -32,8 +32,8 @@ jobs:
           path: dist/*.rpm
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with: { files: dist/*.rpm }
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash .github/upload-asset.sh 'dist/*.rpm'
 
   # ── Windows (installeur NSIS + service WinSW) ────────────────────────────
   windows:
@@ -60,8 +60,8 @@ jobs:
           path: dist/*.exe
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with: { files: dist/*.exe }
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash .github/upload-asset.sh 'dist/*.exe'
 
   # ── macOS (.pkg + launchd, Apple Silicon) ───────────────────────────────
   macos:
@@ -83,5 +83,5 @@ jobs:
           path: dist/*.pkg
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with: { files: dist/*.pkg }
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: bash .github/upload-asset.sh 'dist/*.pkg'
