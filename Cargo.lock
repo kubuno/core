@@ -1664,7 +1664,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1711,7 +1711,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-mcp"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "async-trait",
  "serde",
