@@ -57,7 +57,12 @@ class KubunoClient(
 
     val authApi: AuthApi = retrofit.create(AuthApi::class.java)
 
+    val driveApi: DriveApi = retrofit.create(DriveApi::class.java)
+
     val tokenManager: TokenManager = TokenManager(authApi, tokenStore)
+
+    /** Current server base URL ("https://host[:port]"), or null before onboarding. */
+    fun serverBaseUrl(): String? = baseUrlInterceptor.baseUrl?.toString()?.trimEnd('/')
 
     /** Points the client at another server (onboarding / server switch). */
     fun setServer(url: String) {
