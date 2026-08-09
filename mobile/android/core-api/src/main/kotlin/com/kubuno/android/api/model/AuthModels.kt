@@ -52,11 +52,55 @@ data class UserDto(
     @SerialName("display_name") val displayName: String? = null,
     val role: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    /** Whether a second factor is enrolled. Enrolment itself is web-only. */
+    @SerialName("totp_enabled") val totpEnabled: Boolean = false,
 )
 
-/** Response of GET /api/v1/me. */
+/** Response of GET /api/v1/me. The `privileges` object it also carries is unused here. */
 @Serializable
 data class MeResponse(val user: UserDto)
+
+/**
+ * One live session of the account.
+ *
+ * Fits both wire shapes on purpose: `GET /api/v1/me/sessions` serialises a
+ * refresh-token row (no [deviceId], no [country]) while `GET /api/v1/me/devices`
+ * serialises a session joined to the device inventory. Everything that is
+ * exclusive to one of the two is optional.
+ */
+@Serializable
+data class SessionDto(
+    val id: String,
+    @SerialName("device_id") val deviceId: String? = null,
+    @SerialName("device_name") val deviceName: String? = null,
+    @SerialName("device_label") val deviceLabel: String? = null,
+    @SerialName("device_type") val deviceType: String? = null,
+    @SerialName("client_type") val clientType: String? = null,
+    @SerialName("ip_address") val ipAddress: String? = null,
+    val country: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("last_used_at") val lastUsedAt: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+)
+
+/** Response of GET /api/v1/me/sessions. */
+@Serializable
+data class SessionsResponse(val sessions: List<SessionDto> = emptyList())
+
+/**
+ * Response of GET /api/v1/me/devices, reduced to what this client shows.
+ *
+ * [currentDeviceId] is the only "here and now" marker the API exposes: no
+ * session carries a `current` flag, and a native client cannot recognise its
+ * own refresh-token row (the raw token is stored hashed and its id is never
+ * returned). The server resolves it from the X-Kubuno-Device-Key header this
+ * client already sends on every request.
+ */
+@Serializable
+data class MyDevicesResponse(
+    val sessions: List<SessionDto> = emptyList(),
+    @SerialName("current_device_id") val currentDeviceId: String? = null,
+)
 
 /**
  * Body of POST /api/v1/me/devices/declare (requires the X-Kubuno-Device-Key header).

@@ -3,13 +3,17 @@ package com.kubuno.android.api
 import com.kubuno.android.api.model.DeclareDeviceRequest
 import com.kubuno.android.api.model.LoginRequest
 import com.kubuno.android.api.model.MeResponse
+import com.kubuno.android.api.model.MyDevicesResponse
 import com.kubuno.android.api.model.RefreshRequest
 import com.kubuno.android.api.model.SessionResponse
+import com.kubuno.android.api.model.SessionsResponse
 import com.kubuno.android.api.model.TotpRequest
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 
 /**
  * Core auth + account surface. Endpoints return raw [Response] so the caller
@@ -37,4 +41,27 @@ interface AuthApi {
 
     @POST("api/v1/me/devices/declare")
     suspend fun declareDevice(@Body body: DeclareDeviceRequest): Response<Unit>
+
+    /** Live sessions of the account. No session is flagged as the current one. */
+    @GET("api/v1/me/sessions")
+    suspend fun sessions(): Response<SessionsResponse>
+
+    /**
+     * Same sessions, joined to the device inventory, plus `current_device_id`.
+     * Preferred over [sessions] because it is the only way to tell the caller
+     * which rows belong to this phone.
+     */
+    @GET("api/v1/me/devices")
+    suspend fun myDevices(): Response<MyDevicesResponse>
+
+    /** Revokes one session. 404 when the id is unknown or already revoked. */
+    @DELETE("api/v1/me/sessions/{id}")
+    suspend fun revokeSession(@Path("id") id: String): Response<Unit>
+
+    /**
+     * Revokes EVERY session of the account, this one included — the server has
+     * no "all the others" variant. The caller must sign out locally afterwards.
+     */
+    @DELETE("api/v1/me/sessions")
+    suspend fun revokeAllSessions(): Response<Unit>
 }
