@@ -16,26 +16,6 @@ fun interface DeviceKeyProvider {
     fun deviceKey(): String
 }
 
-/**
- * Rewrites every request against the currently configured server. Retrofit is
- * built once against a placeholder base URL; the real server is only known
- * after onboarding and may change (multi-server later).
- */
-class BaseUrlInterceptor : Interceptor {
-    @Volatile var baseUrl: HttpUrl? = null
-
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val base = baseUrl ?: throw IOException("No server configured")
-        val request = chain.request()
-        val newUrl = request.url.newBuilder()
-            .scheme(base.scheme)
-            .host(base.host)
-            .port(base.port)
-            .build()
-        return chain.proceed(request.newBuilder().url(newUrl).build())
-    }
-}
-
 private val AUTH_PATHS = listOf("/api/v1/auth/")
 
 private fun isAuthEndpoint(url: HttpUrl): Boolean =
