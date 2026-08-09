@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -65,6 +66,10 @@ private class FakeApi(
     override suspend fun myDevices(): Response<MyDevicesResponse> = error("unused")
     override suspend fun revokeSession(id: String): Response<Unit> = error("unused")
     override suspend fun revokeAllSessions(): Response<Unit> = error("unused")
+    override suspend fun uploadAvatar(
+        avatar: MultipartBody.Part,
+        original: MultipartBody.Part?,
+    ): Response<MeResponse> = error("unused")
 }
 
 private fun ok(access: String, refresh: String): Response<SessionResponse> =
