@@ -5,7 +5,9 @@ import com.kubuno.android.api.model.DeclareDeviceRequest
 import com.kubuno.android.api.model.LoginRequest
 import com.kubuno.android.api.model.MeResponse
 import com.kubuno.android.api.model.RefreshRequest
+import com.kubuno.android.api.model.MyDevicesResponse
 import com.kubuno.android.api.model.SessionResponse
+import com.kubuno.android.api.model.SessionsResponse
 import com.kubuno.android.api.model.TotpRequest
 import java.io.IOException
 import java.util.Base64
@@ -58,6 +60,11 @@ private class FakeApi(
     override suspend fun health(): Response<Unit> = Response.success(Unit)
     override suspend fun me(): Response<MeResponse> = error("unused")
     override suspend fun declareDevice(body: DeclareDeviceRequest): Response<Unit> = error("unused")
+    // Account-screen surface: irrelevant to the refresh state machine.
+    override suspend fun sessions(): Response<SessionsResponse> = error("unused")
+    override suspend fun myDevices(): Response<MyDevicesResponse> = error("unused")
+    override suspend fun revokeSession(id: String): Response<Unit> = error("unused")
+    override suspend fun revokeAllSessions(): Response<Unit> = error("unused")
 }
 
 private fun ok(access: String, refresh: String): Response<SessionResponse> =
