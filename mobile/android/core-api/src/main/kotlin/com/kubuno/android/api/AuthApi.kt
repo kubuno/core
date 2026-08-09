@@ -8,10 +8,13 @@ import com.kubuno.android.api.model.RefreshRequest
 import com.kubuno.android.api.model.SessionResponse
 import com.kubuno.android.api.model.SessionsResponse
 import com.kubuno.android.api.model.TotpRequest
+import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
+import retrofit2.http.Part
 import retrofit2.http.POST
 import retrofit2.http.Path
 
@@ -53,6 +56,18 @@ interface AuthApi {
      */
     @GET("api/v1/me/devices")
     suspend fun myDevices(): Response<MyDevicesResponse>
+
+    /**
+     * Replaces the profile picture. The server stores what it receives without
+     * resizing, so [avatar] must already be the square crop the user chose;
+     * [original] is kept aside so a later re-crop can start from the full image.
+     */
+    @Multipart
+    @POST("api/v1/me/avatar")
+    suspend fun uploadAvatar(
+        @Part avatar: MultipartBody.Part,
+        @Part original: MultipartBody.Part?,
+    ): Response<MeResponse>
 
     /** Revokes one session. 404 when the id is unknown or already revoked. */
     @DELETE("api/v1/me/sessions/{id}")
