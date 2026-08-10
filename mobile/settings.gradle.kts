@@ -25,4 +25,5 @@ rootProject.name = "kubuno-android"
 include(":app-drive")
 include(":core-api")
 include(":core-account")
+include(":core-ui")
 include(":core-sync")
