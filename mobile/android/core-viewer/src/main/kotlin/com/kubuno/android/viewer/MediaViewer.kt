@@ -8,35 +8,60 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import android.net.Uri
+import okhttp3.OkHttpClient
 import java.io.File
 
 /**
- * Video and audio playback with Media3/ExoPlayer, from the local file the app
- * downloaded. Reproduces the web's native `<video>`/`<audio>` behaviour with
- * standard transport controls; the player is released when it leaves the tree.
+ * Video and audio with Media3/ExoPlayer.
+ *
+ * A [streamUrl] plays over the app's authenticated OkHttp client, so playback
+ * streams with byte-range requests instead of downloading the whole file first
+ * — the difference between a movie starting at once and staring at a spinner.
+ * Falls back to the local [file] (e.g. an already-cached attachment) when no
+ * URL is given.
  */
 @Composable
-fun MediaViewer(file: File, modifier: Modifier = Modifier) {
+fun MediaViewer(
+    modifier: Modifier = Modifier,
+    streamUrl: String? = null,
+    httpClient: OkHttpClient? = null,
+    file: File? = null,
+) {
     val context = LocalContext.current
-    val player = remember(file) {
+    val player = remember(streamUrl, file) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
-            prepare()
-            playWhenReady = true
+            val item = when {
+                streamUrl != null -> MediaItem.fromUri(Uri.parse(streamUrl))
+                file != null -> MediaItem.fromUri(Uri.fromFile(file))
+                else -> null
+            }
+            if (item != null) {
+                if (streamUrl != null && httpClient != null) {
+                    // Stream over the authenticated client (Bearer + refresh live
+                    // in its interceptor); ExoPlayer issues Range requests.
+                    val factory = DefaultDataSource.Factory(
+                        context,
+                        OkHttpDataSource.Factory(httpClient),
+                    )
+                    setMediaSource(ProgressiveMediaSource.Factory(factory).createMediaSource(item))
+                } else {
+                    setMediaItem(item)
+                }
+                prepare()
+                playWhenReady = true
+            }
         }
     }
     DisposableEffect(player) { onDispose { player.release() } }
 
     AndroidView(
         modifier = modifier.fillMaxSize(),
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                this.player = player
-                useController = true
-            }
-        },
+        factory = { ctx -> PlayerView(ctx).apply { this.player = player; useController = true } },
     )
 }

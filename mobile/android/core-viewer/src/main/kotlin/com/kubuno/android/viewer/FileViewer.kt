@@ -40,11 +40,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** One file to view: its metadata, plus how to fetch its bytes on demand. */
+/**
+ * One file to view: its metadata, plus — for video/audio — a [streamUrl] the
+ * player can stream from over the app's authenticated client, avoiding a full
+ * download. Other kinds are fetched to a file on demand.
+ */
 data class ViewerItem(
     val name: String,
     val mime: String?,
     val size: Long = 0,
+    val streamUrl: String? = null,
 )
 
 /**
@@ -68,6 +73,7 @@ fun FileViewer(
     onDownload: (Int) -> Unit,
     onOpenExternally: (Int) -> Unit,
     onClose: () -> Unit,
+    mediaHttpClient: okhttp3.OkHttpClient? = null,
 ) {
     if (items.isEmpty()) { onClose(); return }
     Dialog(
@@ -83,6 +89,7 @@ fun FileViewer(
                     item = items[page],
                     fetch = { fetch(page) },
                     wrap = wrap,
+                    mediaHttpClient = mediaHttpClient,
                     onOpenExternally = { onOpenExternally(page) },
                     onDownload = { onDownload(page) },
                 )
@@ -129,6 +136,7 @@ private fun ViewerPage(
     item: ViewerItem,
     fetch: suspend () -> File,
     wrap: Boolean,
+    mediaHttpClient: okhttp3.OkHttpClient?,
     onOpenExternally: () -> Unit,
     onDownload: () -> Unit,
 ) {
@@ -137,7 +145,18 @@ private fun ViewerPage(
         Unsupported(item, onOpenExternally, onDownload)
         return
     }
-    // Fetch the bytes once for this page; downstream viewers read the file.
+
+    // Media with a stream URL plays without a full download — no file fetch.
+    val streams = (kind == ViewerKind.VIDEO || kind == ViewerKind.AUDIO) &&
+        item.streamUrl != null && mediaHttpClient != null
+    if (streams) {
+        Box(Modifier.fillMaxSize().padding(top = 56.dp)) {
+            MediaViewer(streamUrl = item.streamUrl, httpClient = mediaHttpClient)
+        }
+        return
+    }
+
+    // Otherwise fetch the bytes once for this page; the viewer reads the file.
     val file = produceState<Result<File>?>(initialValue = null, item.name) {
         value = withContext(Dispatchers.IO) { runCatching { fetch() } }
     }.value
@@ -150,7 +169,7 @@ private fun ViewerPage(
                 ViewerKind.IMAGE -> ImageViewer(file.getOrThrow())
                 ViewerKind.PDF -> PdfViewer(file.getOrThrow())
                 ViewerKind.TEXT -> TextViewer(file.getOrThrow(), wrap)
-                ViewerKind.VIDEO, ViewerKind.AUDIO -> MediaViewer(file.getOrThrow())
+                ViewerKind.VIDEO, ViewerKind.AUDIO -> MediaViewer(file = file.getOrThrow())
                 ViewerKind.UNSUPPORTED -> Unsupported(item, onOpenExternally, onDownload)
             }
         }

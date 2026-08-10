@@ -45,7 +45,9 @@ dependencies {
 
     implementation(libs.coil.compose)
 
-    // Video/audio playback.
+    // Video/audio playback, streamed over the app's authenticated OkHttp client.
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    implementation(libs.media3.datasource.okhttp)
+    implementation(libs.okhttp)
 }
