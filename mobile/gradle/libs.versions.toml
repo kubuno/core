@@ -20,6 +20,8 @@ coroutines = "1.10.2"
 coil = "3.2.0"
 unifiedpush = "3.3.3"
 media3 = "1.4.1"
+maplibre = "11.8.0"
+maplibreAnnotation = "3.0.2"
 junit = "4.13.2"
 
 [libraries]
@@ -70,6 +72,12 @@ media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasourc
 # UnifiedPush connector: the only push transport in v1 (no FCM). The app talks to
 # whichever distributor (ntfy, NextPush…) the user has installed.
 unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpush" }
+
+# MapLibre Native Android: libre (BSD-2) vector map renderer, the open fork of
+# Mapbox GL Native. Drives the maps app; the annotation plugin manages
+# markers/lines/fills as managed symbols instead of raw style layers.
+maplibre-android-sdk = { group = "org.maplibre.gl", name = "android-sdk", version.ref = "maplibre" }
+maplibre-annotation = { group = "org.maplibre.gl", name = "android-plugin-annotation-v9", version.ref = "maplibreAnnotation" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
