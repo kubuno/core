@@ -3,8 +3,11 @@ package com.kubuno.android.account
 import android.accounts.Account
 import android.accounts.AccountManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import java.security.MessageDigest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -61,23 +64,20 @@ class AccountManagerBridge @Inject constructor(
     suspend fun sync() = withContext(Dispatchers.IO) {
         val records = registry.accounts.value
         val system = manager.getAccountsByType(KubunoAccounts.TYPE)
-        val live = records.associateBy { it.id.value }
 
-        val kept = mutableListOf<Pair<String, Account>>()
-        for (account in system) {
-            val id = manager.getUserData(account, KubunoAccounts.USER_DATA_ACCOUNT_ID)
-            // No id at all means an account we did not write (or wrote before
-            // a schema change): it can never be resolved, so it goes too.
-            if (id == null || !live.containsKey(id)) {
-                runCatching { manager.removeAccountExplicitly(account) }
-                    .onFailure { Log.w(TAG, "Could not remove stale system account", it) }
-            } else {
-                kept += id to account
-            }
-        }
-
-        val byId = kept.toMap()
-        val takenNames = kept.mapTo(mutableSetOf()) { it.second.name }
+        // Additive only. This runs in EVERY Kubuno app, but a system account may
+        // belong to a sibling app whose registry this process cannot see —
+        // pruning "accounts not in my registry" would let a consumer app (an
+        // empty registry) delete the accounts the owner created. Removal is
+        // therefore explicit: an app drops an account through remove() when the
+        // user signs out of it here, never as a side effect of mirroring.
+        val byId = system.mapNotNull { account ->
+            manager.getUserData(account, KubunoAccounts.USER_DATA_ACCOUNT_ID)
+                ?.let { it to account }
+        }.toMap()
+        val takenNames = system.mapTo(mutableSetOf()) { it.name }
+        val siblings = siblingPackages()
+        for (account in system) grantVisibility(account, siblings)
         for (record in records) {
             val existing = byId[record.id.value]
             if (existing != null) {
@@ -98,9 +98,58 @@ class AccountManagerBridge @Inject constructor(
             }.onFailure {
                 Log.w(TAG, "Could not add system account", it)
             }.getOrDefault(false)
-            if (added) takenNames += name
+            if (added) {
+                takenNames += name
+                grantVisibility(account, siblings)
+            }
         }
     }
+
+    /**
+     * Makes [account] readable by the other Kubuno apps.
+     *
+     * Since Android O an account is invisible to an app unless it owns the
+     * authenticator or is granted visibility — and the same-signature default
+     * stops applying once a second app declares the same authenticator, which
+     * is exactly our case. So the owner grants visibility explicitly, gated on
+     * a shared signing certificate: only genuine Kubuno apps, never a package
+     * that merely guessed the "com.kubuno" type.
+     */
+    private fun grantVisibility(account: Account, siblingPackages: List<String>) {
+        for (pkg in siblingPackages) {
+            runCatching {
+                manager.setAccountVisibility(account, pkg, AccountManager.VISIBILITY_VISIBLE)
+            }.onFailure { Log.w(TAG, "Could not grant visibility to $pkg", it) }
+        }
+    }
+
+    /** Installed packages, other than us, signed with our certificate. */
+    private fun siblingPackages(): List<String> {
+        val pm = context.packageManager
+        val mine = signaturesOf(context.packageName) ?: return emptyList()
+        @Suppress("DEPRECATION", "QueryPermissionsNeeded")
+        return pm.getInstalledPackages(0)
+            .map { it.packageName }
+            .filter { it != context.packageName }
+            .filter { signaturesOf(it)?.let { sig -> sig.intersect(mine).isNotEmpty() } == true }
+    }
+
+    /** The app's signing certificates as SHA-256 hex, across API levels. */
+    private fun signaturesOf(pkg: String): Set<String>? = runCatching {
+        val pm = context.packageManager
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES)
+            val signing = info.signingInfo ?: return@runCatching null
+            if (signing.hasMultipleSigners()) signing.apkContentsSigners else signing.signingCertificateHistory
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES).signatures
+        }
+        signatures?.mapNotNull { sig ->
+            val digest = MessageDigest.getInstance("SHA-256").digest(sig.toByteArray())
+            digest.joinToString("") { "%02x".format(it) }
+        }?.toSet()
+    }.getOrNull()
 
     /**
      * Name the system knows [id] by, once [sync] has run. Used to answer an

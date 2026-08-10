@@ -10,6 +10,17 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Package visibility (Android 11+): to grant a shared account visibility
+         to the other Kubuno apps, the owner must first be able to see them.
+         Every Kubuno app declares an account authenticator (below), so querying
+         that intent surfaces exactly the app family; siblingPackages() then
+         gates them on a shared signing certificate. -->
+    <queries>
+        <intent>
+            <action android:name="android.accounts.AccountAuthenticator" />
+        </intent>
+    </queries>
+
     <application>
         <!-- exported="false": the framework binds it by intent filter, no app
              ever talks to it directly. -->
