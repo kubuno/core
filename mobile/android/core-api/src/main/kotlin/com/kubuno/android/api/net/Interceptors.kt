@@ -1,7 +1,7 @@
 package com.kubuno.android.api.net
 
 import com.kubuno.android.api.auth.AuthException
-import com.kubuno.android.api.auth.TokenManager
+import com.kubuno.android.api.auth.BearerSource
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl
@@ -26,7 +26,7 @@ private fun isAuthEndpoint(url: HttpUrl): Boolean =
  * `X-Kubuno-Device-Key` correlation header. Auth endpoints are left alone.
  */
 class AuthHeaderInterceptor(
-    private val tokenManagerProvider: () -> TokenManager,
+    private val bearerProvider: () -> BearerSource,
     private val deviceKeyProvider: DeviceKeyProvider,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -35,13 +35,13 @@ class AuthHeaderInterceptor(
             .header("X-Kubuno-Device-Key", deviceKeyProvider.deviceKey())
 
         if (!isAuthEndpoint(request.url)) {
-            val tokenManager = tokenManagerProvider()
+            val bearer = bearerProvider()
             val token = try {
-                runBlocking { tokenManager.validAccessToken() }
+                runBlocking { bearer.validAccessToken() }
             } catch (e: AuthException) {
                 // Transient: fall through with the stale token (the request may
                 // still succeed or come back 401 for the Authenticator).
-                tokenManager.peekAccessToken()
+                bearer.peekAccessToken()
             }
             token?.let { builder.header("Authorization", "Bearer $it") }
         }
@@ -54,7 +54,7 @@ class AuthHeaderInterceptor(
  * the request once with the new access token. Gives up when the request was
  * already retried or when the session is genuinely dead.
  */
-class TokenAuthenticator(private val tokenManagerProvider: () -> TokenManager) : Authenticator {
+class TokenAuthenticator(private val bearerProvider: () -> BearerSource) : Authenticator {
     override fun authenticate(route: Route?, response: Response): Request? {
         if (isAuthEndpoint(response.request.url)) return null
         // Only one retry: if the failed request already carried a token issued
@@ -63,11 +63,11 @@ class TokenAuthenticator(private val tokenManagerProvider: () -> TokenManager) :
 
         val failedToken = response.request.header("Authorization")?.removePrefix("Bearer ")
         val newToken = try {
-            runBlocking { tokenManagerProvider().refreshAfter401(failedToken) }
+            runBlocking { bearerProvider().refreshAfter401(failedToken) }
         } catch (e: AuthException) {
             return null
         }
-        if (newToken == failedToken) return null
+        if (newToken == null || newToken == failedToken) return null
         return response.request.newBuilder()
             .header("Authorization", "Bearer $newToken")
             .build()

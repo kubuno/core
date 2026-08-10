@@ -40,7 +40,7 @@ class TokenManager(
     private val api: AuthApi,
     private val store: TokenStore,
     private val clock: () -> Long = System::currentTimeMillis,
-) {
+) : BearerSource {
     companion object {
         const val FRESH_TTL_MS = 5 * 60 * 1000L
         const val REFRESH_COOLDOWN_MS = 45_000L
@@ -67,7 +67,7 @@ class TokenManager(
     fun isLoggedIn(): Boolean = cached != null
 
     /** Access token currently held, without triggering any network activity. */
-    fun peekAccessToken(): String? = cached?.accessToken
+    override fun peekAccessToken(): String? = cached?.accessToken
 
     /**
      * Returns a valid access token, refreshing first when the current one is
@@ -75,7 +75,7 @@ class TokenManager(
      * Throws [AuthException] (TRANSIENT while in cooldown / network down, or
      * GENUINE when the session is dead — state is then [AuthState.Expired]).
      */
-    suspend fun validAccessToken(): String? {
+    override suspend fun validAccessToken(): String? {
         val current = cached ?: store.load()?.also { cached = it } ?: return null
         if (isAccessUsable(current.accessToken)) return current.accessToken
         return refresh(forceEvenIfFresh = false).accessToken
@@ -86,7 +86,7 @@ class TokenManager(
      * pair another caller already rotated, otherwise forces a rotation (the
      * fresh-adopt shortcut must not return the very token that just failed).
      */
-    suspend fun refreshAfter401(failedAccessToken: String?): String {
+    override suspend fun refreshAfter401(failedAccessToken: String?): String {
         cached?.let { if (it.accessToken != failedAccessToken && isAccessUsable(it.accessToken)) return it.accessToken }
         return refresh(forceEvenIfFresh = true).accessToken
     }
