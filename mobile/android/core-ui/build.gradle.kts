@@ -43,4 +43,7 @@ dependencies {
     api(libs.compose.material.icons)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
+
+    // The avatar loads a profile picture; apps supply the authenticated loader.
+    api(libs.coil.compose)
 }
