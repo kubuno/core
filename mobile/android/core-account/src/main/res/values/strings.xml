@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown in the system's "Passwords & accounts" screen. The account type
+         is "Kubuno" for every app, so this string lives in the shared module
+         rather than in one app. -->
+    <string name="kubuno_account_label">Kubuno</string>
+</resources>

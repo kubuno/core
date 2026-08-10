@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every Kubuno app gets the authenticator simply by depending on this module,
+  which is the point: the apps then carry the SAME implementation of the
+  "com.kubuno" account type, signed with the same certificate. Android binds
+  only one authenticator per type, so whichever app it picks behaves
+  identically, and if that app is uninstalled the next one takes over.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!-- exported="false": the framework binds it by intent filter, no app
+             ever talks to it directly. -->
+        <service
+            android:name="com.kubuno.android.account.KubunoAuthenticatorService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accounts.AccountAuthenticator" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accounts.AccountAuthenticator"
+                android:resource="@xml/authenticator" />
+        </service>
+    </application>
+</manifest>

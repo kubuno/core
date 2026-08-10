@@ -22,6 +22,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "kubuno-android"
 
-include(":app")
+include(":app-drive")
 include(":core-api")
+include(":core-account")
 include(":core-sync")
