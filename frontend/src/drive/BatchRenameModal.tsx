@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { FileText, Folder as FolderIcon, FolderTree, Loader2, ArrowRight } from 'lucide-react'
 import { FloatingWindow } from '@ui'
-import { Button, Input, Dropdown, Checkbox } from '@ui'
+import { Input, Dropdown, Checkbox } from '@ui'
 import { filesApi } from './api'
 
 // Renommage en lot façon PowerRename : recherche (regex ou littérale) → remplacement,
@@ -205,6 +205,23 @@ export default function BatchRenameModal({ items, onClose }: Props) {
       onClose={onClose}
       defaultWidth={780}
       backdrop
+      t={t}
+      actions={{
+        extra: (
+          <span className="text-xs text-text-secondary">
+            {applying
+              ? t('batch_rename.renaming', { done: progress!.done, total: progress!.total })
+              : t('batch_rename.will_rename', { count: changedCount })}
+          </span>
+        ),
+        confirm: {
+          label:    t('batch_rename.apply'),
+          onClick:  apply,
+          disabled: changedCount === 0,
+          loading:  applying,
+        },
+        cancel: { label: t('common.cancel'), disabled: applying },
+      }}
     >
       <div className="flex gap-0 max-h-[70vh]">
         {/* Colonne contrôles */}
@@ -270,18 +287,6 @@ export default function BatchRenameModal({ items, onClose }: Props) {
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-border">
-        <span className="text-xs text-text-secondary">
-          {applying
-            ? t('batch_rename.renaming', { done: progress!.done, total: progress!.total })
-            : t('batch_rename.will_rename', { count: changedCount })}
-        </span>
-        <div className="flex gap-2">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={applying}>{t('common.cancel')}</Button>
-          <Button type="button" onClick={apply} disabled={changedCount === 0} loading={applying}>{t('batch_rename.apply')}</Button>
         </div>
       </div>
     </FloatingWindow>

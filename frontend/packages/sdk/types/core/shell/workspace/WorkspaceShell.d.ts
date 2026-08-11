@@ -4,7 +4,7 @@ import { type MenuItem } from './MenuBar';
 import { type WorkspaceMenuActions, type WsMenu } from './WorkspaceMenuBar';
 import { type WorkspaceTheme } from './theme';
 export type { MenuItem, WorkspaceTheme };
-export declare function WorkspaceShell({ onBack, title, titleIcon, titleSlot, onTitleChange, onTitleCommit, titlePlaceholder, saveStatus, titleActions, onDelete, deleteConfirm, deleteTitle, subtitle, docInfo, topbarActions, search, showSearch, menuActions, extraMenus, menus, menuBar, optionsBar, toolRail, toolRailWidth, bottomBar, statusBar, theme, chromeless, hideHeaderActions, topbarHeight, optionsBarHeight, statusHeight, children, }: {
+export declare function WorkspaceShell({ onBack, title, titleIcon, titleSlot, onTitleChange, onTitleCommit, titlePlaceholder, titleActions, onDelete, deleteConfirm, deleteTitle, subtitle, docInfo, topbarActions, search, showSearch, menuActions, extraMenus, menus, menuBar, optionsBar, toolRail, toolRailWidth, bottomBar, statusBar, theme, chromeless, hideHeaderActions, topbarHeight, optionsBarHeight, statusHeight, children, }: {
     onBack?: () => void;
     title?: ReactNode;
     titleIcon?: ReactNode;
@@ -12,7 +12,6 @@ export declare function WorkspaceShell({ onBack, title, titleIcon, titleSlot, on
     onTitleChange?: (v: string) => void;
     onTitleCommit?: () => void;
     titlePlaceholder?: string;
-    saveStatus?: ReactNode;
     titleActions?: ReactNode;
     onDelete?: () => void;
     deleteConfirm?: ConfirmOptions;

@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Camera, LogOut, UserPlus, X, ExternalLink, ChevronDown, ChevronUp, Shield, Tag } from 'lucide-react'
 import * as Avatar from '@radix-ui/react-avatar'
 import { useAuthStore } from '../store/authStore'
+import { usePrivileges } from '../authz/usePrivileges'
 import { useLinkedAccountsStore } from '../store/linkedAccountsStore'
 import { api } from '../api/client'
 import AvatarCropModal, { type AvatarCrop } from '@ui/AvatarCropModal'
@@ -19,6 +20,7 @@ interface Props {
 export default function UserPanel({ open, onClose, onAddAccount, anchorRef }: Props) {
   const { t } = useTranslation()
   const { user, logout, updateUser } = useAuthStore()
+  const { isAdmin } = usePrivileges()
   const { accounts, remove: removeAccount } = useLinkedAccountsStore()
   const navigate = useNavigate()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -267,8 +269,9 @@ export default function UserPanel({ open, onClose, onAddAccount, anchorRef }: Pr
             {t('user.labels', { defaultValue: 'Étiquettes' })}
           </Link>
 
-          {/* Administration (admin uniquement) — déplacé depuis la barre latérale */}
-          {user.role === 'admin' && (
+          {/* Administration — visible to anyone who may enter the console, which
+              includes a delegated administrator (still `role = 'user'`). */}
+          {isAdmin && (
             <Link
               to="/admin"
               onClick={onClose}

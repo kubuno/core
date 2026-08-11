@@ -28,6 +28,16 @@ export interface SearchConfig {
   inline?: boolean
 }
 
+/**
+ * A request from a module to the SHELL to open (or close) its search surface.
+ *
+ * The shell owns the magnifier and the search mode it expands into, so a module
+ * cannot open it by itself — and its own search component is not even mounted
+ * while the mode is closed, which is exactly when a global shortcut has to work.
+ * `seq` makes each request distinct, so asking twice in a row is honoured twice.
+ */
+export interface SearchOpenSignal { seq: number; open: boolean }
+
 interface SearchState {
   configs:   SearchConfig[]
   // Current text of the shell search field (controlled). Modules can seed it
@@ -35,6 +45,10 @@ interface SearchState {
   // only updates the field; running the search stays the caller's job.
   query:     string
   setQuery:  (q: string) => void
+  /** Latest open/close request. `seq: 0` = nothing asked yet. */
+  openSignal: SearchOpenSignal
+  /** Ask the shell to enter (or leave) search mode. */
+  requestSearchOpen: (open: boolean) => void
   register:  (config: SearchConfig) => void
   unregister: (moduleId: string) => void
 }
@@ -43,7 +57,12 @@ export const useSearchStore = create<SearchState>((set) => ({
   configs: [],
   query:   '',
 
+  openSignal: { seq: 0, open: false },
+
   setQuery: (query) => set({ query }),
+
+  requestSearchOpen: (open) =>
+    set((s) => ({ openSignal: { seq: s.openSignal.seq + 1, open } })),
 
   register: (config) =>
     set((s) => ({

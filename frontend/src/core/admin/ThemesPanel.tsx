@@ -216,7 +216,7 @@ export default function ThemesPanel() {
               <div className="flex items-start justify-between gap-4 mb-3">
                 <div className="min-w-0">
                   <h3 className="text-base font-medium text-text-primary truncate">{selected.name}</h3>
-                  <p className="text-xs text-text-tertiary mt-0.5">
+                  <p className="text-sm text-text-tertiary mt-0.5">
                     {t('admin.t_prev_hint', { defaultValue: 'Aperçu — non appliqué tant que vous n’avez pas cliqué sur Appliquer' })}
                   </p>
                 </div>
@@ -224,7 +224,7 @@ export default function ThemesPanel() {
                   {!isBuiltin && (
                     deleteConfirmId === selected.id ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-text-secondary">{t('admin.t_confirm')}</span>
+                        <span className="text-sm text-text-secondary">{t('admin.t_confirm')}</span>
                         <Button variant="danger" size="sm" loading={deleteMut.isPending}
                                 onClick={() => deleteMut.mutate(selected.id)}>
                           {t('common.delete')}
@@ -275,7 +275,7 @@ export default function ThemesPanel() {
       {saveMut.isError && <p className="mt-4 text-sm text-danger">{t('admin.t_save_error')}</p>}
 
       <div className="mt-6 p-4 bg-surface-1 rounded-lg border border-border">
-        <p className="text-xs text-text-secondary font-medium mb-1">{t('admin.t_format_title')}</p>
+        <p className="text-sm text-text-secondary font-medium mb-1">{t('admin.t_format_title')}</p>
         <pre className="text-xs text-text-tertiary overflow-x-auto">{`{
   "id":           "mon-theme",
   "name":         "Mon Thème",

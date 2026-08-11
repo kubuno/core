@@ -13,15 +13,16 @@ use crate::{
                 update_oauth_provider,
             },
             org_units::{
-                create_org_unit, delete_org_unit, list_org_units, update_org_unit,
+                create_org_unit, delete_org_unit, list_org_units, org_unit_impact,
+                update_org_unit,
             },
             settings::{
                 get_admin_module, get_settings, list_admin_modules, list_event_log, public_config,
                 toggle_module, update_settings,
             },
             users::{
-                admin_stats, create_user, delete_user, get_user, list_users, update_user,
-                list_user_sessions, revoke_user_session, revoke_all_user_sessions,
+                admin_stats, bulk_set_org_unit, create_user, delete_user, get_user, list_users,
+                update_user, list_user_sessions, revoke_user_session, revoke_all_user_sessions,
             },
         },
         auth::{
@@ -34,15 +35,16 @@ use crate::{
             set_theme_trust,
         },
         modules::{
-            get_module_config, list_modules, module_heartbeat, module_log, publish_event,
-            register_module, serve_module_asset, unregister_module,
+            get_module_config, internal_module_settings, list_modules, module_heartbeat,
+            module_log, publish_event, register_module, serve_module_asset, unregister_module,
         },
         users::{
             change_password, get_me, me_activity, list_sessions, revoke_all_sessions, revoke_session,
             update_me, search_users, lookup_users, upload_avatar, get_avatar, get_avatar_original, linked_account_login,
             setup_totp, enable_totp, disable_totp,
         },
-        api_tokens::{list as list_api_tokens, create as create_api_token, revoke as revoke_api_token},
+        api_tokens::{list as list_api_tokens, create as create_api_token, revoke as revoke_api_token,
+                     available_scopes as api_token_scopes},
         labels::{
             list as list_labels, create as create_label, update as update_label,
             delete as delete_label, labels_for_resource, set_resource_labels,
@@ -64,7 +66,7 @@ use axum::{
     },
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
 };
 use std::time::Duration;
 use tower_http::{
@@ -88,12 +90,276 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/oauth/:provider",          get(oauth_redirect))
         .route("/oauth/:provider/callback", get(oauth_callback))
         .route("/providers",                get(list_public_oauth_providers))
+        // Ce que la page de connexion doit afficher. Propriété de la
+        // CONFIGURATION seule : ne prend aucun identifiant, ne lit aucun compte,
+        // donc ne peut pas servir à sonder l'existence d'un compte.
+        .route("/methods",                  get(crate::handlers::auth::public_auth_methods))
         .route("/totp",                     post(totp_verify))
+        // Réauthentification avant action sensible (le porteur est déjà
+        // authentifié ; le limiteur de débit s'applique quand même).
+        .route("/reauth",                   post(crate::handlers::auth::reauth))
+        .route("/reauth/challenge",          get(crate::handlers::auth::reauth_challenge))
         .layer(middleware::from_fn(rate_limit_auth));
+
+    // ── Administration ───────────────────────────────────────────────────────
+    // Every administrative route lives in ONE sub-router carrying ONE layer
+    // guard. Before this, the 38 `/admin` routes were declared flat and each
+    // relied on its handler taking an `AdminUser` extractor: a signature written
+    // tomorrow that forgets it compiles and serves. The layer makes "at least an
+    // administrator" structural; the extractors stay, and narrow it to the
+    // privilege each operation actually needs (defence in depth, see
+    // `crate::authz::guard`).
+    //
+    // Paths here are declared WITHOUT the `/admin` prefix — `.nest("/admin", …)`
+    // below supplies it. Re-adding it inside would serve `/api/v1/admin/admin/…`
+    // and nothing else, which is the single most likely way to get this wrong.
+    let admin_routes = Router::new()
+        // ── Thèmes ────────────────────────────────────────────────
+        .route("/themes",            post(create_theme))
+        .route("/themes/import",     post(import_theme_zip))
+        .route("/themes/:id",       delete(delete_theme))
+        .route("/themes/:id/trust",  patch(set_theme_trust))
+        // ── Comptes ───────────────────────────────────────────────
+        .route("/users",          get(list_users).post(create_user))
+        // Déplacement groupé vers une unité : une transaction, une entrée
+        // d'audit récapitulative — pas N appels PATCH (cf. handlers::admin::users).
+        // Segment statique déclaré avant `/users/:id/…` par convention de lecture.
+        .route("/users/bulk/org-unit", post(bulk_set_org_unit))
+        .route("/users/:id",     get(get_user).patch(update_user).delete(delete_user))
+        // Permanent erasure. A separate route from the DELETE above, which only
+        // deactivates: the two are different acts, and a flag on one endpoint
+        // would put them one click apart.
+        .route("/users/:id/purge", delete(crate::handlers::admin::users::purge_user))
+        .route("/users/:id/sessions",      get(list_user_sessions).delete(revoke_all_user_sessions))
+        .route("/users/:id/sessions/:sid", delete(revoke_user_session))
+        // Réinitialisation du mot de passe d'un compte par un administrateur :
+        // révoque aussi toutes ses sessions (cf. handlers::admin::password_reset).
+        .route("/users/:id/reset-password",
+               post(crate::handlers::admin::password_reset::reset_user_password))
+        // Privilèges effectifs d'un compte (direct + via groupes, portées résolues).
+        .route("/users/:id/privileges",
+               get(crate::handlers::admin::roles::user_effective_privileges))
+        // ── Relais de courriel sortant ────────────────────────────
+        .route("/mail/settings", get(crate::handlers::admin::mail::get_mail_settings)
+                               .patch(crate::handlers::admin::mail::update_mail_settings))
+        .route("/mail/test",    post(crate::handlers::admin::mail::test_mail))
+        .route("/stats",          get(admin_stats))
+        // ── Stockage ──────────────────────────────────────────────────
+        // Les agrégats d'instance et la liste des comptes qui consomment le
+        // plus. Aucune route d'écriture : le quota d'un compte passe par
+        // PATCH /admin/users/:id, la politique par défaut par
+        // PUT/DELETE /admin/settings/scoped/:key — les deux déjà audités.
+        .route("/storage/overview",  get(crate::handlers::admin::storage::overview))
+        .route("/storage/consumers", get(crate::handlers::admin::storage::consumers))
+        // One account's sheet: modules, categories, volumes and object counts —
+        // and deliberately nothing that would say *what* the person stores.
+        .route("/storage/accounts/:id/usage", get(crate::handlers::admin::storage::account_usage))
+        // ── Sauvegarde planifiée ──────────────────────────────────────
+        // La politique elle-même s'écrit par /admin/settings/scoped/:key
+        // (déjà audité). Ici : la lecture, le déclenchement manuel et la
+        // déclaration de restauration testée. Segments statiques d'abord.
+        .route("/backup",              get(crate::handlers::admin::backup::get_backup))
+        .route("/backup/run",         post(crate::handlers::admin::backup::run_now))
+        .route("/backup/restore-test",
+               post(crate::handlers::admin::backup::declare_restore_test))
+        // ── Santé de l'instance ───────────────────────────────────────
+        // Le segment statique précède `/:id`, comme pour /audit.
+        .route("/health-checks",  get(crate::handlers::admin::health::get_health_checks))
+        .route("/health-checks/:id/ignore",
+               post(crate::handlers::admin::health::mute_check)
+             .delete(crate::handlers::admin::health::unmute_check))
+        .route("/settings",       get(get_settings).patch(update_settings))
+        // ── Réglages par portée (héritage par unité organisationnelle) ──
+        // Les segments statiques précèdent la clé, qui contient des points mais
+        // jamais de barre oblique.
+        .route("/settings/resolved",
+               get(crate::handlers::admin::setting_scopes::resolved_settings))
+        .route("/settings/chain/:key",
+               get(crate::handlers::admin::setting_scopes::setting_chain))
+        .route("/settings/scoped/:key",
+               put(crate::handlers::admin::setting_scopes::set_scoped_value)
+            .delete(crate::handlers::admin::setting_scopes::clear_scoped_value))
+        .route("/settings/lock/:key",
+               post(crate::handlers::admin::setting_scopes::set_scoped_lock))
+        .route("/oauth-providers",      get(list_oauth_providers).post(create_oauth_provider))
+        .route("/oauth-providers/:id", patch(update_oauth_provider).delete(delete_oauth_provider))
+        .route("/oauth-providers/:id/test",
+               post(crate::handlers::admin::oauth_providers::test_oauth_provider))
+        // ── Annuaires LDAP / Active Directory ─────────────────────────
+        // Mêmes privilèges que les fournisseurs SSO (core.auth_providers.*) :
+        // un annuaire est un fournisseur d'authentification. Les deux sondes
+        // sont synchrones — c'est ce qui rend une configuration diagnosticable.
+        .route("/ldap/directories",
+               get(crate::handlers::admin::ldap::list_directories)
+              .post(crate::handlers::admin::ldap::create_directory))
+        .route("/ldap/directories/:id",
+               patch(crate::handlers::admin::ldap::update_directory)
+             .delete(crate::handlers::admin::ldap::delete_directory))
+        .route("/ldap/directories/:id/test",
+               post(crate::handlers::admin::ldap::test_directory))
+        .route("/ldap/directories/:id/test-auth",
+               post(crate::handlers::admin::ldap::test_directory_auth))
+        .route("/ldap/directories/:id/sync",
+               post(crate::handlers::admin::ldap::sync_directory))
+        .route("/ldap/directories/:id/govern",
+               post(crate::handlers::admin::ldap::govern_accounts))
+        .route("/modules",        get(list_admin_modules))
+        .route("/modules/:id",   get(get_admin_module).patch(toggle_module))
+        // ── Marketplace (catalogue distant + installation) ────────
+        .route("/marketplace",            get(crate::handlers::admin::marketplace::list_marketplace))
+        .route("/marketplace/:id/install", post(crate::handlers::admin::marketplace::install_marketplace))
+        .route("/marketplace/:id/status",  get(crate::handlers::admin::marketplace::install_status))
+        .route("/marketplace/:id",         delete(crate::handlers::admin::marketplace::uninstall_marketplace))
+        .route("/event-log",      get(list_event_log))
+        // ── Journal d'audit d'administration ──────────────────────
+        // Les segments statiques sont déclarés avant `/:id` : matchit les fait
+        // primer sur le paramètre, donc `export` n'est jamais lu comme un id.
+        .route("/audit",           get(crate::handlers::admin::audit::list_audit))
+        .route("/audit/export",    get(crate::handlers::admin::audit::export_audit_csv))
+        .route("/audit/facets",    get(crate::handlers::admin::audit::audit_facets))
+        .route("/audit/retention", get(crate::handlers::admin::audit::audit_retention))
+        .route("/audit/:id",       get(crate::handlers::admin::audit::get_audit_entry))
+        // ── Centre d'alertes ──────────────────────────────────────
+        // Mêmes précautions d'ordre que pour /audit : les segments statiques
+        // (`summary`, `facets`, `bulk`, `scan`, `views`) précèdent `/:id`, sinon
+        // matchit les lirait comme des identifiants d'alerte.
+        .route("/alerts",          get(crate::handlers::admin::alerts::list_alerts))
+        .route("/alerts/summary",  get(crate::handlers::admin::alerts::alerts_summary))
+        .route("/alerts/facets",   get(crate::handlers::admin::alerts::alerts_facets))
+        .route("/alerts/bulk",    post(crate::handlers::admin::alerts::bulk_alerts))
+        .route("/alerts/scan",    post(crate::handlers::admin::alerts::scan_now))
+        .route("/alerts/views",    get(crate::handlers::admin::alerts::list_alert_views)
+                                  .post(crate::handlers::admin::alerts::save_alert_view))
+        .route("/alerts/views/:id", delete(crate::handlers::admin::alerts::delete_alert_view))
+        .route("/alerts/:id",      get(crate::handlers::admin::alerts::get_alert))
+        .route("/alerts/:id/status",  post(crate::handlers::admin::alerts::set_alert_status))
+        .route("/alerts/:id/assign",  post(crate::handlers::admin::alerts::assign_alert))
+        .route("/alerts/:id/comment", post(crate::handlers::admin::alerts::comment_alert))
+        .route("/alerts/:id/retry-jobs",   post(crate::handlers::admin::alerts::retry_dead_jobs))
+        .route("/alerts/:id/discard-jobs", post(crate::handlers::admin::alerts::discard_dead_jobs))
+        // ── Inventaire des appareils et des sessions ──────────────
+        // Même précaution d'ordre : `facets` précède `/:id`, sinon matchit le
+        // lirait comme un identifiant d'appareil.
+        .route("/devices",             get(crate::handlers::admin::devices::list_devices))
+        .route("/devices/facets",      get(crate::handlers::admin::devices::device_facets))
+        .route("/devices/:id",         get(crate::handlers::admin::devices::get_device)
+                                    .delete(crate::handlers::admin::devices::forget_device))
+        .route("/devices/:id/approval", post(crate::handlers::admin::devices::set_approval))
+        .route("/devices/:id/sign-out", post(crate::handlers::admin::devices::sign_out_device))
+        // Liste globale des sessions actives — vue qui n'existait pas.
+        .route("/sessions",            get(crate::handlers::admin::devices::list_sessions))
+        // ── Moteur de règles d'administration ─────────────────────
+        // Mêmes précautions d'ordre que pour /audit et /alerts : les segments
+        // statiques (`catalog`, `executions`) précèdent `/:id`.
+        .route("/rules",            get(crate::handlers::admin::rules::list_rules)
+                                   .post(crate::handlers::admin::rules::create_rule))
+        .route("/rules/catalog",     get(crate::handlers::admin::rules::get_catalog))
+        .route("/rules/executions",  get(crate::handlers::admin::rules::list_executions))
+        .route("/rules/:id",         get(crate::handlers::admin::rules::get_rule)
+                                   .patch(crate::handlers::admin::rules::update_rule)
+                                  .delete(crate::handlers::admin::rules::delete_rule))
+        .route("/rules/:id/mode",   post(crate::handlers::admin::rules::set_mode))
+        .route("/rules/:id/versions", get(crate::handlers::admin::rules::list_versions))
+        .route("/rules/:id/backtest", post(crate::handlers::admin::rules::start_backtest))
+        .route("/rules/:id/backtest/:backtest_id",
+                                      get(crate::handlers::admin::rules::get_backtest))
+        // ── Détecteurs de contenu (protection des données) ────────
+        // Mêmes précautions d'ordre : `test` et `reference` précèdent `/:id`.
+        .route("/detectors",           get(crate::handlers::admin::detectors::list_detectors)
+                                      .post(crate::handlers::admin::detectors::create_detector))
+        .route("/detectors/test",     post(crate::handlers::admin::detectors::test_detector))
+        .route("/detectors/reference", get(crate::handlers::admin::detectors::lookup_reference))
+        .route("/detectors/:id",       get(crate::handlers::admin::detectors::get_detector)
+                                     .patch(crate::handlers::admin::detectors::update_detector)
+                                    .delete(crate::handlers::admin::detectors::delete_detector))
+        // ── Unités organisationnelles et groupes ──────────────────
+        .route("/org-units",     get(list_org_units).post(create_org_unit))
+        // Ce qu'une suppression détruirait, avant de la déclencher.
+        .route("/org-units/:id/impact", get(org_unit_impact))
+        .route("/org-units/:id", patch(update_org_unit).delete(delete_org_unit))
+        // Audiences cibles : les listes de destinataires proposées au partage.
+        // La politique (quelles audiences, dans quel module, pour quelle unité)
+        // a ses segments statiques AVANT `/audiences/:id`, sinon « policy »
+        // serait lu comme un identifiant.
+        .route("/audiences/policy",             get(crate::handlers::admin::audiences::get_policy)
+                                                .put(crate::handlers::admin::audiences::set_policy))
+        .route("/audiences",                    get(crate::handlers::admin::audiences::list_audiences)
+                                                .post(crate::handlers::admin::audiences::create_audience))
+        .route("/audiences/:id",                get(crate::handlers::admin::audiences::get_audience)
+                                                .patch(crate::handlers::admin::audiences::update_audience)
+                                                .delete(crate::handlers::admin::audiences::delete_audience))
+        .route("/audiences/:id/members",        post(crate::handlers::admin::audiences::add_members)
+                                                .delete(crate::handlers::admin::audiences::remove_members))
+        // Domaines : ce que l'instance affirme s'appeler, et la preuve DNS qui
+        // le rend opposable. Segments statiques d'abord, comme partout ailleurs.
+        .route("/domains",                      get(crate::handlers::admin::domains::list)
+                                               .post(crate::handlers::admin::domains::create))
+        .route("/domains/:id",                  get(crate::handlers::admin::domains::get)
+                                             .delete(crate::handlers::admin::domains::delete))
+        .route("/domains/:id/verify",          post(crate::handlers::admin::domains::verify))
+        .route("/domains/:id/mail-check",      post(crate::handlers::admin::domains::mail_check))
+        .route("/domains/:id/primary",         post(crate::handlers::admin::domains::promote))
+        // Jours fériés : le référentiel mondial, ses corrections locales et la
+        // surcouche par unité. Même précaution d'ordre que les sections
+        // voisines — `/holidays/preview`, `/holidays/reload` et
+        // `/holidays/overview` précèdent tout segment paramétré, et les
+        // journées vivent sous `/holidays/days/:id` plutôt que sous
+        // `/holidays/:id` pour ne jamais être confondues avec un calendrier.
+        .route("/holidays/overview",            get(crate::handlers::admin::holidays::overview))
+        .route("/holidays/preview",            post(crate::handlers::admin::holidays::preview))
+        .route("/holidays/reload",             post(crate::handlers::admin::holidays::reload))
+        .route("/holidays/calendars",           get(crate::handlers::admin::holidays::list_calendars)
+                                               .post(crate::handlers::admin::holidays::create_calendar))
+        .route("/holidays/calendars/:id",       get(crate::handlers::admin::holidays::calendar_detail)
+                                              .patch(crate::handlers::admin::holidays::update_calendar)
+                                             .delete(crate::handlers::admin::holidays::delete_calendar))
+        .route("/holidays/calendars/:id/holidays",   post(crate::handlers::admin::holidays::create_holiday))
+        .route("/holidays/calendars/:id/exclusions",  put(crate::handlers::admin::holidays::set_exclusions))
+        .route("/holidays/days/:id",          patch(crate::handlers::admin::holidays::update_holiday)
+                                             .delete(crate::handlers::admin::holidays::delete_holiday))
+        .route("/holidays/days/:id/enabled",  patch(crate::handlers::admin::holidays::set_holiday_enabled))
+        .route("/holidays/days/:id/reset",     post(crate::handlers::admin::holidays::reset_holiday))
+        .route("/holidays/units/:unit_id",      get(crate::handlers::admin::holidays::unit_overlay)
+                                                .put(crate::handlers::admin::holidays::set_unit_pref))
+        // Bâtiments et ressources : la partie de l'annuaire qui n'est pas des
+        // personnes. Même précaution d'ordre qu'au-dessus — `/resources/overview`
+        // précède `/resources/:id`, sinon « overview » serait lu comme un
+        // identifiant et renverrait un 400 sur une page qui existe.
+        .route("/resources/overview",           get(crate::handlers::admin::resources::overview))
+        .route("/resources",                    get(crate::handlers::admin::resources::list_resources)
+                                                .post(crate::handlers::admin::resources::create_resource))
+        .route("/resources/:id",              patch(crate::handlers::admin::resources::update_resource)
+                                                .delete(crate::handlers::admin::resources::delete_resource))
+        .route("/buildings",                    get(crate::handlers::admin::resources::list_buildings)
+                                                .post(crate::handlers::admin::resources::create_building))
+        .route("/buildings/:id",              patch(crate::handlers::admin::resources::update_building)
+                                                .delete(crate::handlers::admin::resources::delete_building))
+        .route("/resource-features",            get(crate::handlers::admin::resources::list_features)
+                                                .post(crate::handlers::admin::resources::create_feature))
+        .route("/resource-features/:id",      patch(crate::handlers::admin::resources::update_feature)
+                                                .delete(crate::handlers::admin::resources::delete_feature))
+        .route("/groups",                        get(list_groups).post(create_group))
+        .route("/groups/:id",                   get(get_group).patch(update_group).delete(delete_group))
+        .route("/groups/:id/members",           post(add_member))
+        .route("/groups/:id/members/:user_id", delete(remove_member))
+        // ── Administration déléguée : catalogue, rôles, affectations ──
+        .route("/privileges",       get(crate::handlers::admin::roles::list_privileges))
+        .route("/roles",            get(crate::handlers::admin::roles::list_roles)
+                                   .post(crate::handlers::admin::roles::create_role))
+        .route("/roles/:id",      patch(crate::handlers::admin::roles::update_role)
+                                 .delete(crate::handlers::admin::roles::delete_role))
+        .route("/role-assignments",     get(crate::handlers::admin::roles::list_assignments)
+                                       .post(crate::handlers::admin::roles::create_assignment))
+        .route("/role-assignments/:id", delete(crate::handlers::admin::roles::delete_assignment))
+        // The floor. Applied to the sub-router, so it covers every route above
+        // and every route added below it later.
+        .layer(middleware::from_fn_with_state(state.clone(), crate::authz::admin_layer));
 
     let api_v1 = Router::new()
         // ── Auth public ──────────────────────────────────────────
         .nest("/auth", auth_routes)
+        // ── Administration (garde de couche + extracteurs) ───────
+        .nest("/admin", admin_routes)
         // ── Config publique ──────────────────────────────────────
         .route("/config",                   get(public_config))
         // ── Spec OpenAPI + doc interactive (publiques) ───────────
@@ -103,11 +369,6 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/themes", get(list_themes))
         // Assets d'un thème empaqueté (CSS/JS/polices…), servis en même origine.
         .route("/themes/:id/*path", get(serve_theme_asset))
-        // ── Thèmes admin ─────────────────────────────────────────
-        .route("/admin/themes",        post(create_theme))
-        .route("/admin/themes/import", post(import_theme_zip))
-        .route("/admin/themes/:id",       delete(delete_theme))
-        .route("/admin/themes/:id/trust", patch(set_theme_trust))
         // ── Modules (public) ─────────────────────────────────────
         .route("/modules", get(list_modules))
         // Paramètres résolus d'un module pour l'utilisateur courant (authentifié).
@@ -127,8 +388,17 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/users/lookup",         get(lookup_users))
         .route("/me/sessions",          get(list_sessions).delete(revoke_all_sessions))
         .route("/me/sessions/:id",     delete(revoke_session))
+        // Mes appareils : exactement ce qu'un administrateur voit des miens.
+        // Le segment statique `declare` précède `/:id`.
+        .route("/me/devices",              get(crate::handlers::devices::list_my_devices))
+        .route("/me/devices/declare",     post(crate::handlers::devices::declare))
+        .route("/me/devices/:id",          get(crate::handlers::devices::get_my_device)
+                                        .patch(crate::handlers::devices::rename_my_device))
+        .route("/me/devices/:id/sign-out", post(crate::handlers::devices::sign_out_my_device))
+        .route("/me/devices/:id/not-me",   post(crate::handlers::devices::disown_my_device))
         // API tokens personnels
         .route("/me/api-tokens",        get(list_api_tokens).post(create_api_token))
+        .route("/me/api-tokens/scopes", get(api_token_scopes))
         .route("/me/api-tokens/:id",   delete(revoke_api_token))
         // Historique du presse-papiers (par utilisateur, tous modules confondus)
         .route("/clipboard",     get(crate::handlers::clipboard::list)
@@ -136,6 +406,13 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
                                .delete(crate::handlers::clipboard::clear))
         .route("/clipboard/:id", patch(crate::handlers::clipboard::update)
                                .delete(crate::handlers::clipboard::delete))
+        // Jours fériés et journées spéciales : information publique, lisible par
+        // tout compte authentifié. Les segments statiques précèdent tout
+        // paramètre — il n'y en a aucun ici, mais l'ordre reste celui des
+        // sections voisines.
+        .route("/holidays",             get(crate::handlers::holidays::feed))
+        .route("/holidays/applicable",  get(crate::handlers::holidays::applicable))
+        .route("/holidays/calendars",   get(crate::handlers::holidays::calendars))
         // Étiquettes transversales (labels reliant des éléments de tous les modules)
         .route("/labels",               get(list_labels).post(create_label))
         .route("/labels/browse",        get(browse_labels))
@@ -149,34 +426,15 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/me/2fa/setup",         post(setup_totp))
         .route("/me/2fa/enable",        post(enable_totp))
         .route("/me/2fa",              delete(disable_totp))
+        // Codes de secours : GET = compteurs, POST = nouveau lot (action sensible).
+        .route("/me/2fa/backup-codes",   get(crate::handlers::backup_codes::get_status)
+                                        .post(crate::handlers::backup_codes::regenerate))
+        // Vue d'ensemble sécurité du compte courant (compteurs, échéance 2FA admin).
+        .route("/me/security",           get(crate::handlers::users::security_overview))
         // Notifications push (devices + préférences)
         .route("/me/push/devices",      post(crate::handlers::push::register_device))
         .route("/me/push/devices/:id", delete(crate::handlers::push::delete_device))
         .route("/me/push/preferences",  get(crate::handlers::push::list_preferences).patch(crate::handlers::push::set_preference))
-        // ── Admin ────────────────────────────────────────────────
-        .route("/admin/users",          get(list_users).post(create_user))
-        .route("/admin/users/:id",     get(get_user).patch(update_user).delete(delete_user))
-        .route("/admin/users/:id/sessions",      get(list_user_sessions).delete(revoke_all_user_sessions))
-        .route("/admin/users/:id/sessions/:sid", delete(revoke_user_session))
-        .route("/admin/stats",          get(admin_stats))
-        .route("/admin/settings",       get(get_settings).patch(update_settings))
-        .route("/admin/oauth-providers",      get(list_oauth_providers).post(create_oauth_provider))
-        .route("/admin/oauth-providers/:id", patch(update_oauth_provider).delete(delete_oauth_provider))
-        .route("/admin/modules",        get(list_admin_modules))
-        .route("/admin/modules/:id",   get(get_admin_module).patch(toggle_module))
-        // ── Marketplace (catalogue distant + installation) ────────
-        .route("/admin/marketplace",            get(crate::handlers::admin::marketplace::list_marketplace))
-        .route("/admin/marketplace/:id/install", post(crate::handlers::admin::marketplace::install_marketplace))
-        .route("/admin/marketplace/:id/status",  get(crate::handlers::admin::marketplace::install_status))
-        .route("/admin/marketplace/:id",         delete(crate::handlers::admin::marketplace::uninstall_marketplace))
-        .route("/admin/event-log",      get(list_event_log))
-        // ── Groupes d'utilisateurs ────────────────────────────────
-        .route("/admin/org-units",     get(list_org_units).post(create_org_unit))
-        .route("/admin/org-units/:id", patch(update_org_unit).delete(delete_org_unit))
-        .route("/admin/groups",                          get(list_groups).post(create_group))
-        .route("/admin/groups/:id",                     get(get_group).patch(update_group).delete(delete_group))
-        .route("/admin/groups/:id/members",             post(add_member))
-        .route("/admin/groups/:id/members/:user_id",   delete(remove_member))
         // Coupe les requêtes REST anormalement lentes (slowloris applicatif).
         // N'est PAS appliqué à /ws ni au proxy de modules (connexions longues /
         // streaming), interceptés avant ce sous-routeur.
@@ -193,13 +451,47 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
 
     let internal = Router::new()
         .route("/modules/register",         post(register_module))
+        // A module reading back its own instance settings (identified by the
+        // internal secret, so it can only ever read its own).
+        .route("/modules/settings",         get(internal_module_settings))
         .route("/modules/:id/heartbeat",   post(module_heartbeat))
         .route("/modules/:id/unregister",  post(unregister_module))
         .route("/modules/:id/log",         post(module_log))
         .route("/events/publish",           post(publish_event))
+        // Portail de protection des données : un module demande, AVANT de
+        // valider une opération, si elle est autorisée. Interne par nature —
+        // pouvoir soumettre un texte et lire « bloqué » depuis un navigateur,
+        // c'est pouvoir cartographier la politique par dichotomie.
+        .route("/rules/gate",               post(crate::handlers::gate::gate))
         // Internal MCP gateway: the assistant module lists/executes tools
         // des modules au nom d'un utilisateur (identité via en-tête, pas de token API).
         .route("/mcp",                      post(crate::handlers::mcp::internal_mcp_endpoint))
+        // Provenance du stockage : un module déclare ce qu'il occupe pour un
+        // compte. L'identité du déclarant vient du secret interne dérivé, jamais
+        // du corps de la requête — un module ne peut déclarer que pour lui-même.
+        .route("/storage/usage",            post(crate::handlers::storage_usage::declare))
+        // Catalogue des ressources réservables, en LECTURE seule. Un module qui
+        // pourrait écrire ici serait un module qui décide du contenu de
+        // l'annuaire — c'est le travail de l'administrateur. Aucun module n'est
+        // nommé : le secret interne prouve que l'appelant est dans l'instance,
+        // et tous lisent la même réponse.
+        .route("/directory/resources",       get(crate::handlers::admin::resources::internal_list_resources))
+        // Les comptes, en LECTURE seule, pour un module qui doit rattacher un de
+        // ses objets à une personne (une boîte aux lettres à son propriétaire).
+        // Même projection que les sélecteurs de personnes ; aucun module n'est
+        // nommé, le secret interne prouve seulement que l'appelant est dans
+        // l'instance. Écrire ici est et reste impossible : c'est le core qui
+        // définit les comptes, et lui seul.
+        .route("/directory/users",           get(crate::handlers::users::internal_list_users))
+        .route("/directory/users/:id",       get(crate::handlers::users::internal_get_user))
+        // Les domaines déclarés par l'instance, en LECTURE seule, avec leur état
+        // de vérification. C'est la SEULE réponse à « ce nom est-il à nous ? » :
+        // un module qui garderait sa propre liste ferait diverger les deux (le
+        // module mail servait un domaine retiré ici, sans jamais l'apprendre).
+        // Non filtré aux vérifiés : « déclaré, en attente » et « pas déclaré »
+        // appellent des conseils opposés, et un module ne peut pas les
+        // distinguer d'une liste tronquée.
+        .route("/domains",                   get(crate::handlers::admin::domains::internal_list_domains))
         // Montages distants centralisés (le module drive proxifie vers ici).
         .route("/storage/mounts/:user_id",                  get(crate::handlers::storage_mounts::list).post(crate::handlers::storage_mounts::create))
         .route("/storage/mounts/:user_id/:id",              axum::routing::delete(crate::handlers::storage_mounts::delete))
@@ -234,34 +526,10 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .fallback(ServeFile::new(format!("{frontend_dist}/index.html")));
 
     // CSP : l'import map ESM du host est un <script type="importmap"> inline.
-    // La CSP interdit l'inline sans hash, donc on lit le sha256 émis par le build
-    // (frontend_dist/importmap.sha256) et on l'ajoute à script-src. Absent → pas
-    // de hash (dev/host sans plugins runtime) ; l'app fonctionne quand même.
-    let csp = {
-        let hash = std::fs::read_to_string(
-            std::path::Path::new(&frontend_dist).join("importmap.sha256"),
-        )
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| s.starts_with("sha256-"));
-        let script_src = match hash {
-            Some(h) => format!("script-src 'self' https://cdn.jsdelivr.net 'unsafe-eval' '{h}'"),
-            None => "script-src 'self' https://cdn.jsdelivr.net 'unsafe-eval'".to_string(),
-        };
-        format!(
-            "default-src 'self'; {script_src}; \
-             style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; \
-             img-src 'self' data: blob: https:; \
-             media-src 'self' blob:; \
-             connect-src 'self' ws: wss: blob: https: http:; \
-             worker-src 'self' blob:; \
-             font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; \
-             frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com; \
-             object-src 'none'; base-uri 'self'; form-action 'self'"
-        )
-    };
-    let csp_header = HeaderValue::from_str(&csp)
-        .expect("CSP header value invalide");
+    // Sa valeur est recalculée à chaque changement de `importmap.sha256` — voir
+    // `CspHeaderCache` pour la raison (un déploiement frontend-only ne redémarre
+    // pas le serveur).
+    let csp_cache = std::sync::Arc::new(crate::router::csp::CspHeaderCache::new(&frontend_dist));
 
     // Le middleware de proxy intercepte les requêtes vers les modules actifs
     // AVANT le routage, ce qui évite tout conflit avec les routes paramétrées.
@@ -307,7 +575,12 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         ))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("content-security-policy"),
-            csp_header,
+            // Fermeture évaluée par réponse : elle relit le hash de l'import map
+            // dès que le fichier change sur disque (cf. `CspHeaderCache`).
+            {
+                let cache = csp_cache.clone();
+                move |_: &Response<_>| Some(cache.header())
+            },
         ))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("permissions-policy"),

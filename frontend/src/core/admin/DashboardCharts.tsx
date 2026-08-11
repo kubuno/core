@@ -304,7 +304,7 @@ export function ProgressRing({
           {label && <span className="text-[11px] text-text-tertiary mt-1">{label}</span>}
         </div>
       </div>
-      {sub && <span className="text-xs text-text-secondary mt-2">{sub}</span>}
+      {sub && <span className="text-sm text-text-secondary mt-2">{sub}</span>}
     </div>
   )
 }
@@ -355,7 +355,7 @@ export function DonutChart({
         {data.map((d, i) => (
           <li
             key={i}
-            className={`flex items-center gap-2 text-xs rounded-md px-1.5 py-1 -mx-1.5 cursor-default transition-colors ${hi === i ? 'bg-surface-1' : ''}`}
+            className={`flex items-center gap-2 text-sm rounded-md px-1.5 py-1 -mx-1.5 cursor-default transition-colors ${hi === i ? 'bg-surface-1' : ''}`}
             onMouseEnter={() => setHi(i)} onMouseLeave={() => setHi(null)}
           >
             <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: d.color }} />
@@ -382,7 +382,7 @@ export function HBarList({
         const over = pct >= 90
         return (
           <li key={i} className="group">
-            <div className="flex items-center justify-between text-xs mb-1">
+            <div className="flex items-center justify-between text-sm mb-1">
               <span className="text-text-secondary truncate flex-1 mr-2 group-hover:text-text-primary transition-colors">{it.label}</span>
               <span className="text-text-tertiary tabular-nums">{it.sub}</span>
             </div>

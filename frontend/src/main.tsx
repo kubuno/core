@@ -46,7 +46,8 @@ import { useThemeStore } from './core/store/themeStore'
 import './core/i18n'
 import './core/i18n/nav'
 import './core/widgets/coreWidgets'
-import { applyUserLanguage } from './core/i18n'
+import { installDefaultMentionSource } from './core/registry/MentionRegistry'
+import { applyUserLanguage, syncInstanceLanguage } from './core/i18n'
 import App from './App'
 import './index.css'
 
@@ -72,6 +73,17 @@ window.addEventListener('unhandledrejection', (e) => {
     handleChunkError()
   }
 })
+
+// Langue d'instance : lue sur /api/v1/config (réglage public), appliquée
+// seulement si ni l'utilisateur ni son compte n'ont décidé. Lancée ici, sans
+// attente, pour que la page de connexion — servie AVANT toute authentification —
+// s'y conforme dès qu'elle a la réponse.
+void syncInstanceLanguage()
+
+// Bridge the @ui mention fields to the host provider registry ('mentions.provider').
+// Modules (contacts, mail…) register their provider; fields with no explicit
+// `providers` discover them through this source. Idempotent, side-effect free.
+installDefaultMentionSource()
 
 const queryClient = new QueryClient({
   defaultOptions: {

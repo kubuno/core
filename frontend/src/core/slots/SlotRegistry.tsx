@@ -28,6 +28,93 @@ export type SlotName =
   | 'global-services'
   | (string & Record<never, never>) // allow module-defined slot names without losing autocomplete
 
+/**
+ * Slot name of a module's own admin page — `/admin/modules/<id>`.
+ *
+ * The name CARRIES the module id rather than being one shared slot filtered at
+ * render time, for two reasons. First, the core must not know that `mail` (or
+ * anyone else) contributes an admin view: `ModuleAdminPage` builds the name from
+ * the id in the URL, so discovery stays purely dynamic and no module is ever
+ * named in core code. Second, a shared `module-admin` slot would render every
+ * contributor on every module's page unless the consumer filtered them, and a
+ * filter that is easy to forget is a leak waiting to happen — here a wrong id
+ * simply means nothing is registered under that name.
+ *
+ * A module registers with its own id on both sides:
+ *   SlotRegistry.register(moduleAdminSlot('mail'), 'mail', MailAdminPanel)
+ */
+export const moduleAdminSlot = (moduleId: string): SlotName => `module-admin:${moduleId}`
+
+/**
+ * A view a module contributes to its OWN admin page, and WHERE it belongs.
+ *
+ * ── Why the placement travels with the contribution ──────────────────────────
+ * `module-admin:<id>` alone answers "who renders something here"; it cannot
+ * answer "on which page, and under which tab", which is the only question left
+ * once a module's panel is more than one page. The module is the one that knows
+ * — it declared those pages itself, in its manifest — so it says so here, with
+ * the same vocabulary: `group` is a `[[setting_groups]]` id of that module.
+ *
+ * ── The two ways a section shows up ──────────────────────────────────────────
+ *  • WITHOUT a label — rendered inline at the top of its group's page, above
+ *    the tabs. That is for what has to be read before anything is changed: a
+ *    diagnostic, a status. It competes with nothing.
+ *  • WITH a label — a tab of its own, sitting next to the tabs the settings'
+ *    `category` produce. That is for a surface as large as a settings page and
+ *    as unrelated to it as a key store.
+ *
+ * ── Degrading, never breaking ────────────────────────────────────────────────
+ * A section naming a group the module does not declare, or naming none at all,
+ * is not dropped: it renders on the module's FIRST page. Losing a diagnostic
+ * because a manifest was renamed would be far worse than showing it one page
+ * early — and the module keeps working while its two halves are out of step.
+ */
+export interface ModuleAdminSection {
+  /** The contributing module. Its page is `/admin/modules/<moduleId>`. */
+  moduleId: string
+  /** Stable, untranslated id — unique per module. Also the tab id. */
+  id:       string
+  /** `[[setting_groups]]` id of that module. Absent = its first page. */
+  group?:   string
+  /** Already-translated tab label. Absent = inline, above the tabs. */
+  label?:   string
+  /**
+   * i18n key of the label, preferred over `label` when both are given: it is
+   * resolved at RENDER time, so the tab follows a change of language instead of
+   * keeping whatever the language was when the module registered.
+   */
+  labelKey?: string
+  /** Lucide icon name for the tab; unknown names simply show none. */
+  icon?:    string
+  /** Order among the contributed items of the same page (lower first). */
+  position?: number
+  Component: React.ComponentType
+}
+
+const moduleAdminSections: ModuleAdminSection[] = []
+
+export const ModuleAdminRegistry = {
+  /**
+   * Declares one section of the module's own admin page. Re-registering the
+   * same `moduleId` + `id` REPLACES the previous one, so a module bundle that
+   * is evaluated twice (hot reload, a remount) does not draw its panel twice.
+   */
+  register(section: ModuleAdminSection) {
+    const i = moduleAdminSections.findIndex(
+      s => s.moduleId === section.moduleId && s.id === section.id,
+    )
+    if (i >= 0) moduleAdminSections[i] = section
+    else moduleAdminSections.push(section)
+  },
+
+  /** What `moduleId` contributes, in display order. */
+  sectionsFor(moduleId: string): ModuleAdminSection[] {
+    return moduleAdminSections
+      .filter(s => s.moduleId === moduleId)
+      .sort((a, b) => (a.position ?? 100) - (b.position ?? 100))
+  },
+}
+
 interface SlotEntry {
   moduleId: string
   Component: React.ComponentType
@@ -57,6 +144,14 @@ export const SlotRegistry = {
     return registry.get(slot) ?? []
   },
 
+  /** Whether at least one ACTIVE module contributes to `slot` — the same
+   *  filtering `<Slot>` applies, exposed so a page can decide its layout BEFORE
+   *  rendering (e.g. not claiming a module has nothing to configure when it
+   *  does contribute a section of its own). */
+  hasActive(slot: SlotName, activeIds: Set<string>): boolean {
+    return (registry.get(slot) ?? []).some(e => activeIds.has(e.moduleId))
+  },
+
   // Register a component that replaces a built-in component from another module.
   // The replacement is only used when `moduleId` appears in the active modules list.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,6 +177,9 @@ export const SlotRegistry = {
     settingsRoutes.delete(moduleId)
     for (let i = notifGroups.length - 1; i >= 0; i--) {
       if (notifGroups[i].moduleId === moduleId) notifGroups.splice(i, 1)
+    }
+    for (let i = moduleAdminSections.length - 1; i >= 0; i--) {
+      if (moduleAdminSections[i].moduleId === moduleId) moduleAdminSections.splice(i, 1)
     }
   },
 }
@@ -188,6 +286,25 @@ interface SlotProps {
    * props n'en souffre pas. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [prop: string]: any
+}
+
+/** Reactive counterpart of `SlotRegistry.hasActive` — re-evaluated whenever the
+ *  active module list changes, so a page laid out around a contribution follows
+ *  a module being switched off. */
+export function useHasSlot(name: SlotName): boolean {
+  const activeModules = useModulesStore(s => s.activeModules)
+  return SlotRegistry.hasActive(name, new Set(activeModules.map(m => m.module_id)))
+}
+
+/**
+ * The sections `moduleId` contributes to its own admin page — `[]` while the
+ * module is switched off, like every other slot: a disabled module's bundle may
+ * still be loaded in this tab, and rendering its panel would say it is running.
+ */
+export function useModuleAdminSections(moduleId: string): ModuleAdminSection[] {
+  const activeModules = useModulesStore(s => s.activeModules)
+  const active = activeModules.some(m => m.module_id === moduleId)
+  return active ? ModuleAdminRegistry.sectionsFor(moduleId) : []
 }
 
 export function Slot({ name, fallback, ...ctx }: SlotProps) {

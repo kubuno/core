@@ -11,7 +11,10 @@ export const authApi = {
       | { requires_totp: true; totp_session: string }
     >('/auth/login', data),
 
-  totpVerify: (data: { code: string; totp_session: string }) =>
+  // `code` carries the time-based code, `backup_code` a single-use one. The
+  // server accepts either; sending them in distinct fields keeps the intent
+  // explicit rather than relying on the shape of the string.
+  totpVerify: (data: { code?: string; backup_code?: string; totp_session: string }) =>
     api.post<{ access_token: string; user: User }>('/auth/totp', data),
 
   logout: () =>

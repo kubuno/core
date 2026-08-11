@@ -96,15 +96,31 @@ export function Tabs<T extends string = string>({
     className,
   )
 
+  // `underline` and `stretched` share the indicator; only their layout differs.
+  const underlined = variant === 'underline' || variant === 'stretched'
+
   const btnCls = (id: T) => clsx(
     'flex items-center gap-1.5 whitespace-nowrap text-sm font-medium transition-colors',
-    size === 'sm' && 'px-3 py-1.5',
-    size === 'md' && 'px-4 py-2',
+    // The indicator is a ::before, not a bottom border, so it can have rounded top
+    // corners and sit inset from the tab's edges — a border can do neither. The
+    // 3px it no longer occupies as a border is added back as bottom padding, so
+    // the tab keeps exactly the height (and the text position) it had.
+    size === 'sm' && (underlined ? 'px-3 pt-1.5 pb-[9px]'  : 'px-3 py-1.5'),
+    size === 'md' && (underlined ? 'px-4 pt-2 pb-[11px]'   : 'px-4 py-2'),
 
     // underline / stretched share same active/inactive colors
-    (variant === 'underline' || variant === 'stretched') && '-mb-px border-b-[3px]',
-    (variant === 'underline' || variant === 'stretched') && active(id)  && 'border-primary text-primary',
-    (variant === 'underline' || variant === 'stretched') && !active(id) && 'border-transparent text-text-secondary hover:text-text-primary',
+    // No `-mb-px` here. It existed to make the old 3px BORDER overlap the container's
+    // 1px divider, but the scrollable strip is `overflow-y-hidden` and sizes itself to
+    // the tab's MARGIN box: a negative bottom margin makes the strip 1px shorter than
+    // the tab, and that missing pixel is clipped straight off the indicator — a 3px
+    // band rendering as 2. Measured.
+    underlined && `relative before:absolute before:inset-x-0 before:bottom-0 before:mx-2
+                   before:h-[3px] before:rounded-t-[3px] before:content-['']`,
+    // Hover tints the whole tab, active or not — the pointer must get an answer
+    // wherever it lands, not only on the tabs you have not selected.
+    underlined && 'justify-center hover:bg-surface-2',
+    underlined && active(id)  && 'text-primary before:bg-primary',
+    underlined && !active(id) && 'text-text-secondary hover:text-text-primary',
 
     // stretched: equal-width
     variant === 'stretched' && 'flex-1 justify-center',
@@ -163,10 +179,16 @@ export function Tabs<T extends string = string>({
           height for the horizontal scrollbar, making it taller than its tallest tab */}
       <div
         ref={scrollerRef}
-        role="tablist"
-        className="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden"
+        className="no-scrollbar min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
       >
-        {items}
+        {/* Every tab gets the width of the WIDEST one. `w-max` sizes the grid to its
+            content, and `auto-cols-fr` then splits that width into equal columns —
+            under a max-content constraint each equal track resolves to the largest
+            item's natural width. Doing it in CSS rather than by measuring in JS keeps
+            it correct when the font finishes loading or the language changes. */}
+        <div role="tablist" className="grid w-max grid-flow-col auto-cols-fr gap-1">
+          {items}
+        </div>
       </div>
       {canScroll.right && (
         <button type="button" aria-label={tr('tabs_scroll_right')} className={arrowCls} onClick={() => scrollByPage(1)}>

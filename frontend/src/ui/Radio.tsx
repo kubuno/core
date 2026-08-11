@@ -27,13 +27,16 @@ const BASE =
   'before:scale-0 before:transition-transform before:duration-100 checked:before:scale-100 ' +
   'disabled:cursor-not-allowed disabled:opacity-50'
 
+// Same fix as Checkbox: `default` follows the theme variables instead of
+// spelling the light palette out, which made the label unreadable under a dark
+// theme. `dark` stays literal — it is fixed editor chrome, not the dark theme.
 const SKIN: Record<RadioVariant, string> = {
-  default: 'border-[#dadce0] hover:border-[#5f6368]',
+  default: 'border-border hover:border-border-strong',
   dark:    'border-[#555] hover:border-[#808080]',
 }
 
 const LBL: Record<RadioVariant, { label: string; desc: string }> = {
-  default: { label: 'text-sm text-[#202124]', desc: 'text-sm text-[#5f6368]' },
+  default: { label: 'text-sm text-text-primary', desc: 'text-sm text-text-secondary' },
   dark:    { label: 'text-xs text-[#cccccc]', desc: 'text-[11px] text-[#808080]' },
 }
 

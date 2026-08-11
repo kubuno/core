@@ -224,7 +224,7 @@ pub async fn upload(
     let conn = state.remote_mounts.get_connector(id, user_id).await.map_err(remote_err)?;
     let p = path.trim_start_matches('/').to_string();
     let stream = body.into_data_stream()
-        .map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string())));
+        .map(|r| r.map_err(|e| std::io::Error::other(e.to_string())));
     let entry = conn.put_file(&p, Box::pin(stream), None).await.map_err(remote_err)?;
     Ok(Json(json!({ "ok": true, "name": entry.name, "path": entry.path })))
 }
@@ -240,7 +240,7 @@ pub async fn get_file(
     let stream = conn.get_file(&p).await.map_err(remote_err)?;
     let fname = p.rsplit('/').next().unwrap_or("fichier").to_string();
     let body = Body::from_stream(stream.map(|r| {
-        r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+        r.map_err(|e| std::io::Error::other(e.to_string()))
     }));
     Ok((
         [(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{fname}\""))],

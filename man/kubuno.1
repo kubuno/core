@@ -39,6 +39,17 @@ via
 .BR psql (1).
 Demande une confirmation interactive sauf avec
 .BR \-\-force .
+.PP
+Accepte aussi les fichiers écrits par la
+.B sauvegarde planifiée
+du serveur
+.RI ( kubuno\-core\-AAAAMMJJTHHMMSSZ.sql ,
+voir
+.B SAUVEGARDE PLANIFIÉE
+ci\-dessous) : ils sont au même format SQL, données seulement.
+Le schéma
+.I core
+doit alors être vide et les migrations déjà appliquées.
 .TP
 .B db:reset [\-\-force]
 .B ATTENTION : détruit toutes les données.
@@ -139,10 +150,60 @@ Exemple :
 ou
 .B KV__DATABASE__URL=postgres://...
 (utile pour Docker ou CI).
+.SH SAUVEGARDE PLANIFIÉE
+.PP
+La commande
+.B db:backup
+ci\-dessus est manuelle. Le serveur
+.BR kubuno-core (8)
+sait en plus
+.B planifier
+une sauvegarde, l'exécuter, en garder l'historique et alerter quand elle échoue :
+Administration
+.RI \[u2023] " Système" " \[u2023] " "Tâches de fond" .
+.PP
+Cette sauvegarde\-là n'utilise
+.B pas
+.BR pg_dump (1)
+: le serveur tourne sous un bac à sable
+.RB ( kubuno-seccomp )
+qui interdit tout lancement de processus. Le fichier est écrit directement
+depuis le pool de connexions, au même format SQL texte que
+.BR pg_dump " " \-\-data\-only\ \-\-disable\-triggers ,
+et se recharge donc avec
+.BR db:restore .
+.PP
+.B Ce qu'elle contient :
+les lignes de toutes les tables du schéma
+.I core
+et la position des séquences.
+.PP
+.B Ce qu'elle ne contient pas :
+les fichiers téléversés (Drive, Photos, pièces jointes), les schémas des modules
+installés, la structure des tables (DDL) et le fichier de configuration \[em] où
+se trouvent les secrets du serveur. Une sauvegarde complète d'une instance
+suppose donc, en plus, une copie de
+.I /var/lib/kubuno
+et de
+.IR /etc/kubuno .
+.PP
+Destination par défaut :
+.IR /var/backups/kubuno ,
+en mode 0700 (le fichier contient les empreintes des mots de passe de tous les
+comptes). Une destination
+.B hors
+de la liste
+.B ReadWritePaths
+de l'unité systemd échoue avec « Read\-only file system » : ajoutez\-la à l'unité
+avant de la choisir.
 .SH FICHIERS
 .TP
 .I /etc/kubuno/config.toml
 Fichier de configuration de l'instance installée.
+.TP
+.I /var/backups/kubuno/
+Destination par défaut des sauvegardes planifiées
+.RI ( kubuno\-core\-AAAAMMJJTHHMMSSZ.sql ).
 .TP
 .I /etc/kubuno/config.toml.example
 Modèle de configuration commenté.

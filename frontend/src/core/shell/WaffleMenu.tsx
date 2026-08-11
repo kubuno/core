@@ -7,6 +7,9 @@ import type { WaffleApp } from '../registry/WaffleAppRegistry'
 import { appNavMemory } from '../store/appNavMemory'
 import { Button } from '@ui'
 import { useAuthStore } from '../store/authStore'
+import { usePrivileges } from '../authz/usePrivileges'
+import { adminUrl } from '../admin/adminAction'
+import { PRIV } from '../authz/types'
 import { api } from '../api/client'
 import type { User } from '../types'
 
@@ -44,6 +47,7 @@ export default function WaffleMenu({ allApps, compact = false, dark = false, fab
   const { t }      = useTranslation()
   const user       = useAuthStore(s => s.user)
   const updateUser = useAuthStore(s => s.updateUser)
+  const { can }    = usePrivileges()
 
   const [open, setOpen]       = useState(false)
   const [editing, setEditing] = useState(false)
@@ -544,14 +548,15 @@ export default function WaffleMenu({ allApps, compact = false, dark = false, fab
             </div>
 
             {/* ── Marketplace ────────────────────────────────────────────────
-                Pied de panneau, après tous les modules. Réservé aux admins :
-                installer un module passe par l'espace d'administration, un autre
-                rôle ne récolterait qu'un refus. Masqué en mode modification, où
-                le panneau sert au glisser-déposer. */}
-            {!editing && user?.role === 'admin' && (
+                Pied de panneau, après tous les modules. Le lien mène à l'onglet
+                « place de marché » de l'administration : on l'affiche exactement
+                à qui détient le privilège correspondant, sinon il ne mène qu'à un
+                refus. Masqué en mode modification, où le panneau sert au
+                glisser-déposer. */}
+            {!editing && can(PRIV.MARKETPLACE_MANAGE) && (
               <DropdownMenu.Item asChild>
                 <Link
-                  to="/admin?tab=marketplace"
+                  to={adminUrl({ tab: 'marketplace' })}
                   className="mx-5 mt-3 mb-4 flex items-center justify-center rounded-full
                              border border-border px-4 py-2.5 text-center text-xs text-primary
                              hover:bg-black/[0.04] transition-colors outline-none"

@@ -20,8 +20,12 @@ pub async fn push_worker(bus: Arc<EventBus>, db: PgPool) {
     let mut rx = bus.subscribe();
     loop {
         match rx.recv().await {
-            Ok(event) => {
-                if let Some(notif) = mapping::event_to_push(&event) {
+            Ok(envelope) => {
+                // Server-side facts (the audit bridge) are never notifications.
+                if envelope.meta.internal {
+                    continue;
+                }
+                if let Some(notif) = mapping::event_to_push(&envelope.event) {
                     deliver(&client, &db, &unifiedpush, &notif).await;
                 }
             }

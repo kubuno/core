@@ -5,6 +5,9 @@
  * non supportées. Calqué visuellement sur « Mon Drive » (barre de sélection, tri/
  * type/affichage, dossiers/fichiers, multi-sélection, marquee, glisser-déposer,
  * menu contextuel). Cf. [[project_storage_explorer_generalized]].
+ *
+ * Ce fichier est le POINT D'ENTRÉE qui compose ; les unités (vues, lignes,
+ * cartes, menus, hooks d'état) vivent dans `./storage-explorer/`.
  */
 import React from 'react';
 import { type FileItem } from './api';

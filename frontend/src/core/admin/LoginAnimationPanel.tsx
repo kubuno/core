@@ -61,7 +61,7 @@ export default function LoginAnimationPanel() {
         style={{ aspectRatio: '16/8', background: 'linear-gradient(160deg, #08174d 0%, #03091a 100%)' }}
       >
         <LoginAnimationGL />
-        <span className="absolute top-3 left-3 text-xs text-white/50 select-none z-10">
+        <span className="absolute top-3 left-3 text-sm text-white/50 select-none z-10">
           Aperçu — page de connexion
         </span>
       </div>
@@ -69,7 +69,7 @@ export default function LoginAnimationPanel() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 mb-4">
         {ANIM_SLIDERS.map((s) => (
           <label key={s.key} className="block">
-            <span className="flex justify-between text-xs text-text-secondary mb-1">
+            <span className="flex justify-between text-sm text-text-secondary mb-1">
               <span>{s.label}</span>
               <span className="tabular-nums font-mono">
                 {params[s.key].toFixed(s.step < 0.01 ? 4 : 2)}

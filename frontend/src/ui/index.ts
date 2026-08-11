@@ -40,6 +40,14 @@ import { ColorPicker as BaseColorPicker } from './ColorPicker'
 import { ColorField as BaseColorField } from './ColorField'
 import { ColorSwatchPicker as BaseColorSwatchPicker } from './ColorSwatchPicker'
 import { GradientPicker as BaseGradientPicker, GradientField as BaseGradientField } from './GradientPicker'
+import { Card as BaseCard } from './Card'
+import { EmptyState as BaseEmptyState } from './EmptyState'
+import { Callout as BaseCallout } from './Callout'
+import { BreadcrumbBase } from './Breadcrumb'
+import { ProgressBar as BaseProgressBar } from './ProgressBar'
+import { Combobox as BaseCombobox } from './Combobox'
+import { Stepper as BaseStepper } from './Stepper'
+import { DataTable as BaseDataTable } from './DataTable'
 import { AnchoredPopover as BaseAnchoredPopover } from './AnchoredPopover'
 import { FloatingWindow as BaseFloatingWindow } from './FloatingWindow'
 import { ResizeHandle as BaseResizeHandle } from './ResizeHandle'
@@ -80,6 +88,18 @@ export const ColorField = t('ui.ColorField', BaseColorField)
 export const ColorSwatchPicker = t('ui.ColorSwatchPicker', BaseColorSwatchPicker)
 export const GradientPicker = t('ui.GradientPicker', BaseGradientPicker)
 export const GradientField = t('ui.GradientField', BaseGradientField)
+export const Card = t('ui.Card', BaseCard)
+export const EmptyState = t('ui.EmptyState', BaseEmptyState)
+export const Callout = t('ui.Callout', BaseCallout)
+// One trail for the whole product: the console and the file explorer render this.
+export const Breadcrumb = t('ui.Breadcrumb', BreadcrumbBase)
+export const ProgressBar = t('ui.ProgressBar', BaseProgressBar)
+export const Combobox = t('ui.Combobox', BaseCombobox)
+export const Stepper = t('ui.Stepper', BaseStepper)
+// `DataTable` is generic (<T>): cast back to its original type so the type
+// parameter survives the themeable wrapper (which forwards props untouched),
+// exactly as `Tabs` does above.
+export const DataTable = t('ui.DataTable', BaseDataTable as ComponentType<unknown>) as unknown as typeof BaseDataTable
 export const AnchoredPopover = t('ui.AnchoredPopover', BaseAnchoredPopover)
 export const FloatingWindow = t('ui.FloatingWindow', BaseFloatingWindow)
 export const ResizeHandle = t('ui.ResizeHandle', BaseResizeHandle)
@@ -122,3 +142,47 @@ export type { Gradient, GradientStop } from './gradient'
 export { isCoarsePointer, openable, useLongPress, useIsMobile, useIsLandscape, MOBILE_MAX_WIDTH } from './interaction'
 export { useSaveShortcut } from './useSaveShortcut'
 export { MobileSheet, MobileSheetItem, MobileSheetSeparator } from './MobileSheet'
+
+// ── Admin/data primitives (Card, EmptyState, Callout, ProgressBar, Combobox,
+//    Stepper, Toast, DataTable) — types, hooks and helpers. The components
+//    themselves are exported as themeable wrappers above. ──
+export type { CardProps } from './Card'
+export type { EmptyStateProps, EmptyStateVariant, EmptyStateAction } from './EmptyState'
+export type { CalloutProps, CalloutVariant } from './Callout'
+export type { BreadcrumbProps, Crumb } from './Breadcrumb'
+export type { ProgressBarProps, ProgressVariant } from './ProgressBar'
+export type { ComboboxProps, ComboboxOption } from './Combobox'
+export { useStepper } from './Stepper'
+export type { StepperProps, StepDef, StepStatus, UseStepperResult } from './Stepper'
+// Toast is a provider + hook pair, not a themeable leaf component.
+export { ToastProvider, useToast } from './Toast'
+export type { ToastApi, ToastOptions, ToastVariant, ToastProviderProps } from './Toast'
+export { DataTableSkeleton, Pagination } from './DataTable'
+export type {
+  DataTableProps, DataTableColumn, DataTableSort, DataTableBulkAction,
+  DataTableRowAction, SortDirection, SortableValue, PaginationProps,
+} from './DataTable'
+// Text folding used by the Combobox filter — reusable by any module that needs
+// accent-insensitive local search.
+export { foldText, foldIncludes, uiT, UI_FALLBACK } from './uiText'
+
+// ── @mention infrastructure (opt-in on Input / Textarea / RichText) ──
+// Contract types (also re-exported by `@kubuno/sdk` alongside the extension
+// point), the headless engine, the dropdown, and the chip helpers.
+export type { MentionItem, MentionProvider, MentionsConfig, MentionMatch } from './mention/types'
+export { setMentionProviderSource, defaultMentionProviders } from './mention/providerSource'
+export { useMentionAutocomplete } from './mention/useMentionAutocomplete'
+export type { UseMentionAutocompleteOptions, MentionCaretContext } from './mention/useMentionAutocomplete'
+export { useContentEditableMention } from './mention/useContentEditableMention'
+export { MentionList } from './mention/MentionList'
+export type { MentionListProps } from './mention/MentionList'
+export { MentionInput } from './mention/MentionInput'
+export type { MentionInputProps, MentionModel } from './mention/MentionInput'
+export { MentionEditable } from './mention/MentionEditable'
+export type { MentionEditableProps } from './mention/MentionEditable'
+export { detectMention, highlightMatch } from './mention/foldHighlight'
+export type { HighlightSegment } from './mention/foldHighlight'
+export {
+  ensureMentionStyles, buildMentionChipHtml, replaceMentionQueryWithChip,
+  bindMentionChipRemoval, serializeMentions, MENTION_REMOVE_ATTR,
+} from './mention/mentionChip'

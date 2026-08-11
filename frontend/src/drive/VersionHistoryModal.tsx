@@ -63,6 +63,17 @@ export default function VersionHistoryModal({ file, onClose }: Props) {
       defaultHeight={560}
       resizable
       backdrop
+      t={t}
+      actions={{
+        extra: (
+          <p className="text-xs text-text-tertiary">
+            {t('version.count', { count: versions.length })}
+          </p>
+        ),
+        // No button here before, and none added: the × in the title bar is this
+        // window's only way out.
+        cancel: false,
+      }}
     >
       <div className="flex flex-col min-h-0 flex-1">
         {/* Créer un snapshot */}
@@ -113,13 +124,6 @@ export default function VersionHistoryModal({ file, onClose }: Props) {
               isDeleting={deleteMut.isPending}
             />
           ))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-border flex-shrink-0">
-          <p className="text-xs text-text-tertiary">
-            {t('version.count', { count: versions.length })}
-          </p>
         </div>
       </div>
     </FloatingWindow>

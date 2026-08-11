@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import { clsx } from 'clsx'
+import { easeStandard } from './easing'
 import { TOGGLE_GEOMETRY, paintToggle, readTogglePalette } from './toggleCanvas'
 
 interface ToggleProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
@@ -41,8 +42,10 @@ export function Toggle({ label, description, size = 'md', className, id, ...prop
     const start = performance.now()
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / DURATION)
-      // Smoothstep — visually indistinguishable from cubic-bezier(.4, 0, .2, 1).
-      progress.current = from + (target - from) * (t * t * (3 - 2 * t))
+      /* The same curve as the CSS transition this replaces. It must be sampled, not
+       * approximated: a symmetric ease-in-out barely moves over the first third of such
+       * a short animation, which reads as the switch lagging behind the click. */
+      progress.current = from + (target - from) * easeStandard(t)
       draw()
       if (t < 1) raf.current = requestAnimationFrame(step)
     }

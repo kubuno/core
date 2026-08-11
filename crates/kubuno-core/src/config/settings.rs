@@ -1,3 +1,4 @@
+use crate::auth::internal_secret::{authenticate, derive_module_secret, InternalCaller};
 use anyhow::Context;
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
@@ -51,9 +52,120 @@ pub struct ServerSettings {
     /// Ajoute l'attribut Secure aux cookies (activer en production HTTPS).
     #[serde(default)]
     pub secure_cookies:  bool,
+    /// Plages CIDR (IPv4 et IPv6) des mandataires inverses autorisés à définir
+    /// `X-Forwarded-For` / `X-Real-IP`. Toute requête provenant d'une autre
+    /// adresse voit ces en-têtes IGNORÉS : l'adresse de la socket fait foi.
+    ///
+    /// Sans ce filtre, n'importe quel client peut faire varier l'en-tête à
+    /// chaque requête et contourner la limitation de débit et la protection
+    /// anti-déni de service.
+    ///
+    /// Défaut : bouclage et plages privées (127.0.0.0/8, ::1/128, 10.0.0.0/8,
+    /// 172.16.0.0/12, 192.168.0.0/16, fc00::/7) — voir
+    /// [`crate::auth::client_ip::DEFAULT_TRUSTED_PROXY_CIDRS`]. Un mandataire
+    /// atteignant le core depuis une adresse PUBLIQUE (tunnel VPN, répartiteur
+    /// de charge distant) doit être déclaré explicitement ici.
+    #[serde(default = "default_trusted_proxy_cidrs")]
+    pub trusted_proxy_cidrs: Vec<String>,
+    /// Distribue à chaque module supervisé un secret interne **dérivé** de
+    /// `internal_secret` (voir [`crate::auth::internal_secret`]) au lieu du
+    /// secret maître. Le core sait alors quel module l'appelle ; un module
+    /// compromis ne peut plus se faire passer pour un autre auprès du core.
+    ///
+    /// Les modules n'ont rien à changer : ils lisent toujours
+    /// `KUBUNO_INTERNAL_SECRET` et le présentent tel quel.
+    ///
+    /// ⚠️ Défaut `false` : certains modules s'appellent **directement** entre eux
+    /// (client `kubuno-drive` → `http://127.0.0.1:3101/ipc/*`) et comparent le
+    /// secret reçu à leur propre secret. Deux modules dotés de secrets distincts
+    /// ne peuvent donc plus dialoguer en direct. Activer ce réglage suppose
+    /// d'exempter ce groupe via `shared_secret_modules`, ou que les modules
+    /// concernés délèguent la validation au core.
+    #[serde(default)]
+    pub derive_module_secrets: bool,
+    /// Modules conservant le secret **maître** lorsque `derive_module_secrets`
+    /// est actif. Nécessaire pour le groupe de modules qui s'appellent
+    /// directement (IPC de pair à pair), le récepteur exigeant l'égalité stricte
+    /// des secrets. Aucun identifiant n'est codé en dur dans le core.
+    #[serde(default)]
+    pub shared_secret_modules: Vec<String>,
+    /// Durcissement : refuse le secret **maître** sur `/internal/*` et sur le
+    /// chemin d'authentification interne du proxy — seuls les secrets dérivés
+    /// sont alors acceptés. À n'activer qu'une fois tous les modules supervisés
+    /// par le core (un module lancé à la main avec le secret maître, en
+    /// développement, serait rejeté).
+    #[serde(default)]
+    pub reject_master_internal_secret: bool,
     /// Terminaison TLS native (HTTPS) dans le core. Voir [`TlsSettings`].
     #[serde(default)]
     pub tls:             TlsSettings,
+}
+
+fn default_trusted_proxy_cidrs() -> Vec<String> {
+    crate::auth::client_ip::DEFAULT_TRUSTED_PROXY_CIDRS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
+}
+
+/// Longueur minimale de `server.internal_secret`, en octets. 32 octets est le
+/// plancher pour un secret devant résister à une recherche hors ligne ;
+/// `openssl rand -hex 32` en produit 64.
+const MIN_INTERNAL_SECRET_LEN: usize = 32;
+
+impl ServerSettings {
+    /// Valide le secret partagé qui protège `/internal/*`. Un secret vide rend
+    /// ces routes accessibles à toute requête envoyant un en-tête
+    /// `X-Internal-Secret` vide.
+    ///
+    /// La valeur n'est JAMAIS incluse dans le message d'erreur ni journalisée.
+    fn validate_internal_secret(&self) -> Result<(), String> {
+        let len = self.internal_secret.trim().len();
+        if len == 0 {
+            return Err(
+                "server.internal_secret est vide : les routes /internal/* accepteraient alors \
+                 toute requête portant un en-tête X-Internal-Secret vide. Renseignez-le dans \
+                 /etc/kubuno/config.toml (section [server]) ou via KV__SERVER__INTERNAL_SECRET. \
+                 Générez une valeur avec : openssl rand -hex 32"
+                    .into(),
+            );
+        }
+        if len < MIN_INTERNAL_SECRET_LEN {
+            return Err(format!(
+                "server.internal_secret trop court ({len} octets) : {MIN_INTERNAL_SECRET_LEN} \
+                 octets minimum. Régénérez-le avec : openssl rand -hex 32 \
+                 (et reportez la même valeur dans les modules non supervisés par le core)"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Secret interne remis au module `module_id` au démarrage — et donc celui
+    /// que le core doit lui présenter quand il l'appelle (le module compare le
+    /// `X-Internal-Secret` reçu à sa propre valeur).
+    ///
+    /// La valeur retournée ne doit jamais être journalisée.
+    pub fn module_secret(&self, module_id: &str) -> String {
+        let exempt = self
+            .shared_secret_modules
+            .iter()
+            .any(|m| m.trim() == module_id);
+        if self.derive_module_secrets && !exempt {
+            derive_module_secret(&self.internal_secret, module_id)
+        } else {
+            self.internal_secret.clone()
+        }
+    }
+
+    /// Authentifie un `X-Internal-Secret` présenté au core et identifie son
+    /// émetteur. `None` = secret invalide (la requête doit être refusée).
+    pub fn authenticate_internal(&self, presented: &str) -> Option<InternalCaller> {
+        authenticate(
+            &self.internal_secret,
+            presented,
+            !self.reject_master_internal_secret,
+        )
+    }
 }
 
 fn default_wasm_dir() -> String {
@@ -259,6 +371,10 @@ impl Settings {
             .set_default("server.themes_dir", "/var/lib/kubuno/themes")?
             .set_default("server.cors_origins", Vec::<String>::new())?
             .set_default("server.secure_cookies", false)?
+            .set_default("server.trusted_proxy_cidrs", default_trusted_proxy_cidrs())?
+            .set_default("server.derive_module_secrets", false)?
+            .set_default("server.shared_secret_modules", Vec::<String>::new())?
+            .set_default("server.reject_master_internal_secret", false)?
             .set_default("server.tls.enabled", false)?
             .set_default("server.tls.cert_path", "")?
             .set_default("server.tls.key_path", "")?
@@ -284,10 +400,15 @@ impl Settings {
             .add_source(File::with_name("/etc/kubuno/config").required(false))
             // 3. Variables d'environnement KV__ (Docker / surcharge ponctuelle)
             //    Exemple : KV__DATABASE__URL=postgres://...
+            //    Les réglages de type liste se donnent séparés par des virgules :
+            //    KV__SERVER__TRUSTED_PROXY_CIDRS=127.0.0.0/8,10.0.0.0/8
             .add_source(
                 Environment::with_prefix("KV")
                     .separator("__")
-                    .try_parsing(true),
+                    .try_parsing(true)
+                    .list_separator(",")
+                    .with_list_parse_key("server.trusted_proxy_cidrs")
+                    .with_list_parse_key("server.shared_secret_modules"),
             )
             .build()?;
 
@@ -295,6 +416,8 @@ impl Settings {
         settings.database.validate()
             .map_err(ConfigError::Message)?;
         settings.server.tls.validate()
+            .map_err(ConfigError::Message)?;
+        settings.server.validate_internal_secret()
             .map_err(ConfigError::Message)?;
         Ok(settings)
     }
@@ -305,12 +428,17 @@ mod tests {
     use super::*;
     use config::Config;
 
+    /// 64 hex characters, i.e. what `openssl rand -hex 32` produces — the tests
+    /// must use a value that passes `validate_internal_secret()`.
+    const TEST_INTERNAL_SECRET: &str =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     fn minimal_config() -> Config {
         Config::builder()
             .set_default("server.host", "127.0.0.1").unwrap()
             .set_default("server.port", 8080u16).unwrap()
             .set_default("server.frontend_dist", "./frontend/dist").unwrap()
-            .set_default("server.internal_secret", "test_secret").unwrap()
+            .set_default("server.internal_secret", TEST_INTERNAL_SECRET).unwrap()
             .set_default("server.modules_dir", "/usr/lib/kubuno/modules").unwrap()
             .set_default("server.themes_dir", "/var/lib/kubuno/themes").unwrap()
             .set_default("database.url", "postgres://test@localhost/test").unwrap()
@@ -352,7 +480,7 @@ mod tests {
             .set_default("server.host", "127.0.0.1").unwrap()
             .set_default("server.port", 8080u16).unwrap()
             .set_default("server.frontend_dist", "./frontend/dist").unwrap()
-            .set_default("server.internal_secret", "secret").unwrap()
+            .set_default("server.internal_secret", TEST_INTERNAL_SECRET).unwrap()
             .set_default("server.modules_dir", "/usr/lib/kubuno/modules").unwrap()
             .set_default("server.themes_dir", "/var/lib/kubuno/themes").unwrap()
             // ni url ni user/database — tous absents
@@ -404,7 +532,7 @@ mod tests {
             .set_default("server.host", "0.0.0.0").unwrap()
             .set_default("server.port", 8080u16).unwrap()
             .set_default("server.frontend_dist", "./frontend/dist").unwrap()
-            .set_default("server.internal_secret", "secret").unwrap()
+            .set_default("server.internal_secret", TEST_INTERNAL_SECRET).unwrap()
             .set_default("server.modules_dir", "/usr/lib/kubuno/modules").unwrap()
             .set_default("server.themes_dir", "/var/lib/kubuno/themes").unwrap()
             .set_default("database.url", "postgres://test@localhost/test").unwrap()
@@ -437,17 +565,142 @@ mod tests {
             std::env::set_var("KV__AUTH__JWT_SECRET", "my_test_secret_value");
             std::env::set_var("KV__DATABASE__URL", "postgres://env@localhost/testdb");
             std::env::set_var("KV__STORAGE__LOCAL_PATH", "/tmp/kubuno_test");
+            // Settings::load() refuse désormais un secret interne trop court :
+            // on en fournit un valide (et on neutralise le config.toml système).
+            std::env::set_var("KV__SERVER__INTERNAL_SECRET", TEST_INTERNAL_SECRET);
+            std::env::set_var("KV__SERVER__TRUSTED_PROXY_CIDRS", "127.0.0.0/8,10.0.0.0/8");
         }
         let result = Settings::load();
         unsafe {
             std::env::remove_var("KV__AUTH__JWT_SECRET");
             std::env::remove_var("KV__DATABASE__URL");
             std::env::remove_var("KV__STORAGE__LOCAL_PATH");
+            std::env::remove_var("KV__SERVER__INTERNAL_SECRET");
+            std::env::remove_var("KV__SERVER__TRUSTED_PROXY_CIDRS");
         }
         let settings = result.expect("Settings::load() doit réussir avec KV__ env vars");
         assert_eq!(settings.auth.jwt_secret, "my_test_secret_value");
         assert_eq!(settings.database.url.as_deref(), Some("postgres://env@localhost/testdb"));
         assert_eq!(settings.storage.local_path.as_deref(), Some("/tmp/kubuno_test"));
+        // Une liste passée par variable d'environnement est bien découpée sur ','
+        assert_eq!(
+            settings.server.trusted_proxy_cidrs,
+            vec!["127.0.0.0/8".to_string(), "10.0.0.0/8".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_trusted_proxy_cidrs_default_is_loopback_and_private() {
+        let settings: Settings = minimal_config().try_deserialize().unwrap();
+        assert_eq!(
+            settings.server.trusted_proxy_cidrs,
+            crate::auth::client_ip::DEFAULT_TRUSTED_PROXY_CIDRS
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_internal_secret_empty_is_rejected() {
+        let mut settings: Settings = minimal_config().try_deserialize().unwrap();
+        settings.server.internal_secret = String::new();
+        let err = settings.server.validate_internal_secret()
+            .expect_err("un secret interne vide doit être refusé");
+        assert!(err.contains("internal_secret"), "message inattendu : {err}");
+        assert!(err.contains("openssl rand"), "le message doit expliquer comment en générer un : {err}");
+    }
+
+    #[test]
+    fn test_internal_secret_whitespace_only_is_rejected() {
+        let mut settings: Settings = minimal_config().try_deserialize().unwrap();
+        settings.server.internal_secret = "     ".to_string();
+        assert!(settings.server.validate_internal_secret().is_err());
+    }
+
+    #[test]
+    fn test_internal_secret_too_short_is_rejected() {
+        let mut settings: Settings = minimal_config().try_deserialize().unwrap();
+        settings.server.internal_secret = "test_secret".to_string();
+        let err = settings.server.validate_internal_secret()
+            .expect_err("un secret interne de 11 octets doit être refusé");
+        // Le message donne la longueur mais JAMAIS la valeur.
+        assert!(err.contains("11 octets"), "message inattendu : {err}");
+        assert!(!err.contains("test_secret"), "le secret ne doit jamais apparaître : {err}");
+    }
+
+    #[test]
+    fn test_internal_secret_at_minimum_length_is_accepted() {
+        let mut settings: Settings = minimal_config().try_deserialize().unwrap();
+        settings.server.internal_secret = "a".repeat(MIN_INTERNAL_SECRET_LEN);
+        assert!(settings.server.validate_internal_secret().is_ok());
+    }
+
+    #[test]
+    fn test_internal_secret_valid_is_accepted() {
+        let settings: Settings = minimal_config().try_deserialize().unwrap();
+        assert!(settings.server.validate_internal_secret().is_ok());
+    }
+
+    /// Défaut : compatibilité stricte — chaque module reçoit le secret maître.
+    #[test]
+    fn test_module_secret_defaults_to_the_master_secret() {
+        let settings: Settings = minimal_config().try_deserialize().unwrap();
+        assert!(!settings.server.derive_module_secrets);
+        assert_eq!(settings.server.module_secret("drive"), TEST_INTERNAL_SECRET);
+    }
+
+    #[test]
+    fn test_derived_mode_gives_each_module_its_own_secret() {
+        let mut settings: Settings = minimal_config().try_deserialize().unwrap();
+        settings.server.derive_module_secrets = true;
+
+        let drive  = settings.server.module_secret("drive");
+        let office = settings.server.module_secret("office");
+        assert_ne!(drive, office);
+        assert_ne!(drive, TEST_INTERNAL_SECRET);
+
+        // Le core identifie l'émetteur de chaque secret.
+        assert_eq!(
+            settings.server.authenticate_internal(&drive).and_then(|c| c.module_id().map(str::to_owned)),
+            Some("drive".to_owned())
+        );
+        assert_eq!(
+            settings.server.authenticate_internal(&office).and_then(|c| c.module_id().map(str::to_owned)),
+            Some("office".to_owned())
+        );
+        // Le secret maître reste accepté, sans identification.
+        assert_eq!(
+            settings.server.authenticate_internal(TEST_INTERNAL_SECRET),
+            Some(InternalCaller::Master)
+        );
+        // Une valeur quelconque est refusée.
+        assert_eq!(settings.server.authenticate_internal("nope"), None);
+    }
+
+    #[test]
+    fn test_shared_secret_modules_are_exempt_from_derivation() {
+        let mut settings: Settings = minimal_config().try_deserialize().unwrap();
+        settings.server.derive_module_secrets = true;
+        settings.server.shared_secret_modules = vec!["drive".into(), "office".into()];
+
+        assert_eq!(settings.server.module_secret("drive"), TEST_INTERNAL_SECRET);
+        assert_eq!(settings.server.module_secret("office"), TEST_INTERNAL_SECRET);
+        assert_ne!(settings.server.module_secret("calendar"), TEST_INTERNAL_SECRET);
+    }
+
+    #[test]
+    fn test_strict_mode_rejects_the_master_secret() {
+        let mut settings: Settings = minimal_config().try_deserialize().unwrap();
+        settings.server.derive_module_secrets = true;
+        settings.server.reject_master_internal_secret = true;
+
+        assert_eq!(settings.server.authenticate_internal(TEST_INTERNAL_SECRET), None);
+        let mail = settings.server.module_secret("mail");
+        assert_eq!(
+            settings.server.authenticate_internal(&mail),
+            Some(InternalCaller::Module("mail".into()))
+        );
     }
 }
 

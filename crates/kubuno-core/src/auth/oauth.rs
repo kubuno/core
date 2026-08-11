@@ -188,6 +188,11 @@ pub struct OidcUserInfo {
     #[serde(default)]
     pub nickname:           Option<String>,
     pub name:               Option<String>,
+    /// Everything the provider actually returned, kept so the configurable
+    /// claim mapping below can reach names this struct does not know about.
+    /// Skipped by serde and filled in by [`oidc_userinfo`].
+    #[serde(skip)]
+    pub raw:                serde_json::Value,
 }
 
 pub async fn oidc_userinfo(
@@ -207,7 +212,137 @@ pub async fn oidc_userinfo(
         return Err(anyhow::anyhow!("OIDC userinfo endpoint: {body}"));
     }
 
-    resp.json::<OidcUserInfo>()
+    // Parsed once as a generic document, then narrowed. The document is kept:
+    // the standard fields cover the common case, the configurable mapping needs
+    // whatever else the provider chose to send.
+    let raw: serde_json::Value = resp
+        .json()
         .await
-        .context("Réponse userinfo OIDC invalide")
+        .context("Réponse userinfo OIDC invalide")?;
+    let mut info: OidcUserInfo =
+        serde_json::from_value(raw.clone()).context("Profil OIDC sans `sub` exploitable")?;
+    info.raw = raw;
+    Ok(info)
+}
+
+// ── Claim mapping ─────────────────────────────────────────────────────────────
+//
+// The four names below used to be compiled in, which meant they were right for
+// whoever wrote them and wrong for Okta (`login`), for an Azure tenant (`upn`)
+// and for every provider whose author picked their own. They are configuration
+// now, with the OpenID Connect standard names as the defaults.
+
+/// Which claim feeds which of our fields. Names may be **dotted paths**:
+/// `resource_access.kubuno.roles` is what a Keycloak client-role list actually
+/// looks like, and a mapping that could not express it would be a mapping in
+/// name only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimMap {
+    pub username:     String,
+    pub email:        String,
+    pub display_name: String,
+    pub groups:       String,
+}
+
+impl Default for ClaimMap {
+    fn default() -> Self {
+        Self {
+            username:     "preferred_username".into(),
+            email:        "email".into(),
+            display_name: "name".into(),
+            groups:       "groups".into(),
+        }
+    }
+}
+
+/// Walks a dotted path through a JSON document.
+fn claim_at<'a>(doc: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    if path.trim().is_empty() {
+        return None;
+    }
+    let mut cursor = doc;
+    for segment in path.split('.') {
+        cursor = cursor.get(segment)?;
+    }
+    Some(cursor)
+}
+
+/// A single string claim. Numbers and booleans are rendered rather than
+/// refused: a provider that sends an employee number as an integer is not
+/// wrong, and "the claim is missing" would be the wrong diagnosis.
+pub fn claim_string(doc: &serde_json::Value, path: &str) -> Option<String> {
+    match claim_at(doc, path)? {
+        serde_json::Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+/// A list-valued claim. Accepts an array of strings, and a single string —
+/// several providers send one group as a bare string rather than a one-element
+/// array, and treating that as "no groups" loses exactly the people who belong
+/// to one.
+pub fn claim_list(doc: &serde_json::Value, path: &str) -> Vec<String> {
+    match claim_at(doc, path) {
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+        Some(serde_json::Value::String(s)) if !s.trim().is_empty() => vec![s.trim().to_string()],
+        _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_dotted_path_reaches_a_nested_claim() {
+        // What a Keycloak client-role list really looks like.
+        let doc = json!({
+            "sub": "1",
+            "resource_access": { "kubuno": { "roles": ["ventes", "support"] } }
+        });
+        assert_eq!(
+            claim_list(&doc, "resource_access.kubuno.roles"),
+            vec!["ventes".to_string(), "support".to_string()]
+        );
+        assert!(claim_list(&doc, "resource_access.autre.roles").is_empty());
+    }
+
+    #[test]
+    fn a_single_group_sent_as_a_bare_string_is_not_lost() {
+        let doc = json!({ "groups": "ventes" });
+        assert_eq!(claim_list(&doc, "groups"), vec!["ventes".to_string()]);
+    }
+
+    #[test]
+    fn a_claim_that_is_not_text_is_rendered_rather_than_dropped() {
+        let doc = json!({ "employee_number": 4213, "active": true, "nothing": null });
+        assert_eq!(claim_string(&doc, "employee_number").as_deref(), Some("4213"));
+        assert_eq!(claim_string(&doc, "active").as_deref(), Some("true"));
+        assert_eq!(claim_string(&doc, "nothing"), None);
+        assert_eq!(claim_string(&doc, "absent"), None);
+    }
+
+    #[test]
+    fn an_empty_mapping_matches_nothing() {
+        let doc = json!({ "": "surprise", "groups": ["a"] });
+        assert_eq!(claim_string(&doc, ""), None);
+        assert!(claim_list(&doc, "").is_empty());
+    }
+
+    #[test]
+    fn the_defaults_are_the_standard_names() {
+        let m = ClaimMap::default();
+        assert_eq!(m.username, "preferred_username");
+        assert_eq!(m.email, "email");
+        assert_eq!(m.display_name, "name");
+    }
 }

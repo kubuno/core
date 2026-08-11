@@ -87,14 +87,24 @@ pub async fn event_to_ws_worker(bus: Arc<EventBus>, hub: Arc<WsHub>) {
     let mut rx = bus.subscribe();
     loop {
         match rx.recv().await {
-            Ok(event) => {
-                if let Ok(payload) = serde_json::to_value(&event) {
+            Ok(envelope) => {
+                // Facts published for the server's own consumption never leave
+                // the process. The bus is a broadcast to every connected
+                // client, so an administrative refusal reaching it would be
+                // delivered to everybody's browser.
+                if envelope.meta.internal {
+                    continue;
+                }
+                // Only the event travels to the browser: the metadata (source
+                // module, rule-feedback depth) is server-side bookkeeping.
+                let event = &envelope.event;
+                if let Ok(payload) = serde_json::to_value(event) {
                     let msg = WsMessage {
                         r#type:  "event".to_string(),
                         module:  None,
                         payload,
                     };
-                    match targeted_recipients(&event) {
+                    match targeted_recipients(event) {
                         Some(ids) => {
                             for uid in ids {
                                 hub.send_to_user(uid, msg.clone()).await;

@@ -68,7 +68,7 @@ impl RemoteConnector for FtpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() {
             Ok(None)
@@ -89,7 +89,7 @@ impl RemoteConnector for FtpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if !out.status.success() {
             let err = String::from_utf8_lossy(&out.stderr);
@@ -126,7 +126,7 @@ impl RemoteConnector for FtpConnector {
 
     async fn stat(&self, path: &str) -> Result<RemoteEntry, RemoteError> {
         // FTP doesn't have a direct stat; list parent and find the entry
-        let parent = path.rsplitn(2, '/').nth(1).unwrap_or("");
+        let parent = path.rsplit_once('/').map(|x| x.0).unwrap_or("");
         let name   = path.rsplit('/').next().unwrap_or(path);
         let entries = self.list_dir(parent).await?;
         entries.into_iter()
@@ -143,14 +143,14 @@ impl RemoteConnector for FtpConnector {
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         let stdout = child.stdout.ok_or_else(|| RemoteError::Provider("Stdout manquant".into()))?;
         use tokio_util::io::ReaderStream;
         use futures::StreamExt;
 
         let stream = ReaderStream::new(stdout);
-        let mapped: ByteStream = Box::pin(stream.map(|r| r.map_err(|e| RemoteError::Io(e))));
+        let mapped: ByteStream = Box::pin(stream.map(|r| r.map_err(RemoteError::Io)));
         Ok(mapped)
     }
 
@@ -166,10 +166,10 @@ impl RemoteConnector for FtpConnector {
         let tmp = format!("/tmp/kubuno_ftp_{}", uuid::Uuid::new_v4());
         {
             use tokio::io::AsyncWriteExt;
-            let mut f = tokio::fs::File::create(&tmp).await.map_err(|e| RemoteError::Io(e))?;
+            let mut f = tokio::fs::File::create(&tmp).await.map_err(RemoteError::Io)?;
             while let Some(chunk) = stream.next().await {
-                let bytes = chunk.map_err(|e| RemoteError::Io(e))?;
-                f.write_all(&bytes).await.map_err(|e| RemoteError::Io(e))?;
+                let bytes = chunk.map_err(RemoteError::Io)?;
+                f.write_all(&bytes).await.map_err(RemoteError::Io)?;
             }
         }
 
@@ -181,7 +181,7 @@ impl RemoteConnector for FtpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         let _ = tokio::fs::remove_file(&tmp).await;
 
@@ -202,7 +202,7 @@ impl RemoteConnector for FtpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() { Ok(()) } else {
             let err = String::from_utf8_lossy(&out.stderr);
@@ -228,7 +228,7 @@ impl RemoteConnector for FtpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() { Ok(()) } else {
             let err = String::from_utf8_lossy(&out.stderr);
@@ -249,7 +249,7 @@ impl RemoteConnector for FtpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() { Ok(()) } else {
             let err = String::from_utf8_lossy(&out.stderr);

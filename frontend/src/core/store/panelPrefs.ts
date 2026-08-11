@@ -12,6 +12,11 @@ const KEY = 'kubuno.panelPrefs.v1'
  * blank space. The user can drag between the two; the choice is remembered per app. */
 export const SIDEBAR_WIDTH = { MIN: 256, MAX: 360, DEFAULT: 256 } as const
 
+/* Right panel width bounds. DEFAULT is the historical fixed 320px. MAX is generous
+ * because this panel holds CONTENT (notes, tasks, an agenda), not navigation — the
+ * reason the left rail stops at 360 does not apply here. */
+export const RIGHT_PANEL_WIDTH = { MIN: 280, MAX: 560, DEFAULT: 320 } as const
+
 export interface AppPanelPrefs {
   /** Left sidebar collapsed. */
   left?: boolean
@@ -19,6 +24,8 @@ export interface AppPanelPrefs {
   right?: string | null
   /** Left sidebar width in px (expanded state), clamped to SIDEBAR_WIDTH bounds. */
   width?: number
+  /** Right panel width in px, clamped to RIGHT_PANEL_WIDTH bounds. */
+  rightWidth?: number
 }
 
 type Store = Record<string, AppPanelPrefs>
@@ -61,6 +68,11 @@ export const panelPrefs = {
   setWidth(appId: string, width: number): void {
     const s = read()
     s[appId] = { ...s[appId], width }
+    write(s)
+  },
+  setRightWidth(appId: string, rightWidth: number): void {
+    const s = read()
+    s[appId] = { ...s[appId], rightWidth }
     write(s)
   },
 }

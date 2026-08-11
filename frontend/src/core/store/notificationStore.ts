@@ -10,6 +10,15 @@ export interface AppNotification {
   read: boolean
   createdAt: string
   link?: string
+  /**
+   * Stable identity of the THING being announced (an alert id, a job id…), as
+   * opposed to `id` which identifies this notification row.
+   *
+   * It exists because a producer that polls — the alert centre does — would
+   * otherwise re-announce the same open alert on every refresh, and a bell that
+   * cries the same news every minute is a bell people silence. See `pushKeyed`.
+   */
+  key?: string
 }
 
 interface NotificationState {
@@ -17,6 +26,12 @@ interface NotificationState {
   unreadCount: number
 
   push: (n: Omit<AppNotification, 'id' | 'read' | 'createdAt'>) => void
+  /**
+   * Announces something at most once. Returns silently when a notification
+   * already carries `key`, whether it has been read or not: "already told you"
+   * includes "told you and you dismissed it".
+   */
+  pushKeyed: (key: string, n: Omit<AppNotification, 'id' | 'read' | 'createdAt' | 'key'>) => void
   markRead: (id: string) => void
   markAllRead: () => void
   clear: () => void
@@ -25,6 +40,24 @@ interface NotificationState {
 function computeUnread(notifications: AppNotification[]): number {
   return notifications.filter(n => !n.read).length
 }
+
+/**
+ * Identifier for one notification row.
+ *
+ * `crypto.randomUUID` is undefined outside a secure context (a LAN instance
+ * reached over plain HTTP), and reading it there throws — which would take the
+ * whole header down with it. The fallback is not cryptographic and does not need
+ * to be: this is a list key.
+ */
+function uid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `n-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/** Newest first, capped — the cap is what keeps sessionStorage bounded. */
+const MAX_NOTIFICATIONS = 50
 
 export const useNotificationStore = create<NotificationState>()(
   persist(
@@ -35,15 +68,29 @@ export const useNotificationStore = create<NotificationState>()(
       push: (n) => {
         const notification: AppNotification = {
           ...n,
-          id: crypto.randomUUID(),
+          id: uid(),
           read: false,
           createdAt: new Date().toISOString(),
         }
         set((state) => {
-          const updated = [notification, ...state.notifications].slice(0, 50)
+          const updated = [notification, ...state.notifications].slice(0, MAX_NOTIFICATIONS)
           return { notifications: updated, unreadCount: computeUnread(updated) }
         })
       },
+
+      pushKeyed: (key, n) =>
+        set((state) => {
+          if (state.notifications.some(existing => existing.key === key)) return state
+          const notification: AppNotification = {
+            ...n,
+            key,
+            id: uid(),
+            read: false,
+            createdAt: new Date().toISOString(),
+          }
+          const updated = [notification, ...state.notifications].slice(0, MAX_NOTIFICATIONS)
+          return { notifications: updated, unreadCount: computeUnread(updated) }
+        }),
 
       markRead: (id) =>
         set((state) => {

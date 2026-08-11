@@ -194,17 +194,6 @@ struct Window {
 static GLOBAL_LIMITER: LazyLock<Mutex<HashMap<String, Window>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn client_ip(req: &Request<Body>) -> String {
-    req.headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()).map(String::from))
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
 /// Incrémente la fenêtre `key` et dit si `limit` est dépassée.
 fn window_exceeded(key: String, limit: u32) -> bool {
     let mut map = GLOBAL_LIMITER.lock().unwrap_or_else(|e| e.into_inner());
@@ -256,7 +245,9 @@ pub async fn global_rate_limit(req: Request<Body>, next: Next) -> Response {
         return next.run(req).await;
     }
 
-    let ip = client_ip(&req);
+    // Trusted-proxy aware: forwarding headers are honoured only when the socket
+    // peer is a declared proxy. See `crate::auth::client_ip`.
+    let ip = super::client_ip::client_ip_key(&req);
     let limit = RATE_PER_WINDOW.load(Ordering::Relaxed);
 
     if window_exceeded(ip, limit) {

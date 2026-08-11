@@ -1,6 +1,10 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useContext, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type { TFunction } from 'i18next'
 import { SquareArrowOutUpRight, X } from 'lucide-react'
+import { Button } from './Button'
+import { uiT } from './uiText'
+import { ThemeScopeContext } from './themeRegistry'
 import { useWindowZStore } from './windowZStore'
 import { useIsMobile } from './interaction'
 import { usePortalHost } from './portalHost'
@@ -17,6 +21,39 @@ declare global {
       ) => Promise<void>
     }
   }
+}
+
+/** One button of the window's own footer. */
+export interface WindowAction {
+  label:     string
+  onClick:   () => void
+  disabled?: boolean
+  loading?:  boolean
+  /** Destructive: the label turns red. Still a text button, never a filled one. */
+  danger?:   boolean
+  /** Focused on open — what makes Entrée confirm without a click. */
+  autoFocus?: boolean
+}
+
+/**
+ * What the window puts in its footer.
+ *
+ * Described, not drawn: the ORDER is decided here and nowhere else — action on
+ * the LEFT, cancel on the RIGHT, both the same width. That order is a project
+ * rule (the one Word uses), and the only way a rule like it survives a hundred
+ * dialogs is if no dialog gets to spell it out.
+ *
+ * Omitting `actions` renders **no footer at all**: a tool panel — a colour
+ * picker, a canvas palette — confirms nothing and must not grow a bar with a
+ * lonely "Close" in it.
+ */
+export interface WindowActions {
+  /** The thing this window is for. Absent → only the cancel button shows. */
+  confirm?: WindowAction
+  /** `false` removes it; otherwise defaults to "Annuler", which calls `onClose`. */
+  cancel?:  Partial<WindowAction> | false
+  /** Free content pinned to the LEFT edge — a checkbox, a help link, a hint. */
+  extra?:   React.ReactNode
 }
 
 interface FloatingWindowProps {
@@ -45,15 +82,21 @@ interface FloatingWindowProps {
   backdrop?:     boolean           // défaut : false — overlay semi-transparent
   className?:    string            // classes CSS additionnelles sur la fenêtre
   /**
-   * Marge intérieure du contenu, en px (défaut : 20). Le contenu d'une fenêtre ne
-   * doit jamais toucher ses bords ; les rares fenêtres « pleine largeur » (aperçu,
-   * liste qui doit affleurer, contenu déjà encadré) passent `padding={0}` et gèrent
-   * leur propre respiration.
+   * Marge intérieure du contenu, en px. **Défaut : 0** — le contenu affleure les bords
+   * de la zone opaque, à chaque fenêtre de gérer sa propre respiration. Passer
+   * `padding={WINDOW_PADDING}` pour retrouver l'ancienne marge de 20 px.
    */
   padding?:      number
+
+  /**
+   * The window's own footer. See [`WindowActions`] — absent means no footer.
+   */
+  actions?:      WindowActions
+  /** Host translator, for the default cancel label (`@ui` never imports i18n). */
+  t?:            TFunction
 }
 
-/** Marge intérieure par défaut du contenu d'une fenêtre volante, en px. */
+/** Ancienne marge intérieure par défaut, gardée pour les fenêtres qui la veulent. */
 export const WINDOW_PADDING = 20
 
 export function FloatingWindow({
@@ -71,6 +114,8 @@ export function FloatingWindow({
   backdrop      = false,
   className     = '',
   padding,
+  actions,
+  t,
 }: FloatingWindowProps) {
   const windowRef = useRef<HTMLDivElement>(null)
   const [zIndex, setZIndex] = useState(() => useWindowZStore.getState().next())
@@ -85,6 +130,40 @@ export function FloatingWindow({
   // mode (the pixel-mode math is viewport-based and would be wrong inside a host).
   const { host, scoped } = usePortalHost()
   const posCls = scoped ? 'absolute' : 'fixed'
+
+  // ── Carrying the module's scope through the portal ─────────────────────────
+  //
+  // A window is portaled onto `<body>`, which puts it OUTSIDE the
+  // `[data-module="calendar"]` container the host wraps a module in — and that
+  // container is where the module's accent, appearance and density live. Without
+  // this, every window came out in the core's blue no matter which module opened
+  // it, and a module in dark mode opened a light dialog.
+  //
+  // The scope id comes from the context the host already provides for theming;
+  // the presentation attributes are read off the live container, which is the
+  // only place that knows the user's current choice for that module.
+  // The context covers windows opened from the module's own area. A sidebar —
+  // where "Importer un agenda" lives — sits OUTSIDE that provider, so the first
+  // URL segment is the fallback: it is the very rule the host uses to decide
+  // which module a screen belongs to.
+  const contextScope = useContext(ThemeScopeContext)
+  const scopeAttrs = useMemo<Record<string, string>>(() => {
+    if (typeof document === 'undefined') return {}
+    const scope = contextScope
+      ?? window.location.pathname.split('/').filter(Boolean)[0]
+      ?? ''
+    if (!scope) return {}
+    // Only when the module really has a scoped container: inventing the attribute
+    // on a core page would claim a theme nobody defined.
+    const container = document.querySelector(`[data-module="${CSS.escape(scope)}"]`)
+    if (!container) return {}
+    const attrs: Record<string, string> = { 'data-module': scope }
+    for (const name of ['data-kb-appearance', 'data-kb-density', 'data-kb-scheme']) {
+      const value = container.getAttribute(name)
+      if (value) attrs[name] = value
+    }
+    return attrs
+  }, [contextScope])
 
   const isDragging = useRef(false)
   const dragOrigin = useRef({ mx: 0, my: 0, wx: 0, wy: 0 })
@@ -299,18 +378,69 @@ export function FloatingWindow({
     onClose()
   }
 
+  // ── The footer, drawn ONCE for the whole product ───────────────────────────
+  //
+  // Order, widths and styling live here so that a hundred dialogs cannot each
+  // have an opinion: the action sits on the LEFT and the cancel on the RIGHT
+  // (the order Word uses, and the project's rule), both at the same minimum
+  // width so the pair never jitters from one window to the next.
+  //
+  // Text buttons, not filled ones — the hierarchy is carried by colour, exactly
+  // as the reference dialog does it, and buttons are never bold anywhere in this
+  // product.
+  const tr = uiT(t)
+  const cancelSpec = actions?.cancel === false ? null : {
+    label:   actions?.cancel?.label ?? tr('ui.cancel'),
+    onClick: actions?.cancel?.onClick ?? closeWindow,
+    disabled: actions?.cancel?.disabled,
+  }
+  const footer = actions ? (
+    <div className="kb-window-footer flex items-center gap-2 px-4 py-3 flex-shrink-0">
+      {actions.extra && <div className="min-w-0 flex-1">{actions.extra}</div>}
+      <div className="ms-auto flex items-center gap-2">
+        {actions.confirm && (
+          <Button
+            variant={actions.confirm.danger ? 'textDanger' : 'text'}
+            className="min-w-[96px]"
+            disabled={actions.confirm.disabled}
+            loading={actions.confirm.loading}
+            autoFocus={actions.confirm.autoFocus}
+            onClick={actions.confirm.onClick}
+          >
+            {actions.confirm.label}
+          </Button>
+        )}
+        {cancelSpec && (
+          <Button
+            variant="ghost"
+            className="min-w-[96px]"
+            disabled={cancelSpec.disabled}
+            onClick={cancelSpec.onClick}
+          >
+            {cancelSpec.label}
+          </Button>
+        )}
+      </div>
+    </div>
+  ) : null
+
   const resizeHandles = resizable ? (
     <>
       {/* Bords */}
-      <div data-edge="n"  onMouseDown={onResizeMouseDown} className="absolute top-0    left-2  right-2  h-1   cursor-n-resize  z-10" />
-      <div data-edge="s"  onMouseDown={onResizeMouseDown} className="absolute bottom-0 left-2  right-2  h-1   cursor-s-resize  z-10" />
-      <div data-edge="w"  onMouseDown={onResizeMouseDown} className="absolute top-2   left-0  bottom-2  w-1   cursor-w-resize  z-10" />
-      <div data-edge="e"  onMouseDown={onResizeMouseDown} className="absolute top-2   right-0 bottom-2  w-1   cursor-e-resize  z-10" />
+      {/* 5px grab strips along the edges — the frame they used to sit on is gone,
+          but the affordance stays where the hand expects it. */}
+      <div data-edge="n"  onMouseDown={onResizeMouseDown} className="absolute top-0    left-2  right-2  h-[5px] cursor-n-resize  z-10" />
+      <div data-edge="s"  onMouseDown={onResizeMouseDown} className="absolute bottom-0 left-2  right-2  h-[5px] cursor-s-resize  z-10" />
+      <div data-edge="w"  onMouseDown={onResizeMouseDown} className="absolute top-2   left-0  bottom-2  w-[5px] cursor-w-resize  z-10" />
+      <div data-edge="e"  onMouseDown={onResizeMouseDown} className="absolute top-2   right-0 bottom-2  w-[5px] cursor-e-resize  z-10" />
       {/* Coins */}
       <div data-edge="nw" onMouseDown={onResizeMouseDown} className="absolute top-0    left-0  w-3 h-3  cursor-nw-resize z-20" />
       <div data-edge="ne" onMouseDown={onResizeMouseDown} className="absolute top-0    right-0 w-3 h-3  cursor-ne-resize z-20" />
       <div data-edge="sw" onMouseDown={onResizeMouseDown} className="absolute bottom-0 left-0  w-3 h-3  cursor-sw-resize z-20" />
-      <div data-edge="se" onMouseDown={onResizeMouseDown} className="absolute bottom-0 right-0 w-3 h-3  cursor-se-resize z-20" />
+      {/* Bottom-right corner carries the VISIBLE grip, as on the reference: the window
+          is resizable, so say so rather than hide the affordance. */}
+      <div data-edge="se" onMouseDown={onResizeMouseDown}
+           className="kb-window-grip absolute bottom-[2px] right-[2px] w-[18px] h-[18px] rounded cursor-nwse-resize z-20" />
     </>
   ) : null
 
@@ -326,10 +456,13 @@ export function FloatingWindow({
 
       <div
         ref={windowRef}
+        {...scopeAttrs}
         role="dialog"
         aria-modal={backdrop && !isStandalone}
-        className={`${posCls} bg-white flex flex-col overflow-hidden no-print ${className} ${
-          fullBleed ? 'inset-0' : 'rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.18)]'
+        // Full-bleed IS the OS window / the phone screen: it must stay opaque, there is
+        // nothing meaningful behind it to show through. Only a floating card gets glass.
+        className={`${posCls} flex flex-col overflow-hidden no-print ${className} ${
+          fullBleed ? 'inset-0 bg-white' : 'kb-window'
         }`}
         style={fullBleed ? {
           // Full-bleed: fill the OS window edge-to-edge, no chrome, no clamps.
@@ -360,21 +493,26 @@ export function FloatingWindow({
       >
         {!fullBleed && resizeHandles}
 
-        {/* Barre de titre (toolbar simple en mode plein cadre : pas de drag) */}
+        {/* Le bandeau. Même traitement en plein cadre (fenêtre OS détachée,
+            téléphone) : une seule fenêtre à reconnaître, pas deux. */}
         <div
-          className={`flex items-center gap-2.5 px-4 py-3 border-b border-border
-                     flex-shrink-0 select-none ${fullBleed ? '' : 'cursor-move'}`}
+          // Min-height rather than a fixed height: a title that wraps onto two
+          // lines — "Réinitialiser le mot de passe de Marie Dupont" — must push
+          // the band down instead of being clipped by it.
+          className={`kb-window-titlebar flex items-center gap-2.5 px-4 py-2.5 min-h-11 flex-shrink-0 select-none ${
+            fullBleed ? '' : 'cursor-grab active:cursor-grabbing'}`}
           onMouseDown={fullBleed ? undefined : onTitleMouseDown}
         >
-          {icon && (
-            <div className="flex-shrink-0 text-text-secondary">{icon}</div>
-          )}
-          <div className="flex-1 min-w-0 text-sm font-medium text-text-primary truncate">
+          {icon && <div className="flex-shrink-0">{icon}</div>}
+          <div
+            className="flex-1 min-w-0 font-medium"
+            style={{ fontSize: 'var(--kb-text-heading)' }}
+          >
             {title}
           </div>
           {titleActions && (
             <div
-              className="flex items-center gap-1 flex-shrink-0"
+              className="kb-window-actions flex items-center gap-1 flex-shrink-0"
               onMouseDown={e => e.stopPropagation()}
             >
               {titleActions}
@@ -394,8 +532,8 @@ export function FloatingWindow({
               }}
               onMouseDown={e => e.stopPropagation()}
               title="Détacher dans une fenêtre"
-              className="flex-shrink-0 p-1.5 rounded-lg text-text-tertiary
-                         hover:text-text-primary hover:bg-surface-2 transition-colors"
+              className="flex-shrink-0 p-1.5 rounded-lg text-current opacity-80
+                         hover:opacity-100 hover:bg-white/20 transition-colors"
             >
               <SquareArrowOutUpRight size={14} />
             </button>
@@ -404,22 +542,24 @@ export function FloatingWindow({
             onClick={closeWindow}
             onMouseDown={e => e.stopPropagation()}
             title="Fermer (Échap)"
-            className="flex-shrink-0 p-1.5 -mr-1 rounded-lg text-text-tertiary
-                       hover:text-text-primary hover:bg-surface-2 transition-colors"
+            className="flex-shrink-0 grid place-items-center w-[30px] h-[30px] rounded-[5px]
+                       text-current opacity-80 transition-colors hover:opacity-100 hover:bg-white/20"
           >
-            <X size={15} />
+            <X size={15} strokeWidth={2.2} />
           </button>
         </div>
 
-        {/* Contenu — marge intérieure par défaut : sans elle, chaque module devait
-            y penser, et le contenu finissait collé aux bords (constaté sur les
-            dialogues d'office). Neutralisable par `padding={0}`. */}
+        {/* Contenu — aucune marge par défaut : le contenu affleure la zone opaque.
+            Une fenêtre qui veut de la respiration passe `padding`. */}
         <div
-          className="flex-1 flex flex-col min-h-0 overflow-hidden"
-          style={{ padding: padding ?? WINDOW_PADDING }}
+          className={`flex-1 flex flex-col min-h-0 overflow-auto ${
+            fullBleed ? 'bg-white' : 'kb-window-content'}`}
+          style={{ padding: padding ?? 0 }}
         >
           {children}
         </div>
+
+        {footer}
       </div>
     </>
   )

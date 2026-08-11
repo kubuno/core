@@ -70,7 +70,7 @@ impl SmbConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
@@ -137,7 +137,7 @@ impl RemoteConnector for SmbConnector {
     }
 
     async fn stat(&self, path: &str) -> Result<RemoteEntry, RemoteError> {
-        let parent = path.rsplitn(2, '/').nth(1).unwrap_or("");
+        let parent = path.rsplit_once('/').map(|x| x.0).unwrap_or("");
         let name   = path.rsplit('/').next().unwrap_or(path);
         let entries = self.list_dir(parent).await?;
         entries.into_iter()
@@ -151,7 +151,7 @@ impl RemoteConnector for SmbConnector {
         let cmd   = format!(r#"get "{smb_p}" "{tmp}""#);
         self.run_cmd(&cmd).await?;
 
-        let file = tokio::fs::File::open(&tmp).await.map_err(|e| RemoteError::Io(e))?;
+        let file = tokio::fs::File::open(&tmp).await.map_err(RemoteError::Io)?;
         use tokio_util::io::ReaderStream;
         use futures::StreamExt;
 
@@ -159,7 +159,7 @@ impl RemoteConnector for SmbConnector {
         let tmp_clone = tmp.clone();
         let stream = ReaderStream::new(file);
         let mapped: ByteStream = Box::pin(stream.map(move |r| {
-            r.map_err(|e| RemoteError::Io(e))
+            r.map_err(RemoteError::Io)
         }));
         // Note: tmp file cleanup is deferred — could use a wrapper that deletes on drop
         let _ = tmp_clone;
@@ -178,9 +178,9 @@ impl RemoteConnector for SmbConnector {
         let tmp   = format!("/tmp/kubuno_smb_{}", uuid::Uuid::new_v4());
         {
             use tokio::io::AsyncWriteExt;
-            let mut f = tokio::fs::File::create(&tmp).await.map_err(|e| RemoteError::Io(e))?;
+            let mut f = tokio::fs::File::create(&tmp).await.map_err(RemoteError::Io)?;
             while let Some(chunk) = stream.next().await {
-                f.write_all(&chunk.map_err(|e| RemoteError::Io(e))?).await.map_err(|e| RemoteError::Io(e))?;
+                f.write_all(&chunk.map_err(RemoteError::Io)?).await.map_err(RemoteError::Io)?;
             }
         }
 

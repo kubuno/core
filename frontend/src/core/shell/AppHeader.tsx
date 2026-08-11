@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { KubunoLogo } from '@ui'
+import { KubunoLogo, useIsMobile } from '@ui'
 import { Link, useLocation } from 'react-router-dom'
 import { Menu, Search, ArrowLeft } from 'lucide-react'
 import { useUiStore } from '../store/uiStore'
@@ -20,8 +20,15 @@ export default function AppHeader() {
 
   // Opt-out : un module peut demander à garder la barre de recherche INLINE
   // permanente (ancienne méthode) au lieu de la loupe → mode recherche. Ex : mail.
+  //
+  // Jamais sur mobile : une barre permanente y écrase le reste de l'en-tête
+  // (statut, notifications, réglages, avatar se chevauchent). Sous `lg`, TOUS
+  // les modules passent donc à la loupe + recherche plein écran, comme drive —
+  // le module garde sa propre barre (SearchComponent), qui s'affiche alors en
+  // mode recherche.
+  const isMobile      = useIsMobile()
   const searchConfigs = useSearchStore((s) => s.configs)
-  const inlineSearch  = !!resolveSearchConfig(searchConfigs, pathname)?.inline
+  const inlineSearch  = !!resolveSearchConfig(searchConfigs, pathname)?.inline && !isMobile
 
   // Search is a magnifying glass among the right-side icons (like Google Calendar):
   // clicking it turns the whole header into a full-width search mode (back arrow +
@@ -29,6 +36,15 @@ export default function AppHeader() {
   const [searchOpen, setSearchOpen] = useState(false)
   const overlayRef = useRef<HTMLDivElement>(null)
   useEffect(() => { setSearchOpen(false) }, [pathname])
+
+  // A module may ask for search mode without being able to reach it: its own
+  // search component is only mounted once the mode is open, so a global
+  // shortcut (⌘K, /) has to be served from here. Inert until something asks.
+  const openSignal = useSearchStore((s) => s.openSignal)
+  useEffect(() => {
+    if (openSignal.seq === 0) return
+    setSearchOpen(openSignal.open)
+  }, [openSignal])
 
   // Focus the field the moment search mode opens, and close it on Escape.
   useEffect(() => {

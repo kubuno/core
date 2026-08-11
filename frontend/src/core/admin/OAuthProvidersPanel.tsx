@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import { Plus, Trash2, Edit2, KeyRound, Copy, Check, ShieldCheck, Power } from 'lucide-react'
-import { Button, Input } from '@ui'
+import { Plus, Trash2, Edit2, KeyRound, Copy, Check, ShieldCheck, Power, PlugZap } from 'lucide-react'
+import { Button, Callout, Input } from '@ui'
 import { useConfirm } from '../hooks/useConfirm'
 import ConfirmDialog from '@ui/ConfirmDialog'
+import { useAdminAction } from './adminAction'
 
 interface AdminProvider {
   id:           string
@@ -18,6 +19,24 @@ interface AdminProvider {
   enabled:      boolean
   allow_signup: boolean
   position:     number
+  claim_username:     string
+  claim_email:        string
+  claim_display_name: string
+  claim_groups:       string
+  sync_groups:        boolean
+}
+
+/** What `POST /admin/oauth-providers/:id/test` answers. */
+interface DiscoveryProbe {
+  ok:                     boolean
+  message:                string
+  detail?:                string
+  hint?:                  string
+  issuer_url:             string
+  authorization_endpoint?: string
+  token_endpoint?:        string
+  userinfo_endpoint?:     string
+  elapsed_ms:             number
 }
 
 // Quick presets: prefill the form for common identity providers. The admin still
@@ -39,11 +58,22 @@ interface FormState {
   button_color:  string
   enabled:       boolean
   allow_signup:  boolean
+  claim_username:     string
+  claim_email:        string
+  claim_display_name: string
+  claim_groups:       string
+  sync_groups:        boolean
 }
 
 const emptyForm: FormState = {
   slug: '', display_name: '', issuer_url: '', client_id: '', client_secret: '',
   scopes: 'openid email profile', button_color: '', enabled: true, allow_signup: true,
+  // The OpenID Connect standard names. Configurable because roughly nobody
+  // ships them unchanged: Okta puts the handle in `login`, an Azure tenant in
+  // `upn`, and a Keycloak client role list lives at
+  // `resource_access.<client>.roles` — hence dotted paths are accepted.
+  claim_username: 'preferred_username', claim_email: 'email',
+  claim_display_name: 'name', claim_groups: 'groups', sync_groups: false,
 }
 
 function ProviderForm({
@@ -132,6 +162,40 @@ function ProviderForm({
         </label>
       </div>
 
+      {/* ── Mappage des revendications ────────────────────────────────────
+          Les quatre noms étaient codés en dur : justes pour qui les avait
+          écrits, faux pour tout fournisseur ayant choisi les siens. Un chemin
+          pointé est accepté (resource_access.<client>.roles chez Keycloak). */}
+      <div>
+        <div className="text-sm font-medium text-text-primary">Mappage des revendications</div>
+        <p className="mt-0.5 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+          Quelle revendication du profil alimente quel champ. Les valeurs par défaut sont celles
+          d’OpenID Connect. Un chemin pointé est accepté.
+        </p>
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            <span className="text-text-secondary">Identifiant</span>
+            <Input value={f.claim_username} onChange={(e) => set('claim_username', e.target.value)}
+              placeholder="preferred_username" className="font-mono" />
+          </label>
+          <label className="text-sm">
+            <span className="text-text-secondary">Adresse électronique</span>
+            <Input value={f.claim_email} onChange={(e) => set('claim_email', e.target.value)}
+              placeholder="email" className="font-mono" />
+          </label>
+          <label className="text-sm">
+            <span className="text-text-secondary">Nom affiché</span>
+            <Input value={f.claim_display_name} onChange={(e) => set('claim_display_name', e.target.value)}
+              placeholder="name" className="font-mono" />
+          </label>
+          <label className="text-sm">
+            <span className="text-text-secondary">Groupes</span>
+            <Input value={f.claim_groups} onChange={(e) => set('claim_groups', e.target.value)}
+              placeholder="groups" className="font-mono" />
+          </label>
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-5">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={f.enabled} onChange={(e) => set('enabled', e.target.checked)} />
@@ -141,7 +205,19 @@ function ProviderForm({
           <input type="checkbox" checked={f.allow_signup} onChange={(e) => set('allow_signup', e.target.checked)} />
           Autoriser la création de comptes
         </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={f.sync_groups} onChange={(e) => set('sync_groups', e.target.checked)} />
+          Importer les groupes revendiqués
+        </label>
       </div>
+
+      {f.sync_groups && (
+        <Callout variant="info">
+          Le fournisseur décidera de l’appartenance aux groupes sur cette instance. Seules les
+          adhésions accordées par lui sont reprises : ce qu’un administrateur a attribué à la main
+          n’est jamais retiré.
+        </Callout>
+      )}
 
       {/* Redirect URI to register in the IdP */}
       <div className="rounded-lg bg-surface-2 p-3 text-sm">
@@ -167,6 +243,9 @@ export default function OAuthProvidersPanel() {
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const [editing, setEditing] = useState<string | null>(null)  // provider id, or 'new'
 
+  // `/admin/sso?action=add` opens the blank provider form (adminAction.ts).
+  useAdminAction('add', () => setEditing('new'))
+
   const { data: providers, isLoading } = useQuery({
     queryKey: ['admin', 'oauth-providers'],
     queryFn: () => api.get<{ providers: AdminProvider[] }>('/admin/oauth-providers').then((r) => r.data.providers),
@@ -191,10 +270,23 @@ export default function OAuthProvidersPanel() {
     onSuccess: invalidate,
   })
 
+  // Fetches the discovery document and shows what came back. An issuer URL off
+  // by one path segment otherwise fails minutes later, in the browser, on an
+  // error page nobody here controls.
+  const [probe, setProbe] = useState<Record<string, DiscoveryProbe>>({})
+  const testM = useMutation({
+    mutationFn: (id: string) =>
+      api.post<DiscoveryProbe>(`/admin/oauth-providers/${id}/test`).then((r) => r.data),
+    onSuccess: (data, id) => setProbe((p) => ({ ...p, [id]: data })),
+  })
+
   const toFormState = (p: AdminProvider): FormState => ({
     slug: p.slug, display_name: p.display_name, issuer_url: p.issuer_url, client_id: p.client_id,
     client_secret: '', scopes: p.scopes, button_color: p.button_color ?? '',
     enabled: p.enabled, allow_signup: p.allow_signup,
+    claim_username: p.claim_username, claim_email: p.claim_email,
+    claim_display_name: p.claim_display_name, claim_groups: p.claim_groups,
+    sync_groups: p.sync_groups,
   })
 
   const submit = (data: FormState) => {
@@ -266,8 +358,15 @@ export default function OAuthProvidersPanel() {
                     <span className="text-xs font-mono text-text-tertiary">/{p.slug}</span>
                     {!p.enabled && <span className="text-xs px-1.5 py-0.5 rounded bg-surface-3 text-text-tertiary">désactivé</span>}
                   </div>
-                  <div className="text-xs text-text-tertiary truncate">{p.issuer_url}</div>
+                  <div className="text-sm text-text-tertiary truncate">{p.issuer_url}</div>
                 </div>
+                <button
+                  onClick={() => testM.mutate(p.id)}
+                  title="Tester la découverte OIDC"
+                  className="p-2 rounded-lg hover:bg-surface-2 text-text-secondary"
+                >
+                  <PlugZap size={16} />
+                </button>
                 <button
                   onClick={() => updateM.mutate({ id: p.id, data: { enabled: !p.enabled } })}
                   title={p.enabled ? 'Désactiver' : 'Activer'}
@@ -284,6 +383,29 @@ export default function OAuthProvidersPanel() {
               </div>
             )
           ))}
+          {providers?.filter((p) => probe[p.id]).map((p) => {
+            const r = probe[p.id]
+            return (
+              <Callout key={`probe-${p.id}`} variant={r.ok ? 'success' : 'danger'} title={`${p.display_name} — ${r.message}`}>
+                <p className="break-all">{r.issuer_url} · {r.elapsed_ms} ms</p>
+                {r.authorization_endpoint && (
+                  <pre className="mt-2 max-w-full overflow-x-auto rounded-md border border-border bg-surface-1 px-2.5 py-2 font-mono text-text-primary"
+                       style={{ fontSize: 'var(--kb-text-meta)' }}>
+{`authorization_endpoint  ${r.authorization_endpoint}
+token_endpoint          ${r.token_endpoint ?? ''}
+userinfo_endpoint       ${r.userinfo_endpoint ?? ''}`}
+                  </pre>
+                )}
+                {r.detail && (
+                  <pre className="mt-2 max-w-full overflow-x-auto rounded-md border border-border bg-surface-1 px-2.5 py-2 font-mono text-text-primary"
+                       style={{ fontSize: 'var(--kb-text-meta)' }}>
+                    {r.detail}
+                  </pre>
+                )}
+                {r.hint && <p className="mt-2">{r.hint}</p>}
+              </Callout>
+            )
+          })}
         </div>
       )}
 

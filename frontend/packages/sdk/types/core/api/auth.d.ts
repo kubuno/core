@@ -20,7 +20,8 @@ export declare const authApi: {
         totp_session: string;
     }, any, {}>>;
     totpVerify: (data: {
-        code: string;
+        code?: string;
+        backup_code?: string;
         totp_session: string;
     }) => Promise<import("axios").AxiosResponse<{
         access_token: string;

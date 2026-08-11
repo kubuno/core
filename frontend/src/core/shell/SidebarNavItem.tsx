@@ -39,10 +39,14 @@ function SidebarNavItemBase({
   // `cursor-pointer` + `focus-visible` ring: an anchor without href gets neither
   // for free, and the item must feel clickable on hover and reachable at the
   // keyboard exactly like a link.
-  const base = `relative flex items-center h-10 rounded-full text-sm text-left transition-colors
-    cursor-pointer no-underline outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-    collapsed ? 'justify-center w-10 mx-auto' : 'gap-3 w-full px-3'
-  }`
+  // Layout is CONSTANT (full width + px-2 + a fixed 32px icon box), so collapsing
+  // ANIMATES instead of snapping: the item width follows the aside (which tweens its
+  // own width), and only the label tweens (max-width/opacity/margin, see `content`).
+  // No `justify-center`/`w-10` switch — that would jerk the icon to the middle of the
+  // still-wide row at the start of the tween.
+  const base = `relative flex items-center h-10 w-full px-2 rounded-full text-sm text-left
+    transition-colors cursor-pointer no-underline outline-none overflow-hidden
+    focus-visible:ring-2 focus-visible:ring-primary`
   const cls = (a: boolean) =>
     `${base} ${a ? 'text-primary font-medium' : 'text-text-secondary'}`
 
@@ -67,15 +71,33 @@ function SidebarNavItemBase({
 
   const content = (
     <>
-      {icon}
-      {!collapsed && <span className="truncate flex-1">{label}</span>}
+      {/* Fixed 32px box so the icon keeps its place (and lands ~centred in the rail)
+          while the label tweens its width to zero — no icon jump on collapse.
+          `relative` so the collapsed badge dot anchors to the ICON: the row is a
+          `rounded-full` + `overflow-hidden` pill, so a dot at the pill's own corner
+          gets clipped by the rounded edge into a triangle sliver. The icon sits at
+          the row's vertical centre, well clear of the rounded corners. */}
+      <span className="relative w-8 flex items-center justify-center flex-shrink-0">
+        {icon}
+        {collapsed && badge != null && badge > 0 && (
+          <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-primary" />
+        )}
+      </span>
+      <span
+        className="truncate transition-all duration-200 ease-in-out"
+        style={{
+          maxWidth: collapsed ? 0 : 180,
+          opacity: collapsed ? 0 : 1,
+          marginLeft: collapsed ? 0 : 8,
+          flex: collapsed ? '0 1 0%' : '1 1 auto',
+        }}
+      >
+        {label}
+      </span>
       {!collapsed && badge != null && badge > 0 && (
-        <span className="text-xs bg-primary text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
+        <span className="text-xs bg-primary text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center flex-shrink-0">
           {badge > 99 ? '99+' : badge}
         </span>
-      )}
-      {collapsed && badge != null && badge > 0 && (
-        <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-primary" />
       )}
     </>
   )
@@ -107,10 +129,11 @@ function SidebarNavItemBase({
     </a>
   )
 
-  if (!collapsed) return node
-
-  // Collapsed: the label is only reachable through the tooltip.
-  return <Tooltip label={label} side="right">{node}</Tooltip>
+  // ALWAYS wrap in the tooltip (disabled while expanded) — it clones its child, so
+  // the anchor keeps a stable identity across the collapse toggle and its label
+  // tween actually plays. Wrapping only when collapsed would remount the node and
+  // skip the animation. The bubble (label) only shows in the collapsed rail.
+  return <Tooltip label={label} side="right" disabled={!collapsed}>{node}</Tooltip>
 }
 
 // Themeable core shell object: a theme can override the sidebar nav item.

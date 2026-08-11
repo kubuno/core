@@ -43,8 +43,67 @@ modules_dir = "/usr/lib/kubuno/modules"
 themes_dir = "/var/lib/kubuno/themes"
 
 # Secret partagé entre le core et les modules pour les appels /internal/*.
-# OBLIGATOIRE — générez avec : openssl rand -hex 32
+# OBLIGATOIRE — minimum 32 octets — générez avec : openssl rand -hex 32
+# Le core REFUSE de démarrer si ce secret est vide ou trop court : un secret
+# vide rendrait toutes les routes /internal/* accessibles à quiconque envoie un
+# en-tête X-Internal-Secret vide.
 internal_secret = "CHANGEZ_MOI"
+
+# ── Secrets internes par module ───────────────────────────────────
+# Remet à chaque module supervisé un secret DÉRIVÉ du secret ci-dessus
+# (HMAC-SHA256, clé = secret maître, message = identifiant du module) au lieu du
+# secret maître lui-même. Le core sait alors QUEL module l'appelle sur
+# /internal/* et sur le proxy interne : un module compromis ne peut plus se
+# faire passer pour un autre module auprès du core.
+#
+# Les modules n'ont RIEN à changer : ils lisent toujours KUBUNO_INTERNAL_SECRET
+# et le présentent tel quel, sans savoir qu'il leur est propre.
+#
+# ⚠️ Certains modules s'appellent DIRECTEMENT entre eux (client kubuno-drive →
+# http://127.0.0.1:3101/ipc/*) et comparent le secret reçu au leur : deux
+# secrets distincts font échouer ces appels. Déclarez ce groupe dans
+# shared_secret_modules ci-dessous.
+derive_module_secrets = false
+
+# Modules conservant le secret MAÎTRE quand derive_module_secrets est actif
+# (groupe des appels directs de module à module). Exemple d'installation
+# complète :
+#   shared_secret_modules = ["drive", "office", "notes", "flow", "app", "wiki",
+#                            "build", "paintsharp", "code"]
+shared_secret_modules = []
+
+# Durcissement : refuse le secret MAÎTRE sur /internal/* — seuls les secrets
+# dérivés sont acceptés. Suppose que TOUS les modules sont lancés par le core :
+# un module démarré à la main (développement) avec le secret maître serait
+# rejeté.
+reject_master_internal_secret = false
+
+# Mandataires inverses (reverse proxies) autorisés à définir les en-têtes
+# X-Forwarded-For / X-Real-IP, sous forme de plages CIDR (IPv4 et IPv6).
+#
+# Ces en-têtes sont fournis par le CLIENT : n'importe qui peut les inventer.
+# Le core ne les prend donc en compte QUE si l'adresse de la socket (celle du
+# pair TCP, non falsifiable) appartient à l'une de ces plages. Sinon l'adresse
+# réelle de la socket fait foi. Sans ce filtre, il suffit de faire varier
+# l'en-tête à chaque requête pour contourner la limitation de débit et la
+# protection anti-déni de service.
+#
+# Défaut (si la clé est absente) : bouclage + plages privées — couvre le cas
+# courant d'un proxy sur la même machine ou sur le même réseau privé, tout en
+# refusant un en-tête forgé depuis une adresse publique :
+#   ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12",
+#    "192.168.0.0/16", "fc00::/7"]
+#
+# ⚠️ Si votre proxy atteint le core depuis une adresse PUBLIQUE (tunnel VPN,
+# répartiteur de charge distant, front-end cloud), ajoutez sa plage ici —
+# sinon tous vos utilisateurs distants seront comptabilisés sous l'adresse du
+# proxy et partageront le même budget de requêtes.
+# Laisser une liste vide [] désactive complètement la confiance aux en-têtes.
+#
+# Surcharge par environnement (valeurs séparées par des virgules) :
+#   KV__SERVER__TRUSTED_PROXY_CIDRS=127.0.0.0/8,10.0.0.0/8
+#
+# trusted_proxy_cidrs = ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
 
 # Ajoute l'attribut "Secure" aux cookies (refresh token). À activer dès que le
 # site est servi en HTTPS (TLS natif ci-dessous OU reverse-proxy en frontal).

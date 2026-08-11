@@ -339,20 +339,24 @@ pub async fn collab_handler(
 /// ou un module inconnu laissent passer (rétro-compatibilité, robustesse).
 async fn authorize_room(state: &AppState, room: &str, user_id: Uuid) -> bool {
     // Résolution du module propriétaire (id le plus long qui préfixe la room).
-    let base_url = {
+    let (module_id, base_url) = {
         let registry = state.modules.read().await;
-        let mut best: Option<(usize, String)> = None;
+        let mut best: Option<(usize, String, String)> = None;
         for inst in registry.all() {
             let id = &inst.module_id;
             let matches = room == id
                 || room.starts_with(&format!("{id}-"))
                 || room.starts_with(&format!("{id}:"));
-            if matches && best.as_ref().map(|(len, _)| id.len() > *len).unwrap_or(true) {
-                best = Some((id.len(), inst.base_url.trim_end_matches('/').to_owned()));
+            if matches && best.as_ref().map(|(len, _, _)| id.len() > *len).unwrap_or(true) {
+                best = Some((
+                    id.len(),
+                    id.clone(),
+                    inst.base_url.trim_end_matches('/').to_owned(),
+                ));
             }
         }
         match best {
-            Some((_, url)) => url,
+            Some((_, id, url)) => (id, url),
             None => return true, // aucun module → room interne au core, on laisse passer
         }
     };
@@ -361,7 +365,8 @@ async fn authorize_room(state: &AppState, room: &str, user_id: Uuid) -> bool {
     let client = reqwest::Client::new();
     let resp = client
         .post(&url)
-        .header("X-Internal-Secret", &state.settings.server.internal_secret)
+        // Secret interne du module ciblé (il le compare à sa propre valeur).
+        .header("X-Internal-Secret", state.settings.server.module_secret(&module_id))
         .json(&serde_json::json!({ "room": room, "user_id": user_id }))
         .timeout(std::time::Duration::from_secs(3))
         .send()
@@ -391,9 +396,9 @@ async fn handle(socket: WebSocket, state: AppState, room: String, user_id: Uuid)
         Ok(parts) => {
             let empty = parts.is_empty();
             let init = format!("{{\"type\":\"sync\",\"empty\":{empty}}}");
-            if sender.send(Message::Text(init.into())).await.is_err() { return; }
+            if sender.send(Message::Text(init)).await.is_err() { return; }
             for part in parts {
-                if sender.send(Message::Binary(part.into())).await.is_err() {
+                if sender.send(Message::Binary(part)).await.is_err() {
                     return;
                 }
             }
@@ -426,8 +431,8 @@ async fn handle(socket: WebSocket, state: AppState, room: String, user_id: Uuid)
             }
             Ok(frame) = rx.recv() => {
                 let out = match frame {
-                    Frame::Bin(d) => Message::Binary(d.into()),
-                    Frame::Txt(t) => Message::Text(t.into()),
+                    Frame::Bin(d) => Message::Binary(d),
+                    Frame::Txt(t) => Message::Text(t),
                 };
                 if sender.send(out).await.is_err() {
                     break;

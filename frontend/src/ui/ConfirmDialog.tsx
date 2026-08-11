@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { AlertTriangle, Trash2 } from 'lucide-react'
 import { FloatingWindow } from './FloatingWindow'
 
@@ -29,10 +29,6 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: Props) {
-  const confirmRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => { confirmRef.current?.focus() }, [])
-
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Enter') onConfirm() }
     window.addEventListener('keydown', h)
@@ -41,18 +37,20 @@ export default function ConfirmDialog({
 
   const iconBg    = variant === 'danger'  ? 'bg-red-100'    : variant === 'warning' ? 'bg-amber-100'  : 'bg-gray-100'
   const iconColor = variant === 'danger'  ? 'text-red-600'  : variant === 'warning' ? 'text-amber-600' : 'text-gray-600'
-  const confirmBtn = variant === 'danger'
-    ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500 text-white'
-    : variant === 'warning'
-    ? 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-400 text-white'
-    : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500 text-white'
 
+  // The footer belongs to the window now: a confirmation is a dialog like any
+  // other, and it was the last one still drawing two full-width filled buttons
+  // of its own — the shape every other dialog had just stopped using.
   return (
     <FloatingWindow
       title={title}
       onClose={onCancel}
       defaultWidth={380}
       backdrop
+      actions={{
+        confirm: { label: confirmLabel, onClick: onConfirm, danger: variant === 'danger', autoFocus: true },
+        cancel:  hideCancel ? false : { label: cancelLabel, onClick: onCancel },
+      }}
     >
       <div className="p-6 flex flex-col gap-4">
         {/* Icône */}
@@ -65,29 +63,6 @@ export default function ConfirmDialog({
 
         {/* Message */}
         <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-line">{message}</p>
-
-        {/* Actions */}
-        <div className="flex gap-3 mt-1">
-          {!hideCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300
-                       rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors whitespace-nowrap"
-          >
-            {cancelLabel}
-          </button>
-          )}
-          <button
-            ref={confirmRef}
-            type="button"
-            onClick={onConfirm}
-            className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg focus:outline-none
-                        focus:ring-2 focus:ring-offset-1 transition-colors whitespace-nowrap ${confirmBtn}`}
-          >
-            {confirmLabel}
-          </button>
-        </div>
       </div>
     </FloatingWindow>
   )

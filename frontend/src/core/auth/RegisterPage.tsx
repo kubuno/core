@@ -4,21 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { Button, Input, KubunoLogo } from '@ui'
-
-function passwordStrength(password: string): { score: number; key: string; color: string } {
-  let score = 0
-  if (password.length >= 8) score++
-  if (password.length >= 12) score++
-  if (/[A-Z]/.test(password)) score++
-  if (/[0-9]/.test(password)) score++
-  if (/[^A-Za-z0-9]/.test(password)) score++
-
-  if (score <= 1) return { score, key: 'register.s_very_weak', color: '#d93025' }
-  if (score === 2) return { score, key: 'register.s_weak', color: '#f9ab00' }
-  if (score === 3) return { score, key: 'register.s_medium', color: '#f9ab00' }
-  if (score === 4) return { score, key: 'register.s_strong', color: '#1e8e3e' }
-  return { score, key: 'register.s_very_strong', color: '#1e8e3e' }
-}
+import { passwordStrength } from './passwordStrength'
 
 export default function RegisterPage() {
   const { t } = useTranslation()

@@ -259,7 +259,11 @@ LimitNOFILE=65536
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/kubuno /etc/kubuno /var/log/kubuno /usr/lib/kubuno/modules
+# /var/backups/kubuno : destination par défaut de la sauvegarde planifiée
+# (crate::backup). Sans cette entrée, ProtectSystem=strict rend le
+# répertoire en lecture seule et chaque exécution échoue sur
+# « Read-only file system » — une politique armée qui ne produit rien.
+ReadWritePaths=/var/lib/kubuno /etc/kubuno /var/log/kubuno /usr/lib/kubuno/modules /var/backups/kubuno
 
 [Install]
 WantedBy=multi-user.target
@@ -287,6 +291,11 @@ if ! id -u kubuno &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin kubuno
 fi
 mkdir -p /var/lib/kubuno/drive /var/lib/kubuno/themes
+# Destination par défaut des sauvegardes. 0700 : le fichier contient les
+# empreintes de mots de passe de tous les comptes de l'instance.
+mkdir -p /var/backups/kubuno
+chown kubuno:kubuno /var/backups/kubuno
+chmod 700 /var/backups/kubuno
 # Sème/rafraîchit les thèmes livrés (IDs kubuno-*). Écrase les thèmes livrés pour
 # qu'ils restent à jour ; les thèmes IMPORTÉS par l'admin (autres IDs) ne sont
 # jamais dans /usr/share et restent donc intacts.

@@ -1,6 +1,6 @@
 import React from 'react'
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'text' | 'textDanger'
 type ButtonSize    = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -25,6 +25,14 @@ const VARIANT: Record<ButtonVariant, string> = {
   primary:   'bg-primary text-white hover:bg-primary-hover active:bg-primary-hover',
   secondary: 'bg-white border border-border text-text-primary hover:bg-surface-1 active:bg-surface-2',
   ghost:     'bg-transparent text-text-secondary hover:bg-surface-2 active:bg-surface-3',
+  // The accent, without a fill: what a dialog's confirming action looks like in
+  // a footer where the cancel is `ghost`. Distinct from `primary` (filled), which
+  // stays for the actions that carry a page.
+  text:      'bg-transparent text-primary hover:bg-primary-light active:bg-primary-light',
+  // Its own variant rather than `text` plus a colour class: two utilities on one
+  // element are settled by the STYLESHEET's order, not the attribute's, so the
+  // override silently lost and a destructive action came out accent-blue.
+  textDanger: 'bg-transparent text-danger hover:bg-danger-light active:bg-danger-light',
   danger:    'bg-danger text-white hover:opacity-90 active:opacity-80',
 }
 

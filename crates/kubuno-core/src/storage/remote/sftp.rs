@@ -8,9 +8,23 @@ use super::connector::{
     RemoteQuota,
 };
 
-/// Connecteur SFTP basé sur une connexion SSH.
-/// Utilise des commandes SSH standard via sous-processus pour rester sans dépendance native
-/// difficile à compiler (libssh2 nécessite un build system C).
+/// SFTP connector built on an SSH connection, driven through subprocesses
+/// (`ssh`/`sftp`/`sshpass`) to avoid a hard-to-build native dependency
+/// (libssh2 needs a C build system).
+///
+/// ⚠️ **This connector cannot run on this platform.** Every operation below
+/// shells out to a process, and `kubuno-seccomp` returns **`EPERM`** on `execve`
+/// process-wide (it denies the call, it does not kill the process). So each
+/// operation would fail with a cryptic `EPERM` *after* the user finished
+/// configuring the mount. To turn that into an actionable, up-front error,
+/// [`SftpConnector::new`] refuses construction (see there); the trait
+/// implementation below is therefore never reached today.
+///
+/// Kept rather than deleted because deleting it would turn "SFTP is offered and
+/// does not work" into "SFTP was never here". A real fix means an in-process SSH
+/// client (`russh`, `ssh2`), not re-enabling a spawn — see the no-host-execution
+/// rule in `CLAUDE.md`.
+#[allow(dead_code)]
 pub struct SftpConnector {
     host:      String,
     port:      u16,
@@ -21,20 +35,21 @@ pub struct SftpConnector {
 }
 
 impl SftpConnector {
-    pub fn new(config: &ConnectorConfig) -> Result<Self, RemoteError> {
-        let host = config.host.clone()
-            .ok_or_else(|| RemoteError::Auth("Hôte SFTP manquant".into()))?;
-        let username = config.username.clone().unwrap_or_else(|| "root".into());
-        let base_path = config.base_path.clone().unwrap_or_else(|| "/".into());
-
-        Ok(Self {
-            host,
-            port:      config.port.unwrap_or(22),
-            username,
-            password:  config.password.clone(),
-            key_path:  config.private_key.clone(),
-            base_path,
-        })
+    /// Refuses construction on this platform, *before* any subprocess spawn.
+    ///
+    /// Every SFTP operation shells out to `ssh`/`sftp`/`sshpass`, and
+    /// `kubuno-seccomp` returns `EPERM` on `execve` process-wide. Building the
+    /// connector and letting the user configure a mount would only defer the
+    /// failure to a cryptic `EPERM` on first use. We fail fast with a message
+    /// the user can act on immediately. A future in-process SSH client
+    /// (`russh`, `ssh2`) will replace this; re-enabling a spawn is barred by the
+    /// no-host-execution rule in `CLAUDE.md`.
+    pub fn new(_config: &ConnectorConfig) -> Result<Self, RemoteError> {
+        Err(RemoteError::Unsupported(
+            "SFTP n'est pas disponible sur cette plateforme \
+             (exécution de processus interdite par la politique de sécurité)"
+                .into(),
+        ))
     }
 
     fn full_path(&self, rel: &str) -> String {
@@ -59,6 +74,7 @@ impl SftpConnector {
         opts
     }
 
+    #[allow(dead_code)]
     async fn run_sftp_cmd(&self, sftp_cmd: &str) -> Result<String, RemoteError> {
         let mut args = self.ssh_opts();
         args.push(format!("{}@{}", self.username, self.host));
@@ -73,7 +89,7 @@ impl SftpConnector {
             .arg(&cmd)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).to_string())
@@ -102,7 +118,7 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() {
             Ok(None)
@@ -124,7 +140,7 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         let output = String::from_utf8_lossy(&out.stdout);
         let mut entries = Vec::new();
@@ -174,7 +190,7 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         let output = String::from_utf8_lossy(&out.stdout);
         let parts: Vec<&str> = output.trim().splitn(3, '|').collect();
@@ -208,14 +224,14 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         let stdout = child.stdout.ok_or_else(|| RemoteError::Provider("Stdout manquant".into()))?;
         use tokio_util::io::ReaderStream;
         use futures::StreamExt;
 
         let stream = ReaderStream::new(stdout);
-        let mapped: ByteStream = Box::pin(stream.map(|r| r.map_err(|e| RemoteError::Io(e))));
+        let mapped: ByteStream = Box::pin(stream.map(|r| r.map_err(RemoteError::Io)));
         Ok(mapped)
     }
 
@@ -236,17 +252,17 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .stdin(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
             while let Some(chunk) = stream.next().await {
-                let bytes = chunk.map_err(|e| RemoteError::Io(e))?;
-                stdin.write_all(&bytes).await.map_err(|e| RemoteError::Io(e))?;
+                let bytes = chunk.map_err(RemoteError::Io)?;
+                stdin.write_all(&bytes).await.map_err(RemoteError::Io)?;
             }
         }
 
-        child.wait().await.map_err(|e| RemoteError::Io(e))?;
+        child.wait().await.map_err(RemoteError::Io)?;
         self.stat(path).await
     }
 
@@ -260,7 +276,7 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() { Ok(()) } else {
             Err(RemoteError::Provider(String::from_utf8_lossy(&out.stderr).to_string()))
@@ -277,7 +293,7 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() { Ok(()) } else {
             Err(RemoteError::Provider(String::from_utf8_lossy(&out.stderr).to_string()))
@@ -295,7 +311,7 @@ impl RemoteConnector for SftpConnector {
             .args(&args)
             .output()
             .await
-            .map_err(|e| RemoteError::Io(e))?;
+            .map_err(RemoteError::Io)?;
 
         if out.status.success() { Ok(()) } else {
             Err(RemoteError::Provider(String::from_utf8_lossy(&out.stderr).to_string()))

@@ -3,29 +3,81 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { importMapPlugin } from './build/importmap-plugin'
 
-// App version, injected at build time as `__APP_VERSION__` (see src/vite-env.d.ts).
 const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8'),
 ) as { version: string }
 
-// Chunks partagés ciblés par l'import map du host (@ui/@kubuno/*/vendors).
-// Ils sont émis sous `shared/` mais AVEC un content-hash dans le nom, comme le
-// reste des assets : le plugin import map lit le fileName réel (hashé) et l'app
-// host + les modules pointent tous vers la MÊME URL hashée → instance unique
-// préservée. Le hash rend l'URL différente à chaque changement de contenu, ce
-// qui casse le cache mémoire/bfcache d'iOS Safari (indexé par URL, qui ignore
-// `no-store` tant que l'URL est stable) — source des contenus périmés sur iPhone.
-// Contrepartie : l'import map inline change de hash → le core relit
-// `importmap.sha256` au (re)démarrage, ce que fait tout déploiement frontend.
+/**
+ * Version strings injected at build time as `__APP_VERSION__` / `__APP_BUILD__`
+ * (see src/vite-env.d.ts), derived from git the way `build_deb.sh` derives the
+ * package build id. The point is that a screenshot of the login page names the
+ * commit it was built from — `package.json` alone only moves on a release, so
+ * between two releases it can say nothing useful.
+ *
+ *   released (clean tree, HEAD on tag `v<version>`)   0.1.5
+ *   development                                       0.1.5-42.g1a2b3c
+ *   uncommitted changes                               0.1.5-42.g1a2b3c.dirty
+ *
+ * One deliberate difference from `build_deb.sh`: no UTC timestamp after `dirty`.
+ * These strings are baked into the bundle, so a value that changes on every build
+ * would change the chunk content-hash on every build — defeating the stable-hash
+ * scheme the shared chunks rely on (see SHARED_CHUNK below) and leaving a fresh
+ * copy of every shared chunk in the deployed `shared/` directory each time.
+ *
+ * Falls back to the bare package version when git is unavailable (tarball builds).
+ */
+function versionStrings(): { display: string; build: string } {
+  const git = (...args: string[]): string | null => {
+    try {
+      return execFileSync('git', args, {
+        cwd: fileURLToPath(new URL('.', import.meta.url)),
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5_000,
+      }).trim()
+    } catch {
+      return null
+    }
+  }
+
+  const commit = git('rev-parse', '--short=7', 'HEAD')
+  const count  = git('rev-list', '--count', 'HEAD')
+  if (!commit || !count) return { display: pkg.version, build: pkg.version }
+
+  const dirty = (git('status', '--porcelain') ?? '') !== ''
+  const onTag = git('describe', '--exact-match', '--tags', 'HEAD') === `v${pkg.version}`
+
+  // A tagged, clean tree *is* the release: show the plain SemVer, nothing else.
+  if (onTag && !dirty) return { display: pkg.version, build: pkg.version }
+
+  return {
+    display: `${pkg.version}-${count}`,
+    build:   `${pkg.version}-${count}.g${commit}${dirty ? '.dirty' : ''}`,
+  }
+}
+
+const VERSION = versionStrings()
+
+// Shared chunks targeted by the host import map (@ui/@kubuno/*/vendors).
+// They are emitted under `shared/` but WITH a content-hash in the name, like the
+// rest of the assets: the import map plugin reads the real (hashed) fileName, and
+// the host app plus every module all point at the SAME hashed URL → the single
+// shared instance is preserved. The hash makes the URL change whenever the content
+// changes, which busts iOS Safari's memory/bfcache (keyed by URL, and it ignores
+// `no-store` as long as the URL is stable) — the source of stale content on iPhone.
+// Trade-off: the inline import map changes hash → the core re-reads
+// `importmap.sha256` on (re)start, which every frontend deployment does anyway.
 const SHARED_CHUNK = (name: string | undefined) =>
   name === 'kubuno-shared' || name === 'drive-shared' || (name?.startsWith('vendor-') ?? false)
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), importMapPlugin()],
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_VERSION__: JSON.stringify(VERSION.display),
+    __APP_BUILD__:   JSON.stringify(VERSION.build),
   },
   resolve: {
     alias: {

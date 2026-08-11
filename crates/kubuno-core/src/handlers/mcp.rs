@@ -12,11 +12,21 @@ use kubuno_mcp::{handle_message, McpToolProvider, Tool, ToolCallResult};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::{auth::middleware::InternalRequest, handlers::api_tokens::resolve_token, state::AppState};
+use crate::{
+    auth::{
+        middleware::InternalRequest,
+        token_scope::{self, TokenGrant},
+    },
+    errors::AppError,
+    state::AppState,
+};
 
 /// Provider adossé à `core.module_instances.mcp_tools` + exécution par proxy HTTP.
 struct CoreToolProvider {
     state: AppState,
+    /// The API token behind the call, when there is one. `None` for the internal
+    /// variant, which is authenticated by a module's own secret.
+    grant: Option<TokenGrant>,
 }
 
 #[async_trait]
@@ -50,16 +60,20 @@ impl McpToolProvider for CoreToolProvider {
 
     async fn call_tool(&self, name: &str, arguments: Value, user_id: Uuid) -> ToolCallResult {
         // Localiser l'outil (base_url + route + method) parmi les instances actives
-        let rows = sqlx::query_as::<_, (String, Value)>(
-            "SELECT base_url, mcp_tools FROM core.module_instances
+        let rows = sqlx::query_as::<_, (String, String, Value)>(
+            "SELECT module_id, base_url, mcp_tools FROM core.module_instances
              WHERE status IN ('healthy', 'starting')",
         )
         .fetch_all(&self.state.db)
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "MCP: lecture des instances de modules impossible");
+            Vec::new()
+        });
 
-        let mut target: Option<(String, String, String)> = None; // (base_url, route, method)
-        for (base_url, tools) in rows {
+        // (module_id, base_url, route, method)
+        let mut target: Option<(String, String, String, String)> = None;
+        for (module_id, base_url, tools) in rows {
             if let Some(arr) = tools.as_array() {
                 for t in arr {
                     if t.get("name").and_then(|x| x.as_str()) == Some(name) {
@@ -72,7 +86,7 @@ impl McpToolProvider for CoreToolProvider {
                         }
                         let route  = t.get("route").and_then(|x| x.as_str()).unwrap_or("/").to_string();
                         let method = t.get("method").and_then(|x| x.as_str()).unwrap_or("POST").to_uppercase();
-                        target = Some((base_url.clone(), route, method));
+                        target = Some((module_id.clone(), base_url.clone(), route, method));
                         break;
                     }
                 }
@@ -80,21 +94,35 @@ impl McpToolProvider for CoreToolProvider {
             if target.is_some() { break }
         }
 
-        let Some((base_url, route, method)) = target else {
+        let Some((module_id, base_url, route, method)) = target else {
             return ToolCallResult::error(format!("Outil introuvable: {name}"));
         };
 
-        // Charger l'utilisateur pour injecter son identité aux modules
+        // Charger l'utilisateur pour injecter son identité aux modules.
+        // `is_active` is part of the predicate: a suspended account must not keep
+        // driving modules through a tool call.
         let user = sqlx::query_as::<_, crate::models::user::User>(
-            "SELECT * FROM core.users WHERE id = $1",
+            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
         )
         .bind(user_id)
         .fetch_optional(&self.state.db)
         .await
-        .ok()
-        .flatten();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "MCP : chargement de l'utilisateur");
+            None
+        });
         let Some(user) = user else {
             return ToolCallResult::error("Utilisateur introuvable");
+        };
+
+        // The role presented to the module. When the call arrived on an API
+        // token, it is derived from that token's scopes — this endpoint
+        // authenticates by token and nothing else, so forwarding the owner's role
+        // verbatim made it the shortest path in the whole system to untraced
+        // administrative access inside every module.
+        let role = match self.grant.as_ref() {
+            Some(g) => token_scope::module_role_for(g, &user.role),
+            None => user.role.clone(),
         };
 
         let url = format!("{}{}", base_url.trim_end_matches('/'), route);
@@ -104,9 +132,10 @@ impl McpToolProvider for CoreToolProvider {
             _     => client.post(&url).json(&arguments),
         }
         .header("x-kubuno-user-id", user.id.to_string())
-        .header("x-kubuno-user-role", user.role.clone())
+        .header("x-kubuno-user-role", role.clone())
         .header("x-kubuno-user-email", user.email.clone())
-        .header("x-internal-secret", self.state.settings.server.internal_secret.clone());
+        // Secret interne du module ciblé (il le compare à sa propre valeur).
+        .header("x-internal-secret", self.state.settings.server.module_secret(&module_id));
 
         match req.send().await {
             Ok(resp) => {
@@ -140,20 +169,39 @@ pub async fn mcp_endpoint(
         return (StatusCode::NOT_FOUND, "Serveur MCP désactivé").into_response();
     }
 
-    // Auth : token API → utilisateur
-    let token = headers
+    // Auth: personal API token, and nothing else — no session, no cookie. That
+    // makes this the one route where the scoping rules cannot be a second line of
+    // defence behind an interactive check; they are the only line.
+    let Some(token) = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
-    let user_id = match token {
-        Some(t) => resolve_token(&state.db, t).await,
-        None => None,
-    };
-    let Some(user_id) = user_id else {
+        .and_then(|v| v.strip_prefix("Bearer "))
+    else {
         return (StatusCode::UNAUTHORIZED, "Token API requis").into_response();
     };
 
-    dispatch(&state, user_id, body).await
+    let grant = match token_scope::resolve_grant(&state.db, token).await {
+        Ok(g) => g,
+        // Carries the distinguishable codes: a legacy token past its window gets
+        // API_TOKEN_LEGACY_EXPIRED rather than a bare 401 it would keep retrying.
+        Err(e) => return e.into_response(),
+    };
+
+    // A scoped token must say it may do this. A legacy token is admitted during
+    // its grace window — it predates the scope it is now missing — and every one
+    // of its uses is logged and audited by `resolve_grant`.
+    if !grant.may_carry(token_scope::MCP_EXECUTE) {
+        tracing::warn!(
+            token_id = %grant.token_id,
+            user_id = %grant.user_id,
+            "MCP refusé : le jeton ne porte pas la portée core.mcp.execute"
+        );
+        return AppError::ApiTokenScopeMissing(token_scope::MCP_EXECUTE.to_string())
+            .into_response();
+    }
+
+    let user_id = grant.user_id;
+    dispatch(&state, user_id, Some(grant), body).await
 }
 
 /// POST /internal/mcp — internal variant for trusted modules (e.g. the assistant module)
@@ -178,12 +226,17 @@ pub async fn internal_mcp_endpoint(
         return (StatusCode::BAD_REQUEST, "En-tête x-kubuno-user-id requis").into_response();
     };
 
-    dispatch(&state, user_id, body).await
+    dispatch(&state, user_id, None, body).await
 }
 
 /// Traite un message JSON-RPC unique ou un lot (array), au nom de `user_id`.
-async fn dispatch(state: &AppState, user_id: Uuid, body: Value) -> Response {
-    let provider = CoreToolProvider { state: state.clone() };
+async fn dispatch(
+    state: &AppState,
+    user_id: Uuid,
+    grant: Option<TokenGrant>,
+    body: Value,
+) -> Response {
+    let provider = CoreToolProvider { state: state.clone(), grant };
     let version = env!("CARGO_PKG_VERSION");
 
     if let Some(arr) = body.as_array() {

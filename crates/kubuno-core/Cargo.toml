@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "kubuno"
-path = "src/bin/kubuno.rs"
+path = "src/bin/kubuno/main.rs"
 
 [lib]
 name = "kubuno_core"
@@ -37,6 +37,8 @@ argon2.workspace       = true
 aes-gcm.workspace      = true
 rand.workspace         = true
 sha2.workspace         = true
+hmac.workspace         = true
+subtle.workspace       = true
 base64.workspace       = true
 
 reqwest.workspace   = true
@@ -45,6 +47,7 @@ config.workspace    = true
 dotenvy.workspace   = true
 
 validator.workspace = true
+regex.workspace     = true
 
 tracing.workspace            = true
 tracing-subscriber.workspace = true
@@ -55,6 +58,10 @@ anyhow.workspace    = true
 
 uuid.workspace   = true
 chrono.workspace = true
+hickory-resolver.workspace = true
+chrono-tz.workspace = true
+ipnet.workspace  = true
+libc.workspace   = true
 bytes.workspace   = true
 zip.workspace     = true
 futures.workspace = true
@@ -65,6 +72,10 @@ toml.workspace    = true
 totp-rs.workspace = true
 clap.workspace    = true
 url.workspace               = true
+lettre.workspace            = true
+ldap3.workspace              = true
+rustls-pemfile.workspace     = true
+rustls-native-certs.workspace = true
 tokio-tungstenite.workspace = true
 kubuno-storage.workspace    = true
 kubuno-mcp.workspace        = true

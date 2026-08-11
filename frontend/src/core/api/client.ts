@@ -1,4 +1,5 @@
 import axios, { type AxiosError } from 'axios'
+import { requestReauth } from '../store/reauthStore'
 
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -30,6 +31,28 @@ api.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const original = error.config!
+
+    // ── Réauthentification avant action sensible ────────────────────────────
+    // Le core refuse par un 403 PORTEUR D'UN CODE (`REAUTH_REQUIRED`) — c'est ce
+    // qui distingue ce refus d'un « accès refusé » ordinaire et permet de
+    // proposer le bon écran plutôt que d'échouer sans recours. On obtient une
+    // preuve fraîche, puis on rejoue la requête telle quelle.
+    //
+    // Volontairement un 403 et non un 401 : un 401 déclencherait la branche de
+    // renouvellement ci-dessous, or re-signer un jeton d'accès n'est justement
+    // PAS ce qui manque ici.
+    const code = (error.response?.data as { error?: string } | undefined)?.error
+    if (
+      error.response?.status === 403 &&
+      code === 'REAUTH_REQUIRED' &&
+      !(original as { _reauth?: boolean })._reauth
+    ) {
+      ;(original as { _reauth?: boolean })._reauth = true
+      const proof = await requestReauth()
+      if (!proof) return Promise.reject(normalizeError(error))
+      original.headers['X-Reauth-Token'] = proof
+      return api(original)
+    }
 
     // Ne pas retenter sur l'endpoint de refresh lui-même (évite la boucle infinie)
     const isRefreshEndpoint = original.url?.includes('/auth/refresh')

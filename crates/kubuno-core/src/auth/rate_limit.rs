@@ -25,6 +25,12 @@ fn limit_for_path(path: &str) -> u32 {
     if path.contains("forgot-password") || path.contains("reset-password") {
         // Brute-forceable and mail-sending — keep these tight.
         3
+    } else if path.contains("/reauth") {
+        // Step-up: the caller is already authenticated and each attempt is audited,
+        // so the brute-force surface is small — but an office behind one NAT can
+        // legitimately produce a burst of challenges, and locking a shared address
+        // out of every sensitive action would be worse than the risk.
+        30
     } else if path.ends_with("/refresh") {
         // One home/office IP legitimately carries many refresh callers (browser tabs,
         // desktop daemon + doc proxy, mobile). A refresh without a valid HttpOnly
@@ -37,12 +43,9 @@ fn limit_for_path(path: &str) -> u32 {
 
 pub async fn rate_limit_auth(req: Request<Body>, next: Next) -> Response {
     let path  = req.uri().path().to_owned();
-    let ip    = req.headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or("").trim().to_string())
-        .or_else(|| req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()).map(String::from))
-        .unwrap_or_else(|| "unknown".to_string());
+    // Trusted-proxy aware: a forged X-Forwarded-For can no longer mint a fresh
+    // bucket on every request. See `crate::auth::client_ip`.
+    let ip    = crate::auth::client_ip::client_ip_key(&req);
 
     let key   = format!("{ip}:{path}");
     let limit = limit_for_path(&path);

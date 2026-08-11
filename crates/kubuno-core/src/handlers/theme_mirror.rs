@@ -41,7 +41,8 @@ async fn try_sync(state: &AppState) -> anyhow::Result<()> {
             None => return Ok(()),
         }
     };
-    let secret = state.settings.server.internal_secret.clone();
+    // Secret interne du module drive (celui qu'il détient), pas le secret maître.
+    let secret = state.settings.server.module_secret("drive");
     let themes_dir = state.settings.server.themes_dir.clone();
     let client = reqwest::Client::new();
 

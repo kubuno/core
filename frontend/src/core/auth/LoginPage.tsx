@@ -39,6 +39,32 @@ interface OAuthProviderInfo {
   button_color: string | null
 }
 
+/**
+ * Which sign-in methods the page must draw.
+ *
+ * A property of the CONFIGURATION alone — the endpoint takes no login and reads
+ * no account, so nothing here can be used to find out whether an address exists
+ * or which organisational unit it belongs to. The per-unit rule is enforced
+ * after identification (see `crate::auth::methods`), and its refusal wears the
+ * same "invalid credentials" as every other failure.
+ *
+ * Failing OPEN is deliberate: if this call does not come back, the password form
+ * is shown. A network hiccup must not present an operator with a page that has
+ * no way in at all.
+ */
+function useAuthMethods() {
+  return useQuery({
+    queryKey: ['auth-methods'],
+    queryFn: () =>
+      axios
+        .get<{ methods: { local: boolean; directory: boolean; sso: boolean }; password_form: boolean }>(
+          '/api/v1/auth/methods',
+        )
+        .then((r) => r.data),
+    staleTime: 60_000,
+  })
+}
+
 function useOAuthProviders() {
   return useQuery({
     queryKey: ['oauth-providers'],
@@ -57,6 +83,11 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
   const [error, setError] = useState('')
   const [step, setStep] = useState<'credentials' | 'totp' | 'forgot'>(initialStep)
   const [totpCode, setTotpCode] = useState('')
+  // A lost phone is exactly when the second-factor screen matters, so this screen
+  // must be able to take a backup code. The two inputs are mutually exclusive:
+  // one is six digits, the other ten letters and digits, and a single field
+  // sanitising for both would silently eat characters from whichever it is not.
+  const [useBackupCode, setUseBackupCode] = useState(false)
   // Mot de passe oublié — rendu dans le panneau droit du login (au lieu d'une page séparée).
   const [forgotEmail, setForgotEmail] = useState('')
   const [forgotSubmitted, setForgotSubmitted] = useState(false)
@@ -68,6 +99,11 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
   const registrationOpen = useRegistrationOpen()
   const defaultModulePath = useDefaultModulePath()
   const { data: oauthProviders } = useOAuthProviders()
+  const { data: authMethods } = useAuthMethods()
+  // Undefined = the call has not answered (or failed). Show the form: a page
+  // with neither a password field nor a provider button is a dead end.
+  const showPasswordForm = authMethods?.password_form ?? true
+  const showProviders = (authMethods?.methods.sso ?? true) && (oauthProviders?.length ?? 0) > 0
   const { data: publicConfig } = usePublicConfig()
 
   // L'animation lit ses paramètres depuis le réglage serveur (console admin,
@@ -114,7 +150,7 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
     e.preventDefault()
     setError('')
     try {
-      await verifyTotp(totpCode)
+      await verifyTotp(totpCode, useBackupCode ? 'backup' : 'totp')
       navigate(postLoginPath())
     } catch (err: unknown) {
       const msg = (err as { message?: string })?.message
@@ -157,8 +193,14 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
           </p>
         </div>
 
-        {/* Version de l'application — en bas du panneau */}
-        <span className="absolute bottom-4 left-0 right-0 text-center text-xs text-white/45 z-10 select-none">
+        {/* Application version, at the foot of the panel. The full build id —
+            commit hash, working-tree state — stays in the tooltip rather than on
+            screen: this page is public, and the commit is of no use to whoever is
+            signing in. It is one hover away for whoever is diagnosing a report. */}
+        <span
+          className="absolute bottom-4 left-0 right-0 text-center text-xs text-white/45 z-10 select-none"
+          title={`Kubuno ${__APP_BUILD__}`}
+        >
           Kubuno v{__APP_VERSION__}
         </span>
       </div>
@@ -178,7 +220,9 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                 <ShieldCheck size={28} className="text-primary shrink-0" />
                 <div>
                   <h1 className="text-2xl font-normal" style={{ color: '#202124' }}>{t('login.tfa_title')}</h1>
-                  <p className="text-sm mt-1" style={{ color: '#5f6368' }}>{t('login.tfa_subtitle')}</p>
+                  <p className="text-sm mt-1" style={{ color: '#5f6368' }}>
+                    {useBackupCode ? t('login.backup_subtitle') : t('login.tfa_subtitle')}
+                  </p>
                 </div>
               </div>
 
@@ -191,14 +235,18 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                 >
                   <input
                     type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    maxLength={6}
+                    inputMode={useBackupCode ? 'text' : 'numeric'}
+                    pattern={useBackupCode ? undefined : '[0-9]{6}'}
+                    maxLength={useBackupCode ? 11 : 6}
                     value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setTotpCode(
+                      useBackupCode
+                        ? e.target.value.replace(/[^A-Za-z0-9-]/g, '').toUpperCase()
+                        : e.target.value.replace(/\D/g, '')
+                    )}
                     autoFocus
                     autoComplete="one-time-code"
-                    placeholder={t('settings.tfa_code_ph')}
+                    placeholder={useBackupCode ? t('login.backup_ph') : t('settings.tfa_code_ph')}
                     className="w-full px-4 py-3.5 text-sm bg-white outline-none text-text-primary tracking-widest text-center
                                placeholder:text-text-tertiary placeholder:tracking-normal"
                   />
@@ -210,10 +258,19 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                   </div>
                 )}
 
+                <button
+                  type="button"
+                  onClick={() => { setUseBackupCode((v) => !v); setTotpCode(''); setError('') }}
+                  className="text-sm font-medium hover:underline"
+                  style={{ color: '#1a73e8' }}
+                >
+                  {useBackupCode ? t('login.use_app_code') : t('login.use_backup_code')}
+                </button>
+
                 <div className="flex items-center justify-between pt-2">
                   <button
                     type="button"
-                    onClick={() => { setStep('credentials'); setTotpCode(''); setError('') }}
+                    onClick={() => { setStep('credentials'); setTotpCode(''); setUseBackupCode(false); setError('') }}
                     className="text-sm font-medium hover:underline"
                     style={{ color: '#1a73e8' }}
                   >
@@ -222,7 +279,9 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                   <Button
                     type="submit"
                     size="lg"
-                    disabled={totpCode.length !== 6}
+                    disabled={useBackupCode
+                      ? totpCode.replace(/[^A-Za-z0-9]/g, '').length !== 10
+                      : totpCode.length !== 6}
                     loading={isLoading}
                     className="ml-auto"
                   >
@@ -298,8 +357,11 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
             {t('login.subtitle')}
           </p>
 
-          {/* SSO / OIDC providers (Keycloak, GitLab, …) */}
-          {(oauthProviders?.length ?? 0) > 0 && (
+          {/* SSO / OIDC providers (Keycloak, GitLab, …) — only when the
+              instance actually accepts that method somewhere. A button for a
+              method nobody may use is an invitation to an error the person
+              cannot diagnose. */}
+          {showProviders && (
             <>
               <div className="space-y-2">
                 {oauthProviders!.map((p) => (
@@ -321,14 +383,26 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                   </a>
                 ))}
               </div>
-              <div className="flex items-center gap-3 my-2">
-                <div className="flex-1 h-px" style={{ background: '#dadce0' }} />
-                <span className="text-xs" style={{ color: '#80868b' }}>{t('login.or')}</span>
-                <div className="flex-1 h-px" style={{ background: '#dadce0' }} />
-              </div>
+              {showPasswordForm && (
+                <div className="flex items-center gap-3 my-2">
+                  <div className="flex-1 h-px" style={{ background: '#dadce0' }} />
+                  <span className="text-xs" style={{ color: '#80868b' }}>{t('login.or')}</span>
+                  <div className="flex-1 h-px" style={{ background: '#dadce0' }} />
+                </div>
+              )}
             </>
           )}
 
+          {/* The same two fields serve the local password AND the directory
+              bind, so the form is shown when either method is accepted. */}
+          {!showPasswordForm && !showProviders && (
+            <p className="text-sm px-4 py-3 rounded-md"
+               style={{ color: '#d93025', background: '#fce8e6', border: '1px solid #f28b82' }}>
+              {t('login.no_method')}
+            </p>
+          )}
+
+          {showPasswordForm && (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <div
@@ -414,6 +488,7 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
               </Button>
             </div>
           </form>
+          )}
           </>
           )}
         </div>

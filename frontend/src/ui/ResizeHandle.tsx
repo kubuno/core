@@ -54,7 +54,7 @@ export function ResizeHandle({
       className="absolute top-0 bottom-0 z-20 w-3 -translate-x-1/2 cursor-ew-resize group"
     >
       {/* ligne verticale visible (centrée dans la zone de saisie) */}
-      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:bg-primary/40 transition-colors" />
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[5px] rounded-full bg-border group-hover:bg-primary/40 transition-colors" />
       {/* poignée (grip) indiquant que c'est redimensionnable */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center
                       h-9 w-3.5 rounded-full bg-surface-0 border border-border text-text-tertiary shadow-sm

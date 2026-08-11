@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { KubunoLogo } from '@ui'
+import { useTranslation } from 'react-i18next'
+import { KubunoLogo, ToastProvider } from '@ui'
 import { useAuthStore } from './core/store/authStore'
 import { useModulesStore } from './core/store/modulesStore'
 import { RouteRegistry } from './core/registry/RouteRegistry'
@@ -8,7 +9,9 @@ import Shell from './core/shell/Shell'
 import { DocumentTitle } from './core/shell/DocumentTitle'
 import LoginPage from './core/auth/LoginPage'
 import RegisterPage from './core/auth/RegisterPage'
+import ResetPasswordPage from './core/auth/ResetPasswordPage'
 import OAuthCallback from './core/auth/OAuthCallback'
+import ForcePasswordChange from './core/auth/ForcePasswordChange'
 import SettingsPage from './core/settings/SettingsPage'
 import AdminPage from './core/admin/AdminPage'
 import HomePage from './core/pages/HomePage'
@@ -16,6 +19,7 @@ import ModulesPage from './core/pages/ModulesPage'
 import AboutPage from './core/pages/AboutPage'
 import LabelsPage from './core/pages/LabelsPage'
 import PromptHost from './core/components/PromptHost'
+import ReauthHost from './core/components/ReauthHost'
 import ImagePickerHost from './core/components/ImagePickerHost'
 import ShareHost from './core/components/ShareHost'
 import LabelPickerHost from './core/components/LabelPickerHost'
@@ -55,6 +59,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const from = location.pathname + location.search
     return <Navigate to="/login" replace state={from !== '/' ? { from } : undefined} />
   }
+  // Account still carrying the seeded default password: the WHOLE shell is
+  // replaced by the change screen, whatever route was asked for. Nothing to
+  // dismiss and no page behind it — typing /admin or /settings lands here too.
+  if (user.must_change_password) return <ForcePasswordChange />
   return <>{children}</>
 }
 
@@ -95,14 +103,26 @@ export default function App() {
   // Se re-rend quand un bundle de module est chargé à l'exécution : les routes
   // enregistrées par le module (RouteRegistry, non réactif) sont alors prises en compte.
   useModulesStore((s) => s.loadedVersion)
+  // `t` du host : les libellés internes de la primitive (« Fermer ») suivent la
+  // langue de l'utilisateur au lieu des repères anglais de @ui.
+  const { t } = useTranslation()
   return (
-    <>
+    // Mounted ABOVE <Routes>: the toast host must survive a route change and
+    // cover the whole application — the authentication screens and the admin
+    // console included, neither of which lives inside <Shell>. It portals to
+    // <body> (no PortalHostContext here), so a toast is never clipped by a
+    // scroll container, and it is the single stack every `useToast()` in the
+    // host or in a runtime-loaded module writes into.
+    <ToastProvider t={t}>
     <DocumentTitle />
     <Routes>
       {/* Pages publiques core — redirigent vers l'accueil si déjà connecté */}
       <Route path="/login"           element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
       <Route path="/register"        element={<PublicOnlyRoute><RegisterPage /></PublicOnlyRoute>} />
       <Route path="/forgot-password" element={<PublicOnlyRoute><LoginPage initialStep="forgot" /></PublicOnlyRoute>} />
+      {/* Cible du lien envoyé par « mot de passe oublié ». Le jeton arrive en
+          query string ; la page est publique par nature (aucune session). */}
+      <Route path="/reset-password"  element={<PublicOnlyRoute><ResetPasswordPage /></PublicOnlyRoute>} />
       <Route path="/auth/oauth/:provider/callback" element={<OAuthCallback />} />
 
       {/* Pages publiques des modules */}
@@ -117,7 +137,16 @@ export default function App() {
         <Route index         element={<HomePage />} />
         <Route path="modules"  element={<ModulesPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="admin"    element={<AdminPage />} />
+        {/* La console d'administration met le LIEU dans le chemin —
+            `/admin/<section>[/<fiche>[/<volet>]]` — et le reste (filtres,
+            recherche, verbe d'action) en query string. AdminPage lit lui-même
+            location.pathname : la forme de chaque section est déclarée dans
+            adminNav.ts et interprétée par adminRoute.ts, qui redirige aussi
+            toute adresse historique (`/admin?tab=users&user=…`). */}
+        <Route path="admin"                  element={<AdminPage />} />
+        <Route path="admin/:tab"             element={<AdminPage />} />
+        <Route path="admin/:tab/:record"     element={<AdminPage />} />
+        <Route path="admin/:tab/:record/:pane" element={<AdminPage />} />
         <Route path="about"    element={<AboutPage />} />
         <Route path="labels"   element={<LabelsPage />} />
 
@@ -132,12 +161,13 @@ export default function App() {
       </Route>
     </Routes>
     <PromptHost />
+    <ReauthHost />
     <ImagePickerHost />
     <ShareHost />
     <LabelPickerHost />
     <ClipboardPaneHost />
     <PendingDeletionHost />
     <TextFieldMenuHost />
-    </>
+    </ToastProvider>
   )
 }

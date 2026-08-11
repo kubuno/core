@@ -1,0 +1,324 @@
+//! Job types shipped by the core itself.
+//!
+//! * [`CLEANUP_EVENT_LOG`] — periodic purge of `core.event_log` (30-day
+//!   retention). The SQL function `core.cleanup_event_log()` has existed since
+//!   migration `000003` and nothing ever called it; this is its caller.
+//! * [`PURGE_ADMIN_AUDIT`] — periodic purge of `core.admin_audit`, honouring the
+//!   configurable `security.audit_retention_days` window. Same shape as above;
+//!   [`crate::audit::retention::purge_expired`] records its own entry in the
+//!   trail, so a purge is never an invisible deletion.
+//! * [`SELFTEST`] — diagnostic job used to exercise the runner end to end
+//!   (execution, retry with backoff, crash recovery) on a real instance,
+//!   without waiting for a real workload. It does nothing but sleep and,
+//!   optionally, fail on purpose.
+
+use std::time::Duration;
+
+use sqlx::PgPool;
+
+use super::queue::{self, NewJob};
+use super::registry::JobRegistry;
+
+pub const CLEANUP_EVENT_LOG: &str = "core.cleanup_event_log";
+pub const PURGE_ADMIN_AUDIT: &str = "core.purge_admin_audit";
+pub const STORAGE_USAGE_RECONCILE: &str = "core.storage.usage_reconcile";
+pub const SELFTEST: &str = "core.selftest";
+/// Erases accounts whose deletion grace period has run out.
+pub const PURGE_DELETED_USERS: &str = "core.purge_deleted_users";
+
+/// How often the event log is purged.
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(24 * 3_600);
+
+/// How often the administrative audit trail is trimmed to its retention window.
+const AUDIT_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 3_600);
+
+/// How often the storage breakdown is checked against the authoritative total
+/// and its declarants checked for silence.
+///
+/// Hourly, and deliberately more often than the staleness window it enforces
+/// (`storage.usage_stale_hours`, 24 h by default): a check that ran at the same
+/// period as the threshold would report a module a whole period late.
+const USAGE_RECONCILE_INTERVAL: Duration = Duration::from_secs(3_600);
+
+/// Daily, like the other sweeps. The grace period is counted in days, so a
+/// finer cadence would only move the moment of erasure inside a day nobody is
+/// watching.
+const USER_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 3_600);
+
+/// Registers the core's own job types.
+pub fn register(registry: &mut JobRegistry) {
+    registry.register_fn(CLEANUP_EVENT_LOG, |ctx, job| async move {
+        let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM core.event_log")
+            .fetch_one(&ctx.db)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Comptage de core.event_log échoué");
+                e
+            })?;
+
+        sqlx::query("SELECT core.cleanup_event_log()")
+            .execute(&ctx.db)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Purge de core.event_log échouée");
+                e
+            })?;
+
+        let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM core.event_log")
+            .fetch_one(&ctx.db)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Comptage de core.event_log échoué");
+                e
+            })?;
+
+        tracing::info!(
+            purgées = before - after,
+            restantes = after,
+            "Purge du journal d'événements (rétention 30 jours)"
+        );
+
+        // Schedule the next occurrence. Done on success only: a failing purge
+        // is retried by the runner, and the startup call below re-arms the
+        // cycle if it ever gave up for good.
+        let next = NewJob::new(CLEANUP_EVENT_LOG).delay(CLEANUP_INTERVAL);
+        queue::reschedule_after(&ctx.db, next, job.id).await?;
+        Ok(())
+    });
+
+    registry.register_fn(PURGE_ADMIN_AUDIT, |ctx, job| async move {
+        // `purge_expired` reads the configured window, applies the floor, logs
+        // its own database errors and writes its own audit entry.
+        let deleted = crate::audit::retention::purge_expired(&ctx.db).await?;
+        tracing::info!(
+            purgées = deleted,
+            "Purge du journal d'audit administratif (rétention configurable)"
+        );
+
+        // Same discipline as the event-log purge: re-arm on success only, so a
+        // failing purge is retried by the runner instead of silently skipping a
+        // day, and the startup call below revives the cycle if it gave up.
+        let next = NewJob::new(PURGE_ADMIN_AUDIT).delay(AUDIT_PURGE_INTERVAL);
+        queue::reschedule_after(&ctx.db, next, job.id).await?;
+        Ok(())
+    });
+
+    // ── Storage provenance ──────────────────────────────────────────────────
+    //
+    // The declarations that feed the per-module breakdown are pushed by the
+    // modules themselves; this is the core's side of the bargain. It does two
+    // things, and deliberately not a third.
+    //
+    // * It states the divergence between the authoritative total
+    //   (`SUM(core.users.used_bytes)`, what quotas are enforced against) and the
+    //   sum of the declarations. That residue is normal — it is every module
+    //   that does not declare yet — and the point is that it is written down
+    //   somewhere periodically rather than only visible to whoever opens the
+    //   console.
+    // * It raises an alert for a module that used to declare and has gone quiet,
+    //   and resolves it as soon as the module speaks again. Silence is the one
+    //   failure mode of a push channel that produces no error anywhere: the
+    //   figure simply stops moving, and a stale figure that looks fresh is worse
+    //   than no figure.
+    //
+    // What it does **not** do is recompute anything on a module's behalf. The
+    // core cannot enumerate another module's storage — that is the entire reason
+    // the module has to declare — so a "reconciliation" that recounted would be
+    // inventing the number it is supposed to be checking.
+    registry.register_fn(STORAGE_USAGE_RECONCILE, |ctx, job| async move {
+        let authoritative: i64 =
+            sqlx::query_scalar("SELECT COALESCE(SUM(used_bytes), 0)::bigint FROM core.users")
+                .fetch_one(&ctx.db)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "storage_usage: total faisant autorité");
+                    e
+                })?;
+
+        let breakdown = crate::storage::usage::breakdown(&ctx.db, authoritative).await?;
+        tracing::info!(
+            déclaré = breakdown.declared_bytes,
+            non_attribué = breakdown.unattributed_bytes,
+            sur_déclaré = breakdown.over_declared_bytes,
+            modules_silencieux = breakdown.silent_modules,
+            "Réconciliation du stockage : provenance de la consommation"
+        );
+
+        let stale = crate::storage::usage::stale_reporters(&ctx.db).await?;
+        let mut live = Vec::new();
+        for (module_id, display_name, last, used) in &stale {
+            let hours = (chrono::Utc::now() - *last).num_hours().max(0);
+            let alert = crate::alerts::model::NewAlert::new(
+                crate::alerts::catalog::USAGE_STALE,
+                crate::alerts::catalog::SRC_STORAGE,
+                crate::alerts::catalog::default_severity(crate::alerts::catalog::USAGE_STALE),
+                format!("“{display_name}” has stopped declaring what it stores"),
+            )
+            .summary(format!(
+                "Its last declaration was {hours} h ago. Its share of the storage breakdown is still shown — it is the last measurement known to be true — but it is no longer being refreshed."
+            ))
+            .payload(serde_json::json!({
+                "module_id":        module_id,
+                "module_name":      display_name,
+                "last_declared_at": last,
+                "hours_silent":     hours,
+                "declared_bytes":   used,
+                "stale_hours":      breakdown.stale_hours,
+            }))
+            .module(module_id.clone())
+            .dedup(module_id);
+
+            live.push(alert.dedup_key.clone());
+            crate::alerts::store::raise(&ctx.db, alert).await?;
+        }
+
+        // A module that started declaring again closes its own alert: the queue
+        // must never keep a card about a condition that has ended.
+        crate::alerts::store::auto_resolve(&ctx.db, crate::alerts::catalog::USAGE_STALE, &live)
+            .await?;
+
+        // ── Then the repair ─────────────────────────────────────────────────
+        //
+        // Ordered after the staleness check on purpose: the pass suspends itself
+        // whenever a declarant is stale, so the alert that explains *why* nothing
+        // was corrected is already raised by the time the repair declines to run.
+        let repair = crate::storage::usage::repair_counters(&ctx.db).await?;
+        if !repair.enabled {
+            tracing::debug!("Recalage du stockage désactivé par la configuration");
+        } else if !repair.blocked_by.is_empty() {
+            tracing::info!(
+                modules = ?repair.blocked_by.iter().map(|b| (b.module_id.as_str(), b.blocker)).collect::<Vec<_>>(),
+                comptes_en_écart = repair.drifting_accounts,
+                "Recalage du stockage suspendu : un déclarant n'est pas à jour"
+            );
+        }
+
+        let next = NewJob::new(STORAGE_USAGE_RECONCILE).delay(USAGE_RECONCILE_INTERVAL);
+        queue::reschedule_after(&ctx.db, next, job.id).await?;
+        Ok(())
+    });
+
+    // Erases accounts whose grace period has expired.
+    //
+    // Keyed on `deleted_at`, **never** on `is_active`: the two mean the same
+    // thing in the column and opposite things to a person, because a suspension
+    // also deactivates. A purge reading `is_active` would destroy accounts
+    // somebody had merely put on hold. See `migrations/000109`.
+    //
+    // `deleted_at` is stamped only by `admin::users::delete_user` and cleared by
+    // reactivation, so accounts that were already inactive when this shipped
+    // carry no stamp and are never swept — erasing them stays a deliberate,
+    // one-at-a-time act through the purge route.
+    registry.register_fn(PURGE_DELETED_USERS, |ctx, job| async move {
+        // Read straight from the instance row, like `audit::retention`: this is
+        // an instance-wide policy, so resolving it through the per-unit chain
+        // would invite a unit to shorten its own grace period.
+        let raw: Option<serde_json::Value> =
+            sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'users.purge_after_days'")
+                .fetch_optional(&ctx.db)
+                .await
+                .unwrap_or(None)
+                .flatten();
+        // Clamped to ten years: a value read from a column somebody can write is
+        // an input, and `make_interval` with an absurd figure is a query that
+        // never returns.
+        let days = raw.and_then(|v| v.as_i64()).unwrap_or(20).clamp(0, 3_650);
+
+        // Release alerts these accounts had taken, first. `core.alerts` pairs
+        // `assignee_id` with `assigned_at` under a CHECK, while the foreign key
+        // nulls only the first — so the delete below would fail on the
+        // constraint. Same reasoning as `admin::users::purge_user`.
+        if let Err(e) = sqlx::query(
+            "UPDATE core.alerts a SET assignee_id = NULL, assigned_at = NULL
+               FROM core.users u
+              WHERE a.assignee_id = u.id
+                AND u.deleted_at IS NOT NULL
+                AND u.deleted_at < NOW() - make_interval(days => $1::int)",
+        )
+        .bind(days as i32)
+        .execute(&ctx.db)
+        .await
+        {
+            tracing::error!(error = %e, "Libération des alertes avant purge échouée");
+            return Err(e.into());
+        }
+
+        // One statement, and it returns what it destroyed: an erasure that left
+        // no trace of its own scope would be the one operation nobody can audit
+        // after the fact.
+        let erased: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+            "DELETE FROM core.users
+              WHERE deleted_at IS NOT NULL
+                AND deleted_at < NOW() - make_interval(days => $1::int)
+              RETURNING id, email::text",
+        )
+        .bind(days as i32)
+        .fetch_all(&ctx.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Purge des comptes supprimés échouée");
+            e
+        })?;
+
+        if !erased.is_empty() {
+            let audit = crate::audit::AuditContext::system("Purge des comptes supprimés");
+            for (id, email) in &erased {
+                audit
+                    .record(
+                        &ctx.db,
+                        crate::audit::AuditEntry::new("core.users.purge")
+                            .target(crate::audit::redact::target::USER, *id, email.clone())
+                            .detail(format!("délai de grâce de {days} jour(s) écoulé")),
+                    )
+                    .await;
+            }
+            tracing::info!(
+                comptes = erased.len(),
+                délai_jours = days,
+                "Comptes supprimés effacés définitivement"
+            );
+        }
+
+        let next = NewJob::new(PURGE_DELETED_USERS).delay(USER_PURGE_INTERVAL);
+        queue::reschedule_after(&ctx.db, next, job.id).await?;
+        Ok(())
+    });
+
+    registry.register_fn(SELFTEST, |_ctx, job| async move {
+        let sleep_ms = job.payload.get("sleep_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+        if sleep_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(sleep_ms.min(600_000))).await;
+        }
+        let label = job.payload.get("label").and_then(|v| v.as_str()).unwrap_or("");
+        if job.payload.get("fail").and_then(|v| v.as_bool()).unwrap_or(false) {
+            anyhow::bail!("échec volontaire (core.selftest{}{label})", if label.is_empty() { "" } else { " " });
+        }
+        tracing::info!(job_id = %job.id, label = %label, "Tâche de diagnostic exécutée");
+        Ok(())
+    });
+}
+
+/// Arms the recurring maintenance jobs at startup. Idempotent across restarts
+/// and across several core processes.
+pub async fn schedule(db: &PgPool) {
+    match queue::ensure_scheduled(db, NewJob::new(CLEANUP_EVENT_LOG)).await {
+        Ok(Some(id)) => tracing::info!(job_id = %id, "Purge du journal d'événements planifiée"),
+        Ok(None) => tracing::debug!("Purge du journal d'événements déjà planifiée"),
+        Err(_) => { /* already logged */ }
+    }
+    match queue::ensure_scheduled(db, NewJob::new(PURGE_ADMIN_AUDIT)).await {
+        Ok(Some(id)) => tracing::info!(job_id = %id, "Purge du journal d'audit planifiée"),
+        Ok(None) => tracing::debug!("Purge du journal d'audit déjà planifiée"),
+        Err(_) => { /* already logged */ }
+    }
+    match queue::ensure_scheduled(db, NewJob::new(PURGE_DELETED_USERS)).await {
+        Ok(Some(id)) => tracing::info!(job_id = %id, "Purge des comptes supprimés planifiée"),
+        Ok(None) => tracing::debug!("Purge des comptes supprimés déjà planifiée"),
+        Err(_) => { /* already logged */ }
+    }
+    match queue::ensure_scheduled(db, NewJob::new(STORAGE_USAGE_RECONCILE)).await {
+        Ok(Some(id)) => tracing::info!(job_id = %id, "Réconciliation du stockage planifiée"),
+        Ok(None) => tracing::debug!("Réconciliation du stockage déjà planifiée"),
+        Err(_) => { /* already logged */ }
+    }
+}

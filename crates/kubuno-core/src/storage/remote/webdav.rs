@@ -214,32 +214,41 @@ impl RemoteConnector for WebDavConnector {
     async fn stat(&self, path: &str) -> Result<RemoteEntry, RemoteError> {
         let xml = self.propfind(path, "0").await?;
         let mut entries = self.parse_propfind(&xml, "");
-        // When depth=0, the response includes the resource itself with no filtering
-        // Parse it directly
+
+        // A `Depth: 0` PROPFIND answers with exactly **one** `<d:response>`: the
+        // resource itself. `parse_propfind` drops it when the href ends in a
+        // slash and the last segment comes out empty — a collection asked about
+        // by a path the server echoes back with a trailing slash. That is the
+        // only case this fallback exists for, so it reads the single block
+        // directly rather than looping: there is never a second one, and the
+        // previous `for … { return }` said "loop" while meaning "take the
+        // first", which is also what clippy's `never_loop` was pointing at.
         if entries.is_empty() {
-            // Re-parse without filtering parent
-            for response_block in xml.split("<d:response>").skip(1) {
-                let href = extract_xml_text(response_block, "d:href").unwrap_or_default();
+            if let Some(block) = xml.split("<d:response>").nth(1) {
+                let href = extract_xml_text(block, "d:href").unwrap_or_default();
                 let decoded = percent_decode(&href);
-                let name = decoded.trim_end_matches('/')
+                let name = decoded
+                    .trim_end_matches('/')
                     .rsplit('/')
                     .next()
                     .unwrap_or_default()
                     .to_string();
-                let is_collection = response_block.contains("<d:collection");
-                let size_bytes = extract_xml_text(response_block, "d:getcontentlength")
-                    .and_then(|s| s.parse::<u64>().ok());
-                let modified_at = extract_xml_text(response_block, "d:getlastmodified")
-                    .and_then(|s| parse_http_date(&s));
+                let is_collection = block.contains("<d:collection");
                 return Ok(RemoteEntry {
                     name,
                     path: path.to_string(),
-                    entry_type: if is_collection { RemoteEntryType::Directory } else { RemoteEntryType::File },
-                    size_bytes,
-                    modified_at,
+                    entry_type: if is_collection {
+                        RemoteEntryType::Directory
+                    } else {
+                        RemoteEntryType::File
+                    },
+                    size_bytes: extract_xml_text(block, "d:getcontentlength")
+                        .and_then(|s| s.parse::<u64>().ok()),
+                    modified_at: extract_xml_text(block, "d:getlastmodified")
+                        .and_then(|s| parse_http_date(&s)),
                     mime_type: None,
                     remote_id: None,
-                    etag: extract_xml_text(response_block, "d:getetag"),
+                    etag: extract_xml_text(block, "d:getetag"),
                 });
             }
         }
@@ -278,7 +287,7 @@ impl RemoteConnector for WebDavConnector {
         // Collect the stream into bytes (WebDAV PUT requires Content-Length for most servers)
         let mut data = Vec::new();
         while let Some(chunk) = stream.next().await {
-            let bytes = chunk.map_err(|e| RemoteError::Io(e))?;
+            let bytes = chunk.map_err(RemoteError::Io)?;
             data.extend_from_slice(&bytes);
         }
 

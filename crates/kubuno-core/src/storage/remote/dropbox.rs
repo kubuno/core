@@ -7,8 +7,8 @@ use serde::Deserialize;
 use std::pin::Pin;
 
 use super::connector::{
-    ByteStream, ConnectorConfig, RemoteConnector, RemoteEntry, RemoteEntryType, RemoteError,
-    RemoteQuota,
+    next_page_step, ByteStream, ConnectorConfig, PageStep, RemoteConnector, RemoteEntry,
+    RemoteEntryType, RemoteError, RemoteQuota, MAX_LIST_PAGES,
 };
 
 const API_URL:    &str = "https://api.dropboxapi.com/2";
@@ -28,6 +28,10 @@ struct DbxEntry {
     rev:               Option<String>,
 }
 
+/// One page of a `list_folder` (or `list_folder/continue`) response. When
+/// `has_more` is true, `cursor` is the token to POST to `/files/list_folder/continue`
+/// to fetch the next page; `list_dir` loops on it (bounded by [`MAX_LIST_PAGES`])
+/// so a folder larger than one page is returned in full.
 #[derive(Debug, Deserialize)]
 struct DbxList {
     entries:     Vec<DbxEntry>,
@@ -139,12 +143,12 @@ impl RemoteConnector for DropboxConnector {
 
     async fn list_dir(&self, path: &str) -> Result<Vec<RemoteEntry>, RemoteError> {
         let full = self.full_path(path);
-        let body = serde_json::json!({ "path": full });
 
+        // First page: /files/list_folder with the folder path.
         let resp = self.client
             .post(format!("{API_URL}/files/list_folder"))
             .header("Authorization", self.auth())
-            .json(&body)
+            .json(&serde_json::json!({ "path": full }))
             .send()
             .await
             .map_err(|e| RemoteError::Network(e.to_string()))?;
@@ -154,10 +158,51 @@ impl RemoteConnector for DropboxConnector {
             return Err(RemoteError::Provider(err));
         }
 
-        let list: DbxList = resp.json().await
+        let mut list: DbxList = resp.json().await
             .map_err(|e| RemoteError::Provider(e.to_string()))?;
 
-        Ok(list.entries.into_iter().map(|e| self.entry_from_dbx(e)).collect())
+        let mut entries = Vec::new();
+        let mut pages: u32 = 0;
+
+        loop {
+            entries.extend(list.entries.into_iter().map(|e| self.entry_from_dbx(e)));
+            pages += 1;
+
+            let cursor = match next_page_step(list.has_more, list.cursor, pages, MAX_LIST_PAGES) {
+                PageStep::Next(cursor) => cursor,
+                PageStep::Done => break,
+                PageStep::Truncated => {
+                    // Never lie by silence: the folder holds more entries than
+                    // we fetched (page cap reached, or `has_more` with no cursor).
+                    tracing::warn!(
+                        path = %path,
+                        pages,
+                        "Listing Dropbox tronqué (plafond de pages ou curseur absent) : des entrées sont omises"
+                    );
+                    break;
+                }
+            };
+
+            // Subsequent pages use a DIFFERENT endpoint: /files/list_folder/continue,
+            // driven by the cursor rather than the path.
+            let resp = self.client
+                .post(format!("{API_URL}/files/list_folder/continue"))
+                .header("Authorization", self.auth())
+                .json(&serde_json::json!({ "cursor": cursor }))
+                .send()
+                .await
+                .map_err(|e| RemoteError::Network(e.to_string()))?;
+
+            if !resp.status().is_success() {
+                let err = resp.text().await.unwrap_or_default();
+                return Err(RemoteError::Provider(err));
+            }
+
+            list = resp.json().await
+                .map_err(|e| RemoteError::Provider(e.to_string()))?;
+        }
+
+        Ok(entries)
     }
 
     async fn stat(&self, path: &str) -> Result<RemoteEntry, RemoteError> {
@@ -209,7 +254,7 @@ impl RemoteConnector for DropboxConnector {
         let full = self.full_path(path);
         let mut data = Vec::new();
         while let Some(chunk) = stream.next().await {
-            data.extend_from_slice(&chunk.map_err(|e| RemoteError::Io(e))?);
+            data.extend_from_slice(&chunk.map_err(RemoteError::Io)?);
         }
 
         let api_arg = serde_json::json!({ "path": full, "mode": "overwrite" });

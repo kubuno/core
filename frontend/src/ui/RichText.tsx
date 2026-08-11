@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Bold, Italic, Underline, List, ListOrdered, Link2, Eraser } from 'lucide-react'
+import type { MentionsConfig } from './mention/types'
+import { useContentEditableMention } from './mention/useContentEditableMention'
 
 interface RichTextProps {
   /** HTML controlled value */
@@ -9,18 +11,26 @@ interface RichTextProps {
   className?: string
   minHeight?: number
   disabled?: boolean
+  /**
+   * Opt-in @mention support. ABSENT (or `enabled` falsy) → unchanged behaviour.
+   * When enabled, picking a mention inserts an inline chip directly in the
+   * contenteditable; the chips are part of the emitted HTML `value`.
+   */
+  mentions?: MentionsConfig
 }
 
 // Éditeur de texte enrichi primitif (@ui) — contenteditable + execCommand.
 // Toolbar : gras, italique, souligné, listes (numérotée/à puces), lien,
 // effacer la mise en forme. Sans dépendance lourde ; le lien s'ajoute via un
 // petit champ intégré (pas de dialogue navigateur).
-export function RichText({ value, onChange, placeholder, className, minHeight = 96, disabled }: RichTextProps) {
+export function RichText({ value, onChange, placeholder, className, minHeight = 96, disabled, mentions }: RichTextProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkUrl, setLinkUrl]   = useState('')
   const [empty, setEmpty]       = useState(!value)
   const savedRange = useRef<Range | null>(null)
+  // Opt-in @mention behaviour bound to THIS contenteditable. No-op when absent.
+  const mention = useContentEditableMention(ref, mentions, () => emit())
 
   // Initialise le HTML une seule fois (évite de réinitialiser le curseur à chaque frappe).
   useEffect(() => {
@@ -77,13 +87,17 @@ export function RichText({ value, onChange, placeholder, className, minHeight = 
         </div>
       )}
       <div className="relative">
-        <div ref={ref} contentEditable={!disabled} onInput={emit} suppressContentEditableWarning
+        <div ref={ref} contentEditable={!disabled} suppressContentEditableWarning
+          onInput={() => { emit(); mention.onInput() }}
+          onKeyUp={mention.onKeyUp}
+          onKeyDown={mention.onKeyDown}
           className="px-3 py-2 text-sm text-text-primary outline-none leading-relaxed
                      [&_a]:text-primary [&_a]:underline [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:ml-5 [&_ol]:ml-5"
           style={{ minHeight }} />
         {empty && placeholder && (
           <div className="absolute top-2 left-3 text-sm text-text-tertiary pointer-events-none select-none">{placeholder}</div>
         )}
+        {mention.overlay}
       </div>
     </div>
   )

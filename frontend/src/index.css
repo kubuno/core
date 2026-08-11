@@ -116,83 +116,95 @@ button {
  * Unlayered on purpose, and a CSS class rather than a JS helper: every module can
  * use it immediately, with no `@kubuno/ui` release and no version bump.
  *
- * Three things are NOT obvious here:
+ * The blur sits on the panel itself and is clipped by its own `border-radius`, which
+ * is what the reference design does too. An earlier version blurred an oversized
+ * child layer trimmed back with a 6-layer gradient `mask`, to dodge the pale ring
+ * `backdrop-filter` leaves along an edge (the backdrop is clipped to the element box
+ * before blurring, so the kernel runs out of samples). Measured side by side over a
+ * high-contrast backdrop, that cure was worse than the disease at this blur radius:
+ * the mask rendered visibly square, stair-stepped corners that detached from the
+ * rounded border, and averaging such a wide area flattened the backdrop to a dead
+ * grey. Blurring in place keeps the corners exact and actually shows what is behind.
  *
- * 1. The blurred layer OVERFLOWS the panel by more than the blur radius. A
- *    `backdrop-filter` on the panel itself clips the backdrop to its own box BEFORE
- *    blurring, so within one radius of each edge the kernel runs out of samples and
- *    flattens — a pale ring where the panel reads as opaque.
- * 2. It is trimmed back with `mask`, NOT `overflow`/`clip-path`: Chrome applies those
- *    two BEFORE filters, which throws the extra samples away again (measured).
- *    The mask is assembled from 6 layers (4 corners + a cross) because a single mask
- *    image cannot hold a fixed-radius rounded rectangle at an arbitrary size.
- *    Careful: in `mask-position`, `100%` means "box minus image", hence the plain
- *    `--kb-frost-pad` offset on the far edges rather than pad + radius.
- * 3. Blur alone is INVISIBLE on a light UI — blurring white gives white. The tint,
- *    the inner top highlight and the grain are what make it read as glass.
+ * NO `position` here. This rule is unlayered, so it would beat the panel's own
+ * `fixed`/`absolute` Tailwind utility (utilities live in a cascade layer) and drop the
+ * menu back into normal flow — it then renders off-screen.
  *
- * 4. The blurred layer is a REAL child element, not a `::before`: measured in Chrome
- *    150, `backdrop-filter` on the pseudo-element simply does not composite here —
- *    the panel came out translucent but perfectly sharp. A real element works.
+ * The surface MUST stay translucent: an opaque colour silently disables the blur.
  *
- * Usage: `.kb-frosted` on the panel + `<div class="kb-frost-layer">` as its FIRST
- * child; sibling content is lifted above it automatically. Add `.kb-frosted-dark`
- * for dark editors. The panel must carry NO clipping of its own.
+ * `.kb-frost-layer` is kept as a no-op so the five consumers (and every module
+ * bundle already shipped) keep rendering their first child harmlessly.
  * ───────────────────────────────────────────────────────────────────────────── */
 .kb-frosted {
-  --kb-frost-pad: 72px;
-  --kb-frost-r: var(--kb-float-radius);
-  /* NO `position` here. This rule is unlayered, so it would beat the panel's own
-   * `fixed`/`absolute` Tailwind utility (utilities live in a cascade layer) and drop the
-   * menu back into normal flow — it then renders off-screen. The panel must therefore
-   * already be positioned, which every consumer is; the layer anchors to it. */
-  border: 1px solid var(--kb-float-border);
-  border-radius: var(--kb-float-radius);
-  box-shadow: var(--kb-float-highlight), var(--kb-shadow-float);
-}
-.kb-frost-layer {
-  position: absolute;
-  inset: calc(-1 * var(--kb-frost-pad, 72px));
-  z-index: 0;
-  pointer-events: none;
   background-color: var(--kb-float-surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='0.42'/%3E%3C/svg%3E");
-  background-blend-mode: soft-light;
   /* Pas de ligne `-webkit-` ici : Lightning CSS la réordonnait devant la propriété
      standard et Chrome rejetait alors la déclaration entière (absente de la CSSOM,
      calculée à `none`). Mesuré. Le prix est le flou perdu sur Safari < 18. */
   backdrop-filter: var(--kb-float-filter);
-  mask-image:
-    radial-gradient(circle var(--kb-frost-r) at var(--kb-frost-r) var(--kb-frost-r), #000 99%, transparent 100%),
-    radial-gradient(circle var(--kb-frost-r) at 0 var(--kb-frost-r), #000 99%, transparent 100%),
-    radial-gradient(circle var(--kb-frost-r) at var(--kb-frost-r) 0, #000 99%, transparent 100%),
-    radial-gradient(circle var(--kb-frost-r) at 0 0, #000 99%, transparent 100%),
-    linear-gradient(#000 0 0),
-    linear-gradient(#000 0 0);
-  mask-position:
-    var(--kb-frost-pad) var(--kb-frost-pad),
-    calc(100% - var(--kb-frost-pad)) var(--kb-frost-pad),
-    var(--kb-frost-pad) calc(100% - var(--kb-frost-pad)),
-    calc(100% - var(--kb-frost-pad)) calc(100% - var(--kb-frost-pad)),
-    var(--kb-frost-pad) calc(var(--kb-frost-pad) + var(--kb-frost-r)),
-    calc(var(--kb-frost-pad) + var(--kb-frost-r)) var(--kb-frost-pad);
-  mask-size:
-    var(--kb-frost-r) var(--kb-frost-r),
-    var(--kb-frost-r) var(--kb-frost-r),
-    var(--kb-frost-r) var(--kb-frost-r),
-    var(--kb-frost-r) var(--kb-frost-r),
-    calc(100% - 2 * var(--kb-frost-pad)) calc(100% - 2 * (var(--kb-frost-pad) + var(--kb-frost-r))),
-    calc(100% - 2 * (var(--kb-frost-pad) + var(--kb-frost-r))) calc(100% - 2 * var(--kb-frost-pad));
-  mask-repeat: no-repeat;
+  border-radius: var(--kb-float-radius);
+  box-shadow: var(--kb-shadow-float);
 }
+/* `.kb-window` — floating window surface (dialogs, tool panels). Unlayered, so
+ * module bundles pick it up with no republish. Declares NO `position`: the
+ * window carries its own.
+ *
+ * The frosted-glass frame it used to carry was removed on 2026-08-09: a window
+ * now reads as a solid card whose HEADER is a full accent band, the way the
+ * reference console draws its dialogs. The blur survives only where it says
+ * something — menus (`.kb-frosted`) and the backdrop. */
+.kb-window {
+  padding: var(--kb-window-inset);
+  background-color: var(--kb-window-surface);
+  backdrop-filter: var(--kb-window-filter);
+  border: var(--kb-window-border, none);
+  border-radius: var(--kb-window-radius);
+  box-shadow: var(--kb-shadow-window);
+}
+/* The band. Its colour is the MODULE's accent, so the same primitive is blue in
+ * the console and office-coloured inside office. */
+.kb-window-titlebar {
+  /* L'accent est lu ICI, sur la fenêtre elle-même, qui porte `data-module` : un
+     jeton intermédiaire défini sur `:root` aurait figé le bleu du core (voir
+     theme.css). Un thème peut toujours imposer `--kb-window-titlebar`. */
+  background: var(--kb-window-titlebar, var(--color-primary));
+  color: var(--kb-window-title-fg);
+  border-radius: var(--kb-window-inner-radius) var(--kb-window-inner-radius) 0 0;
+}
+/* Title actions were written for a light bar and carry their own dark utility
+ * colours; on an accent band those are unreadable. Two class selectors beat a
+ * single utility class, so the inherited white wins without `!important` — and
+ * a caller that really wants another colour can still say so with two classes. */
+.kb-window-titlebar .kb-window-actions button,
+.kb-window-titlebar .kb-window-actions a,
+.kb-window-titlebar .kb-window-actions svg,
+.kb-window-titlebar .kb-window-actions span { color: inherit; }
+
+.kb-window-content {
+  background: var(--kb-window-content);
+}
+/* The footer the window draws itself: one rule, one look, everywhere. */
+.kb-window-footer {
+  background: var(--kb-window-content);
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 0 var(--kb-window-inner-radius) var(--kb-window-inner-radius);
+}
+
+/* Resize grip — two rounded oblique strokes, drawn in SVG like the reference. */
+.kb-window-grip {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14'%3E%3Cpath d='M12 6 6 12 M12 10 10 12' stroke='%232c2c3a' stroke-width='1.8' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") no-repeat center;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+.kb-window-grip:hover, .kb-window-grip:active { opacity: 0.9; }
+
+.kb-frost-layer { display: none; }
 .kb-frosted > *:not(.kb-frost-layer) { position: relative; z-index: 1; }
 
 /* Dark editors (paintsharp, workspace shells). */
 .kb-frosted-dark {
-  border-color: var(--kb-float-border-dark);
-  box-shadow: var(--kb-float-highlight-dark), var(--kb-shadow-float-dark);
+  background-color: var(--kb-float-surface-dark);
+  box-shadow: var(--kb-shadow-float-dark);
 }
-.kb-frosted-dark > .kb-frost-layer { background-color: var(--kb-float-surface-dark); }
 
 button, input, textarea, select {
   font-family: var(--font-family-sans);

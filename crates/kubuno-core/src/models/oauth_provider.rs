@@ -17,8 +17,27 @@ pub struct OAuthProvider {
     pub enabled:           bool,
     pub allow_signup:      bool,
     pub position:          i32,
+    /// Claim names feeding our fields. Dotted paths allowed — see
+    /// [`crate::auth::oauth::ClaimMap`].
+    pub claim_username:     String,
+    pub claim_email:        String,
+    pub claim_display_name: String,
+    pub claim_groups:       String,
+    /// Place the person in the groups named by `claim_groups`.
+    pub sync_groups:        bool,
     pub created_at:        DateTime<Utc>,
     pub updated_at:        DateTime<Utc>,
+}
+
+impl OAuthProvider {
+    pub fn claims(&self) -> crate::auth::oauth::ClaimMap {
+        crate::auth::oauth::ClaimMap {
+            username:     self.claim_username.clone(),
+            email:        self.claim_email.clone(),
+            display_name: self.claim_display_name.clone(),
+            groups:       self.claim_groups.clone(),
+        }
+    }
 }
 
 /// Admin-facing view — exposes everything EXCEPT the secret (only whether one is set).
@@ -35,6 +54,11 @@ pub struct AdminOAuthProvider {
     pub enabled:      bool,
     pub allow_signup: bool,
     pub position:     i32,
+    pub claim_username:     String,
+    pub claim_email:        String,
+    pub claim_display_name: String,
+    pub claim_groups:       String,
+    pub sync_groups:        bool,
 }
 
 impl From<OAuthProvider> for AdminOAuthProvider {
@@ -51,6 +75,11 @@ impl From<OAuthProvider> for AdminOAuthProvider {
             enabled:      p.enabled,
             allow_signup: p.allow_signup,
             position:     p.position,
+            claim_username:     p.claim_username,
+            claim_email:        p.claim_email,
+            claim_display_name: p.claim_display_name,
+            claim_groups:       p.claim_groups,
+            sync_groups:        p.sync_groups,
         }
     }
 }
@@ -83,6 +112,12 @@ pub struct CreateOAuthProviderDto {
     pub allow_signup:  bool,
     #[serde(default)]
     pub position:      i32,
+    pub claim_username:     Option<String>,
+    pub claim_email:        Option<String>,
+    pub claim_display_name: Option<String>,
+    pub claim_groups:       Option<String>,
+    #[serde(default)]
+    pub sync_groups:        bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,4 +132,9 @@ pub struct UpdateOAuthProviderDto {
     pub enabled:      Option<bool>,
     pub allow_signup: Option<bool>,
     pub position:     Option<i32>,
+    pub claim_username:     Option<String>,
+    pub claim_email:        Option<String>,
+    pub claim_display_name: Option<String>,
+    pub claim_groups:       Option<String>,
+    pub sync_groups:        Option<bool>,
 }

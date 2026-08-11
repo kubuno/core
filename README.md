@@ -31,6 +31,7 @@ The *core* is the platform's "operating system": it provides the infrastructure 
 - 🖥️ **Runtime-loaded frontend** — the React 19 host loads modules **at runtime** via ESM import maps and shared singletons (`@kubuno/sdk`, `@ui`), without ever naming a module statically.
 - 🎨 **Packaged themes (skins)** — themes are importable `.zip` bundles that can restyle the whole platform or targeted modules with CSS variables, stylesheets and (admin-trusted) scripts; several polished themes ship with the core. See [`THEMES.md`](THEMES.md).
 - 🏷️ **Cross-module labels** — user-owned labels that attach to items of *any* module (files, tasks, events…), with rich cross-module previews and sharing to users or groups.
+- 💬 **@mentions everywhere** — the shared `@ui` text primitives (single-line, multiline and rich-text) accept an opt-in *mention* mode; any module can publish a mention provider on the extension registry, so typing `@` suggests people (e.g. contacts) with a bold-matched dropdown and inserts a removable chip — degrading gracefully to plain text when no provider is installed.
 - 🌍 **i18n** — 13 languages, RTL included.
 
 ## 🏗️ Architecture

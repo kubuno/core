@@ -30,6 +30,24 @@ pub enum AppEvent {
     AiIndexRequested { resource_id: Uuid, resource_type: String, user_id: Uuid, module_id: String },
     ContactUpdated  { contact_id: Uuid, user_id: Uuid, module_id: String },
 
+    /// A setting changed at one scope. Emitted by every scoped write, including
+    /// "revert to inherited" (`value_set = false`) and lock changes.
+    ///
+    /// The value itself is deliberately absent: this event reaches every module
+    /// and the WebSocket hub, and some settings hold credentials. Subscribers
+    /// that need the new value re-read it through the resolver for the scope
+    /// they care about — which is also the only way to get inheritance right.
+    SettingChanged {
+        key:        String,
+        scope_type: String,
+        scope_id:   Option<Uuid>,
+        /// Owning module, `None` for a core setting.
+        module_id:  Option<String>,
+        /// `false` when the scope went back to inheriting.
+        value_set:  bool,
+        locked:     bool,
+    },
+
     // Core interne
     ModuleRegistered    { module_id: String, base_url: String },
     ModuleUnregistered  { module_id: String },

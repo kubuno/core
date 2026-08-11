@@ -7,11 +7,26 @@ export interface AppNotification {
     read: boolean;
     createdAt: string;
     link?: string;
+    /**
+     * Stable identity of the THING being announced (an alert id, a job id…), as
+     * opposed to `id` which identifies this notification row.
+     *
+     * It exists because a producer that polls — the alert centre does — would
+     * otherwise re-announce the same open alert on every refresh, and a bell that
+     * cries the same news every minute is a bell people silence. See `pushKeyed`.
+     */
+    key?: string;
 }
 interface NotificationState {
     notifications: AppNotification[];
     unreadCount: number;
     push: (n: Omit<AppNotification, 'id' | 'read' | 'createdAt'>) => void;
+    /**
+     * Announces something at most once. Returns silently when a notification
+     * already carries `key`, whether it has been read or not: "already told you"
+     * includes "told you and you dismissed it".
+     */
+    pushKeyed: (key: string, n: Omit<AppNotification, 'id' | 'read' | 'createdAt' | 'key'>) => void;
     markRead: (id: string) => void;
     markAllRead: () => void;
     clear: () => void;

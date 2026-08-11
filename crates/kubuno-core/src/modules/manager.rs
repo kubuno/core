@@ -121,7 +121,9 @@ async fn sync_to_db(db: &PgPool, manifest: &ModuleManifest) -> bool {
 ///
 /// Variables d'environnement injectées dans chaque processus :
 ///   KUBUNO_CORE_URL        → URL du core (pour l'auto-enregistrement)
-///   KUBUNO_INTERNAL_SECRET → Secret partagé
+///   KUBUNO_INTERNAL_SECRET → Secret interne du module (dérivé du secret maître
+///                            si `server.derive_module_secrets` est actif, sinon
+///                            le secret maître lui-même)
 ///   KUBUNO_MODULE_ID       → Identifiant du module
 ///   KUBUNO_CONFIG_DIR      → /etc/kubuno/modules/<id>/
 ///   KUBUNO_DATA_DIR        → /var/lib/kubuno/modules/<id>/
@@ -188,7 +190,15 @@ pub async fn spawn_module(
             return false;
         }
     };
-    let secret   = settings.server.internal_secret.clone();
+    // Secret propre à ce module (dérivé du maître) lorsque la dérivation est
+    // active — le module le lit comme n'importe quel secret partagé, il ignore
+    // qu'il lui est spécifique. Voir `crate::auth::internal_secret`.
+    let secret   = settings.server.module_secret(&manifest.module.id);
+    tracing::debug!(
+        module_id = %manifest.module.id,
+        derived   = secret != settings.server.internal_secret,
+        "Secret interne du module préparé"
+    );
     let cfg_dir  = settings.server.modules_config_dir.clone();
     let data_dir = settings.server.modules_data_dir.clone();
     let db2      = db.clone();

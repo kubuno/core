@@ -1,6 +1,5 @@
-use axum::{body::Body, extract::ConnectInfo, http::Request, middleware::Next, response::Response};
+use axum::{body::Body, http::Request, middleware::Next, response::Response};
 use chrono::Local;
-use std::net::SocketAddr;
 use tracing_appender::{
     non_blocking::WorkerGuard,
     rolling::{RollingFileAppender, Rotation},
@@ -177,6 +176,11 @@ pub async fn apache_log_middleware(req: Request<Body>, next: Next) -> Response {
     response
 }
 
+// Nine parameters, and they stay nine: this is one line of the Apache combined
+// log format, whose fields are fixed by the format itself. Folding them into a
+// struct would add a type whose only purpose is to be destructured immediately,
+// and whose field order could then drift from the format it must reproduce.
+#[allow(clippy::too_many_arguments)]
 pub fn format_apache_line(
     remote_ip: &str,
     timestamp: &str,
@@ -201,24 +205,12 @@ fn header_str(req: &Request<Body>, name: &str) -> String {
         .to_string()
 }
 
+/// Adresse du client pour le journal d'accès. Les en-têtes de redirection ne
+/// sont pris en compte que derrière un mandataire de confiance : sinon le
+/// journal serait trivialement falsifiable. Voir `crate::auth::client_ip`.
 fn forwarded_ip(req: &Request<Body>) -> String {
-    req.headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .or_else(|| {
-            req.headers()
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_string)
-        })
-        .or_else(|| {
-            req.extensions()
-                .get::<ConnectInfo<SocketAddr>>()
-                .map(|ci| ci.0.ip().to_string())
-        })
-        .unwrap_or_else(|| "-".to_string())
+    crate::auth::client_ip::client_ip(req)
+        .map_or_else(|| "-".to_string(), |ip| ip.to_string())
 }
 
 #[cfg(test)]

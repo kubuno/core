@@ -7,13 +7,14 @@ use serde::Deserialize;
 use std::pin::Pin;
 
 use super::connector::{
-    ByteStream, ConnectorConfig, RemoteConnector, RemoteEntry, RemoteEntryType, RemoteError,
-    RemoteQuota,
+    next_page_step, ByteStream, ConnectorConfig, PageStep, RemoteConnector, RemoteEntry,
+    RemoteEntryType, RemoteError, RemoteQuota, MAX_LIST_PAGES,
 };
 
 const DRIVE_API: &str = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD: &str = "https://www.googleapis.com/upload/drive/v3";
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct DriveFile {
     id:               String,
@@ -23,12 +24,17 @@ struct DriveFile {
     size:             Option<String>,
     #[serde(rename = "modifiedTime")]
     modified_time:    Option<String>,
+    // Parsed to document the payload; not used by any read path yet.
     #[serde(rename = "parents")]
     parents:          Option<Vec<String>>,
     #[serde(rename = "webContentLink")]
     web_content_link: Option<String>,
 }
 
+/// One page of a `files.list` response. `next_page_token`, when present, is the
+/// `pageToken` to pass on the next request to fetch the following page; `list_dir`
+/// loops on it (bounded by [`MAX_LIST_PAGES`]) so a folder larger than one API
+/// page is returned in full.
 #[derive(Debug, Deserialize)]
 struct DriveList {
     files:             Option<Vec<DriveFile>>,
@@ -176,25 +182,60 @@ impl RemoteConnector for GDriveConnector {
         let folder_id = self.resolve_path(path).await?;
         let query = format!("'{}' in parents and trashed = false", folder_id);
 
-        let resp = self.client
-            .get(format!("{DRIVE_API}/files"))
-            .header("Authorization", self.auth_header())
-            .query(&[
+        let mut entries = Vec::new();
+        let mut page_token: Option<String> = None;
+        let mut pages: u32 = 0;
+
+        loop {
+            // `pageToken` is added only from the second page onwards; it carries
+            // the cursor Drive returned as `nextPageToken` on the previous page.
+            let mut params: Vec<(&str, &str)> = vec![
                 ("q", query.as_str()),
                 ("fields", "files(id,name,mimeType,size,modifiedTime,parents),nextPageToken"),
                 ("pageSize", "1000"),
-            ])
-            .send()
-            .await
-            .map_err(|e| RemoteError::Network(e.to_string()))?;
+            ];
+            if let Some(tok) = page_token.as_deref() {
+                params.push(("pageToken", tok));
+            }
 
-        let list: DriveList = resp.json().await
-            .map_err(|e| RemoteError::Provider(e.to_string()))?;
+            let resp = self.client
+                .get(format!("{DRIVE_API}/files"))
+                .header("Authorization", self.auth_header())
+                .query(&params)
+                .send()
+                .await
+                .map_err(|e| RemoteError::Network(e.to_string()))?;
 
-        Ok(list.files.unwrap_or_default()
-            .into_iter()
-            .map(|f| self.entry_from_file(f, path))
-            .collect())
+            if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(RemoteError::Auth("Token Google Drive expiré".into()));
+            }
+
+            let list: DriveList = resp.json().await
+                .map_err(|e| RemoteError::Provider(e.to_string()))?;
+
+            if let Some(files) = list.files {
+                entries.extend(files.into_iter().map(|f| self.entry_from_file(f, path)));
+            }
+            pages += 1;
+
+            let has_more = list.next_page_token.is_some();
+            match next_page_step(has_more, list.next_page_token, pages, MAX_LIST_PAGES) {
+                PageStep::Next(tok) => page_token = Some(tok),
+                PageStep::Done => break,
+                PageStep::Truncated => {
+                    // Never lie by silence: the folder holds more than the cap.
+                    // `path` carries no credentials, unlike the request URL.
+                    tracing::warn!(
+                        path = %path,
+                        pages,
+                        "Listing Google Drive tronqué (plafond de pages atteint) : des entrées sont omises"
+                    );
+                    break;
+                }
+            }
+        }
+
+        Ok(entries)
     }
 
     async fn stat(&self, path: &str) -> Result<RemoteEntry, RemoteError> {
@@ -210,7 +251,7 @@ impl RemoteConnector for GDriveConnector {
         let file: DriveFile = resp.json().await
             .map_err(|e| RemoteError::Provider(e.to_string()))?;
 
-        let parent = path.rsplitn(2, '/').nth(1).unwrap_or("");
+        let parent = path.rsplit_once('/').map(|x| x.0).unwrap_or("");
         Ok(self.entry_from_file(file, parent))
     }
 
@@ -243,13 +284,13 @@ impl RemoteConnector for GDriveConnector {
         use futures::StreamExt;
 
         let name   = path.rsplit('/').next().unwrap_or(path).to_string();
-        let parent = path.rsplitn(2, '/').nth(1).unwrap_or("");
+        let parent = path.rsplit_once('/').map(|x| x.0).unwrap_or("");
         let parent_id = self.resolve_path(parent).await?;
 
         // Collect data
         let mut data = Vec::new();
         while let Some(chunk) = stream.next().await {
-            data.extend_from_slice(&chunk.map_err(|e| RemoteError::Io(e))?);
+            data.extend_from_slice(&chunk.map_err(RemoteError::Io)?);
         }
 
         // Multipart upload
@@ -276,7 +317,7 @@ impl RemoteConnector for GDriveConnector {
 
     async fn create_dir(&self, path: &str) -> Result<(), RemoteError> {
         let name   = path.rsplit('/').next().unwrap_or(path).to_string();
-        let parent = path.rsplitn(2, '/').nth(1).unwrap_or("");
+        let parent = path.rsplit_once('/').map(|x| x.0).unwrap_or("");
         let parent_id = self.resolve_path(parent).await?;
 
         let body = serde_json::json!({
@@ -317,8 +358,8 @@ impl RemoteConnector for GDriveConnector {
     async fn rename(&self, from: &str, to: &str) -> Result<(), RemoteError> {
         let file_id   = self.resolve_path(from).await?;
         let new_name  = to.rsplit('/').next().unwrap_or(to);
-        let from_dir  = from.rsplitn(2, '/').nth(1).unwrap_or("");
-        let to_dir    = to.rsplitn(2, '/').nth(1).unwrap_or("");
+        let from_dir  = from.rsplit_once('/').map(|x| x.0).unwrap_or("");
+        let to_dir    = to.rsplit_once('/').map(|x| x.0).unwrap_or("");
 
         let mut req = self.client
             .patch(format!("{DRIVE_API}/files/{file_id}"))

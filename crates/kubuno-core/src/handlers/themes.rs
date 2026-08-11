@@ -1,4 +1,9 @@
-use crate::{auth::middleware::AdminUser, errors::AppError, state::AppState};
+use crate::{
+    authz::{keys, AdminCtx},
+    audit::{redact::target, AdminAudit, AuditEntry},
+    errors::AppError,
+    state::AppState,
+};
 use axum::{
     body::Body,
     extract::{Multipart, Path, State},
@@ -175,9 +180,11 @@ pub async fn list_themes(State(state): State<AppState>) -> Result<Json<Value>, A
 /// Kept for backward compatibility with the simple JSON theme editor/upload.
 pub async fn create_theme(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Json(theme): Json<ThemeManifest>,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::THEMES_MANAGE)?;
     if BUILTIN_IDS.contains(&theme.id.as_str()) {
         return Err(AppError::Validation(
             "Impossible de remplacer un thème livré avec l'application".into(),
@@ -211,6 +218,18 @@ pub async fn create_theme(
     })?;
 
     tracing::info!("Thème '{}' importé ({})", theme.id, path);
+
+    // Themes live on disk, not in a table: there is no transaction to ride
+    // along with, so the entry is recorded standalone once the write succeeded.
+    audit
+        .record(
+            &state.db,
+            AuditEntry::new("core.themes.create")
+                .target(target::THEME, &theme.id, theme.name.clone())
+                .after(json!({ "id": &theme.id, "name": &theme.name, "source": "json" })),
+        )
+        .await;
+
     mirror_themes(&state);
     Ok(Json(json!({ "theme": theme })))
 }
@@ -226,9 +245,11 @@ fn mirror_themes(state: &AppState) {
 /// referenced CSS/JS/asset files. Extraction is strictly validated.
 pub async fn import_theme_zip(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require_superuser("import d'un thème empaqueté")?;
     let mut zip_bytes: Option<Vec<u8>> = None;
     while let Some(field) = multipart
         .next_field()
@@ -270,6 +291,23 @@ pub async fn import_theme_zip(
         manifest,
     };
     tracing::info!("Thème '{}' importé (bundle ZIP)", entry.manifest.id);
+
+    audit
+        .record(
+            &state.db,
+            AuditEntry::new("core.themes.import")
+                .target(target::THEME, &entry.manifest.id, entry.manifest.name.clone())
+                .after(json!({
+                    "id": &entry.manifest.id,
+                    "name": &entry.manifest.name,
+                    "source": "zip",
+                    // Whether the bundle ships JavaScript at all: the operator
+                    // reading the trail wants that before the trust decision.
+                    "has_scripts": entry.has_scripts,
+                })),
+        )
+        .await;
+
     mirror_themes(&state);
     Ok(Json(json!({ "theme": entry })))
 }
@@ -414,10 +452,12 @@ pub struct TrustDto {
 /// overrides in users' browsers (admin only). CSS is always applied regardless.
 pub async fn set_theme_trust(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Path(id): Path<String>,
     Json(dto): Json<TrustDto>,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require_superuser("approbation d'un thème")?;
     if !is_valid_theme_id(&id) {
         return Err(AppError::Validation("ID de thème invalide".into()));
     }
@@ -429,6 +469,7 @@ pub async fn set_theme_trust(
     }
 
     let mut trusted = load_trusted(&state.db).await;
+    let was_trusted = trusted.contains(&id);
     if dto.scripts_enabled {
         trusted.insert(id.clone());
     } else {
@@ -440,6 +481,21 @@ pub async fn set_theme_trust(
         "Thème '{id}' : exécution des scripts {}",
         if dto.scripts_enabled { "AUTORISÉE" } else { "révoquée" }
     );
+
+    // Granting a theme the right to run JavaScript in every user's browser is
+    // one of the most consequential switches in the console — it belongs in the
+    // trail with an explicit before/after.
+    audit
+        .record(
+            &state.db,
+            AuditEntry::new("core.themes.trust")
+                .target(target::THEME, &id, id.clone())
+                .before(json!({ "id": &id, "trusted": was_trusted }))
+                .after(json!({ "id": &id, "trusted": dto.scripts_enabled }))
+                .reversible(),
+        )
+        .await;
+
     Ok(Json(json!({ "id": id, "scripts_enabled": dto.scripts_enabled })))
 }
 
@@ -447,10 +503,21 @@ pub async fn set_theme_trust(
 /// Built-in themes cannot be deleted. Handles both bundle dirs and legacy files.
 pub async fn delete_theme(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::THEMES_MANAGE)?;
     if BUILTIN_IDS.contains(&id.as_str()) {
+        // Refused attempt: recorded like any other, it is the interesting kind.
+        audit
+            .record(
+                &state.db,
+                AuditEntry::new("core.themes.delete")
+                    .target(target::THEME, &id, id.clone())
+                    .denied("builtin_theme"),
+            )
+            .await;
         return Err(AppError::Forbidden);
     }
 
@@ -485,6 +552,16 @@ pub async fn delete_theme(
     }
 
     tracing::info!("Thème '{id}' supprimé");
+
+    audit
+        .record(
+            &state.db,
+            AuditEntry::new("core.themes.delete")
+                .target(target::THEME, &id, id.clone())
+                .before(json!({ "id": &id })),
+        )
+        .await;
+
     mirror_themes(&state);
     Ok(Json(json!({ "deleted": id })))
 }

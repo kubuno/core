@@ -8,6 +8,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
+    authz::{keys, AdminCtx},
+    audit::{redact::target, snap, AdminAudit, AuditEntry},
     auth::middleware::AdminUser,
     errors::AppError,
     models::group::{CreateGroupDto, UpdateGroupDto, UserGroup},
@@ -17,7 +19,9 @@ use crate::{
 pub async fn list_groups(
     State(state): State<AppState>,
     _admin: AdminUser,
+    ctx: AdminCtx,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::GROUPS_READ)?;
     let groups = sqlx::query_as::<_, UserGroup>(
         r#"SELECT g.id, g.name, g.description, g.permissions, g.is_default, g.is_system,
                   g.created_at, g.updated_at
@@ -56,8 +60,10 @@ pub async fn list_groups(
 pub async fn get_group(
     State(state): State<AppState>,
     _admin: AdminUser,
+    ctx: AdminCtx,
     Path(group_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::GROUPS_READ)?;
     let group = sqlx::query_as::<_, UserGroup>(
         "SELECT * FROM core.user_groups WHERE id = $1",
     )
@@ -90,14 +96,18 @@ pub async fn get_group(
 
 pub async fn create_group(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Json(dto): Json<CreateGroupDto>,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::GROUPS_MANAGE)?;
     dto.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let permissions = serde_json::to_value(&dto.permissions)
         .unwrap_or(serde_json::Value::Array(vec![]));
+
+    let mut tx = audit.begin(&state.db).await?;
 
     let group = sqlx::query_as::<_, UserGroup>(
         r#"INSERT INTO core.user_groups (name, description, permissions, is_default)
@@ -108,29 +118,51 @@ pub async fn create_group(
     .bind(dto.description.as_deref())
     .bind(&permissions)
     .bind(dto.is_default)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         if e.to_string().contains("unique") {
             AppError::Conflict(format!("Un groupe nommé '{}' existe déjà", dto.name))
         } else {
+            tracing::error!(error = %e, "create_group");
             AppError::Database(e)
         }
     })?;
+
+    tx.commit(
+        AuditEntry::new("core.groups.create")
+            .target(target::GROUP, group.id, group.name.clone())
+            .after(snap(target::GROUP, &group))
+            .reversible(),
+    )
+    .await?;
 
     Ok(Json(json!({ "group": group })))
 }
 
 pub async fn update_group(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Path(group_id): Path<Uuid>,
     Json(dto): Json<UpdateGroupDto>,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::GROUPS_MANAGE)?;
     dto.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let permissions = dto.permissions.as_ref().map(|p| serde_json::to_value(p).unwrap_or_default());
+
+    let mut tx = audit.begin(&state.db).await?;
+
+    let previous = sqlx::query_as::<_, UserGroup>(
+        "SELECT * FROM core.user_groups WHERE id = $1 FOR UPDATE",
+    )
+    .bind(group_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "update_group: lecture"); AppError::Database(e) })?
+    .ok_or_else(|| AppError::NotFound("Groupe introuvable".into()))?;
 
     let group = sqlx::query_as::<_, UserGroup>(
         r#"UPDATE core.user_groups
@@ -146,36 +178,69 @@ pub async fn update_group(
     .bind(permissions.as_ref())
     .bind(dto.is_default)
     .bind(group_id)
-    .fetch_optional(&state.db)
-    .await?
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "update_group: écriture"); AppError::Database(e) })?
     .ok_or_else(|| AppError::NotFound("Groupe introuvable".into()))?;
+
+    tx.commit(
+        AuditEntry::new("core.groups.update")
+            .target(target::GROUP, group.id, group.name.clone())
+            .before(snap(target::GROUP, &previous))
+            .after(snap(target::GROUP, &group))
+            .reversible(),
+    )
+    .await?;
 
     Ok(Json(json!({ "group": group })))
 }
 
 pub async fn delete_group(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Path(group_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    // Les groupes système (Administrateurs, Utilisateurs, Invités) ne sont pas supprimables
-    let is_system: Option<bool> = sqlx::query_scalar(
-        "SELECT is_system FROM core.user_groups WHERE id = $1",
+    ctx.require(keys::GROUPS_MANAGE)?;
+    let mut tx = audit.begin(&state.db).await?;
+
+    let group = sqlx::query_as::<_, UserGroup>(
+        "SELECT * FROM core.user_groups WHERE id = $1 FOR UPDATE",
     )
     .bind(group_id)
-    .fetch_optional(&state.db)
-    .await?;
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "delete_group: lecture"); AppError::Database(e) })?
+    .ok_or_else(|| AppError::NotFound("Groupe introuvable".into()))?;
 
-    match is_system {
-        None => return Err(AppError::NotFound("Groupe introuvable".into())),
-        Some(true) => return Err(AppError::Forbidden),
-        Some(false) => {}
+    // Les groupes système (Administrateurs, Utilisateurs, Invités) ne sont pas
+    // supprimables : le refus est journalisé au même titre qu'une réussite.
+    if group.is_system {
+        let name = group.name.clone();
+        return Err(tx
+            .abort(
+                &state.db,
+                AuditEntry::new("core.groups.delete")
+                    .target(target::GROUP, group_id, name)
+                    .before(snap(target::GROUP, &group)),
+                AppError::Forbidden,
+            )
+            .await);
     }
 
     sqlx::query("DELETE FROM core.user_groups WHERE id = $1")
         .bind(group_id)
-        .execute(&state.db)
-        .await?;
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_group"); AppError::Database(e) })?;
+
+    tx.commit(
+        AuditEntry::new("core.groups.delete")
+            .target(target::GROUP, group_id, group.name.clone())
+            .before(snap(target::GROUP, &group))
+            .reversible(),
+    )
+    .await?;
 
     Ok(Json(json!({ "message": "Groupe supprimé" })))
 }
@@ -187,20 +252,40 @@ pub struct AddMemberDto {
     pub user_id: Uuid,
 }
 
+/// Group name and member username, for a readable membership entry.
+async fn membership_labels(
+    conn: &mut sqlx::PgConnection,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<(String, String), AppError> {
+    let group_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM core.user_groups WHERE id = $1")
+            .bind(group_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "membership_labels: groupe"); AppError::Database(e) })?;
+    let group_name = group_name.ok_or_else(|| AppError::NotFound("Groupe introuvable".into()))?;
+
+    let username: Option<String> =
+        sqlx::query_scalar("SELECT username FROM core.users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "membership_labels: utilisateur"); AppError::Database(e) })?;
+
+    Ok((group_name, username.unwrap_or_else(|| user_id.to_string())))
+}
+
 pub async fn add_member(
     State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Path(group_id): Path<Uuid>,
     Json(dto): Json<AddMemberDto>,
 ) -> Result<Json<Value>, AppError> {
-    // Vérifier que le groupe existe
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM core.user_groups WHERE id = $1)",
-    )
-    .bind(group_id)
-    .fetch_one(&state.db)
-    .await?;
-    if !exists { return Err(AppError::NotFound("Groupe introuvable".into())); }
+    ctx.require(keys::GROUPS_MANAGE)?;
+    let mut tx = audit.begin(&state.db).await?;
+    let (group_name, username) = membership_labels(&mut tx, group_id, dto.user_id).await?;
 
     sqlx::query(
         r#"INSERT INTO core.user_group_members (group_id, user_id, added_by)
@@ -209,8 +294,23 @@ pub async fn add_member(
     )
     .bind(group_id)
     .bind(dto.user_id)
-    .bind(admin.id)
-    .execute(&state.db)
+    .bind(audit.admin.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "add_member"); AppError::Database(e) })?;
+
+    tx.commit(
+        AuditEntry::new("core.groups.member_add")
+            .target(target::GROUP, group_id, group_name.clone())
+            .after(crate::audit::redact::snapshot(
+                target::GROUP_MEMBER,
+                &json!({
+                    "group_id": group_id, "group_name": group_name,
+                    "user_id": dto.user_id, "username": username,
+                }),
+            ))
+            .reversible(),
+    )
     .await?;
 
     Ok(Json(json!({ "message": "Membre ajouté" })))
@@ -218,21 +318,42 @@ pub async fn add_member(
 
 pub async fn remove_member(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
+    ctx: AdminCtx,
     Path((group_id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::GROUPS_MANAGE)?;
+    let mut tx = audit.begin(&state.db).await?;
+    let (group_name, username) = membership_labels(&mut tx, group_id, user_id).await?;
+
     let affected = sqlx::query(
         "DELETE FROM core.user_group_members WHERE group_id = $1 AND user_id = $2",
     )
     .bind(group_id)
     .bind(user_id)
-    .execute(&state.db)
-    .await?
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "remove_member"); AppError::Database(e) })?
     .rows_affected();
 
     if affected == 0 {
         return Err(AppError::NotFound("Membre introuvable dans ce groupe".into()));
     }
+
+    tx.commit(
+        AuditEntry::new("core.groups.member_remove")
+            .target(target::GROUP, group_id, group_name.clone())
+            .before(crate::audit::redact::snapshot(
+                target::GROUP_MEMBER,
+                &json!({
+                    "group_id": group_id, "group_name": group_name,
+                    "user_id": user_id, "username": username,
+                }),
+            ))
+            .reversible(),
+    )
+    .await?;
+
     Ok(Json(json!({ "message": "Membre retiré" })))
 }
 

@@ -3,7 +3,7 @@ import { useLocation, NavLink, Link } from 'react-router-dom'
 import { KubunoLogo, useIsMobile } from '@ui'
 import { useTranslation } from 'react-i18next'
 import {
-  Home, Star, Trash2, Plus, Clock, GripVertical,
+  Home, Star, Trash2, Clock, GripVertical,
   Cloud, Image, Calendar, MessageSquare, FileText, CheckSquare,
   BookOpen, Music, Video, Code, FolderOpen, Share2,
   // Icônes utilisées par les modules (PaintSharp, Office, etc.) — sinon fallback Cloud
@@ -39,51 +39,57 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
   const { t } = useTranslation('nav')
   const label = t(item.id, { defaultValue: item.label })
   return (
+    // Collapse ANIMATES rather than snapping: constant padding + a fixed-width icon
+    // box (so the icon lands centred in the 64px rail without a justify switch that
+    // would make it jump), and the label collapses its width/opacity/margin. The
+    // link width follows its content, so it glides in step with the aside width.
     <NavLink
       to={item.path}
       end={item.path === '/'}
       onClick={closeSidebar}
       title={collapsed ? label : undefined}
       className={({ isActive }) =>
-        `group flex items-center gap-3 py-2 rounded-full text-sm font-medium relative
-         transition-all cursor-pointer select-none
-         ${collapsed ? 'justify-center px-2' : 'px-3'}
-         ${isActive
-           ? 'bg-primary-light'
-           : 'hover:bg-[#e4ecf7]'
-         }`
+        `group flex items-center px-2 py-2 rounded-full text-sm font-medium relative
+         overflow-hidden transition-all duration-200 ease-in-out cursor-pointer select-none
+         ${isActive ? 'bg-primary-light' : 'hover:bg-[#e4ecf7]'}`
       }
     >
       {({ isActive }) => (
         <>
           <span
-            className="flex-shrink-0 transition-colors"
+            className="w-8 flex items-center justify-center flex-shrink-0 transition-colors"
             style={{ color: isActive ? '#1a73e8' : '#5f6368' }}
           >
             <SidebarIcon name={item.icon} />
           </span>
-          {!collapsed && (
-            <span
-              className="flex-1 truncate"
-              style={{ color: isActive ? '#041e49' : '#5f6368', fontWeight: isActive ? 600 : 400 }}
-            >
-              {label}
-            </span>
-          )}
-          {!collapsed && item.badge != null && item.badge > 0 && (
-            <span
-              className="text-xs text-white rounded-full min-w-[18px] h-[18px]
-                         flex items-center justify-center px-1 font-medium"
-              style={{ background: '#d93025' }}
-            >
-              {item.badge > 99 ? '99+' : item.badge}
-            </span>
-          )}
-          {collapsed && item.badge != null && item.badge > 0 && (
-            <span
-              className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
-              style={{ background: '#d93025' }}
-            />
+          <span
+            className="truncate transition-all duration-200 ease-in-out"
+            style={{
+              color: isActive ? '#041e49' : '#5f6368',
+              fontWeight: isActive ? 600 : 400,
+              maxWidth: collapsed ? 0 : 180,
+              opacity: collapsed ? 0 : 1,
+              marginLeft: collapsed ? 0 : 8,
+              flex: collapsed ? '0 1 0%' : '1 1 auto',
+            }}
+          >
+            {label}
+          </span>
+          {item.badge != null && item.badge > 0 && (
+            collapsed ? (
+              <span
+                className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
+                style={{ background: '#d93025' }}
+              />
+            ) : (
+              <span
+                className="text-xs text-white rounded-full min-w-[18px] h-[18px] flex-shrink-0
+                           flex items-center justify-center px-1 font-medium"
+                style={{ background: '#d93025' }}
+              >
+                {item.badge > 99 ? '99+' : item.badge}
+              </span>
+            )
           )}
         </>
       )}
@@ -122,7 +128,9 @@ export default function AppSidebar() {
     if (!dragStart.current) return
     dragStart.current = null
     setDragging(false)
-    ;(e.target as Element).releasePointerCapture?.(e.pointerId)
+    // Releasing an already-lost capture throws in some engines, and this also runs
+    // from `onLostPointerCapture` where the capture is gone by definition.
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId) } catch { /* already released */ }
   }, [])
 
   const activeConfig = resolveActiveSidebarConfig(configs, pathname)
@@ -220,8 +228,14 @@ export default function AppSidebar() {
       )}
 
       {/* ── Bouton Nouveau / Créer ─────────────────────────────────────── */}
-      {showNewButton && !collapsed && (
-        <div className="px-3 flex items-center" style={{ height: 72 }}>
+      {/* UN SEUL élément qui MORPHE entre la pilule (déplié) et le disque de 48px
+          (replié), au lieu de deux blocs conditionnels qui claquaient. Astuce
+          d'animation : hauteur/rayon constants (stade → cercle à 48px de large),
+          largeur = celle du CONTENU → le bouton rétrécit tout seul en douceur quand
+          le libellé replie sa largeur/opacité/marge et que le padding tombe à 0.
+          `px-2` constant → à 48px de large, le disque est centré dans le rail de 64. */}
+      {showNewButton && (
+        <div className="flex items-center px-2" style={{ height: 72 }}>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               {/* Anchor, never a <button>: the whole left panel is links. It only
@@ -230,23 +244,48 @@ export default function AppSidebar() {
                 href="#"
                 role="button"
                 onClick={e => e.preventDefault()}
-                className="flex items-center gap-2 bg-white text-sm font-medium text-text-primary cursor-pointer"
+                aria-label={newButtonLabel}
+                className="inline-flex items-center bg-white text-sm font-medium
+                           text-text-primary cursor-pointer overflow-hidden
+                           transition-all duration-200 ease-in-out"
                 style={{
-                  padding: '20px 25px',
+                  // Expanded = the original pill (60px tall, radius 20); collapsed =
+                  // a 48px disc. HEIGHT, radius and (right-)padding all tween, so the
+                  // button visibly grows/shrinks — not just its width.
+                  height: collapsed ? 48 : 60,
+                  minWidth: 48,
+                  // NO left padding, and the icon lives in a fixed 48px box (= the
+                  // collapsed disc width): its centre stays at the same x whether
+                  // expanded or collapsed, so the « + » DOES NOT slide sideways during
+                  // the tween — and it lines up with the menu icons below (all at the
+                  // rail's centre). Only the right side (label) extends.
+                  paddingRight: collapsed ? 0 : 20,
                   border: '1px solid #e0e0e0',
-                  borderRadius: '20px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+                  borderRadius: collapsed ? 24 : 20,
+                  boxShadow: collapsed
+                    ? '0 1px 3px rgba(60,64,67,0.3), 0 4px 8px rgba(60,64,67,0.15)'
+                    : '0 1px 3px rgba(0,0,0,0.12)',
                 }}
               >
-                <PlusIcon />
-                {newButtonLabel}
+                <span className="flex items-center justify-center flex-shrink-0" style={{ width: 48, height: '100%' }}>
+                  <PlusIcon />
+                </span>
+                <span
+                  className="whitespace-nowrap transition-all duration-200 ease-in-out"
+                  style={{
+                    maxWidth: collapsed ? 0 : 150,
+                    opacity: collapsed ? 0 : 1,
+                  }}
+                >
+                  {newButtonLabel}
+                </span>
               </a>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
-                side="bottom"
+                side={collapsed ? 'right' : 'bottom'}
                 align="start"
-                sideOffset={4}
+                sideOffset={collapsed ? 8 : 4}
                 className="min-w-52 bg-white rounded-[5px] border border-border shadow-lg py-1 z-50"
               >
                 {NewActionsComponent ? (
@@ -265,37 +304,6 @@ export default function AppSidebar() {
         </div>
       )}
 
-      {/* Icône "+" compacte en mode collapsed */}
-      {showNewButton && collapsed && (
-        <div className="flex justify-center items-center" style={{ height: 72 }}>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <a
-                href="#"
-                role="button"
-                onClick={e => e.preventDefault()}
-                className="w-12 h-12 flex items-center justify-center bg-white rounded-full
-                           transition-shadow cursor-pointer"
-                style={{ boxShadow: '0 1px 3px rgba(60,64,67,0.3), 0 4px 8px rgba(60,64,67,0.15)' }}
-                aria-label={newButtonLabel}
-              >
-                <Plus size={20} className="text-text-secondary" />
-              </a>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                side="right"
-                align="start"
-                sideOffset={8}
-                className="min-w-52 bg-white rounded-[5px] border border-border shadow-lg py-1 z-50"
-              >
-                {NewActionsComponent ? <NewActionsComponent /> : <Slot name="sidebar-new-actions" />}
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </div>
-      )}
-
       {/* ── Corps de la sidebar ────────────────────────────────────────── */}
       {/* Le SidebarBody du module est rendu dans LES DEUX états (replié/déplié) en
           lui passant `collapsed`, pour que la nav reste identique — au lieu de
@@ -304,7 +312,7 @@ export default function AppSidebar() {
         <activeConfig.SidebarBody collapsed={collapsed} />
       ) : (
         <>
-          <nav className={`flex-1 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
+          <nav className="flex-1 space-y-0.5 px-2">
             {mainItems.map((item) => (
               <SidebarLink key={item.id} item={item} collapsed={collapsed} />
             ))}
@@ -313,7 +321,7 @@ export default function AppSidebar() {
           {secondaryItems.length > 0 && (
             <>
               <div className="mx-3 my-2 h-px bg-border" />
-              <nav className={`space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
+              <nav className="space-y-0.5 px-2">
                 {secondaryItems.map((item) => (
                   <SidebarLink key={item.id} item={item} collapsed={collapsed} />
                 ))}
@@ -349,10 +357,14 @@ export default function AppSidebar() {
         onPointerMove={onResizeMove}
         onPointerUp={endResize}
         onPointerCancel={endResize}
+        /* Safety net: a capture lost for any other reason (window blur, the node being
+           re-parented) would otherwise leave the sidebar stuck in the dragging state —
+           blue line, and no collapse animation any more. */
+        onLostPointerCapture={endResize}
         className="hidden lg:block absolute top-0 left-full h-full w-3 z-[60] cursor-col-resize group"
       >
         {/* Trait vertical — discret au repos, teinté au survol/glissement. */}
-        <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors
+        <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-[5px] rounded-full transition-colors
                         ${dragging ? 'bg-primary' : 'bg-transparent group-hover:bg-border'}`} />
         {/* Pastille à grip (façon office) — invisible au repos, apparaît à l'approche. */}
         <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center

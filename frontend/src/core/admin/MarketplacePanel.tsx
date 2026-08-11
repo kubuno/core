@@ -64,10 +64,18 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
     },
     onMutate: (id) => { setBusy(id); setOkMsg(null); setErrMsg(null); setPhase((p) => ({ ...p, [id]: '…' })) },
     onSuccess: (report) => {
-      setOkMsg(t('admin.mk_installed', {
-        defaultValue: '« {{name}} » v{{version}} installé' + (report.started ? ' et démarré.' : '.'),
-        name: report.name, version: report.version,
-      }))
+      // Two whole sentences rather than one assembled with `+`: a concatenated
+      // default cannot be translated — a locale would only ever carry the first
+      // half, silently dropping the "and started" ending in every language.
+      setOkMsg(report.started
+        ? t('admin.mk_installed_started', {
+            defaultValue: '« {{name}} » v{{version}} installé et démarré.',
+            name: report.name, version: report.version,
+          })
+        : t('admin.mk_installed', {
+            defaultValue: '« {{name}} » v{{version}} installé.',
+            name: report.name, version: report.version,
+          }))
       qc.invalidateQueries({ queryKey: ['admin-marketplace'] })
       qc.invalidateQueries({ queryKey: ['admin-modules'] })
       useModulesStore.getState().fetchModules()
@@ -119,7 +127,7 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
         </div>
         <div>
           <p className="text-sm font-medium text-text-primary">{t('admin.m_marketplace', { defaultValue: 'Marketplace' })}</p>
-          <p className="text-xs text-text-tertiary">{t('admin.mk_subtitle', { defaultValue: 'Installer des modules officiels' })}</p>
+          <p className="text-sm text-text-tertiary">{t('admin.mk_subtitle', { defaultValue: 'Installer des modules officiels' })}</p>
         </div>
       </div>
 
@@ -162,7 +170,8 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
 
       {categories.map((cat) => (
         <div key={cat} className="mb-6">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary mb-2">{cat}</h4>
+          {/* Panel section title: 14px bold, no forced caps and no letter-spacing. */}
+          <h4 className="text-sm font-bold text-text-secondary mb-2">{cat}</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visible.filter((m) => (m.category || 'Autres') === cat).map((mod) => {
               const upToDate = mod.installed && mod.installed_version === mod.version
@@ -184,7 +193,7 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-text-tertiary flex items-center gap-2">
+                      <p className="text-sm text-text-tertiary flex items-center gap-2">
                         v{mod.version}
                         {typeof mod.rating === 'number' && mod.rating > 0 && (
                           <span className="inline-flex items-center gap-0.5"><Star size={11} className="text-warning" fill="currentColor" />{mod.rating}</span>
@@ -192,11 +201,11 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
                       </p>
                     </div>
                   </div>
-                  {mod.summary && <p className="text-xs text-text-secondary leading-relaxed line-clamp-3">{mod.summary}</p>}
+                  {mod.summary && <p className="text-sm text-text-secondary leading-relaxed line-clamp-3">{mod.summary}</p>}
                   <div className="mt-auto flex items-center justify-between gap-2">
                     {mod.links?.repo
                       ? <a href={mod.links.repo} target="_blank" rel="noreferrer"
-                           className="text-xs text-text-tertiary hover:text-primary inline-flex items-center gap-1">
+                           className="text-sm text-text-tertiary hover:text-primary inline-flex items-center gap-1">
                           <ExternalLink size={12} /> {t('admin.mk_source', { defaultValue: 'Source' })}
                         </a>
                       : <span />}
@@ -211,14 +220,14 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
                         </button>
                       )}
                       {upToDate ? (
-                        <span className="text-xs px-2.5 py-1 rounded-lg bg-success-light text-success font-medium inline-flex items-center gap-1">
+                        <span className="text-sm px-2.5 py-1 rounded-lg bg-success-light text-success font-medium inline-flex items-center gap-1">
                           <Check size={13} /> {t('admin.mk_installed_badge', { defaultValue: 'Installé' })}
                         </span>
                       ) : (
                         <button
                           onClick={() => install.mutate(mod.id)}
                           disabled={isBusy}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-primary text-white font-medium inline-flex items-center gap-1.5 hover:bg-primary-hover disabled:opacity-60 transition-colors">
+                          className="text-sm px-3 py-1.5 rounded-lg bg-primary text-white font-medium inline-flex items-center gap-1.5 hover:bg-primary-hover disabled:opacity-60 transition-colors">
                           {isBusy
                             ? <><RefreshCw size={13} className="animate-spin" /> {phase[mod.id] || t('admin.mk_installing', { defaultValue: 'Installation…' })}</>
                             : canUpdate

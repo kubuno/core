@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { useNotificationStore } from '../store/notificationStore'
+import { useAlertFeed } from './useAlertFeed'
 import { Slot, SlotRegistry } from '../slots/SlotRegistry'
 import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
 import UserPanel from './UserPanel'
@@ -18,7 +19,8 @@ import AddAccountModal from '../components/AddAccountModal'
 import WaffleMenu from './WaffleMenu'
 import SettingsMenu from './SettingsMenu'
 
-const NOTIF_ICONS: Record<string, LucideIcon> = { Calendar, PhoneMissed }
+// Glyph a producer may ask for by name. `Bell` is the alert centre's.
+const NOTIF_ICONS: Record<string, LucideIcon> = { Bell, Calendar, PhoneMissed }
 
 // Cluster d'actions de l'en-tête (langue, notifications, réglages, aide, waffle,
 // avatar). Extrait de l'AppHeader pour être réutilisable : l'AppHeader global le
@@ -31,6 +33,10 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
   const activeIds = new Set(activeModules.map(m => m.module_id))
   const SettingsButtonOverride = SlotRegistry.getActiveOverride<{ compact?: boolean; dark?: boolean }>('topbar-settings', activeIds)
   const { notifications, unreadCount, markRead, markAllRead } = useNotificationStore()
+  // Producer of the bell. Until now the store had none: a push() API nobody
+  // called, so the panel was empty on every instance. The hook only queries
+  // for callers holding `core.alerts.read` and announces each alert once.
+  useAlertFeed()
   const navigate = useNavigate()
   const pathname = useLocation().pathname
   const isHome = pathname === '/'

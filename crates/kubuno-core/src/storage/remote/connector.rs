@@ -66,6 +66,50 @@ pub struct RemoteQuota {
     pub free_bytes:  Option<u64>,
 }
 
+/// Hard cap on the number of pages a single directory listing will fetch.
+/// Guards against a provider that keeps handing back a next-page cursor forever:
+/// once reached, the listing stops and the caller logs a truncation warning
+/// rather than looping indefinitely.
+pub(crate) const MAX_LIST_PAGES: u32 = 100;
+
+/// Decision produced by [`next_page_step`] for a paginated directory listing.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PageStep {
+    /// Fetch the next page using this cursor/token.
+    Next(String),
+    /// The provider reported no further pages — the listing is complete.
+    Done,
+    /// The provider still advertises more pages but we must stop: either the
+    /// hard page cap was reached or no cursor was supplied to fetch them. The
+    /// caller must warn that the listing is truncated instead of pretending it
+    /// is complete.
+    Truncated,
+}
+
+/// Shared pagination guard for remote directory listings.
+///
+/// - `has_more`   = the provider still advertises further pages.
+/// - `cursor`     = the token needed to fetch them (`None` ⇒ nothing to fetch).
+/// - `pages_done` = pages already accumulated in this listing.
+/// - `max_pages`  = hard bound (see [`MAX_LIST_PAGES`]).
+///
+/// Pure and network-free so the accumulation loop can be unit-tested.
+pub(crate) fn next_page_step(
+    has_more: bool,
+    cursor: Option<String>,
+    pages_done: u32,
+    max_pages: u32,
+) -> PageStep {
+    if !has_more {
+        return PageStep::Done;
+    }
+    match cursor {
+        Some(tok) if pages_done < max_pages => PageStep::Next(tok),
+        // Either the cap is hit or the provider gave no cursor: truncate.
+        _ => PageStep::Truncated,
+    }
+}
+
 /// Config universelle pour tous les providers.
 /// Chaque provider utilise les champs dont il a besoin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,5 +212,84 @@ pub trait RemoteConnector: Send + Sync {
     /// Renvoie true si la connexion est encore valide (sans requête réseau).
     fn is_token_valid(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_more_pages_is_done() {
+        // Provider reports no further pages: listing is complete.
+        assert_eq!(next_page_step(false, None, 0, MAX_LIST_PAGES), PageStep::Done);
+        assert_eq!(
+            next_page_step(false, Some("ignored".into()), 3, MAX_LIST_PAGES),
+            PageStep::Done
+        );
+    }
+
+    #[test]
+    fn more_pages_within_cap_yields_next_cursor() {
+        assert_eq!(
+            next_page_step(true, Some("cursor-42".into()), 0, MAX_LIST_PAGES),
+            PageStep::Next("cursor-42".into())
+        );
+        // One page below the cap must still continue.
+        assert_eq!(
+            next_page_step(true, Some("tok".into()), MAX_LIST_PAGES - 1, MAX_LIST_PAGES),
+            PageStep::Next("tok".into())
+        );
+    }
+
+    #[test]
+    fn hard_cap_truncates_even_with_cursor() {
+        // Cursor present but the cap is reached: stop and signal truncation.
+        assert_eq!(
+            next_page_step(true, Some("still-more".into()), MAX_LIST_PAGES, MAX_LIST_PAGES),
+            PageStep::Truncated
+        );
+        assert_eq!(
+            next_page_step(true, Some("still-more".into()), MAX_LIST_PAGES + 5, MAX_LIST_PAGES),
+            PageStep::Truncated
+        );
+    }
+
+    #[test]
+    fn more_pages_but_missing_cursor_truncates() {
+        // Provider claims more pages yet supplies no cursor to fetch them.
+        assert_eq!(next_page_step(true, None, 0, MAX_LIST_PAGES), PageStep::Truncated);
+    }
+
+    #[test]
+    fn accumulation_loop_stops_and_bounds() {
+        // Simulate the accumulation loop against a fake provider that returns
+        // `total_pages` pages, each advertising a next cursor until the last.
+        fn run(total_pages: u32, max_pages: u32) -> (u32, bool) {
+            let mut pages = 0u32;
+            let mut truncated = false;
+            loop {
+                // A page was just fetched and accumulated.
+                pages += 1;
+                let has_more = pages < total_pages;
+                let cursor = has_more.then(|| format!("cursor-{pages}"));
+                match next_page_step(has_more, cursor, pages, max_pages) {
+                    PageStep::Next(_) => continue,
+                    PageStep::Done => break,
+                    PageStep::Truncated => {
+                        truncated = true;
+                        break;
+                    }
+                }
+            }
+            (pages, truncated)
+        }
+
+        // Fits under the cap: reads every page, no truncation.
+        assert_eq!(run(3, 100), (3, false));
+        // Single page: stops immediately.
+        assert_eq!(run(1, 100), (1, false));
+        // Provider has more pages than the cap allows: bounded + truncated.
+        assert_eq!(run(500, 10), (10, true));
     }
 }

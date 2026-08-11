@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { foldIncludes } from '@ui'
 import { api } from '../api/client'
+import { useAdminAction } from './adminAction'
 import type { UserGroup } from '../types'
 import { Users, Plus, Trash2, Edit2, X, Check, Shield, ChevronDown, ChevronRight } from 'lucide-react'
 import { Checkbox, Button, Input } from '@ui'
@@ -70,7 +73,7 @@ function GroupForm({
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs font-medium text-text-secondary mb-1">{t('admin.g_name')} *</label>
+        <label className="block text-sm font-medium text-text-secondary mb-1">{t('admin.g_name')} *</label>
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -79,7 +82,7 @@ function GroupForm({
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-text-secondary mb-1">{t('admin.g_description')}</label>
+        <label className="block text-sm font-medium text-text-secondary mb-1">{t('admin.g_description')}</label>
         <Input
           value={description}
           onChange={(e) => setDesc(e.target.value)}
@@ -88,7 +91,7 @@ function GroupForm({
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-text-secondary mb-2">{t('admin.g_permissions')}</label>
+        <label className="block text-sm font-medium text-text-secondary mb-2">{t('admin.g_permissions')}</label>
         <div className="space-y-2 mb-3">
           {KNOWN_PERMISSIONS.map((p) => (
             <Checkbox
@@ -205,11 +208,11 @@ function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: num
             )}
           </div>
           {group.description && (
-            <p className="text-xs text-text-tertiary truncate">{group.description}</p>
+            <p className="text-sm text-text-tertiary truncate">{group.description}</p>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <span className="text-xs text-text-tertiary">
+          <span className="text-sm text-text-tertiary">
             <Users size={12} className="inline mr-1" />{group.member_count}
           </span>
           <div className="flex gap-1">
@@ -257,9 +260,9 @@ function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: num
             <>
               {/* Permissions */}
               <div>
-                <p className="text-xs font-medium text-text-secondary mb-1.5">{t('admin.g_permissions')}</p>
+                <p className="text-sm font-medium text-text-secondary mb-1.5">{t('admin.g_permissions')}</p>
                 {group.permissions.length === 0 ? (
-                  <p className="text-xs text-text-tertiary">{t('admin.g_no_permission')}</p>
+                  <p className="text-sm text-text-tertiary">{t('admin.g_no_permission')}</p>
                 ) : (
                   <div className="flex flex-wrap gap-1">
                     {group.permissions.map((p) => <PermBadge key={p} perm={p} />)}
@@ -271,7 +274,7 @@ function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: num
               <div>
                 <button
                   onClick={() => setShowMem(!showMembers)}
-                  className="text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1 hover:text-text-primary"
+                  className="text-sm font-medium text-text-secondary mb-1.5 flex items-center gap-1 hover:text-text-primary"
                 >
                   {showMembers ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   {t('admin.g_members')} ({group.member_count})
@@ -279,11 +282,11 @@ function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: num
                 {showMembers && detail && (
                   <div className="space-y-1 mt-1">
                     {detail.members.length === 0 && (
-                      <p className="text-xs text-text-tertiary">{t('admin.g_no_member')}</p>
+                      <p className="text-sm text-text-tertiary">{t('admin.g_no_member')}</p>
                     )}
                     {detail.members.map((m) => (
                       <div key={m.id} className="flex items-center justify-between px-2 py-1 rounded bg-white border border-border">
-                        <span className="text-xs text-text-primary">{m.display_name} <span className="text-text-tertiary">({m.email})</span></span>
+                        <span className="text-sm text-text-primary">{m.display_name} <span className="text-text-tertiary">({m.email})</span></span>
                         <button
                           onClick={() => removeMember.mutate(m.id)}
                           className="text-text-tertiary hover:text-danger"
@@ -297,7 +300,7 @@ function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: num
                 )}
               </div>
 
-              <p className="text-xs text-text-tertiary">
+              <p className="text-sm text-text-tertiary">
                 {t('admin.g_created')} {format(new Date(group.created_at), 'd MMM yyyy', { locale: getDateLocale() })}
               </p>
             </>
@@ -315,6 +318,14 @@ export default function GroupsPanel() {
   const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
 
+  // `/admin/groups?action=create` opens the form directly (adminAction.ts).
+  useAdminAction('create', () => setShowCreate(true))
+
+  // `?q=` narrows the list — what the admin search deep-links to when a group
+  // is picked among its results.
+  const [params] = useSearchParams()
+  const filter = params.get('q')?.trim() ?? ''
+
   const { data, isLoading } = useQuery({
     queryKey: ['admin-groups'],
     queryFn: () =>
@@ -327,12 +338,17 @@ export default function GroupsPanel() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-groups'] }); setShowCreate(false) },
   })
 
+  // Accent-insensitive, like every other local match in the console.
+  const rows = filter
+    ? data?.filter(g => foldIncludes(`${g.name} ${g.description ?? ''}`, filter))
+    : data
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="text-sm font-medium text-text-primary">{t('admin.g_title')}</h3>
-          <p className="text-xs text-text-secondary mt-0.5">
+          <p className="text-sm text-text-secondary mt-0.5">
             {t('admin.g_desc')}
           </p>
         </div>
@@ -353,7 +369,7 @@ export default function GroupsPanel() {
 
       {isLoading && <p className="text-sm text-text-secondary py-4">{t('common.loading')}</p>}
 
-      {data && data.length === 0 && (
+      {rows && rows.length === 0 && (
         <div className="text-center py-10 text-text-tertiary">
           <Users size={32} className="mx-auto mb-2 opacity-30" />
           <p className="text-sm">{t('admin.g_none')}</p>
@@ -361,7 +377,7 @@ export default function GroupsPanel() {
       )}
 
       <div className="space-y-3">
-        {data?.map((g) => (
+        {rows?.map((g) => (
           <GroupRow
             key={g.id}
             group={g}
@@ -371,7 +387,7 @@ export default function GroupsPanel() {
       </div>
 
       <div className="mt-6 p-3 bg-surface-1 rounded-lg border border-border">
-        <p className="text-xs text-text-secondary">
+        <p className="text-sm text-text-secondary">
           <strong className="text-text-primary">{t('admin.g_access_logic_title')}</strong>{' '}
           {t('admin.g_access_logic')}
         </p>

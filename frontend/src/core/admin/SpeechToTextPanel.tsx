@@ -150,7 +150,7 @@ export default function SpeechToTextPanel() {
             <p className="text-sm font-medium text-text-primary">
               {t('admin.stt_enable_title', { defaultValue: 'Reconnaissance vocale' })}
             </p>
-            <p className="text-xs text-text-tertiary">
+            <p className="text-sm text-text-tertiary">
               {enabled
                 ? t('admin.stt_enable_on', { defaultValue: 'Activée — le bouton micro est disponible dans la barre de recherche.' })
                 : t('admin.stt_enable_off', { defaultValue: 'Désactivée — le bouton micro est masqué pour tous les utilisateurs.' })}
@@ -200,7 +200,7 @@ export default function SpeechToTextPanel() {
 
                 {/* Engine */}
                 <div className="w-36">
-                  <label className="text-xs text-text-tertiary block mb-1">
+                  <label className="text-sm text-text-tertiary block mb-1">
                     {t('admin.stt_engine', { defaultValue: 'Moteur' })}
                   </label>
                   <Dropdown
@@ -216,7 +216,7 @@ export default function SpeechToTextPanel() {
 
                 {/* Model */}
                 <div className="flex-1 min-w-44">
-                  <label className="text-xs text-text-tertiary block mb-1">
+                  <label className="text-sm text-text-tertiary block mb-1">
                     {t('admin.stt_model', { defaultValue: 'Modèle' })}
                   </label>
                   {models.length === 0 ? (
@@ -244,7 +244,7 @@ export default function SpeechToTextPanel() {
                       <Trash2 size={16} className="text-danger" />
                     </Button>
                   ) : isDownloading ? (
-                    <div className="flex items-center gap-2 text-xs text-text-secondary w-40">
+                    <div className="flex items-center gap-2 text-sm text-text-secondary w-40">
                       <Spinner size="sm" />
                       <span>{dl.total > 0 ? `${Math.round((dl.received / dl.total) * 100)}%`
                         : t('admin.stt_downloading', { defaultValue: 'Téléchargement…' })}</span>
@@ -259,7 +259,7 @@ export default function SpeechToTextPanel() {
 
                 {/* Advanced toggle */}
                 <button type="button" onClick={() => setExpanded(isOpen ? null : lang.code)}
-                        className="shrink-0 self-end h-9 px-2.5 rounded-lg flex items-center gap-1.5 text-xs text-text-secondary hover:bg-surface-2 transition-colors"
+                        className="shrink-0 self-end h-9 px-2.5 rounded-lg flex items-center gap-1.5 text-sm text-text-secondary hover:bg-surface-2 transition-colors"
                         title={t('admin.stt_advanced', { defaultValue: 'Options avancées' })}>
                   <SlidersHorizontal size={14} />
                   <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -268,12 +268,12 @@ export default function SpeechToTextPanel() {
 
               {/* Status line */}
               {isInstalled && (
-                <p className="text-xs text-success mt-2 flex items-center gap-1">
+                <p className="text-sm text-success mt-2 flex items-center gap-1">
                   <Check size={13} /> {t('admin.stt_installed', { defaultValue: 'Modèle installé et prêt.' })}
                 </p>
               )}
               {hasError && (
-                <p className="text-xs text-danger mt-2 flex items-center gap-1">
+                <p className="text-sm text-danger mt-2 flex items-center gap-1">
                   <AlertCircle size={13} /> {dl?.error || t('admin.stt_dl_error', { defaultValue: 'Échec du téléchargement.' })}
                 </p>
               )}
@@ -326,7 +326,7 @@ function GlobalSettingsCard({
       </h3>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
         <div>
-          <label className="text-xs text-text-secondary block mb-1.5">
+          <label className="text-sm text-text-secondary block mb-1.5">
             {t('admin.stt_silence', { defaultValue: 'Arrêt automatique après un silence' })}
           </label>
           <RangeSlider
@@ -338,7 +338,7 @@ function GlobalSettingsCard({
           />
         </div>
         <div>
-          <label className="text-xs text-text-secondary block mb-1.5">
+          <label className="text-sm text-text-secondary block mb-1.5">
             {t('admin.stt_threshold', { defaultValue: 'Sensibilité du micro (seuil de son)' })}
           </label>
           <RangeSlider
@@ -353,7 +353,7 @@ function GlobalSettingsCard({
       <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
         <div>
           <p className="text-sm text-text-primary">{t('admin.stt_profanity', { defaultValue: 'Filtrer les grossièretés' })}</p>
-          <p className="text-xs text-text-tertiary">
+          <p className="text-sm text-text-tertiary">
             {t('admin.stt_profanity_hint', { defaultValue: 'Masque les mots vulgaires dans les transcriptions (fr/en).' })}
           </p>
         </div>
@@ -375,7 +375,7 @@ function AdvancedOptions({ cfg, onPatch }: { cfg: LangCfg; onPatch: (p: Partial<
     <div className="flex items-center justify-between gap-4 py-2">
       <div className="min-w-0">
         <p className="text-sm text-text-primary">{title}</p>
-        {hint && <p className="text-xs text-text-tertiary">{hint}</p>}
+        {hint && <p className="text-sm text-text-tertiary">{hint}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -430,7 +430,7 @@ function AdvancedOptions({ cfg, onPatch }: { cfg: LangCfg; onPatch: (p: Partial<
               className="min-h-[64px] text-sm"
               placeholder={t('admin.stt_prompt_ph', { defaultValue: 'Noms propres, jargon… ex. : Kubuno, Drive, AGPLv3' })}
             />
-            <p className="text-xs text-text-tertiary mt-1">
+            <p className="text-sm text-text-tertiary mt-1">
               {t('admin.stt_prompt_hint', { defaultValue: 'Oriente Whisper vers ce vocabulaire et son orthographe.' })}
             </p>
           </div>
@@ -447,7 +447,7 @@ function AdvancedOptions({ cfg, onPatch }: { cfg: LangCfg; onPatch: (p: Partial<
             className="min-h-[64px] text-sm"
             placeholder={t('admin.stt_grammar_ph', { defaultValue: 'Mots attendus, séparés par des virgules. Vide = reconnaissance libre.' })}
           />
-          <p className="text-xs text-text-tertiary mt-1">
+          <p className="text-sm text-text-tertiary mt-1">
             {t('admin.stt_grammar_hint', { defaultValue: 'Restreint Vosk à ces mots — précision maximale pour des commandes courtes.' })}
           </p>
         </div>

@@ -28,7 +28,13 @@ cp -r "$FE"/dist-types/core/* "$PKG/sdk/types/core/"
 rm -rf "$PKG/drive/types"; mkdir -p "$PKG/drive/types/drive"; cp -r "$FE"/dist-types/drive/* "$PKG/drive/types/drive/"
 
 echo "==> 3/3  Building @kubuno/ui ESM bundle"
+# ⚠️ The `cd` is load-bearing, not stylistic. Vite resolves `outDir` against the
+# CURRENT WORKING DIRECTORY, not against the config file. Run from frontend/ as
+#     npx vite build --config packages/ui/vite.config.ts
+# and the library lands in `frontend/dist/` — where `emptyOutDir` first WIPES the
+# host application build. Always build a package from inside the package.
 ( cd "$PKG/ui" && "$FE/node_modules/.bin/vite" build )
 
 rm -rf "$FE/dist-types"
-echo "==> done. Publish with:  for p in ui sdk drive; do (cd packages/\$p && npm publish --access public); done"
+echo "==> done. Never publish by hand: use  bash _tools/publish_all.sh  (regenerates,"
+echo "    runs the blocking consistency check, then publishes)."

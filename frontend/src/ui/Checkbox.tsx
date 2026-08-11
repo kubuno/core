@@ -30,13 +30,18 @@ const BASE =
   'before:shadow-[inset_1em_1em_#fff] ' +
   'disabled:cursor-not-allowed disabled:opacity-50'
 
+// `default` follows the active theme through its variables. It used to spell the
+// light palette out in hex, which made the label INVISIBLE under a dark theme —
+// the box was there, the word next to it was #202124 on a near-black surface.
+// `dark` is not the theme's dark mode: it is the fixed editor chrome (VS Code
+// tones) some modules paint their panels in, and it stays literal on purpose.
 const SKIN: Record<CheckboxVariant, string> = {
-  default: 'border-[#dadce0] hover:border-[#5f6368]',
+  default: 'border-border hover:border-border-strong',
   dark:    'border-[#555] hover:border-[#808080] bg-[#3c3c3c]',
 }
 
 const LBL: Record<CheckboxVariant, { label: string; desc: string }> = {
-  default: { label: 'text-sm text-[#202124]', desc: 'text-sm text-[#5f6368]' },
+  default: { label: 'text-sm text-text-primary', desc: 'text-sm text-text-secondary' },
   dark:    { label: 'text-xs text-[#cccccc]', desc: 'text-[11px] text-[#808080]' },
 }
 

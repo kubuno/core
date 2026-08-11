@@ -6,6 +6,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ModuleSettingsRegistry } from '../slots/SlotRegistry'
 import { ModuleMenuRegistry } from '../registry/ModuleMenuRegistry'
 import { useModulesStore } from '../store/modulesStore'
+import { adminUrl } from '../admin/adminAction'
 import AppearanceDialog from './AppearanceDialog'
 
 /* Header settings menu (⚙). Replaces the old plain "go to settings" button with a
@@ -39,7 +40,7 @@ export default function SettingsMenu({
   // preview (styled by the app's `@media print` rules).
   const doPrint = () => { if (menuCfg?.print?.onOpen) menuCfg.print.onOpen(); else window.print() }
   // Marketplace pre-filtered on modules related to the current one (category/tags).
-  const openMarketplace = () => navigate(`/admin?tab=marketplace&related=${moduleId}`)
+  const openMarketplace = () => navigate(adminUrl({ tab: 'marketplace', params: { related: moduleId } }))
 
   const customItems = (menuCfg?.items ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 
