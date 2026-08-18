@@ -26,7 +26,7 @@ private object Ref {
     val PrimaryHover = Color(0xFF1557B0)
     val PrimaryLight = Color(0xFFD3E3FD)
     val NavActive = Color(0xFF041E49)
-    val BodyBg = Color(0xFFF1F4F8)
+    val BodyBg = Color(0xFFF8FAFD)
     val Surface0 = Color(0xFFFFFFFF)
     val Surface1 = Color(0xFFF8F9FA)
     val Surface2 = Color(0xFFF1F3F4)
