@@ -14,7 +14,8 @@
   "files": [
     "dist",
     "types",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "types": "./types/index.d.ts",
   "exports": {

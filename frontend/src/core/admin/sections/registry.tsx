@@ -29,6 +29,8 @@ import DevicesSection from '../devices/DevicesSection'
 import NetworksSection from '../devices/NetworksSection'
 import RulesSection, { RulesLogSection } from '../rules/RulesSection'
 import DetectorsSection from '../detectors/DetectorsSection'
+import SecurityDashboardSection from '../security/SecurityDashboardSection'
+import ReportsSection from '../reports/ReportsSection'
 import StorageSection from '../storage/StorageSection'
 import BackupPanel from '../backup/BackupPanel'
 import AudiencesSection from './audiences/AudiencesSection'
@@ -36,6 +38,9 @@ import ResourcesSection from './resources/ResourcesSection'
 import DirectorySettingsSection from './directory-settings/DirectorySettingsSection'
 import HolidaysSection from './holidays/HolidaysSection'
 import DomainsSection from './domains/DomainsSection'
+import DataMigrationSection from './data-migration/DataMigrationSection'
+import DataExportSection from './data-export/DataExportSection'
+import SubscriptionSection from './subscription/SubscriptionSection'
 import { adminUrl } from '../adminAction'
 
 /**
@@ -199,6 +204,16 @@ export const ADMIN_SECTIONS: Record<string, AdminSection> = {
   // réglage d'inscription vit sous la LISTE : à l'intérieur d'un domaine, il
   // se lirait comme s'appliquant à celui-là seul.
   'domains':       { Component: withSettings(DomainsSection, 'domains', p => !!p.get('domain')), ownHeader: true },
+  // La liste des campagnes, ou la fiche de l'une d'elles — chacune avec son
+  // propre en-tête. Pas de `withSettings` : la section ne possède aucun réglage
+  // d'instance, tout ce qu'elle configure appartient à une campagne.
+  'data-migration': { Component: DataMigrationSection, ownHeader: true },
+  // Le miroir : faire sortir les données. `withSettings`, parce que la
+  // section possède bien des réglages d'instance (le délai de sécurité, la
+  // rétention, les prérequis) — et `isDetail` sur l'export ouvert, pour que la
+  // liste des comptes couverts ne se lise pas sous une barre d'onglets qui
+  // parle de la page entière.
+  'data-export':   { Component: withSettings(DataExportSection, 'data-export', p => !!p.get('export')) },
   // Paints its own title, its framing callout and its scope bar — and is made
   // entirely of scoped settings, so no `withSettings` wrapper: the page would
   // otherwise end with a second scope bar governing the same keys.
@@ -221,6 +236,10 @@ export const ADMIN_SECTIONS: Record<string, AdminSection> = {
   // The directories, then the instance-wide switches that govern them.
   'ldap':          { Component: withSettings(LdapSection, 'ldap') },
   'security-health': { Component: HealthSection },
+  // The overview: a grid of panels, a period selector beside the title and a
+  // customisation mode — so it paints its own header rather than inheriting the
+  // generic one, which would leave the selector orphaned below the title.
+  'security-dashboard': { Component: SecurityDashboardSection, ownHeader: true },
   // Renders the queue or one alert's sheet, each with its own header; the
   // thresholds sit under the queue, not under one alert.
   'alerts':        { Component: withSettings(AlertsSection, 'alerts', p => !!p.get('alert')), ownHeader: true },
@@ -251,6 +270,10 @@ export const ADMIN_SECTIONS: Record<string, AdminSection> = {
   'networks':        { Component: withSettings(NetworksSection, 'networks'), ownHeader: true },
   'audit':         { Component: withSettings(AuditSection, 'audit') },
   'event-log':     { Component: EventLogSection },
+  // The catalogue of printable reports, or one report. A report paints its own
+  // document head — the instance, the subject, the window, the timestamp — and a
+  // generic `<h1>` above it would be a second, contextless title on the sheet.
+  'reports':       { Component: ReportsSection, ownHeader: true },
   // Renders the inventory, the editor or one rule's sheet — each with its own
   // header — and the run log as a sibling place.
   'rules':         { Component: withSettings(RulesSection, 'rules', p => !!p.get('rule') || p.get('new') === '1'), ownHeader: true },
@@ -259,4 +282,9 @@ export const ADMIN_SECTIONS: Record<string, AdminSection> = {
   'detectors':     { Component: withSettings(DetectorsSection, 'detectors', p => !!p.get('detector')), ownHeader: true },
   // Capacity: the page paints its own title and intro.
   'storage':       { Component: StorageSection, ownHeader: true },
+  // The licence the software is held under, what this installation IS, and the
+  // support contract — if any. Paints its own title and framing callout, hence
+  // `ownHeader`. Deliberately NOT wrapped in `withSettings`: the page governs
+  // no setting, and a "Réglages" tab would suggest there is a knob here.
+  'subscription':  { Component: SubscriptionSection, ownHeader: true },
 }

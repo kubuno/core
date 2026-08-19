@@ -308,7 +308,14 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
         let hash = kubuno_core::crypto::password::hash_password(&plain)
             .map_err(|e| anyhow::anyhow!("Hachage du mot de passe : {e}"))?;
         sqlx::query(
-            "UPDATE core.users SET password_hash = $2, must_change_password = TRUE WHERE id = $1",
+            // `password_changed_at` is stamped here too: the console recovery
+            // path deliberately bypasses the instance password policy — it is
+            // the escape hatch used when the policy itself is what locked
+            // everybody out — but the account must not come back carrying a
+            // date that makes it look permanently expired.
+            "UPDATE core.users \
+                SET password_hash = $2, must_change_password = TRUE, password_changed_at = NOW() \
+              WHERE id = $1",
         )
         .bind(account.id)
         .bind(&hash)

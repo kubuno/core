@@ -4,17 +4,15 @@
  * (un)tick — the mobile-app flow).
  */
 import React from 'react'
-import { Upload, ChevronDown, Trash2, Download, FolderPlus, X, ListChecks, CheckSquare } from 'lucide-react'
-import { Button, type MenuItem } from '@ui'
-import type { Folder } from '../api'
+import { Trash2, Download, X, ListChecks, CheckSquare } from 'lucide-react'
+import { Button } from '@ui'
 import { StorageBreadcrumb } from './themed'
 import type { TFunc } from './types'
 
 export function ExplorerHeader({
   mobileSelecting, selectedIds, itemTypeMap, allItemsSelected, toggleSelectAll, clearSelection,
   onDownloadSelection, onDeleteSelection, canDelete, hasPlayingInSelection,
-  title, breadcrumbs, onNavigate, childFolders, onOpenChild,
-  isMobile, canUpload, hideImport, importMenuItems, onImport, onImportMenu, canMkdir, onNewFolder,
+  title, breadcrumbs, onNavigate, onFolderMenu, viewControls,
   toolbarContent, t,
 }: {
   mobileSelecting: boolean
@@ -30,16 +28,9 @@ export function ExplorerHeader({
   title: string
   breadcrumbs: Array<{ id: string; name: string }>
   onNavigate: (idx: number) => void
-  childFolders: Folder[]
-  onOpenChild: (folder: Folder) => void
-  isMobile: boolean
-  canUpload: boolean
-  hideImport?: boolean
-  importMenuItems?: MenuItem[]
-  onImport: () => void
-  onImportMenu: (e: React.MouseEvent) => void
-  canMkdir: boolean
-  onNewFolder: () => void
+  onFolderMenu?: (e: React.MouseEvent) => void
+  /** View switcher, shown on the trail's line. */
+  viewControls?: React.ReactNode
   toolbarContent?: React.ReactNode
   t: TFunc
 }) {
@@ -64,8 +55,7 @@ export function ExplorerHeader({
         rootName={title}
         crumbs={breadcrumbs}
         onNavigate={onNavigate}
-        childFolders={childFolders}
-        onOpenChild={onOpenChild}
+        onOpenMenu={onFolderMenu}
         ariaLabel={t('app.breadcrumb')}
       />
 
@@ -85,26 +75,9 @@ export function ExplorerHeader({
             <button onClick={clearSelection} className="p-1.5 rounded-full hover:bg-surface-2 text-text-tertiary transition-colors" title={t('app.cancel_selection')}><X size={16} /></button>
             <div className="w-px h-5 bg-border" />
           </>
-        ) : isMobile ? (
-          // Sur mobile, « Importer » et « Nouveau dossier » vivent déjà dans le
-          // FAB du shell (slot sidebar-new-actions) — les répéter ici mangerait
-          // la largeur du fil d'Ariane pour rien.
-          null
-        ) : (
-          <>
-            {canUpload && !hideImport && (
-              importMenuItems && importMenuItems.length > 0 ? (
-                <Button variant="secondary" size="sm" icon={<Upload size={14} />} onClick={onImportMenu}>
-                  {t('common.import')}<ChevronDown size={13} className="ml-1 -mr-1 opacity-70" />
-                </Button>
-              ) : (
-                <Button variant="secondary" size="sm" icon={<Upload size={14} />} onClick={onImport}>{t('common.import')}</Button>
-              )
-            )}
-            {canMkdir && <Button variant="secondary" size="sm" icon={<FolderPlus size={14} />} onClick={onNewFolder}>{t('newfolder.title')}</Button>}
-          </>
-        )}
+        ) : null}
         {toolbarContent && <div className="flex items-center gap-2">{toolbarContent}</div>}
+        {viewControls}
       </div>
     </div>
   )

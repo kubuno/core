@@ -4,6 +4,7 @@ import { Callout, Card } from '@ui'
 import type { User } from '../../../types'
 import { Field } from './atoms'
 import PasswordResetCard from './PasswordResetCard'
+import RequirePasswordChangeCard from './RequirePasswordChangeCard'
 import SessionsCard from './SessionsCard'
 
 /**
@@ -49,6 +50,12 @@ export default function SecurityTab({ user }: { user: User }) {
       {/* Reserved slot for the administrator-driven password reset — see the
           component's own documentation. Renders nothing until it lands. */}
       <PasswordResetCard user={user} />
+
+      {/* The lighter of the two credential levers, and therefore below the
+          heavier one: forcing a change does not replace the password, so an
+          operator who lands here having already decided to reset finds the
+          reset first. */}
+      <RequirePasswordChangeCard user={user} />
 
       <SessionsCard user={user} />
     </div>

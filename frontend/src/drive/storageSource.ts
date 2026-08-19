@@ -75,6 +75,10 @@ export interface StorageSource {
   remove(items: ItemRef[]): Promise<void>   // suppression définitive
   uploadFile(file: File, parentId: string | null, onProgress?: (pct: number) => void, overwrite?: boolean): Promise<{ id: string } | null>
 
+  /** The folder's OWN record (the listing only returns its children). Absent on
+   *  sources that cannot fetch one — the trail then falls back to id + name. */
+  statFolder?(id: string): Promise<Folder | null>
+
   star?(item: ItemRef): Promise<void>
   setFolderColor?(id: string, color: string | null): Promise<void>
 
@@ -164,6 +168,10 @@ export function localSource(opts: LocalSourceOpts = {}): StorageSource {
         filesApi.listFiles(parentId, undefined, undefined, undefined, undefined, { limit: 1000 }),
       ])
       return { folders, files }
+    },
+    async statFolder(id) {
+      const { folder } = await filesApi.getFolder(id)
+      return folder
     },
     async resolveAncestors(id) {
       if (!id) return []

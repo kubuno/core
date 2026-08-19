@@ -21,8 +21,8 @@ use super::tokens::{refresh_cookie, RefreshRequest};
 
 /// What a session already knows about its device, carried across a rotation.
 #[derive(Debug, Default, Clone)]
-struct SessionInventory {
-    device_id: Option<uuid::Uuid>,
+pub(super) struct SessionInventory {
+    pub(super) device_id: Option<uuid::Uuid>,
     country: Option<String>,
     auth_strength: Option<String>,
 }
@@ -30,7 +30,7 @@ struct SessionInventory {
 /// Reads it back. Best-effort: a rotation must never fail because the inventory
 /// could not be consulted — the session is what keeps the user signed in, the
 /// inventory is what tells an operator about it.
-async fn session_inventory(state: &AppState, session_id: uuid::Uuid) -> SessionInventory {
+pub(super) async fn session_inventory(state: &AppState, session_id: uuid::Uuid) -> SessionInventory {
     let row: Option<(Option<uuid::Uuid>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT device_id, country, auth_strength FROM core.refresh_tokens WHERE id = $1",
     )
@@ -60,7 +60,7 @@ async fn session_inventory(state: &AppState, session_id: uuid::Uuid) -> SessionI
 /// blocked machine comes back: an access token already issued keeps working
 /// until it expires (fifteen minutes), and revoking the sessions at block time —
 /// which the console does — closes that window from the other side.
-async fn device_is_blocked(state: &AppState, device_id: Option<uuid::Uuid>) -> bool {
+pub(super) async fn device_is_blocked(state: &AppState, device_id: Option<uuid::Uuid>) -> bool {
     let Some(device_id) = device_id else {
         return false;
     };

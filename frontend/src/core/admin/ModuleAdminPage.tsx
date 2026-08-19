@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CircleSlash, Package, PackageX, SlidersHorizontal, TriangleAlert } from 'lucide-react'
 import { Button, Callout, Card, EmptyState, Spinner, Toggle, useToast, type Crumb } from '@ui'
@@ -19,6 +19,8 @@ import {
   type AdminModule, type ModuleLiveState, type ModuleSettingGroup,
 } from './adminModules'
 import ModuleAdminSettings, { useModuleInstanceSettings } from './ModuleAdminSettings'
+import ModuleSidePanel from './settings/ModuleSidePanel'
+import { INSTANCE_SCOPE, type ActiveScope } from './settings/scopeTypes'
 
 /**
  * Applications ▸ Modules installés ▸ one module — `/admin/modules/<id>`.
@@ -54,10 +56,15 @@ import ModuleAdminSettings, { useModuleInstanceSettings } from './ModuleAdminSet
  *
  * ── One page, or several ─────────────────────────────────────────────────────
  * A module with forty-eight settings has no readable single page. So a module
- * may declare PAGES of its own (`[[setting_groups]]`): each is an entry of the
- * admin menu, an address (`/admin/modules/mail/filtering`), and a heading here;
- * its settings' `category` values become the tabs inside it. Everything about
- * those pages — ids, labels, icons, order, wording — comes from the module.
+ * may declare PAGES of its own (`[[setting_groups]]`): each is an address
+ * (`/admin/modules/mail/filtering`) and a heading here; its settings'
+ * `category` values become the tabs inside it. Everything about those pages —
+ * ids, labels, icons, order, wording — comes from the module.
+ *
+ * They are listed in the CARD on the left of this page (`ModuleSidePanel`), not
+ * in the console's navigation tree: nested there, under the module, under
+ * "Modules installés", under "Applications", twenty modules' worth of pages
+ * buried the applications an operator was scanning for.
  *
  * A module that declares none keeps EXACTLY the page it had: state card, its
  * own sections, one settings card. That is almost every module, and it is the
@@ -179,6 +186,17 @@ export default function ModuleAdminPage({ params, navigate }: AdminSectionProps)
   const hasOwnAdmin = useHasSlot(ownSlot)
   const ownSections = useModuleAdminSections(id)
 
+  // WHO the settings on screen apply to. It lives HERE and not in the settings
+  // panel because the tree that changes it is in the card beside it, and that
+  // card outlives the panel: moving from one page of a module to the next
+  // remounts nothing on the left.
+  const [scope, setScope] = useState<ActiveScope>(INSTANCE_SCOPE)
+
+  // Another module, another org chart to answer for: a selected unit carried
+  // over would silently point the form at a scope the operator never chose for
+  // this module.
+  useEffect(() => { setScope(INSTANCE_SCOPE) }, [id])
+
   // The pages the module declares, and the one addressed. An id that names no
   // declared page (a stale bookmark) resolves to the first, never to nothing.
   const groups   = useMemo(() => groupsOf(module), [module])
@@ -276,9 +294,15 @@ export default function ModuleAdminPage({ params, navigate }: AdminSectionProps)
     </div>
   )
 
-  const scopeCallout = (
-    // The frame everything below is read in: these knobs govern the whole
-    // instance, not the operator's own preferences.
+  // The frame everything below is read in: these knobs govern the instance, not
+  // the operator's own preferences.
+  //
+  // It is dropped for a module that declares something `overridable`: that page
+  // carries a scope column saying, permanently and more precisely, WHO the
+  // values apply to. Leaving the banner there would state the opposite of the
+  // column right under it — "toute l'instance" over a selected unit.
+  const perUnit = settings.items.some(s => s.scope === 'overridable')
+  const scopeCallout = perUnit ? null : (
     <Callout variant="info" className="mb-4" title={t('admin.m_scope_title')}>
       {t('admin.m_scope_body')}
     </Callout>
@@ -304,51 +328,79 @@ export default function ModuleAdminPage({ params, navigate }: AdminSectionProps)
     </div>
   )
 
+  /**
+   * The two columns of the page: what qualifies the settings, then the settings.
+   *
+   * From `md` up the card is a 240px column beside the content; below it, the
+   * same card sits ABOVE — a phone has no width to give away, and a fold the
+   * operator has to scroll past is cheaper than a form squeezed into what is
+   * left of the screen. The card returns `null` when the module has neither
+   * pages nor overridable settings, and the row then holds a single column.
+   */
+  const columns = (content: ReactNode) => (
+    <div className="flex min-w-0 flex-col gap-5 md:flex-row md:items-start">
+      <ModuleSidePanel
+        module={module}
+        groups={groups}
+        activeGroup={active?.id ?? null}
+        scopable={perUnit}
+        scope={scope}
+        onScopeChange={setScope}
+      />
+      <div className="min-w-0 flex-1">{content}</div>
+    </div>
+  )
+
   // ── Split into pages ───────────────────────────────────────────────────────
   if (paged && active) {
     return (
       <div className="min-w-0">
         {header}
-        <GroupHeading group={active} />
+        {columns(
+          <>
+            <GroupHeading group={active} />
 
-        {/* Both belong to the module, not to any one of its pages — so they sit
-            on the FIRST one, which is where the menu lands, instead of being
-            repeated five times over. */}
-        {isFirst && scopeCallout}
-        {isFirst && <ModuleStateCard module={module} state={state} />}
+            {/* Both belong to the module, not to any one of its pages — so they
+                sit on the FIRST one, which is where the menu lands, instead of
+                being repeated five times over. */}
+            {isFirst && scopeCallout}
+            {isFirst && <ModuleStateCard module={module} state={state} />}
 
-        {/* The module's own views for this page, above the form: a diagnostic is
-            read before a setting is changed, and it is what tells the operator
-            WHICH setting to change. */}
-        {inline.map(({ id: sectionId, Component }) => <Component key={sectionId} />)}
-        {/* A module that contributes through the plain slot said nothing about
-            pages; its views belong to the module as a whole, so they show where
-            the menu lands rather than on every page. */}
-        {isFirst && <Slot name={ownSlot} />}
+            {/* The module's own views for this page, above the form: a
+                diagnostic is read before a setting is changed, and it is what
+                tells the operator WHICH setting to change. */}
+            {inline.map(({ id: sectionId, Component }) => <Component key={sectionId} />)}
+            {/* A module that contributes through the plain slot said nothing
+                about pages; its views belong to the module as a whole, so they
+                show where the menu lands rather than on every page. */}
+            {isFirst && <Slot name={ownSlot} />}
 
-        {settings.isLoading ? (
-          <div className="py-10 flex justify-center"><Spinner /></div>
-        ) : settings.isError ? (
-          configError
-        ) : settings.items.length > 0 ? (
-          // Mounted on EVERY page, including one with no setting of its own:
-          // it holds the pending edits and the module-wide filter, and
-          // unmounting it while moving between pages would throw away staged
-          // changes the footer had just promised to save.
-          <ModuleAdminSettings
-            key={module.id}
-            moduleId={module.id}
-            group={active.id}
-            groups={groups}
-            extraTabs={asTabs}
-          />
-        ) : (
-          // No setting anywhere in the module, but it does administer itself:
-          // the contributed sections above are the page.
-          asTabs.map(({ id: sectionId, Component }) => <Component key={sectionId} />)
+            {settings.isLoading ? (
+              <div className="py-10 flex justify-center"><Spinner /></div>
+            ) : settings.isError ? (
+              configError
+            ) : settings.items.length > 0 ? (
+              // Mounted on EVERY page, including one with no setting of its
+              // own: it holds the pending edits and the module-wide filter, and
+              // unmounting it while moving between pages would throw away
+              // staged changes the footer had just promised to save.
+              <ModuleAdminSettings
+                key={module.id}
+                moduleId={module.id}
+                group={active.id}
+                groups={groups}
+                extraTabs={asTabs}
+                scope={scope}
+              />
+            ) : (
+              // No setting anywhere in the module, but it does administer
+              // itself: the contributed sections above are the page.
+              asTabs.map(({ id: sectionId, Component }) => <Component key={sectionId} />)
+            )}
+
+            {backLink}
+          </>,
         )}
-
-        {backLink}
       </div>
     )
   }
@@ -357,46 +409,51 @@ export default function ModuleAdminPage({ params, navigate }: AdminSectionProps)
   return (
     <div className="min-w-0">
       {header}
-      {scopeCallout}
-
-      <ModuleStateCard module={module} state={state} />
-
-      {/* The module's own sections, above the generated form. */}
-      {ownSections.map(({ id: sectionId, Component }) => <Component key={sectionId} />)}
-      <Slot name={ownSlot} />
-
-      {settings.isLoading ? (
-        <div className="py-10 flex justify-center"><Spinner /></div>
-      ) : settings.isError ? (
-        configError
-      ) : settings.items.length === 0 ? (
-        hasAdmin ? (
-          // The module declares no setting but administers itself above. Saying
-          // "not configurable" here would contradict the panel the operator is
-          // looking at; only the way back is still owed.
-          backLink
-        ) : (
-          // Declares nothing at all: an empty form would claim it is configurable.
-          <Card>
-            <EmptyState
-              compact
-              variant="unavailable"
-              icon={<SlidersHorizontal size={22} />}
-              title={t('admin.m_no_settings_title')}
-              description={t('admin.m_no_settings_desc')}
-              action={{ label: t('admin.m_back_to_list'), onClick: backToList }}
-              t={t}
-            />
-          </Card>
-        )
-      ) : (
+      {columns(
         <>
-          <ModuleAdminSettings key={module.id} moduleId={module.id} />
-          {/* Only here: the two states above already offer the way back inside
-              their own empty state, and a second identical button reads as a
-              different destination. */}
-          {backLink}
-        </>
+          {scopeCallout}
+
+          <ModuleStateCard module={module} state={state} />
+
+          {/* The module's own sections, above the generated form. */}
+          {ownSections.map(({ id: sectionId, Component }) => <Component key={sectionId} />)}
+          <Slot name={ownSlot} />
+
+          {settings.isLoading ? (
+            <div className="py-10 flex justify-center"><Spinner /></div>
+          ) : settings.isError ? (
+            configError
+          ) : settings.items.length === 0 ? (
+            hasAdmin ? (
+              // The module declares no setting but administers itself above.
+              // Saying "not configurable" here would contradict the panel the
+              // operator is looking at; only the way back is still owed.
+              backLink
+            ) : (
+              // Declares nothing at all: an empty form would claim it is
+              // configurable.
+              <Card>
+                <EmptyState
+                  compact
+                  variant="unavailable"
+                  icon={<SlidersHorizontal size={22} />}
+                  title={t('admin.m_no_settings_title')}
+                  description={t('admin.m_no_settings_desc')}
+                  action={{ label: t('admin.m_back_to_list'), onClick: backToList }}
+                  t={t}
+                />
+              </Card>
+            )
+          ) : (
+            <>
+              <ModuleAdminSettings key={module.id} moduleId={module.id} scope={scope} />
+              {/* Only here: the two states above already offer the way back
+                  inside their own empty state, and a second identical button
+                  reads as a different destination. */}
+              {backLink}
+            </>
+          )}
+        </>,
       )}
     </div>
   )

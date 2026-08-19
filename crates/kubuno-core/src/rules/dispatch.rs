@@ -42,6 +42,7 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::config::settings::ServerSettings;
 use crate::crypto::token;
 use crate::errors::AppError;
 use crate::jobs::{queue, NewJob};
@@ -120,10 +121,13 @@ pub struct DispatchOutcome {
 
 /// Runs every action of a match, in order.
 ///
-/// `internal_secret` is captured at bootstrap and handed down rather than read
-/// from the database: it is configuration, it never appears in `core.settings`,
-/// and the job runner deliberately carries nothing but a pool.
-pub async fn run_all(db: &PgPool, job: &ActionJob, internal_secret: &str) -> DispatchOutcome {
+/// `server` is captured at bootstrap and handed down rather than read from the
+/// database: it is configuration, it never appears in `core.settings`, and the
+/// job runner deliberately carries nothing but a pool. The whole settings block
+/// travels rather than one string because calling a module means presenting the
+/// secret **of that module** ([`ServerSettings::module_secret`]), which is only
+/// derivable from the master — see [`call_module`].
+pub async fn run_all(db: &PgPool, job: &ActionJob, server: &ServerSettings) -> DispatchOutcome {
     let mut outcome = DispatchOutcome::default();
     let mut halted = false;
 
@@ -167,7 +171,7 @@ pub async fn run_all(db: &PgPool, job: &ActionJob, internal_secret: &str) -> Dis
             }
         }
 
-        let (status, error, blocking) = run_one(db, job, spec, internal_secret).await;
+        let (status, error, blocking) = run_one(db, job, spec, server).await;
         if status == "ok" {
             outcome.ok = outcome.ok.saturating_add(1);
         } else {
@@ -195,7 +199,7 @@ async fn run_one(
     db: &PgPool,
     job: &ActionJob,
     spec: &ActionSpec,
-    internal_secret: &str,
+    server: &ServerSettings,
 ) -> (&'static str, Option<String>, bool) {
     let resolved = match catalog::resolve_action(db, &spec.action).await {
         Ok(Some(r)) => r,
@@ -230,7 +234,7 @@ async fn run_one(
             "rules: action sans endpoint et inconnue du core — déclaration incohérente");
         return ("failed", Some("no endpoint declared".into()), blocking);
     };
-    match call_module(db, job, spec, &resolved.module_id, &endpoint, internal_secret).await {
+    match call_module(db, job, spec, &resolved.module_id, &endpoint, server).await {
         Ok(()) => ("ok", None, blocking),
         Err(e) => {
             tracing::error!(error = %e, action = %spec.action, module_id = %resolved.module_id,
@@ -241,13 +245,19 @@ async fn run_one(
 }
 
 /// POSTs an action to the module that declared it.
+///
+/// The call carries the internal secret **of the target module**, not the master
+/// one: handing a module the master secret would hand it the key to every other
+/// module, so one compromised module would compromise all of them. This is the
+/// same rule the proxy ([`crate::modules::proxy`]) and event delivery
+/// ([`crate::events::dispatch`]) follow.
 async fn call_module(
     db: &PgPool,
     job: &ActionJob,
     spec: &ActionSpec,
     module_id: &str,
     endpoint: &str,
-    internal_secret: &str,
+    server: &ServerSettings,
 ) -> Result<(), AppError> {
     // Resolved from the database rather than from the in-memory registry: the
     // job runner holds a pool and nothing else, which is what makes an action
@@ -288,7 +298,7 @@ async fn call_module(
 
     let response = client
         .post(&url)
-        .header("X-Internal-Secret", internal_secret)
+        .header("X-Internal-Secret", secret_for(server, module_id))
         // The feedback counter travels with the call. A module that emits an
         // event as a consequence must echo it, or its own chain is invisible to
         // the guard — documented in the module contract, and the only part of
@@ -309,6 +319,15 @@ async fn call_module(
         )));
     }
     Ok(())
+}
+
+/// The `X-Internal-Secret` value a call to `module_id` must carry.
+///
+/// One line, but a named one: it is the single place the engine decides which
+/// secret leaves the process, and the regression it guards against — sending the
+/// master secret, i.e. the key to every module — is silent when it happens.
+fn secret_for(server: &ServerSettings, module_id: &str) -> String {
+    server.module_secret(module_id)
 }
 
 // ── Idempotency ──────────────────────────────────────────────────────────────
@@ -372,6 +391,62 @@ pub fn detail_of(outcome: &DispatchOutcome) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::internal_secret::InternalCaller;
+
+    /// 64 hex characters, i.e. what `openssl rand -hex 32` produces.
+    const MASTER: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn server(derive: bool) -> ServerSettings {
+        let mut s: ServerSettings = serde_json::from_value(json!({
+            "host":            "127.0.0.1",
+            "port":            8080,
+            "frontend_dist":   "./frontend/dist",
+            "internal_secret": MASTER,
+            "modules_dir":     "/usr/lib/kubuno/modules",
+            "themes_dir":      "/var/lib/kubuno/themes",
+        }))
+        .expect("les réglages serveur de test doivent se désérialiser");
+        s.derive_module_secrets = derive;
+        s
+    }
+
+    /// The regression this guards: an action sent to a module used to carry the
+    /// master secret, i.e. a value that opens every other module.
+    #[test]
+    fn an_action_carries_the_secret_of_the_module_it_targets() {
+        let server = server(true);
+
+        let mail = secret_for(&server, "mail");
+        let drive = secret_for(&server, "drive");
+
+        assert_ne!(mail, MASTER, "le secret maître ne doit jamais partir vers un module");
+        assert_ne!(mail, drive, "chaque module doit recevoir sa propre valeur");
+
+        // And the core recognises it as coming from that module, exactly like
+        // the proxy's and the event delivery's.
+        assert_eq!(
+            server.authenticate_internal(&mail),
+            Some(InternalCaller::Module("mail".into()))
+        );
+    }
+
+    /// Derivation off (the default) is the historical behaviour: one shared
+    /// secret. The dispatcher must follow the setting, not second-guess it.
+    #[test]
+    fn without_derivation_the_shared_secret_is_still_used() {
+        let server = server(false);
+        assert_eq!(secret_for(&server, "mail"), MASTER);
+    }
+
+    /// A module listed as exempt keeps the shared secret even with derivation
+    /// on — it talks to its peers directly and compares for equality.
+    #[test]
+    fn an_exempt_module_keeps_the_shared_secret() {
+        let mut server = server(true);
+        server.shared_secret_modules = vec!["drive".into()];
+        assert_eq!(secret_for(&server, "drive"), MASTER);
+        assert_ne!(secret_for(&server, "mail"), MASTER);
+    }
 
     #[test]
     fn the_idempotency_identity_separates_actions_and_evaluations() {

@@ -117,6 +117,13 @@ pub struct User {
     pub created_at:     DateTime<Utc>,
     pub updated_at:     DateTime<Utc>,
     pub last_login_at:  Option<DateTime<Utc>>,
+    /// When the current local password was chosen (migration `000115`).
+    ///
+    /// This is a date, not a secret: it says *when*, never anything about the
+    /// password itself. It is what makes `security.password_expiry_days`
+    /// enforceable — an argon2id hash cannot be asked how old it is.
+    /// `NULL` for an account that holds no local password at all.
+    pub password_changed_at: Option<DateTime<Utc>>,
     pub totp_enabled:        bool,
     /// Set when the account still carries a password it did not choose (initial
     /// seeded administrator). The UI forces a password change before anything else.

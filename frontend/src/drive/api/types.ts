@@ -31,6 +31,12 @@ export interface FileItem {
   size_bytes: number
   mime_type: string
   is_starred: boolean
+  /**
+   * Undeletable file (platform fonts shipped with the module, and anything an
+   * IPC caller protected). Optional: alternative sources (remotes, WebDAV)
+   * fabricate items without it.
+   */
+  is_protected?: boolean
   is_trashed: boolean
   has_thumbnail: boolean
   versioning_enabled: boolean

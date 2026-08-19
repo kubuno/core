@@ -48,12 +48,20 @@ pub struct LoginDto {
     /// refresh token in the JSON body (no cookie) so non-browser clients can
     /// store it in the OS keychain and refresh without a cookie jar.
     pub client_type: Option<String>,
+    /// Multi-account (web only): slot this sign-in should occupy (used when
+    /// re-connecting an existing account row). Omitted → the server reuses the
+    /// slot already holding this user, else the first free one.
+    #[serde(default)]
+    pub slot: Option<u8>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
     pub access_token: String,
     pub user:         crate::models::user::User,
+    /// Multi-account slot this session occupies in the browser (web only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u8>,
 }
 
 /// Token response for native/desktop clients. The raw refresh token is returned

@@ -68,7 +68,7 @@ impl RemoteMountService {
         .ok_or_else(|| RemoteError::NotFound(format!("Montage {id}")))?;
 
         let config = self.decrypt_config(&row.1)
-            .ok_or_else(|| RemoteError::Auth("config illisible".into()))?;
+            .ok_or(RemoteError::ConfigUnreadable)?;
         let conn = self.connector_from(&row.0, &config)?;
         self.cache.write().await.insert(id, conn.clone());
         Ok(conn)

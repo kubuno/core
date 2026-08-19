@@ -53,6 +53,10 @@ pub mod chain;
 /// rather than read off `core.settings` — see the module's own preamble.
 pub mod directory;
 pub mod intl;
+/// The password policy (migration `000115`), resolved through the chain: what a
+/// local password must satisfy, how long it stays valid, and whether the
+/// forgotten-password link may be issued — per organisational unit.
+pub mod password_policy;
 pub mod schema;
 pub mod scope;
 pub mod store;

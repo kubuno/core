@@ -37,6 +37,9 @@ export { default as i18n } from '../core/i18n'
 // ── Accès core étendu : singletons/contextes/composants partagés requis par les
 //    bundles de modules (sinon une copie bundlée = instance désynchronisée). ──
 export { api } from '../core/api/client'
+// SPA navigation from OUTSIDE React (menu items built as data, stores, workers):
+// routes through the router when the shell is mounted, History API otherwise.
+export { navigate } from '../core/navigation'
 export { useAuthStore } from '../core/store/authStore'
 export { useModulesStore } from '../core/store/modulesStore'
 export { useNotificationStore } from '../core/store/notificationStore'

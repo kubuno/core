@@ -6,7 +6,6 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, List, LayoutGrid, Check } from 'lucide-react'
 import { Dropdown, MobileSheet, MobileSheetItem, MobileSheetSeparator } from '@ui'
-import { ViewMenu, type ViewMode } from '../fileView'
 import { sortDirLabels } from './detailsModel'
 import type { SortField, TFunc } from './types'
 
@@ -70,7 +69,7 @@ export function MobileControlBar({ sortField, sortDir, onSortField, onSortDir, g
         </button>
         <button
           onClick={() => onGrid(true)}
-          aria-label={t('view.icons_md')}
+          aria-label={t('view.icons_lg')}
           aria-pressed={grid}
           className={`w-14 h-9 rounded-full flex items-center justify-center transition-colors
                       ${grid ? 'bg-text-primary text-white' : 'bg-primary-light text-text-secondary'}`}
@@ -106,12 +105,10 @@ export function MobileControlBar({ sortField, sortDir, onSortField, onSortDir, g
 
 // ── SortFilterBar (dropdown Type, identique à Mon Drive) ─────────────────────────
 
-export function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField, onSortDir, onTypeFilter, hideType, viewMode, onViewMode, compact, onCompact, showHidden, onShowHidden }: {
+export function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField, onSortDir, onTypeFilter, hideType }: {
   sortField: SortField; sortDir: 'asc' | 'desc'; typeFilter: string | null
   onSortField: (v: SortField) => void; onSortDir: (v: 'asc' | 'desc') => void
   onTypeFilter: (v: string | null) => void; hideType?: boolean
-  viewMode: ViewMode; onViewMode: (v: ViewMode) => void; compact: boolean; onCompact: (v: boolean) => void
-  showHidden: boolean; onShowHidden: (v: boolean) => void
 }) {
   const { t } = useTranslation('drive')
   const SORT_OPTIONS = [
@@ -129,21 +126,18 @@ export function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField,
   return (
     <div className="flex flex-wrap items-center gap-2 pb-3 -mx-6 px-6 border-b border-border">
       <div className="flex items-center gap-1">
-        <span className="text-sm text-text-tertiary select-none font-medium">{t('app.sort_label')}</span>
-        <Dropdown variant="ghost" value={sortField} onChange={v => onSortField(v as typeof sortField)} options={SORT_OPTIONS} />
-        <button onClick={() => onSortDir(sortDir === 'asc' ? 'desc' : 'asc')} className="ml-0.5 text-sm text-text-secondary hover:text-primary transition-colors select-none"
+        <span className="text-sm select-none font-medium" style={{ color: 'var(--color-text-nav)' }}>{t('app.sort_label')}</span>
+        <Dropdown variant="ghost" value={sortField} onChange={v => onSortField(v as typeof sortField)} options={SORT_OPTIONS} buttonStyle={{ color: 'var(--color-text-nav)' }} />
+        <button onClick={() => onSortDir(sortDir === 'asc' ? 'desc' : 'asc')} style={{ color: 'var(--color-text-nav)' }} className="ml-0.5 text-sm hover:text-primary transition-colors select-none"
           title={sortDir === 'asc' ? t('app.sort_asc') : t('app.sort_desc')}>{sortDir === 'asc' ? '↑' : '↓'}</button>
       </div>
       {!hideType && <>
         <div className="h-5 w-px bg-border" />
         <div className="flex items-center gap-1">
-          <span className="text-sm text-text-tertiary select-none font-medium">{t('app.type_label')}</span>
-          <Dropdown variant="ghost" value={typeFilter ?? ''} onChange={v => onTypeFilter(v === '' ? null : v)} options={TYPE_OPTIONS} />
+          <span className="text-sm select-none font-medium" style={{ color: 'var(--color-text-nav)' }}>{t('app.type_label')}</span>
+          <Dropdown variant="ghost" value={typeFilter ?? ''} onChange={v => onTypeFilter(v === '' ? null : v)} options={TYPE_OPTIONS} buttonStyle={{ color: 'var(--color-text-nav)' }} />
         </div>
       </>}
-      <div className="ml-auto">
-        <ViewMenu value={viewMode} onChange={onViewMode} compact={compact} onCompact={onCompact} showHidden={showHidden} onShowHidden={onShowHidden} t={t} />
-      </div>
     </div>
   )
 }

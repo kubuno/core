@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import AppHeader from './AppHeader'
 import AppSidebar from './AppSidebar'
 import TitleTooltips from './TitleTooltips'
@@ -16,10 +16,20 @@ import { Slot } from '../slots/SlotRegistry'
 import { useIdleLogout } from '../hooks/useIdleLogout'
 import { usePanelStatePersistence } from '../hooks/usePanelStatePersistence'
 import { useAppNavMemory } from '../hooks/useAppNavMemory'
+import { setRouterNavigate } from '../navigation'
 
 export default function Shell() {
   const { sidebarOpen, closeSidebar, headerHidden } = useUiStore()
   const location = useLocation()
+
+  // Hand the router's `navigate` to the core helper so non-React code (menu item
+  // handlers built as data, stores, registries) navigates through React Router
+  // instead of each module re-implementing pushState. See `core/navigation.ts`.
+  const routerNavigate = useNavigate()
+  useEffect(() => {
+    setRouterNavigate(routerNavigate)
+    return () => setRouterNavigate(null)
+  }, [routerNavigate])
 
   // Déconnexion automatique après inactivité (réglage admin).
   useIdleLogout()
@@ -62,7 +72,7 @@ export default function Shell() {
           recherche + les actions dans sa propre barre de titre. */}
       {!headerHidden && <AppHeader />}
 
-      {/* Corps : fond #f1f4f8 visible entre les zones comme séparateur. La marge
+      {/* Corps : fond --body-bg visible entre les zones comme séparateur. La marge
           basse mobile réserve la place de la barre de navigation fixe (sauf en
           paysage, où la nav passe à gauche, dans le flux). */}
       {/* data-has-bottom-nav : index.css réserve la hauteur de la barre + safe-area

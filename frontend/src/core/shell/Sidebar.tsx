@@ -35,14 +35,14 @@ function SidebarLink({ item, iconOverride }: { item: SidebarItem; iconOverride?:
         `group flex items-center gap-3 px-3 py-2 rounded-full text-sm font-medium relative
          transition-all cursor-pointer select-none
          ${isActive
-           ? 'bg-primary-light text-primary'
-           : 'text-text-secondary hover:bg-surface-2'
+           ? 'bg-primary-light text-text-nav-active'
+           : 'text-text-nav hover:bg-surface-2'
          }`
       }
     >
       {({ isActive }) => (
         <>
-          <span className={isActive ? 'text-primary' : 'text-text-secondary group-hover:text-text-primary'}>
+          <span className={isActive ? 'text-primary' : 'text-text-secondary group-hover:text-text-nav'}>
             {iconOverride ?? <SidebarIcon name={item.icon} />}
           </span>
           <span className="flex-1 truncate">{item.label}</span>

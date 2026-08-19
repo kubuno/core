@@ -321,6 +321,11 @@ pub async fn set_scoped_value(
     if key == crate::auth::methods::KEY_METHODS {
         crate::auth::methods::MethodSet::validate(&dto.value)?;
     }
+    // The declared `value_type` says "an integer"; it cannot say "at least 8".
+    // The resolver clamps out-of-range values so a stale row can never make the
+    // policy fail open — but a console that accepts "3" and silently enforces 8
+    // is a console that lies about what it enforces.
+    validate_password_policy_value(&key, &dto.value)?;
 
     let mut tx = audit.begin(&state.db).await?;
     let out = store::set_value(&mut tx, &key, &scope, &dto.value, Some(audit.admin.id)).await?;
@@ -427,6 +432,38 @@ fn guard_owned_elsewhere(key: &str) -> Result<(), AppError> {
         return Err(AppError::Validation(format!(
             "'{key}' s'enregistre depuis Administration → Tâches de fond \
              (POST /admin/backup/restore-test)"
+        )));
+    }
+    Ok(())
+}
+
+/// Range guard for the numeric keys of the password policy (migration `000115`).
+///
+/// The bounds are the resolver's own ([`crate::settings::password_policy`]), so
+/// the value an administrator sees accepted is the value the server enforces.
+/// A key that is not one of these passes straight through.
+pub(crate) fn validate_password_policy_value(key: &str, value: &Value) -> Result<(), AppError> {
+    use crate::settings::password_policy as pol;
+
+    let (min, max) = match key {
+        pol::KEY_MIN_LENGTH => (pol::MIN_LENGTH_FLOOR, pol::MIN_LENGTH_CEILING),
+        pol::KEY_HISTORY_DEPTH => (1, pol::HISTORY_DEPTH_CEILING),
+        // 0 disables expiry; ten years is the far end of anything meaningful.
+        pol::KEY_EXPIRY_DAYS => (0, 3650),
+        _ => return Ok(()),
+    };
+
+    // `null` is how a scope says "inherit"; the schema check above already
+    // refused anything that is neither a number nor null.
+    if value.is_null() {
+        return Ok(());
+    }
+    let n = value.as_i64().ok_or_else(|| {
+        AppError::Validation(format!("'{key}' attend une valeur de type entier"))
+    })?;
+    if !(min..=max).contains(&n) {
+        return Err(AppError::Validation(format!(
+            "'{key}' doit être compris entre {min} et {max}"
         )));
     }
     Ok(())

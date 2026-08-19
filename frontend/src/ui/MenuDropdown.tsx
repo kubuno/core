@@ -209,18 +209,24 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
       <div className="kb-frost-layer" aria-hidden />
       <div
         ref={scrollRef}
-        // side padding forms the gutter the highlight pill is inset by
-        style={{ padding: 5, overflowY: 'auto', overflowX: 'hidden' }}
+        // Side padding forms the gutter the highlight pill is inset by.
+        // GRID: icon | label | shortcut, shared by every row through `subgrid`
+        // below, so shortcuts line up in their OWN column across the whole menu
+        // (native-menu behaviour) instead of trailing each label.
+        style={{
+          padding: 5, overflowY: 'auto', overflowX: 'hidden',
+          display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignContent: 'start',
+        }}
       >
       {items.map((item, i) => {
         if (item.type === 'separator') {
-          return <div key={i} style={{ background: c.sep, height: 1, margin: '5px 6px' }} />
+          return <div key={i} style={{ gridColumn: '1 / -1', background: c.sep, height: 1, margin: '5px 6px' }} />
         }
         if (item.type === 'label') {
           return (
             <div
               key={i}
-              style={{ padding: '4px 10px', fontSize: 'var(--kb-text-meta)', color: c.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+              style={{ gridColumn: '1 / -1', padding: '4px 10px', fontSize: 'var(--kb-text-meta)', color: c.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}
             >
               {item.text}
             </div>
@@ -231,7 +237,7 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
                                 index={i} hovered={hovered} setHovered={setHovered} />
         }
         if (item.type === 'custom') {
-          return <React.Fragment key={i}>{item.render(onClose)}</React.Fragment>
+          return <div key={i} style={{ gridColumn: '1 / -1' }}>{item.render(onClose)}</div>
         }
         const on = hovered === i && !item.disabled
         const fg = on ? c.hoverText : item.danger ? c.danger : c.text
@@ -242,8 +248,12 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
             onClick={() => { item.onClick(); onClose() }}
             onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(h => (h === i ? null : h))}
-            className="w-full flex items-center gap-2 text-left disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
+              // `subgrid` → this row reuses the MENU's columns, so every icon,
+              // label and shortcut aligns with the other rows'.
+              display: 'grid', gridColumn: '1 / -1', gridTemplateColumns: 'subgrid',
+              alignItems: 'center', columnGap: 8,
               padding: '5px 12px 5px 10px', fontSize: 'var(--kb-text-body)', color: fg, lineHeight: '20px',
               borderRadius: 6, background: on ? c.hover : 'transparent',
             }}
@@ -251,12 +261,13 @@ export function MenuDropdown({ items, pos, onClose, minWidth: minWidthProp = 200
             <span style={{ width: 20, flexShrink: 0, color: on ? c.hoverText : item.danger ? c.danger : c.accent, fontSize: 14, display: 'inline-flex', alignItems: 'center' }}>
               {item.checked ? '✓' : item.icon ? item.icon : ''}
             </span>
-            <span className="flex-1">{item.label}</span>
-            {item.shortcut && (
-              <span style={{ color: on ? c.hoverText : c.shortcut, fontSize: 'var(--kb-text-body)', marginLeft: 24, flexShrink: 0, opacity: on ? 0.85 : 1 }}>
-                {item.shortcut}
-              </span>
-            )}
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+            {/* Third column: left-aligned so the shortcuts read as a clean column
+                (the column itself is `auto`, i.e. as wide as the longest one).
+                Always rendered — an empty cell keeps the columns in step. */}
+            <span style={{ color: on ? c.hoverText : c.shortcut, fontSize: 'var(--kb-text-body)', textAlign: 'left', paddingLeft: 16, opacity: on ? 0.85 : 1 }}>
+              {item.shortcut ?? ''}
+            </span>
           </button>
         )
       })}
@@ -308,20 +319,29 @@ function SubmenuItem({ item, onClose, theme, index, hovered, setHovered }: {
     <div
       onMouseEnter={() => { setHovered(index); openNow() }}
       onMouseLeave={() => { setHovered(h => (h === index ? null : h)); scheduleClose() }}
-      style={{ position: 'relative' }}
+      // The wrapper exists to anchor the child panel; it must still relay the
+      // menu's columns to its button, hence subgrid on two levels.
+      style={{
+        position: 'relative', display: 'grid', gridColumn: '1 / -1',
+        gridTemplateColumns: 'subgrid',
+      }}
     >
       <button
         ref={btnRef}
         disabled={item.disabled}
-        className="w-full flex items-center gap-2 text-left disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
         style={{
+          display: 'grid', gridColumn: '1 / -1', gridTemplateColumns: 'subgrid',
+          alignItems: 'center', columnGap: 8,
           padding: '5px 12px 5px 10px', fontSize: 'var(--kb-text-body)', color: on ? c.hoverText : c.text, lineHeight: '20px',
           borderRadius: 6, background: on ? c.hover : 'transparent',
         }}
       >
         <span style={{ width: 20, flexShrink: 0, color: on ? c.hoverText : c.accent, fontSize: 14, display: 'inline-flex', alignItems: 'center' }}>{item.icon ?? ''}</span>
-        <span className="flex-1">{item.label}</span>
-        <span style={{ color: on ? c.hoverText : c.label, fontSize: 'var(--kb-text-body)', marginLeft: 24, flexShrink: 0 }}>▸</span>
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+        {/* The caret sits in the SHORTCUT column: a submenu has no shortcut, and
+            the two never coexist — so the arrow lines up with the shortcuts. */}
+        <span style={{ color: on ? c.hoverText : c.label, fontSize: 'var(--kb-text-body)', textAlign: 'right', paddingLeft: 16 }}>▸</span>
       </button>
       {pos && (
         <div onMouseEnter={openNow} onMouseLeave={scheduleClose}>

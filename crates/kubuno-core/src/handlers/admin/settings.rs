@@ -93,6 +93,13 @@ pub async fn update_settings(
         )));
     }
 
+    // The numeric bounds of the password policy (migration `000115`), applied on
+    // this route too: it writes the instance mirror, and a minimum length of 3
+    // accepted here would be a policy the resolver then quietly reads as 8.
+    for (key, value) in &updates {
+        super::setting_scopes::validate_password_policy_value(key, value)?;
+    }
+
     // Bounds declared by a module (`min`/`max` on an int) are enforced here and
     // not only in the console. The panel disables its Save button when a field
     // is out of range, but the panel is one caller among possible others, and a

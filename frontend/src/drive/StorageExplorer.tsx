@@ -9,12 +9,12 @@
  * Ce fichier est le POINT D'ENTRÉE qui compose ; les unités (vues, lignes,
  * cartes, menus, hooks d'état) vivent dans `./storage-explorer/`.
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Folder as FolderIcon, Upload, Loader2, CloudUpload, FolderPlus, RefreshCw,
+  Folder as FolderIcon, Upload, Loader2, CloudUpload, FolderPlus, RefreshCw, AlertTriangle, Info,
 } from 'lucide-react'
 import { copyKubunoData } from '../core/registry/DataTransferRegistry'
 import { driveFileEnvelope } from '../core/registry/DriveFileCard'
@@ -22,13 +22,12 @@ import { filesApi, type Folder, type FileItem } from './api'
 import { useFilesStore } from './store'
 import { useFilesPaintStore } from './filesPaintStore'
 import { useAuthStore, api, prompt, useConfirm, type User } from '@kubuno/sdk'
-import { type ViewMode } from './fileView'
+import { ViewMenu, type ViewMode } from './fileView'
 import NewFolderModal from './NewFolderModal'
 import BatchRenameModal, { type BatchRenameItem } from './BatchRenameModal'
 import { useBatchRenameStore } from './batchRenameStore'
 import MoveModal from './MoveModal'
 import ShareModal, { type ShareTarget } from './ShareModal'
-import FileInfoModal, { type InfoTarget } from './FileInfoModal'
 import VersionHistoryModal from './VersionHistoryModal'
 import { MenuDropdown, ConfirmDialog, type MenuItem, useIsMobile, isCoarsePointer, Spinner } from '@ui'
 import { useDriveLabels } from './useDriveLabels'
@@ -45,6 +44,9 @@ import { MediaViewer } from './storage-explorer/MediaViewer'
 import { MobileControlBar } from './storage-explorer/toolbars'
 import { ExplorerHeader } from './storage-explorer/ExplorerHeader'
 import { DetailsTable, FilesSection, FoldersSection } from './storage-explorer/sections'
+import { DriveDetailsPanel, DRIVE_DETAILS_PANEL } from './storage-explorer/DetailsSidePanel'
+import { useDetailsTargetStore, type DetailsTarget } from './detailsTargetStore'
+import { useRightPanelStore } from '../core/store/rightPanelStore'
 import { buildItemMenuItems } from './storage-explorer/itemMenu'
 import { DND_MIME, type MenuTarget, type SortField } from './storage-explorer/types'
 import { useExplorerNavigation } from './storage-explorer/useExplorerNavigation'
@@ -147,7 +149,6 @@ export default function StorageExplorer({
   // menu « Afficher » n'ont pas de place — ni d'intérêt — sur un téléphone.
   const isMobile = useIsMobile()
   const [mobileGrid, setMobileGrid] = useState(true)
-  const [compact, setCompact] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const [sortField, setSortField] = useState<SortField>('date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
@@ -157,19 +158,59 @@ export default function StorageExplorer({
   const [menu, setMenu] = useState<MenuTarget>(null)
   const [emptyMenu, setEmptyMenu] = useState<{ x: number; y: number } | null>(null)
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null)
-  const [importMenu, setImportMenu] = useState<{ x: number; y: number } | null>(null)
   const { open: batchOpen, items: batchItems, close: closeBatch } = useBatchRenameStore()
   const [moveTarget, setMoveTarget] = useState<{ type: 'folder'; item: Folder } | { type: 'file'; item: FileItem } | null>(null)
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null)
-  const [infoTarget, setInfoTarget] = useState<InfoTarget | null>(null)
   const [versionTarget, setVersionTarget] = useState<FileItem | null>(null)
 
   // ── Données via la source ───────────────────────────────────────────────────
-  const { rootLoading, rootResolved, effectiveFolderId, dirKey, isLoading, folders, files, itemTypeMap } =
+  const { rootLoading, rootResolved, effectiveFolderId, dirKey, isLoading, error, folders, files, itemTypeMap } =
     useExplorerData({ src, caps, currentFolderId, acceptedMimeTypes, fileTypeModuleId })
   const { viewMode, changeViewMode, details, persistDetails } = useViewPrefs(dirKey, isMobile)
-  const view: ViewMode = isMobile ? (mobileGrid ? 'md' : 'details') : viewMode
+  const view: ViewMode = isMobile ? (mobileGrid ? 'lg' : 'details') : viewMode
+  // The listing returns a folder's children, never the folder itself — fetch its
+  // record so the trail's menu can offer the real actions (a folder whose
+  // protection is unknown must not be offered to the bin).
+  const { data: currentFolder } = useQuery({
+    queryKey: ['explorer', src.key, 'folder', effectiveFolderId],
+    queryFn:  () => src.statFolder!(effectiveFolderId as string),
+    enabled:  !!effectiveFolderId && !!src.statFolder,
+    staleTime: 30_000,
+  })
+  const openFolderMenu = useCallback((e: React.MouseEvent) => {
+    const id = effectiveFolderId
+    if (!id) return
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const item = currentFolder ?? ({ id, name: breadcrumbs[breadcrumbs.length - 1]?.name ?? '' } as Folder)
+    setMenu({ type: 'folder', item, x: r.left, y: r.bottom + 4, fromCrumb: true })
+  }, [effectiveFolderId, currentFolder, breadcrumbs])
+
   const { filteredFiles, sortedFolders, orderedIds } = useExplorerSorting({ folders, files, sortField, sortDir, typeFilter, showHidden })
+
+  const detailsOpen = useRightPanelStore(s => s.activeModuleId) === DRIVE_DETAILS_PANEL
+  const togglePanel = useRightPanelStore(s => s.togglePanel)
+  useEffect(() => {
+    const store = useRightPanelStore.getState()
+    store.registerEntry({
+      moduleId: DRIVE_DETAILS_PANEL, icon: Info, label: t('info.title'), panelComponent: DriveDetailsPanel,
+    })
+    return () => useRightPanelStore.getState().unregisterEntry(DRIVE_DETAILS_PANEL)
+  }, [t])
+  const detailsTarget = useMemo((): DetailsTarget => {
+    if (selectedIds.size !== 1) return null
+    const id = [...selectedIds][0]
+    const folder = sortedFolders.find(f => f.id === id)
+    if (folder) return { type: 'folder', item: folder }
+    const file = filteredFiles.find(f => f.id === id)
+    return file ? { type: 'file', item: file } : null
+  }, [selectedIds, sortedFolders, filteredFiles])
+
+  const detailsFolderName = breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1].name : title
+  useEffect(() => {
+    useDetailsTargetStore.getState().setDetails(detailsTarget, detailsFolderName)
+  }, [detailsTarget, detailsFolderName])
+
+
 
   // Touch multi-selection: on a phone, having ≥1 item selected puts the explorer
   // in "pick" mode — the header turns into a selection bar and a tap toggles
@@ -323,7 +364,7 @@ export default function StorageExplorer({
   const folderRowProps = (folder: Folder) => ({
     folder, isDragTarget: dragOverFolderId === folder.id,
     selected: selectedIds.has(folder.id), preSelected: preSelectedIds.has(folder.id), focused: cursorId === folder.id, canMove: caps.move,
-    onSelect: handleItemSelect, onToggle: handleItemToggle,
+    onSelect: handleItemSelect,
     onOpen: () => { if (mobileSelecting) { handleItemToggle(folder.id); return } navigateTo(folder) },
     onContextMenu: (e: React.MouseEvent) => openMenu(e, 'folder', folder),
     // Long-press on touch enters selection mode; the kebab (⋮) and
@@ -336,7 +377,7 @@ export default function StorageExplorer({
   const fileRowProps = (file: FileItem) => ({
     file, thumb: src.thumbnail(file),
     selected: selectedIds.has(file.id), preSelected: preSelectedIds.has(file.id), focused: cursorId === file.id, canMove: caps.move,
-    onSelect: handleItemSelect, onToggle: handleItemToggle,
+    onSelect: handleItemSelect,
     onContextMenu: (e: React.MouseEvent) => openMenu(e, 'file', file),
     onLongPress: (e: React.MouseEvent) => { if (isMobile && isCoarsePointer()) { handleItemToggle(file.id); return } openMenu(e, 'file', file) },
     onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourceKey: src.key, id: file.id, type: 'file', name: file.name })); if (!selectedIds.has(file.id)) { setSelectedIds(new Set([file.id])); lastSelectedIdxRef.current = orderedIds.indexOf(file.id) } setDraggingItem({ type: 'file', id: file.id }) },
@@ -352,10 +393,6 @@ export default function StorageExplorer({
       {/* @ts-expect-error webkitdirectory n'est pas dans les types React */}
       <input ref={folderInputRef} type="file" hidden webkitdirectory="" directory="" onChange={handleFolderInput} />
 
-      {importMenu && importMenuItems && (
-        <MenuDropdown items={[{ type: 'action', label: t('common.import'), icon: <Upload size={15} />, onClick: () => fileInputRef.current?.click() }, { type: 'separator' }, ...importMenuItems]}
-          pos={{ top: importMenu.y, left: importMenu.x }} onClose={() => setImportMenu(null)} />
-      )}
 
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-primary bg-primary/5 transition-all">
@@ -371,11 +408,24 @@ export default function StorageExplorer({
         onDownloadSelection={downloadSelection} onDeleteSelection={deleteSelection}
         canDelete={caps.delete} hasPlayingInSelection={hasPlayingInSelection}
         title={title} breadcrumbs={breadcrumbs} onNavigate={navigateUp}
-        childFolders={sortedFolders} onOpenChild={navigateTo}
-        isMobile={isMobile} canUpload={caps.upload} hideImport={hideImport} importMenuItems={importMenuItems}
-        onImport={() => fileInputRef.current?.click()}
-        onImportMenu={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setImportMenu({ x: r.left, y: r.bottom + 4 }) }}
-        canMkdir={caps.mkdir} onNewFolder={openNewFolder} toolbarContent={toolbarContent} t={t}
+        onFolderMenu={effectiveFolderId ? openFolderMenu : undefined}
+        viewControls={!isMobile ? (
+          <div className="flex items-center gap-1.5">
+            <ViewMenu value={viewMode} onChange={changeViewMode} showHidden={showHidden} onShowHidden={setShowHidden} t={t} />
+            <button
+              onClick={() => togglePanel(DRIVE_DETAILS_PANEL)}
+              title={t('info.title')}
+              aria-label={t('info.title')}
+              aria-pressed={detailsOpen}
+              className={`flex items-center justify-center h-8 w-8 rounded-full border transition-colors ${
+                detailsOpen ? 'bg-primary-light text-primary border-transparent' : 'border-border text-text-secondary hover:bg-surface-1'
+              }`}
+            >
+              <Info size={16} />
+            </button>
+          </div>
+        ) : undefined}
+        toolbarContent={toolbarContent} t={t}
       />
 
       {/* Contenu défilable */}
@@ -403,6 +453,17 @@ export default function StorageExplorer({
           </div>
         ) : isLoading ? (
           <div className="flex items-center gap-2 text-text-secondary text-sm py-16 justify-center"><Loader2 size={18} className="animate-spin" />{t('common.loading')}</div>
+        ) : error ? (
+          // Before the empty state, never after: a listing that failed leaves no
+          // items either, and "dossier vide" would report a wrong fact.
+          <div className="flex flex-col items-center justify-center py-24 text-center gap-3 px-6">
+            <AlertTriangle size={44} className="text-warning" />
+            <p className="text-text-primary text-sm font-medium">{t('app.listing_failed')}</p>
+            {error.message && <p className="text-text-secondary text-xs max-w-md">{error.message}</p>}
+            {error.code === 'MOUNT_CONFIG_UNREADABLE' && (
+              <p className="text-text-tertiary text-xs max-w-md">{t('app.mount_reconnect_hint')}</p>
+            )}
+          </div>
         ) : isEmpty ? (
           emptyState ? <>{emptyState}</> : (
             <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
@@ -423,8 +484,7 @@ export default function StorageExplorer({
               />
             ) : files.length > 0 && (
               <SortFilterBar sortField={sortField} sortDir={sortDir} typeFilter={typeFilter}
-                onSortField={setSortField} onSortDir={setSortDir} onTypeFilter={setTypeFilter} hideType={hideType}
-                viewMode={viewMode} onViewMode={changeViewMode} compact={compact} onCompact={setCompact} showHidden={showHidden} onShowHidden={setShowHidden} />
+                onSortField={setSortField} onSortDir={setSortDir} onTypeFilter={setTypeFilter} hideType={hideType} />
             )}
 
             {!isMobile && view === 'details' ? (
@@ -438,7 +498,7 @@ export default function StorageExplorer({
             ) : (<>
             {sortedFolders.length > 0 && (
               <FoldersSection
-                visibleFolders={visibleFolders} view={view} compact={compact} isMobile={isMobile}
+                visibleFolders={visibleFolders} view={view} isMobile={isMobile}
                 selectedIds={selectedIds} folderRowProps={folderRowProps} t={t}
               />
             )}
@@ -446,7 +506,7 @@ export default function StorageExplorer({
             {visibleFiles.length > 0 && (
               <FilesSection
                 visibleFiles={visibleFiles} filteredFiles={filteredFiles} files={files} typeFilter={typeFilter}
-                view={view} compact={compact} isMobile={isMobile} selectedIds={selectedIds}
+                view={view} isMobile={isMobile} selectedIds={selectedIds}
                 fileRowProps={fileRowProps} renderFileCard={renderFileCard}
                 allowVideoPreview={caps.thumbnails === 'url'} t={t}
               />
@@ -464,11 +524,17 @@ export default function StorageExplorer({
         )}
       </div>
 
+
       {menu && (
         <MenuDropdown
           pos={{ top: menu.y, left: menu.x }}
           onClose={() => setMenu(null)}
-          items={buildItemMenuItems(menu, t, {
+          items={[
+            ...(menu.type === 'folder' && menu.fromCrumb && caps.mkdir
+              ? [{ type: 'action' as const, label: t('newfolder.title'), icon: <FolderPlus size={14} />, onClick: () => { setMenu(null); openNewFolder() } },
+                 { type: 'separator' as const }]
+              : []),
+            ...buildItemMenuItems(menu, t, {
             caps, navigate, isPlaying: isMenuItemPlaying, onClose: () => setMenu(null),
             onRename: doRename,
             onMove: () => { setMoveTarget({ type: menu.type, item: menu.item } as typeof moveTarget) },
@@ -477,7 +543,7 @@ export default function StorageExplorer({
             onDelete: () => { scheduleDelete([{ id: menu.item.id, type: menu.type }]) },
             onShare: () => { if (menu.type === 'file') setShareTarget({ type: 'file', item: menu.item as FileItem }); else setShareTarget({ type: 'folder', item: menu.item as Folder }) },
             onGetLink: handleGetLink,
-            onInfo: () => { if (menu.type === 'file') setInfoTarget({ type: 'file', item: menu.item as FileItem }); else setInfoTarget({ type: 'folder', item: menu.item as Folder }) },
+            onInfo: () => { setSelectedIds(new Set([menu.item.id])); useRightPanelStore.getState().setActive(DRIVE_DETAILS_PANEL) },
             onEditPaint: () => { if (menu.type === 'file') useFilesPaintStore.getState().openEditor(menu.item as FileItem) },
             onVersionHistory: () => { if (menu.type === 'file') setVersionTarget(menu.item as FileItem) },
             onDownload: () => { src.download(asRef(menu)) },
@@ -492,7 +558,8 @@ export default function StorageExplorer({
             onCompress: () => { const name = menu.item.name; if (menu.type === 'file') filesApi.compressDownload([menu.item.id], [], name + '.zip'); else filesApi.compressDownload([], [menu.item.id], name + '.zip') },
             onSetColor: (color) => { if (menu.type === 'folder') src.setFolderColor?.(menu.item.id, color).then(invalidate) },
             clipboard, fileContextActions,
-          })}
+            }),
+          ]}
         />
       )}
 
@@ -504,6 +571,11 @@ export default function StorageExplorer({
         <MenuDropdown pos={{ top: emptyMenu.y, left: emptyMenu.x }} onClose={() => setEmptyMenu(null)}
           items={[
             ...(caps.mkdir ? [{ type: 'action' as const, label: t('newfolder.title'), icon: <FolderPlus size={14} />, onClick: openNewFolder }] : []),
+            ...(caps.upload && !hideImport
+              ? [{ type: 'action' as const, label: t('common.import'), icon: <Upload size={14} />, onClick: () => fileInputRef.current?.click() },
+                 ...(importMenuItems ?? [])]
+              : []),
+            { type: 'separator' as const },
             { type: 'action' as const, label: t('actions.refresh'), icon: <RefreshCw size={14} />, onClick: () => { bumpAllImageCache(); invalidate() } },
           ]} />
       )}
@@ -519,7 +591,6 @@ export default function StorageExplorer({
         {batchOpen && <BatchRenameModal items={batchItems} onClose={closeBatch} />}
         <MoveModal target={moveTarget} onClose={() => setMoveTarget(null)} />
         <ShareModal target={shareTarget} onClose={() => setShareTarget(null)} />
-        <FileInfoModal target={infoTarget} onClose={() => setInfoTarget(null)} />
         <VersionHistoryModal file={versionTarget} onClose={() => setVersionTarget(null)} />
       </>}
 

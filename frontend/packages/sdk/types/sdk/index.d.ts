@@ -33,6 +33,7 @@ export * from '../core/store/rightPanelStore';
 export * from '../core/i18n';
 export { default as i18n } from '../core/i18n';
 export { api } from '../core/api/client';
+export { navigate } from '../core/navigation';
 export { useAuthStore } from '../core/store/authStore';
 export { useModulesStore } from '../core/store/modulesStore';
 export { useNotificationStore } from '../core/store/notificationStore';

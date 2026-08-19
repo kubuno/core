@@ -7,6 +7,10 @@ pub mod collab;
 pub mod logging;
 pub mod config;
 pub mod crypto;
+pub mod data_export;
+/// Importing an organisation's data from a third-party provider — the core
+/// orchestrates, the module that owns the destination does the copying.
+pub mod data_migration;
 pub mod database;
 pub mod devices;
 pub mod directory;
@@ -28,4 +32,7 @@ pub mod rules;
 pub mod settings;
 pub mod state;
 pub mod storage;
+/// The licence this software carries, and the support contract an instance may
+/// have bought for it — two different things (`support/mod.rs` says why).
+pub mod support;
 pub mod websocket;

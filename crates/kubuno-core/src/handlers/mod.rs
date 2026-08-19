@@ -3,13 +3,14 @@ pub mod api_tokens;
 pub mod auth;
 pub mod backup_codes;
 pub mod clipboard;
-pub mod desktop;
 pub mod devices;
 pub mod gate;
 pub mod health;
 pub mod holidays;
 pub mod labels;
 pub mod mcp;
+/// "Download my data": the data export, opened for the account it is about.
+pub mod me_export;
 pub mod modules;
 pub mod push;
 pub mod storage_mounts;

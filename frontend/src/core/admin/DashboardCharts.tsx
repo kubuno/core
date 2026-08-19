@@ -2,8 +2,71 @@
 // Séries temporelles dessinées en CANVAS (HiDPI, animées, interactives :
 // survol, surbrillance, crosshair, tooltip) ; donut/jauge en SVG (net, rond).
 import { useId, useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
+import { useUiTheme } from '../hooks/useUiTheme'
 
 export const CHART_COLORS = ['#1a73e8', '#1e8e3e', '#f9ab00', '#d93025', '#9c27b0', '#0b8043', '#e8710a', '#12b5cb']
+
+/**
+ * The categorical scale, as theme VARIABLES rather than literals.
+ *
+ * `CHART_COLORS` above is the historical literal set, still used by the general
+ * dashboard. Anything drawn for both themes takes this one instead: the dark
+ * steps are a separately-validated set, not a filter over the light ones, and
+ * the choice is made in JS because Kubuno applies themes by writing variables,
+ * not through `prefers-color-scheme` (see `theme.css`).
+ */
+export const CHART_SERIES_LIGHT = [
+  'var(--kb-chart-1)', 'var(--kb-chart-2)', 'var(--kb-chart-3)', 'var(--kb-chart-4)',
+  'var(--kb-chart-5)', 'var(--kb-chart-6)', 'var(--kb-chart-7)', 'var(--kb-chart-8)',
+] as const
+
+export const CHART_SERIES_DARK = [
+  'var(--kb-chart-1-dark)', 'var(--kb-chart-2-dark)', 'var(--kb-chart-3-dark)', 'var(--kb-chart-4-dark)',
+  'var(--kb-chart-5-dark)', 'var(--kb-chart-6-dark)', 'var(--kb-chart-7-dark)', 'var(--kb-chart-8-dark)',
+] as const
+
+/** The categorical scale for the theme actually in force. */
+export function useChartSeries(): readonly string[] {
+  return useUiTheme() === 'dark' ? CHART_SERIES_DARK : CHART_SERIES_LIGHT
+}
+
+// ── Reading theme variables from a canvas ────────────────────────────────────
+//
+// A canvas composites literal colours: `var(--…)` means nothing to
+// `ctx.fillStyle`. Everything painted below therefore RESOLVES its variables
+// against the live element at draw time, which is also what makes a theme switch
+// (a rewrite of those variables) repaint correctly — the draw effects depend on
+// `useUiTheme()` so they run again when it happens.
+
+/** Last-resort ink, used only if a theme forgot to define a variable at all. */
+const FALLBACK_INK = '#5f6368'
+
+function cssVar(el: Element | null, name: string, fallback: string): string {
+  if (!el) return fallback
+  const v = getComputedStyle(el).getPropertyValue(name).trim()
+  return v || fallback
+}
+
+/**
+ * A CSS colour expression → the literal the canvas can paint.
+ *
+ * Accepts either a literal (returned as-is) or a single `var(--token)`. The
+ * resolved value is a 6-digit hex in every theme Kubuno ships, which is what
+ * lets the callers below append an alpha pair to it.
+ */
+function resolveColor(el: Element | null, color: string): string {
+  const m = /^var\(\s*(--[\w-]+)\s*\)$/.exec(color)
+  return m ? cssVar(el, m[1], FALLBACK_INK) : color
+}
+
+/** The chrome every canvas chart paints: grid, tick labels, surface. */
+function chartInk(el: Element | null) {
+  return {
+    grid:    cssVar(el, '--color-border', '#eceef1'),
+    label:   cssVar(el, '--color-text-tertiary', FALLBACK_INK),
+    surface: cssVar(el, '--color-surface-0', '#ffffff'),
+  }
+}
 
 /** Octets → chaîne lisible (Ko/Mo/Go…). */
 export function fmtBytes(n: number): string {
@@ -31,9 +94,6 @@ function axisTicks(max: number): { top: number; ticks: number[] } {
   const uniq = [...new Set(ticks)]
   return { top: uniq[uniq.length - 1], ticks: uniq }
 }
-
-const TEXT_TERTIARY = '#80868b'
-const GRID = '#eceef1'
 
 // Largeur responsive d'un conteneur (ResizeObserver).
 function useWidth<T extends HTMLElement>(ref: React.RefObject<T | null>): number {
@@ -71,6 +131,7 @@ export function BarChart({
   const wrap = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const W = useWidth(wrap)
+  const theme = useUiTheme()
   const [hi, setHi] = useState<number | null>(null)
   const progress = useRef(0)
   const animated = useRef(false)
@@ -91,6 +152,8 @@ export function BarChart({
     const ctx = cv.getContext('2d')!
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, height)
+    const ink = chartInk(cv)
+    const paint = resolveColor(cv, color)
     const { x0, x1, y1, slot, ph } = geom()
     // Grille + axe Y
     ctx.font = '10px system-ui, sans-serif'
@@ -98,11 +161,11 @@ export function BarChart({
     ctx.lineWidth = 1
     ticks.forEach((tk) => {
       const y = y1 - (tk / top) * ph
-      ctx.strokeStyle = GRID
+      ctx.strokeStyle = ink.grid
       ctx.setLineDash([3, 3])
       ctx.beginPath(); ctx.moveTo(x0, y + 0.5); ctx.lineTo(x1, y + 0.5); ctx.stroke()
       ctx.setLineDash([])
-      ctx.fillStyle = TEXT_TERTIARY
+      ctx.fillStyle = ink.label
       ctx.fillText(String(tk), x0 - 6, y)
     })
     // Barres
@@ -114,8 +177,8 @@ export function BarChart({
       const y = y1 - h
       const isHi = hover === i
       const g = ctx.createLinearGradient(0, y, 0, y1)
-      g.addColorStop(0, color)
-      g.addColorStop(1, color + (isHi ? 'cc' : '99'))
+      g.addColorStop(0, paint)
+      g.addColorStop(1, paint + (isHi ? 'cc' : '99'))
       ctx.fillStyle = g
       const r = Math.min(4, bw / 2)
       ctx.beginPath()
@@ -145,7 +208,9 @@ export function BarChart({
     return () => cancelAnimationFrame(raf)
   }, [W, draw]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (animated.current) draw(1, hi) }, [hi, draw])
+  // `theme` is a dependency, not a stray: a theme switch rewrites the variables
+  // the canvas resolved at its last paint, and a canvas does not reflow.
+  useEffect(() => { if (animated.current) draw(1, hi) }, [hi, theme, draw])
 
   const onMove = (e: React.MouseEvent) => {
     const { x0, slot } = geom()
@@ -179,6 +244,7 @@ export function AreaChart({
   const wrap = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const W = useWidth(wrap)
+  const theme = useUiTheme()
   const [hi, setHi] = useState<number | null>(null)
   const animated = useRef(false)
   const { top, ticks } = axisTicks(Math.max(...data.map((d) => d.value), 0))
@@ -200,15 +266,17 @@ export function AreaChart({
     const ctx = cv.getContext('2d')!
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, height)
+    const ink = chartInk(cv)
+    const paint = resolveColor(cv, color)
     const { x0, x1, y1, ph, xOf, yOf } = geom()
     // Grille + axe Y
     ctx.font = '10px system-ui, sans-serif'
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.lineWidth = 1
     ticks.forEach((tk) => {
       const y = y1 - (tk / top) * ph
-      ctx.strokeStyle = GRID; ctx.setLineDash([3, 3])
+      ctx.strokeStyle = ink.grid; ctx.setLineDash([3, 3])
       ctx.beginPath(); ctx.moveTo(x0, y + 0.5); ctx.lineTo(x1, y + 0.5); ctx.stroke()
-      ctx.setLineDash([]); ctx.fillStyle = TEXT_TERTIARY
+      ctx.setLineDash([]); ctx.fillStyle = ink.label
       ctx.fillText(String(tk), x0 - 6, y)
     })
     // Courbe lissée (Catmull-Rom → bézier), animée en hauteur depuis la ligne de base.
@@ -227,19 +295,20 @@ export function AreaChart({
     tracePath()
     ctx.lineTo(pts[n - 1][0], y1); ctx.lineTo(pts[0][0], y1); ctx.closePath()
     const g = ctx.createLinearGradient(0, PAD.t, 0, y1)
-    g.addColorStop(0, color + '4d'); g.addColorStop(1, color + '05')
+    g.addColorStop(0, paint + '4d'); g.addColorStop(1, paint + '05')
     ctx.fillStyle = g; ctx.fill()
     // Ligne
     tracePath()
-    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke()
+    ctx.strokeStyle = paint; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke()
     // Crosshair + point survolé
     if (hover !== null) {
       const hx = xOf(hover), hy = yOf(data[hover].value)
-      ctx.strokeStyle = color + '88'; ctx.setLineDash([4, 4])
+      ctx.strokeStyle = paint + '88'; ctx.setLineDash([4, 4])
       ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, y1); ctx.stroke(); ctx.setLineDash([])
       ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2)
-      ctx.fillStyle = '#fff'; ctx.fill()
-      ctx.lineWidth = 2.5; ctx.strokeStyle = color; ctx.stroke()
+      // The surface, not white: a dark theme's card is not a white disc.
+      ctx.fillStyle = ink.surface; ctx.fill()
+      ctx.lineWidth = 2.5; ctx.strokeStyle = paint; ctx.stroke()
     }
   }, [W, height, data, ticks, top, color, n, geom])
 
@@ -256,7 +325,8 @@ export function AreaChart({
     return () => cancelAnimationFrame(raf)
   }, [W, draw]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (animated.current) draw(1, hi) }, [hi, draw])
+  // See the note on the bar chart: a theme switch has to repaint the canvas.
+  useEffect(() => { if (animated.current) draw(1, hi) }, [hi, theme, draw])
 
   const onMove = (e: React.MouseEvent) => {
     const { x0, x1 } = geom()
@@ -291,7 +361,7 @@ export function ProgressRing({
     <div className="flex flex-col items-center justify-center">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e8eaed" strokeWidth={stroke} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--color-surface-3)" strokeWidth={stroke} />
           <circle
             cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
             strokeLinecap="round" strokeDasharray={c}
@@ -324,7 +394,7 @@ export function DonutChart({
     <div className="flex items-center gap-4">
       <div className="relative flex-shrink-0" style={{ width: size, height: size }} onMouseLeave={() => setHi(null)}>
         <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f1f3f4" strokeWidth={stroke} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--color-surface-2)" strokeWidth={stroke} />
           {total > 0 && data.map((d, i) => {
             const frac = d.value / total
             const dim = hi !== null && hi !== i
@@ -342,12 +412,21 @@ export function DonutChart({
             return seg
           })}
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-lg font-semibold text-text-primary leading-none">
+        {/* The hole of a ring is a fixed, small circle: a segment name never fits
+            in it, and truncating one there produced a clipped grey string lying
+            across the arc. The legend beside it already carries every name, and
+            the row of the hovered segment is highlighted — so the centre states
+            the NUMBER, and on hover its share. Two facts that always fit. */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-[18%] text-center">
+          <span className="font-semibold text-text-primary leading-none"
+            style={{ fontSize: 'var(--kb-text-title)' }}>
             {active ? active.value : (centerValue ?? total)}
           </span>
-          <span className="text-[10px] text-text-tertiary mt-0.5 max-w-[80%] truncate text-center">
-            {active ? active.label : (centerLabel ?? '')}
+          <span className="mt-1 leading-tight text-text-tertiary"
+            style={{ fontSize: 'var(--kb-text-meta)' }}>
+            {active
+              ? `${total > 0 ? Math.round((active.value / total) * 100) : 0} %`
+              : (centerLabel ?? '')}
           </span>
         </div>
       </div>
@@ -374,7 +453,12 @@ export function DonutChart({
 // ── Liste de barres horizontales (top stockage), avec survol ──────────────────
 export function HBarList({
   items, color = '#1a73e8',
-}: { items: { label: string; value: number; max: number; sub?: string }[]; color?: string }) {
+}: {
+  /** `color` per item overrides the list's own — a printed report ties each bar
+      to the slice and to the table row that carry the same entry. */
+  items: { label: string; value: number; max: number; sub?: string; color?: string }[]
+  color?: string
+}) {
   return (
     <ul className="space-y-3">
       {items.map((it, i) => {
@@ -387,15 +471,156 @@ export function HBarList({
               <span className="text-text-tertiary tabular-nums">{it.sub}</span>
             </div>
             <div className="h-2 rounded-full bg-surface-2 overflow-hidden" title={`${Math.round(pct)} %`}>
+              {/* A flat fill rather than a gradient: `${color}cc` only composes
+                  when `color` is a literal hex, and silently voids the whole
+                  background when it is a theme variable. */}
               <div
                 className="h-full rounded-full"
-                style={{ width: `${pct}%`, background: over ? '#d93025' : `linear-gradient(90deg, ${color}cc, ${color})`, transition: 'width .6s ease' }}
+                style={{ width: `${pct}%`, background: over ? 'var(--color-danger)' : (it.color ?? color), transition: 'width .6s ease' }}
               />
             </div>
           </li>
         )
       })}
     </ul>
+  )
+}
+
+// ── Série chronologique en SVG (pour les rapports imprimables) ────────────────
+
+/**
+ * The same series as {@link BarChart} and {@link AreaChart}, drawn in SVG.
+ *
+ * ## Why a second implementation, and only for reports
+ *
+ * A `<canvas>` is a BITMAP composited at draw time. Two consequences a printed
+ * report cannot live with:
+ *
+ *   • It resolves its theme variables when it paints (see the note at the top of
+ *     this file). Under a dark theme the axis labels are painted in the dark
+ *     theme's pale ink — and printing does not repaint a canvas, so a print
+ *     stylesheet forcing black text has no effect whatsoever on it. The chart
+ *     comes out as pale grey on white, or invisible.
+ *   • It is rasterised at the screen's pixel ratio, then scaled to the printer's
+ *     much higher one. A 132-pixel-tall chart enlarged to a page width prints
+ *     visibly soft.
+ *
+ * SVG has neither problem: it is part of the document, so `@media print` reaches
+ * it, and it is resolution-independent. The interactive charts stay on canvas —
+ * they are hovered, animated and redrawn constantly, which is the one thing
+ * canvas is better at — and reports take this one.
+ *
+ * ## No measurement, deliberately
+ *
+ * There is no `ResizeObserver` here. The drawing is laid out in a fixed
+ * `viewBox` and scaled by CSS, so it needs no width to render — which matters
+ * because the browser lays a page out again for the printer, and a chart that
+ * waits for an observer to fire can be measured at zero on the sheet it is being
+ * printed onto.
+ */
+export function ReportSeriesChart({
+  data, color = 'var(--kb-chart-1)', shape = 'bars', unit,
+}: {
+  data:   { label: string; value: number }[]
+  color?: string
+  /** `bars` for counts of discrete events, `area` for continuous activity. */
+  shape?: 'bars' | 'area'
+  /** Spells a value in the panel's own unit (counts, or bytes). */
+  unit?:  (v: number) => string
+}) {
+  const gid = useId()
+  // A fixed drawing surface: the printed sheet and the screen show the same
+  // geometry, only at different sizes.
+  const W = 800, H = 280
+  const pad = { l: 74, r: 12, t: 14, b: 46 }
+  const x0 = pad.l, x1 = W - pad.r, y0 = pad.t, y1 = H - pad.b
+  const plotW = x1 - x0, plotH = y1 - y0
+
+  const n = data.length
+  if (n === 0) return null
+
+  const { top, ticks } = axisTicks(Math.max(...data.map(d => d.value), 0))
+  const yOf = (v: number) => y1 - (v / top) * plotH
+
+  // At most a dozen labels on the axis: forty daily dates printed side by side
+  // are a grey band, not a reading. The rows below the chart carry every one.
+  const every = Math.max(1, Math.ceil(n / 12))
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      className="w-full text-text-tertiary"
+      style={{ height: 'auto' }}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <defs>
+        <linearGradient id={`rep-${gid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.04} />
+        </linearGradient>
+      </defs>
+
+      {/* Grid and the value axis.
+          The rules take the theme's own border colour rather than the ink at a
+          reduced opacity: an alpha over a theme colour composites against
+          whatever is behind it, which is a different surface in each theme and
+          white on paper. The LABELS take `currentColor`, so one print rule on
+          the container blackens them. */}
+      {ticks.map(tk => (
+        <g key={tk}>
+          <line
+            x1={x0} x2={x1} y1={yOf(tk)} y2={yOf(tk)}
+            stroke="var(--color-border)" strokeDasharray="3 3"
+          />
+          <text
+            x={x0 - 8} y={yOf(tk)} textAnchor="end" dominantBaseline="middle"
+            fontSize={14} fill="currentColor"
+          >
+            {unit ? unit(tk) : tk}
+          </text>
+        </g>
+      ))}
+
+      {shape === 'area' ? (() => {
+        const xOf = (i: number) => x0 + (i / Math.max(1, n - 1)) * plotW
+        const line = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d.value).toFixed(1)}`).join(' ')
+        return (
+          <>
+            <path d={`${line} L${xOf(n - 1)},${y1} L${xOf(0)},${y1} Z`} fill={`url(#rep-${gid})`} />
+            <path d={line} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" />
+          </>
+        )
+      })() : (() => {
+        const slot = plotW / n
+        const bw = Math.min(slot * 0.66, 46)
+        return data.map((d, i) => {
+          const h = (d.value / top) * plotH
+          return (
+            <rect
+              key={i} x={x0 + (i + 0.5) * slot - bw / 2} y={y1 - h}
+              width={bw} height={Math.max(0, h)} rx={2} fill={color}
+            />
+          )
+        })
+      })()}
+
+      {/* The baseline, and the instants under it. */}
+      <line x1={x0} x2={x1} y1={y1} y2={y1} stroke="var(--color-border-strong)" />
+      {data.map((d, i) => {
+        if (i % every !== 0) return null
+        const x = shape === 'area'
+          ? x0 + (i / Math.max(1, n - 1)) * plotW
+          : x0 + (i + 0.5) * (plotW / n)
+        return (
+          <text
+            key={i} x={x} y={y1 + 22} textAnchor="middle" fontSize={14} fill="currentColor"
+          >
+            {d.label}
+          </text>
+        )
+      })}
+    </svg>
   )
 }
 

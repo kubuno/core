@@ -1,29 +1,56 @@
 // Instance-wide (admin) settings for a module, rendered INSIDE the admin console.
 //
-// Admins configure a module's instance settings here — they stay in the admin panel
-// and are never navigated into the module's own shell. Driven by the module's
-// declarative schema (`GET /modules/:id/config`); only `global` and `overridable`
-// scopes are editable here (per-user settings live in the module). Saved through
-// PATCH /admin/settings (keys are prefixed with the module id).
+// Admins configure a module's instance settings here — they stay in the admin
+// panel and are never navigated into the module's own shell. Driven by the
+// module's declarative schema (`GET /modules/:id/config`); only `global` and
+// `overridable` scopes are editable here (per-user settings live in the module).
 //
 // A module may legitimately declare NONE — `drive` and `media` do. The caller is
 // what decides what to show then (see `ModuleAdminPage`), which is why the
 // reading of the schema is exposed as a hook: the page must know there is
 // nothing before it paints a heading promising something.
 //
-// A module may also declare a LOT: mail alone exposes forty-eight knobs across
-// ten categories. Nothing here knows any of them. The schema drives everything —
+// A module may also declare a LOT: mail alone exposes fifty knobs across ten
+// categories. Nothing here knows any of them. The schema drives everything —
 // `advanced` folds the expert knobs away, `depends_on` hides what a switched-off
 // feature does not need, `min`/`max` refuse a bad value before it is sent, and
 // `risk` makes the console ask before something that can take the service down.
 //
+// ── The page, from left to right ─────────────────────────────────────────────
+//   ┌────────────┬────────────────────────────────────────────┐
+//   │ module     │ filter                                     │
+//   │ side card  │ ┌────────────────────────────────────────┐ │
+//   │ pages ▾    │ │ section ▾     n réglages · m remplacés  │ │
+//   │ units ▾    │ ├──────────────┬─────────────────────────┤ │
+//   │            │ │ appliqué à … │ ☐ réglage               │ │
+//   │            │ │              │ ☑ réglage               │ │
+//   │            │ ├──────────────┴─────────────────────────┤ │
+//   └────────────┤ │              ANNULER    ENREGISTRER    │ │
+//                │ └────────────────────────────────────────┘ │
+//                └────────────────────────────────────────────┘
+//
+// The card on the left belongs to the PAGE (`ModuleAdminPage`), not to this
+// panel: it holds the module's pages as well as its scope tree, and it has to
+// stay on screen while this component is swapped from one page to the next.
+// Which scope is selected therefore arrives as a prop — the tree that changes
+// it lives in that card.
+//
+// ── Two writes, one panel ────────────────────────────────────────────────────
+// Instance scope keeps the batched `PATCH /admin/settings`: one request, one
+// audit transaction, and the module-bounds validation the route already runs.
+// A unit scope writes one key at a time through `PUT /admin/settings/scoped/:key`
+// — a scoped write names its scope, and a refusal on one key (a lock upstream)
+// must not silently drop the others. Both land in the same place: the database
+// mirrors `core.settings.value` and the instance row of `core.setting_values`
+// onto each other (migration `000060`), so nothing depends on which door a value
+// came through.
+//
 // ── One panel, two shapes ────────────────────────────────────────────────────
-// A module that declares no PAGE (`[[setting_groups]]`) renders exactly as it
-// always has: one card, its `category` values as collapsible sections. That is
-// almost every module, and nothing about it changes.
+// A module that declares no PAGE (`[[setting_groups]]`) renders as a stack of
+// foldable sections, one per `category`. That is almost every module.
 //
 // A module that declares pages is rendered one page at a time — the page is in
-// the URL, it is a menu entry, and `category` becomes a TAB inside it. Forty-eight
+// the URL, it is a menu entry, and `category` becomes a TAB inside it. Fifty
 // knobs stacked on one address is a wall; five addresses of ten is a panel.
 //
 // ── What stays whole across the pages ────────────────────────────────────────
@@ -31,29 +58,41 @@
 // work or fails to find a setting:
 //
 //  • The PENDING EDITS. They live here, keyed by setting, for the whole module —
-//    switching tab or page changes what is painted, never what is staged, and
-//    the footer counts every one of them, not the visible ones. One "Enregistrer"
-//    saves the lot, so there is no state in which leaving a page drops a change
-//    (and therefore nothing to warn about on the way out).
+//    switching tab or page changes what is painted, never what is staged. Only
+//    the WRITE is per section: each section's bar sends its own keys and clears
+//    only those, so saving one section never commits, and never discards, what
+//    was typed in another. What that costs is a change with no bar in front of
+//    it (folded section, other tab, other page), which is why every bar keeps
+//    saying how many are waiting outside it and how to get back to them.
 //  • The FILTER. It searches the whole module and says where each hit lives —
 //    "Filtrage ▸ Politique anti-spam" — and lets it be edited on the spot. Past
 //    forty settings, typing what you came for is the main way in; a filter that
 //    only searched the open tab would answer "no match" while the setting sits
 //    two pages away.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import { Button, Card, ConfirmDialog, Input, Spinner, Tabs } from '@ui'
-import { Check, RotateCcw, Save, Search } from 'lucide-react'
+import { Callout, ConfirmDialog, Input, Spinner, Tabs } from '@ui'
+import { Search } from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
 import { adminPath } from './adminRoute'
 import type { ModuleSettingGroup } from './adminModules'
 import type { ModuleAdminSection } from '../slots/SlotRegistry'
 import { findIcon } from '../utils/iconMap'
 import ModuleSettingRow from './settings/ModuleSettingRow'
-import { CollapsibleCategory, SettingRows } from './settings/SettingsBlocks'
+import { SettingRows } from './settings/SettingsBlocks'
+import SettingSectionCard from './settings/SettingSectionCard'
+import SettingsSaveBar from './settings/SettingsSaveBar'
+import { ScopeHeadline } from './settings/ScopeTree'
+import ScopeStatusPill from './settings/ScopeStatusPill'
+import ProvenanceLine from './settings/ProvenanceLine'
+import InheritanceChainWindow from './settings/InheritanceChainWindow'
+import {
+  hasScopableSettings, prefixedKey, useResolvedModuleSettings,
+} from './settings/moduleScope'
+import { INSTANCE_SCOPE, type ActiveScope, type ResolvedSetting } from './settings/scopeTypes'
 import {
   isVisible, outOfRange, sameValue, type SettingItem,
 } from './settings/moduleSettingSchema'
@@ -94,16 +133,18 @@ function pageOf(item: SettingItem, known: Set<string>, fallback: string): string
 
 export interface ModuleAdminSettingsProps {
   moduleId: string
-  /** The page being shown. `null` = the module declares none (single card). */
+  /** The page being shown. `null` = the module declares none (single stack). */
   group?:   string | null
   /** Every page the module declares — what the filter names its hits by. */
   groups?:  ModuleSettingGroup[]
   /** The module's own views that asked for a tab on THIS page. */
   extraTabs?: ModuleAdminSection[]
+  /** WHO the values on screen belong to — chosen in the page's side card. */
+  scope?:   ActiveScope
 }
 
 export default function ModuleAdminSettings({
-  moduleId, group = null, groups = [], extraTabs = [],
+  moduleId, group = null, groups = [], extraTabs = [], scope = INSTANCE_SCOPE,
 }: ModuleAdminSettingsProps) {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -111,32 +152,55 @@ export default function ModuleAdminSettings({
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
 
   const [edits, setEdits]         = useState<Record<string, unknown>>({})
-  const [savedFlag, setSaved]     = useState(false)
+  // Which section is writing, and which one just wrote: with one bar per section
+  // a single boolean would flash "Enregistré" on all of them at once.
+  const [busySection, setBusy]    = useState<string | null>(null)
+  const [savedSection, setSaved]  = useState<string | null>(null)
+  const [error, setError]         = useState<string | null>(null)
   const [filter, setFilter]       = useState('')
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [opened, setOpened]       = useState<Record<string, boolean>>({})
   const [advOpen, setAdvOpen]     = useState<Record<string, boolean>>({})
   const [tab, setTab]             = useState<string | null>(null)
+  const [chainKey, setChainKey]   = useState<string | null>(null)
 
-  const save = useMutation({
-    mutationFn: async (changes: Record<string, unknown>) => {
-      const payload: Record<string, unknown> = {}
-      for (const [k, v] of Object.entries(changes)) payload[`${moduleId}.${k}`] = v
-      await api.patch('/admin/settings', payload)
-    },
-    onSuccess: async () => {
-      setSaved(true); setTimeout(() => setSaved(false), 2500)
-      // Clear the edits only once the refetch has landed — see SettingsPanel: dropping
-      // them first falls back to the stale cached value and flips the controls back.
-      await qc.invalidateQueries({ queryKey: ['module-config', moduleId] })
-      setEdits({})
-    },
-  })
+  // ── Scope ──────────────────────────────────────────────────────────────────
+  // A module with nothing `overridable` is instance-wide by declaration; asking
+  // the core to resolve its keys per unit would cost a request and answer
+  // nothing the schema did not already say.
+  const scopable = hasScopableSettings(items)
+  const scoped   = scopable && scope.type === 'org_unit'
 
+  // The instance reading is the one that applies while no unit is selected; the
+  // side card asks for it too (same query key, one request) to mark the units
+  // that have stopped following.
+  const instanceResolved = useResolvedModuleSettings(moduleId, INSTANCE_SCOPE, scopable)
+  const unitResolved     = useResolvedModuleSettings(moduleId, scope, scoped)
+  const resolvedByKey    = scoped ? unitResolved.byKey : instanceResolved.byKey
+
+  // Changing scope drops pending edits: they were typed against another level's
+  // value, and carrying them over would write one unit's number into another.
+  useEffect(() => { setEdits({}); setError(null) }, [scope.type, scope.id])
+
+  // ── Values ─────────────────────────────────────────────────────────────────
   const byKey = useMemo(() => new Map(items.map(s => [s.key, s])), [items])
-  const shown = (s: SettingItem) => (s.key in edits ? edits[s.key] : (s.global ?? s.default))
+
+  /** What applies at the scope on screen, before anything was staged. */
+  const storedValue = (s: SettingItem) => {
+    const resolved = resolvedByKey.get(s.key)
+    if (scoped && resolved) return resolved.value
+    return s.global ?? s.default
+  }
+  const shown = (s: SettingItem) => (s.key in edits ? edits[s.key] : storedValue(s))
   const valueOf = (key: string) => {
     const parent = byKey.get(key)
     return parent ? shown(parent) : undefined
+  }
+
+  /** A unit may not touch what the module declared instance-wide. */
+  const instanceOnly = (s: SettingItem) => s.scope !== 'overridable'
+  const isReadOnly = (s: SettingItem) => {
+    if (scoped && instanceOnly(s)) return true
+    return !!resolvedByKey.get(s.key)?.locked_above
   }
 
   // A row whose gate is off is not rendered at all, so its pending edit would be
@@ -165,15 +229,80 @@ export default function ModuleAdminSettings({
     return bad
   }, [edits, byKey])
 
+  // ── Writing ────────────────────────────────────────────────────────────────
+  const reportError = (e: unknown) => {
+    const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+    setError(detail ?? t('admin.setting_write_failed', {
+      defaultValue: "L'enregistrement a échoué.",
+    }))
+  }
+
+  /* The pending edits are what the controls display; the query cache still holds
+   * the value from before the write. Dropping the edits before the refetch has
+   * landed would show that stale value for the length of a round trip, so every
+   * control would flip back to its old state and then forward again.
+   *
+   * Only the keys that were WRITTEN are dropped: a section save must leave what
+   * is staged in the other sections exactly where the operator left it. */
+  const afterWrite = async (written: string[]) => {
+    setError(null)
+    await qc.invalidateQueries({ queryKey: ['module-config', moduleId] })
+    await qc.invalidateQueries({ queryKey: ['module-settings-resolved', moduleId] })
+    await qc.invalidateQueries({ queryKey: ['setting-chain'] })
+    setEdits(prev => {
+      const next = { ...prev }
+      for (const key of written) delete next[key]
+      return next
+    })
+  }
+
+  const save = useMutation({
+    mutationFn: async (changes: Record<string, unknown>) => {
+      if (scope.type === 'instance') {
+        const payload: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(changes)) payload[prefixedKey(moduleId, k)] = v
+        await api.patch('/admin/settings', payload)
+        return
+      }
+      for (const [k, v] of Object.entries(changes)) {
+        await api.put(`/admin/settings/scoped/${encodeURIComponent(prefixedKey(moduleId, k))}`, {
+          scope_type: scope.type,
+          scope_id:   scope.id,
+          value:      v,
+        })
+      }
+    },
+    onSuccess: (_data, changes) => afterWrite(Object.keys(changes)),
+    onError:   reportError,
+  })
+
+  /** Back to following the level above — the row this scope owns is removed. */
+  const revert = useMutation({
+    mutationFn: (key: string) =>
+      api.delete(`/admin/settings/scoped/${encodeURIComponent(prefixedKey(moduleId, key))}`, {
+        params: { scope_type: scope.type, scope_id: scope.id ?? undefined },
+      }),
+    onSuccess: (_data, key) => afterWrite([key]),
+    onError:   reportError,
+  })
+
+  const lock = useMutation({
+    mutationFn: (p: { key: string; locked: boolean }) =>
+      api.post(`/admin/settings/lock/${encodeURIComponent(prefixedKey(moduleId, p.key))}`, {
+        scope_type: scope.type,
+        scope_id:   scope.id,
+        locked:     p.locked,
+      }),
+    onSuccess: (_data, p) => afterWrite([p.key]),
+    onError:   reportError,
+  })
+
   // ── Pages ──────────────────────────────────────────────────────────────────
   const paged      = groups.length > 0
   const groupIds   = useMemo(() => new Set(groups.map(g => g.id)), [groups])
   const firstGroup = groups[0]?.id ?? ''
   const page       = paged ? (groupIds.has(group ?? '') ? (group as string) : firstGroup) : ''
-  const groupLabel = useMemo(
-    () => new Map(groups.map(g => [g.id, g.label])),
-    [groups],
-  )
+  const groupLabel = useMemo(() => new Map(groups.map(g => [g.id, g.label])), [groups])
 
   // Filtering is a search across the WHOLE module, so it opens everything it can
   // reach — a hit folded inside a collapsed "Avancé", or sitting on another
@@ -197,13 +326,25 @@ export default function ModuleAdminSettings({
   }, [items, filter, edits, byKey, groupLabel])
 
   /**
+   * The section a setting is painted in.
+   *
+   * A module that declares no category is stored under its own id, which would
+   * title the section "flow" or "drive" — the module name repeated under its own
+   * page. That is treated as "no category at all".
+   */
+  const categoryOf = (s: SettingItem) => {
+    const declared = s.category && s.category !== moduleId ? s.category : ''
+    return declared || t('admin.m_other_settings', { defaultValue: 'Autres' })
+  }
+
+  /**
    * Settings split by category, in DECLARATION order — the order the module
    * wrote them in its manifest, which is the order it meant them to be read.
    */
   const splitByCategory = (list: SettingItem[]) => {
     const byCategory = new Map<string, SettingItem[]>()
     for (const s of list) {
-      const key = s.category || t('admin.m_other_settings', { defaultValue: 'Autres' })
+      const key = categoryOf(s)
       const acc = byCategory.get(key) ?? []
       acc.push(s)
       byCategory.set(key, acc)
@@ -258,23 +399,19 @@ export default function ModuleAdminSettings({
   }
 
   const dirtyCount = Object.keys(edits).length
-  const isDirty = dirtyCount > 0
-  const hasInvalid = invalidKeys.size > 0
-  // Staged changes that are NOT on the page being looked at. The footer says so
-  // rather than counting only what is visible: an operator who edits two pages
-  // then reads "1 modification" has been told something false.
-  const pendingElsewhere = paged
-    ? Object.keys(edits).filter(k => {
-        const item = byKey.get(k)
-        return item ? pageOf(item, groupIds, firstGroup) !== page : false
-      }).length
-    : 0
 
-  const submit = async () => {
-    if (hasInvalid) return
+  /** Writes the staged edits of ONE section, and clears only those. */
+  const submitSection = async (sectionKey: string, keys: string[]) => {
+    const changes: Record<string, unknown> = {}
+    for (const key of keys) if (key in edits) changes[key] = edits[key]
+    const staged = Object.keys(changes)
+    // Out-of-bounds values are refused per section too: a bad number in another
+    // section is that section's problem, and must not hold this one hostage.
+    if (staged.length === 0 || staged.some(k => invalidKeys.has(k))) return
+
     // A setting flagged `danger` can make the server unreachable or lose mail.
     // The panel says so once, plainly, before the value leaves the browser.
-    const risky = Object.keys(edits)
+    const risky = staged
       .map(k => byKey.get(k))
       .filter((s): s is SettingItem => !!s && s.risk === 'danger')
     if (risky.length > 0) {
@@ -291,11 +428,71 @@ export default function ModuleAdminSettings({
       })
       if (!ok) return
     }
-    save.mutate(edits)
+
+    setBusy(sectionKey)
+    try {
+      await save.mutateAsync(changes)
+      setSaved(sectionKey)
+      // Guarded: another section may have written in the meantime, and clearing
+      // the flag blind would take the flash off the wrong bar.
+      setTimeout(() => setSaved(current => (current === sectionKey ? null : current)), 2500)
+    } catch {
+      // Already surfaced by the mutation's `onError`; caught so the rejection of
+      // `mutateAsync` does not escape as an unhandled one.
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** Undoes the staged edits of ONE section, leaving the others alone. */
+  const cancelSection = (keys: string[]) =>
+    setEdits(prev => {
+      const next = { ...prev }
+      for (const key of keys) delete next[key]
+      return next
+    })
+
+  /**
+   * The way back to a staged edit that has no bar in front of it — folded away,
+   * on another tab, or on another page. One target is enough: it is a pointer,
+   * not an inventory, and following it lands the operator where the rest are.
+   */
+  const elsewhereAction = (keys: string[]) => {
+    const item = keys.map(k => byKey.get(k)).find((s): s is SettingItem => !!s)
+    if (!item) return null
+    const label = t('admin.m_pending_elsewhere_goto', { defaultValue: 'Voir' })
+    const itemPage = paged ? pageOf(item, groupIds, firstGroup) : ''
+    if (paged && itemPage !== page) {
+      // A real href: the operator must be able to see where it goes, and to open
+      // it in another tab.
+      return (
+        <Link to={adminPath('modules', moduleId, itemPage)} className="text-primary hover:underline">
+          {label}
+        </Link>
+      )
+    }
+    const category = categoryOf(item)
+    return (
+      <button
+        type="button"
+        // Both at once, because the two shapes of the panel name their sections
+        // differently: a tab id when the module declares pages, the bare
+        // category when it declares none.
+        onClick={() => {
+          setTab(`${CATEGORY_TAB}${category}`)
+          setOpened(o => ({ ...o, [category]: true }))
+        }}
+        className="text-primary hover:underline"
+      >
+        {label}
+      </button>
+    )
   }
 
   const renderRow = (s: SettingItem) => {
-    const current = shown(s)
+    const current  = shown(s)
+    const resolved = resolvedByKey.get(s.key)
+    const readOnly = isReadOnly(s)
     return (
       <ModuleSettingRow
         key={s.key}
@@ -304,32 +501,132 @@ export default function ModuleAdminSettings({
         modified={!sameValue(current, s.default)}
         pending={s.key in edits}
         invalid={invalidKeys.has(s.key)}
+        readOnly={readOnly}
+        showFactoryReset={!scoped}
+        statusPill={scopable
+          ? <ScopeStatusPill resolved={resolved} scoped={scoped} instanceOnly={instanceOnly(s)} />
+          : undefined}
+        // Only where there IS something above to inherit from. At instance level
+        // the "rétablir la valeur par défaut" link on the row already says the
+        // one thing reverting can mean.
+        provenance={scoped && resolved && !instanceOnly(s)
+          ? (
+            <>
+              <ProvenanceLine
+                setting={resolved}
+                onRevert={() => revert.mutate(s.key)}
+                onLock={locked => lock.mutate({ key: s.key, locked })}
+                onShowChain={() => setChainKey(s.key)}
+              />
+              {/* Going back to following the parent is one of the three things
+                  this page can do to a value, so it is a button under the
+                  sentence that states the value's origin — not an entry of a
+                  menu the operator has to go looking for. */}
+              {resolved.has_own_value && !resolved.locked_above && (
+                <button
+                  type="button"
+                  onClick={() => revert.mutate(s.key)}
+                  disabled={revert.isPending}
+                  className="block text-left text-primary transition-colors hover:underline disabled:opacity-50"
+                  style={{ fontSize: 'var(--kb-text-meta)' }}
+                >
+                  {t('admin.m_inherit', { defaultValue: 'Hériter la valeur du parent' })}
+                </button>
+              )}
+            </>
+          )
+          : undefined}
         onChange={v => setValue(s, v)}
         onReset={() => setValue(s, s.default)}
       />
     )
   }
 
-  /** A category as a collapsible section — used unpaged, and by the filter. */
+  /** How many of a run differ from what the scope on screen would inherit. */
+  const changedCount = (list: SettingItem[]) => list.filter(s => {
+    if (scoped) return resolvedByKey.get(s.key)?.has_own_value ?? false
+    return !sameValue(s.global ?? s.default, s.default)
+  }).length
+
+  /**
+   * WHO the values of a section belong to, in its left gutter.
+   *
+   * `ScopeHeadline` is drawn for a full-width strip — a rule under it and a
+   * margin below that. In the gutter the section's own hairlines already do that
+   * work, so its spacing is stripped rather than repeated.
+   */
+  const scopeAside = (
+    <div className="[&>div]:mb-0 [&>div]:border-0 [&>div]:pb-0">
+      <ScopeHeadline scope={scope} />
+    </div>
+  )
+
+  /** A category as a foldable section — the shape of the whole page. */
   const categorySection = (
     key: string,
     category: string,
     basic: SettingItem[],
     advanced: SettingItem[],
-    aside?: React.ReactNode,
+    onlyOne: boolean,
   ) => {
     const all = [...basic, ...advanced]
+    const changed = changedCount(all)
+    // What this section's bar commits, and what it must NOT commit.
+    const keys      = all.map(s => s.key)
+    const here      = keys.filter(k => k in edits)
+    const outside   = Object.keys(edits).filter(k => !keys.includes(k))
+    // Writing on a scope that holds no value yet REMOVES it from its parent's
+    // authority for that key. The action says which of the two it is about to do.
+    const overriding = scoped && here.some(k => !resolvedByKey.get(k)?.has_own_value)
+    // "Autres" is a name given RELATIVE to other sections. When the page holds a
+    // single unnamed run of settings there is nothing to be other than, and the
+    // page heading above already says what they are — so it carries no title.
+    const synthetic = category === t('admin.m_other_settings', { defaultValue: 'Autres' })
     return (
-      <CollapsibleCategory
+      <SettingSectionCard
         key={key}
-        title={category}
-        aside={aside}
-        count={all.length}
-        changed={all.filter(s => !sameValue(s.global ?? s.default, s.default)).length}
+        title={onlyOne && synthetic ? '' : category}
+        status={
+          <>
+            {t('admin.m_settings_count', {
+              count: all.length,
+              defaultValue: `${all.length} réglages`,
+            })}
+            {changed > 0 && ' · '}
+            {changed > 0 && (
+              <span className="text-primary">
+                {scoped
+                  ? t('admin.m_section_overridden', {
+                      count: changed,
+                      defaultValue: `${changed} remplacé(s) ici`,
+                    })
+                  : t('admin.m_section_modified', {
+                      count: changed,
+                      defaultValue: `${changed} modifié(s)`,
+                    })}
+              </span>
+            )}
+          </>
+        }
         // While filtering, everything is open: a hit hidden behind a fold the
-        // operator has to guess at is not a hit.
-        collapsed={filtering ? false : (collapsed[key] ?? false)}
-        onToggle={() => setCollapsed(c => ({ ...c, [key]: !(c[key] ?? false) }))}
+        // operator has to guess at is not a hit. A page made of ONE section has
+        // nothing to choose between, so folding it only adds a click.
+        open={filtering || (opened[key] ?? onlyOne)}
+        onToggle={() => setOpened(o => ({ ...o, [key]: !(o[key] ?? onlyOne) }))}
+        aside={scopeAside}
+        footer={
+          <SettingsSaveBar
+            count={here.length}
+            elsewhere={outside.length}
+            elsewhereAction={elsewhereAction(outside)}
+            invalid={here.filter(k => invalidKeys.has(k)).length}
+            saving={busySection === key}
+            saved={savedSection === key}
+            overriding={overriding}
+            onSave={() => void submitSection(key, keys)}
+            onCancel={() => cancelSection(keys)}
+          />
+        }
       >
         <SettingRows
           basic={basic}
@@ -338,7 +635,7 @@ export default function ModuleAdminSettings({
           onToggleAdvanced={() => setAdvOpen(a => ({ ...a, [key]: !(a[key] ?? false) }))}
           renderRow={renderRow}
         />
-      </CollapsibleCategory>
+      </SettingSectionCard>
     )
   }
 
@@ -352,8 +649,12 @@ export default function ModuleAdminSettings({
       )
     }
     if (!paged) {
-      return splitByCategory(list).map(c =>
-        categorySection(c.category, c.category, c.basic, c.advanced))
+      return (
+        <div className="space-y-3">
+          {splitByCategory(list).map(c =>
+            categorySection(c.category, c.category, c.basic, c.advanced, false))}
+        </div>
+      )
     }
     // Grouped by page, pages in menu order, so a result reads as an address:
     // "Filtrage ▸ Politique anti-spam".
@@ -362,8 +663,8 @@ export default function ModuleAdminSettings({
       if (inPage.length === 0) return null
       const here = g.id === page
       return (
-        <div key={g.id}>
-          <div className="flex flex-wrap items-center gap-2 pt-4 pb-1">
+        <div key={g.id} className="mb-4">
+          <div className="flex flex-wrap items-center gap-2 pb-2">
             <span className="text-sm font-bold text-text-primary">{g.label}</span>
             {here ? (
               <span className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-micro)' }}>
@@ -381,8 +682,10 @@ export default function ModuleAdminSettings({
               </Link>
             )}
           </div>
-          {splitByCategory(inPage).map(c =>
-            categorySection(`${g.id}::${c.category}`, c.category, c.basic, c.advanced))}
+          <div className="space-y-3">
+            {splitByCategory(inPage).map(c =>
+              categorySection(`${g.id}::${c.category}`, c.category, c.basic, c.advanced, false))}
+          </div>
         </div>
       )
     })
@@ -395,62 +698,25 @@ export default function ModuleAdminSettings({
     ? pageCategories.find(c => `${CATEGORY_TAB}${c.category}` === activeTab) ?? null
     : null
 
+  // Every bar lives inside a section, so a view that paints no section at all —
+  // one of the module's own tabs, a page with no settings, a fruitless filter —
+  // would say nothing about work staged elsewhere. That is the one case the
+  // panel still owes a standing sentence.
+  const showsSections = filtering
+    ? (matches?.length ?? 0) > 0
+    : paged
+      ? !ExtraTab && !!activeCategory
+      : pageCategories.length > 0
+
   return (
     <>
-      <Card
-        flush
-        footer={
-          <div className="flex items-center justify-between gap-4">
-            <span
-              className={hasInvalid ? 'text-danger' : 'text-text-tertiary'}
-              style={{ fontSize: 'var(--kb-text-meta)' }}
-            >
-              {hasInvalid
-                ? t('admin.m_invalid_values', {
-                    count: invalidKeys.size,
-                    defaultValue: `${invalidKeys.size} valeur(s) hors bornes`,
-                  })
-                : isDirty
-                ? t('admin.m_pending_changes', {
-                    count: dirtyCount,
-                    defaultValue: `${dirtyCount} modification(s) non enregistrée(s)`,
-                  })
-                : t('admin.m_settings_count', {
-                    count: items.length,
-                    defaultValue: `${items.length} réglages`,
-                  })}
-              {isDirty && !hasInvalid && pendingElsewhere > 0 && (
-                <span className="ml-1 text-text-tertiary">
-                  {t('admin.m_pending_elsewhere', {
-                    count: pendingElsewhere,
-                    defaultValue: `(dont ${pendingElsewhere} sur d'autres pages)`,
-                  })}
-                </span>
-              )}
-            </span>
-            <div className="flex items-center gap-2">
-              {isDirty && (
-                <Button variant="ghost" onClick={() => setEdits({})} icon={<RotateCcw size={14} />}>
-                  {t('common.cancel', { defaultValue: 'Annuler' })}
-                </Button>
-              )}
-              <Button
-                onClick={submit}
-                disabled={!isDirty || hasInvalid || save.isPending}
-                icon={savedFlag ? <Check size={14} /> : <Save size={15} />}
-              >
-                {savedFlag ? t('admin.m_saved') : t('common.save')}
-              </Button>
-            </div>
-          </div>
-        }
-      >
-        {/* Filter: the fastest way through a long panel is to type what you came
-            for — and past forty settings it is the main way in, which is why it
-            searches every page rather than the one on screen. */}
-        <div className="px-5 pt-4 pb-1">
-          <div className="relative max-w-sm">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
+      <div className="min-w-0">
+        {/* Filter: the fastest way through a long panel is to type what you
+            came for — and past forty settings it is the main way in, which is
+            why it searches every page rather than the one on screen. */}
+        <div className="mb-4">
+          <div className="relative max-w-md">
+            <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <Input
               value={filter}
               onChange={e => setFilter(e.target.value)}
@@ -470,41 +736,67 @@ export default function ModuleAdminSettings({
           )}
         </div>
 
+        {/* What the values below belong to is now said INSIDE each section, in
+            its left gutter: a page-level headline scrolls out of sight long
+            before the section an operator is editing does. */}
+
+        {error && (
+          <Callout variant="danger" className="mb-4" dismissible onDismiss={() => setError(null)}>
+            {error}
+          </Callout>
+        )}
+
         {filtering ? (
-          <div className="px-5 pb-2">{renderMatches(matches ?? [])}</div>
+          renderMatches(matches ?? [])
         ) : paged ? (
           <>
             {tabs.length > 1 && (
-              <Tabs tabs={tabs} value={activeTab} onChange={setTab} className="px-5" t={t} />
+              <Tabs tabs={tabs} value={activeTab} onChange={setTab} className="mb-4" t={t} />
             )}
-            <div className="px-5 pb-2 pt-1">
-              {ExtraTab ? <ExtraTab /> : activeCategory ? (
-                <SettingRows
-                  basic={activeCategory.basic}
-                  advanced={activeCategory.advanced}
-                  advancedOpen={advOpen[activeTab] ?? false}
-                  onToggleAdvanced={() => setAdvOpen(a => ({ ...a, [activeTab]: !(a[activeTab] ?? false) }))}
-                  renderRow={renderRow}
-                />
-              ) : (
-                // Says what the card is still good for rather than only what it
-                // has not got: on a page made of the module's own views, this
-                // box is the way into the other pages' settings.
-                <p className="py-6 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-                  {t('admin.m_group_empty', {
-                    count: items.length,
-                    defaultValue: `Cette page ne contient aucun réglage. Le filtre ci-dessus cherche dans les ${items.length} réglages du module.`,
-                  })}
-                </p>
-              )}
-            </div>
+            {ExtraTab ? <ExtraTab /> : activeCategory ? (
+              categorySection(
+                activeTab, activeCategory.category,
+                activeCategory.basic, activeCategory.advanced, true,
+              )
+            ) : (
+              // Says what the page is still good for rather than only what it
+              // has not got: on a page made of the module's own views, the
+              // filter above is the way into the other pages' settings.
+              <p className="py-6 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+                {t('admin.m_group_empty', {
+                  count: items.length,
+                  defaultValue: `Cette page ne contient aucun réglage. Le filtre ci-dessus cherche dans les ${items.length} réglages du module.`,
+                })}
+              </p>
+            )}
           </>
         ) : (
-          <div className="px-5 pb-2">
-            {pageCategories.map(c => categorySection(c.category, c.category, c.basic, c.advanced))}
+          <div className="space-y-3">
+            {pageCategories.map(c => categorySection(
+              c.category, c.category, c.basic, c.advanced, pageCategories.length === 1,
+            ))}
           </div>
         )}
-      </Card>
+
+        {!showsSections && dirtyCount > 0 && (
+          <p className="mt-4 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+            {t('admin.m_pending_elsewhere_count', {
+              count: dirtyCount,
+              defaultValue: `${dirtyCount} autre(s) modification(s) non enregistrée(s)`,
+            })}
+            <span className="ml-2">{elsewhereAction(Object.keys(edits))}</span>
+          </p>
+        )}
+      </div>
+
+      {chainKey && (
+        <InheritanceChainWindow
+          settingKey={prefixedKey(moduleId, chainKey)}
+          scope={scope}
+          title={byKey.get(chainKey)?.label ?? chainKey}
+          onClose={() => setChainKey(null)}
+        />
+      )}
 
       {confirmState && (
         <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
@@ -512,3 +804,6 @@ export default function ModuleAdminSettings({
     </>
   )
 }
+
+/** Re-exported so the panel's helpers stay reachable from one import. */
+export type { ResolvedSetting }

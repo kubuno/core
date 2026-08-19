@@ -324,7 +324,7 @@ interface Props {
 
 type TabId = 'general' | 'details' | 'activity'
 
-export default function FileInfoModal({ target, onClose }: Props) {
+export function FileInfoContent({ target }: { target: NonNullable<Props['target']> }) {
   const { t, i18n } = useTranslation('drive')
   const [tab, setTab] = useState<TabId>('general')
   const qc = useQueryClient()
@@ -418,15 +418,7 @@ export default function FileInfoModal({ target, onClose }: Props) {
   const openWith = typeof fileMeta['open_with'] === 'string' ? fileMeta['open_with'] : null
 
   return (
-    <FloatingWindow
-      title={t('info.title')}
-      onClose={onClose}
-      defaultWidth={440}
-      defaultHeight={560}
-      resizable
-      backdrop
-    >
-      <div className="flex flex-col min-h-0 flex-1">
+    <div className="flex flex-col min-h-0 flex-1">
         {/* Icon + name */}
         <div className="flex flex-col items-center gap-2 pt-4 pb-4 px-6 flex-shrink-0">
           {icon}
@@ -572,8 +564,19 @@ export default function FileInfoModal({ target, onClose }: Props) {
               )}
             </>
           )}
-        </div>
       </div>
+    </div>
+  )
+}
+
+/** The details window. Kept for the search view until `@kubuno/drive` is
+ *  republished with `FileInfoContent`; the explorer uses the side panel. */
+export default function FileInfoModal({ target, onClose }: Props) {
+  const { t } = useTranslation('drive')
+  if (!target) return null
+  return (
+    <FloatingWindow title={t('info.title')} onClose={onClose} defaultWidth={440} defaultHeight={560} resizable backdrop>
+      <FileInfoContent target={target} />
     </FloatingWindow>
   )
 }

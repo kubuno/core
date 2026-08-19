@@ -43,7 +43,10 @@ const SIZE: Record<ButtonSize, string> = {
   lg: 'h-11 px-5 text-sm gap-2',
 }
 
-export function Button({
+/* forwardRef: a caller needs the DOM node to anchor a popover or a tooltip on the
+ * button. Without it the ref lands on nothing and the anchor has to be a wrapper
+ * <span>, which changes the layout for a purely technical reason. */
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   variant  = 'primary',
   size     = 'md',
   icon,
@@ -53,9 +56,10 @@ export function Button({
   children,
   type     = 'button',
   ...props
-}: ButtonProps) {
+}, ref) {
   return (
     <button
+      ref={ref}
       type={type}
       className={[BASE, VARIANT[variant], SIZE[size], className].filter(Boolean).join(' ')}
       disabled={disabled || loading}
@@ -71,4 +75,6 @@ export function Button({
       )}
     </button>
   )
-}
+})
+
+Button.displayName = 'Button'

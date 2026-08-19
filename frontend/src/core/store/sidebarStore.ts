@@ -26,7 +26,13 @@ export interface SidebarConfig {
   // Clé i18n (ex: 'agenda:create') résolue réactivement par AppSidebar.
   // Prioritaire sur `newButtonLabel` ; permet la traduction au changement de langue.
   newButtonLabelKey?: string
-  // Contenu du dropdown Nouveau/Créer — remplace le slot sidebar-new-actions
+  /** @deprecated IGNORÉ depuis la migration du bouton « Nouveau » vers le composant
+   *  de menu du projet (`MenuDropdown` de @ui, qui prend des DONNÉES). Un module
+   *  contribue désormais des `MenuItem[]` au point d'extension `shell.new-actions` :
+   *    ExtensionRegistry.register('shell.new-actions', '<id>',
+   *      { moduleId: '<id>', items: () => MenuItem[] })
+   *  Le champ reste déclaré pour ne pas casser le typecheck des modules pas encore
+   *  migrés ; il ne rend plus rien. Idem pour le slot `sidebar-new-actions`. */
   NewActions?:     React.ComponentType
   // Corps entier de la sidebar (nav + footer) — remplace la nav par défaut.
   // Reçoit `collapsed` : le module rend sa nav en icônes seules quand replié,

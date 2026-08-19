@@ -10,26 +10,22 @@
  * si bien que la console d'administration et l'explorateur affichent exactement
  * le même fil. Reste la base thémable de la clé `drive.breadcrumb`.
  */
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Folder as FolderIcon, ChevronDown, Home } from 'lucide-react'
-import { Breadcrumb, MenuDropdown, type Crumb } from '@ui'
-import type { Folder } from '../api'
-import { FolderGlyph } from '../FolderGlyph'
+import { ChevronDown } from 'lucide-react'
+import { Breadcrumb, type Crumb } from '@ui'
 
-export function StorageBreadcrumbBase({ rootName, crumbs, onNavigate, childFolders, onOpenChild, ariaLabel }: {
+export function StorageBreadcrumbBase({ rootName, crumbs, onNavigate, onOpenMenu, ariaLabel }: {
   rootName: string
   crumbs: Array<{ id: string; name: string }>
   onNavigate: (idx: number) => void            // -1 = racine, sinon index du segment
-  childFolders: Folder[]
-  onOpenChild: (folder: Folder) => void
+  /** Opens the current folder's own action menu, hung off the last segment. */
+  onOpenMenu?: (e: React.MouseEvent) => void
   ariaLabel?: string
 }) {
   const { t } = useTranslation('drive')
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
 
   const items: Crumb[] = [
-    { label: rootName, title: rootName, icon: <Home size={16} />, onClick: () => onNavigate(-1) },
+    { label: rootName, title: rootName, onClick: () => onNavigate(-1) },
     ...crumbs.map((crumb, idx) => ({
       label:   crumb.name,
       title:   crumb.name,
@@ -45,25 +41,17 @@ export function StorageBreadcrumbBase({ rootName, crumbs, onNavigate, childFolde
       // segments avant de replier, contre quatre pour la console.
       maxVisible={6}
       maxSegmentWidth="16rem"
-      trailing={childFolders.length > 0 ? (
-        <>
-          <button
-            type="button"
-            onClick={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ x: r.left, y: r.bottom + 4 }) }}
-            className="ms-2.5 inline-flex items-center text-text-secondary bg-surface-1 border border-border hover:bg-surface-2 hover:text-text-primary shadow-xs font-medium leading-5 rounded-md text-sm px-2.5 py-1.5 transition-colors focus:outline-none"
-          >
-            <FolderIcon size={14} className="me-1.5 shrink-0" />
-            {t('breadcrumb.go_to', { defaultValue: 'Aller à' })}
-            <ChevronDown size={14} className="ms-1.5 shrink-0" />
-          </button>
-          {menu && (
-            <MenuDropdown
-              items={childFolders.map(f => ({ type: 'action' as const, label: f.name, icon: <FolderGlyph folder={f} size={15} />, onClick: () => onOpenChild(f) }))}
-              pos={{ top: menu.y, left: menu.x }}
-              onClose={() => setMenu(null)}
-            />
-          )}
-        </>
+      size="lg"
+      trailing={onOpenMenu ? (
+        <button
+          type="button"
+          aria-label={t('breadcrumb.folder_menu', { defaultValue: 'Actions du dossier' })}
+          title={t('breadcrumb.folder_menu', { defaultValue: 'Actions du dossier' })}
+          onClick={onOpenMenu}
+          className="ms-1 inline-flex items-center justify-center rounded-full p-1 text-text-secondary hover:bg-surface-2 hover:text-text-primary transition-colors focus:outline-none"
+        >
+          <ChevronDown size={20} className="shrink-0" />
+        </button>
       ) : undefined}
     />
   )

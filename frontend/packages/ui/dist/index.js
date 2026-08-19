@@ -315,7 +315,7 @@ function gt({ items: e, activeIndex: t, query: n, anchorRect: r, onPick: i, onHo
 	let s = Math.min(r.left, window.innerWidth - pt - 8), c = r.bottom + mt;
 	return X(/* @__PURE__ */ v("div", {
 		role: "listbox",
-		className: "fixed z-[1000] min-w-56 max-w-80 py-1 rounded-lg border border-border\n                 bg-white/95 backdrop-blur-md shadow-lg max-h-64 overflow-y-auto",
+		className: "fixed z-[9999] min-w-56 max-w-80 py-1 rounded-lg border border-border\n                 bg-white/95 backdrop-blur-md shadow-lg max-h-64 overflow-y-auto",
 		style: {
 			left: Math.max(8, s),
 			top: c

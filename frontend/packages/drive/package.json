@@ -14,7 +14,8 @@
   "files": [
     "index.js",
     "types",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "types": "./types/drive/index.d.ts",
   "exports": {

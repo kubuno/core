@@ -1,10 +1,10 @@
 import {
   BarChart3, Building2, Cloud, Contact, CreditCard, Home, LayoutDashboard, LayoutGrid,
-  MonitorSmartphone, Server, Shield, Sparkles, Workflow, type LucideIcon,
+  MonitorSmartphone, Puzzle, Server, Shield, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { PRIV, type CanFn } from '../authz/types'
 
-// ── Admin navigation tree (Workspace-style) ──────────────────────────────────
+// ── Admin navigation tree ────────────────────────────────────────────────────
 // Collapsible sections up to 3 levels deep. A node WITH children is an
 // expand-only group (not navigable — clicking toggles it). A leaf routes to
 // /admin/<id>. `soon` leaves render a placeholder. `secondary` top-level
@@ -14,6 +14,16 @@ import { PRIV, type CanFn } from '../authz/types'
 // This module is the single declarative source of truth for the admin menu:
 // adding an entry here is what makes a section reachable (see AdminPage.tsx for
 // the full "add a section" checklist).
+//
+// ── Why the sections are in THIS order ───────────────────────────────────────
+// It follows the console this product's administration is modelled on, because
+// operators arrive already knowing that order: who the people are (annuaire),
+// what they connect from (appareils), what they use (applications), what
+// protects it (sécurité), what it produced (rapports), what the instance itself
+// is (instance), and what runs by itself (automatisation). Capacity and the
+// machinery underneath sit last, behind the fold, because they are consulted
+// once a quarter — and a menu whose fifteen branches are all on screen at once
+// is a wall, not a menu.
 
 /**
  * How a section spells its address, beyond its own id.
@@ -132,6 +142,15 @@ export const ADMIN_NAV: AdminNavItem[] = [
     // a delegated account the settings route then answers 403 to.
     { id: 'directory-settings', labelKey: 'admin.nav_directory_settings',                           priv: PRIV.SETTINGS_READ },
   ] },
+  { id: 'devices', labelKey: 'admin.nav_devices', Icon: MonitorSmartphone, children: [
+    // `device` is the record; `user` is a filter here ("the sessions of that
+    // account"), so it stays in the query string.
+    { id: 'device-sessions', labelKey: 'admin.nav_sessions',  priv: PRIV.SESSIONS_READ,
+      url: { entity: 'device' } },
+    // Where the live sessions come from — addresses and countries. Gated on
+    // the session key, not the settings one: it is a session listing.
+    { id: 'networks',        labelKey: 'admin.nav_networks',  priv: PRIV.SESSIONS_READ },
+  ] },
   { id: 'apps', labelKey: 'admin.nav_apps', Icon: LayoutGrid, children: [
     // The one section whose children are DISCOVERED, not declared: every
     // installed module is a row under it, and clicking one opens that module's
@@ -160,7 +179,7 @@ export const ADMIN_NAV: AdminNavItem[] = [
   // the entry after the feature — not after the `speech-to-text` module id —
   // is what keeps this file free of any module's name, the rule the modules
   // submenu is built to honour.
-  { id: 'core-features', labelKey: 'admin.nav_core_features', Icon: Sparkles, children: [
+  { id: 'core-features', labelKey: 'admin.nav_core_features', Icon: Puzzle, children: [
     { id: 'voice-search',  labelKey: 'admin.nav_voice_search',                    priv: PRIV.MODULES_MANAGE },
   ] },
   { id: 'security', labelKey: 'admin.nav_security', Icon: Shield, children: [
@@ -190,9 +209,27 @@ export const ADMIN_NAV: AdminNavItem[] = [
     { id: 'access-data', labelKey: 'admin.nav_access_data',                priv: PRIV.SETTINGS_READ },
     // Rate limits and flood protection: what keeps the instance answering.
     { id: 'service-protection', labelKey: 'admin.nav_service_protection',  priv: PRIV.SETTINGS_READ },
-    { id: 'security-center', labelKey: 'admin.nav_security_center', soon: true, children: [
-      { id: 'security-dashboard', labelKey: 'admin.nav_security_dashboard', soon: true, priv: PRIV.AUDIT_READ },
+    // The overview, above the reports it summarises. Every panel it draws is a
+    // count over what the core itself records — the audit trail, the alert
+    // queue, the rule log, the device inventory — and each one links back to the
+    // report that owns those records. Gated on the audit key, which is the one
+    // an operator trusted with "read what happened here" already holds.
+    { id: 'security-center', labelKey: 'admin.nav_security_center', children: [
+      { id: 'security-dashboard', labelKey: 'admin.nav_security_dashboard', priv: PRIV.AUDIT_READ },
     ] },
+  ] },
+  { id: 'reporting', labelKey: 'admin.nav_reporting', Icon: BarChart3, children: [
+    // The printable documents behind the dashboard panels — one panel, one
+    // window, every figure, in a form that can be handed to somebody or filed.
+    // Its record is the PANEL (`/admin/reports/storage`); the window and the
+    // dashboard the id came from identify no place and stay in the query
+    // string. No `priv`: a report narrows itself to what its own endpoint
+    // serves the caller — every panel is gated at instance scope there — so an
+    // administrator who may read one report and not another sees the catalogue
+    // and is told, per document, which ones are withheld.
+    { id: 'reports',   labelKey: 'admin.nav_reports',   url: { entity: 'panel' } },
+    { id: 'event-log', labelKey: 'admin.nav_event_log', priv: PRIV.AUDIT_READ },
+    { id: 'audit',     labelKey: 'admin.nav_audit',     priv: PRIV.AUDIT_READ },
   ] },
   // What this instance IS. Named after the thing being administered rather than
   // after a subscription: the reference this console imitates calls it
@@ -220,30 +257,26 @@ export const ADMIN_NAV: AdminNavItem[] = [
       url: { entity: 'domain' } },
     { id: 'admin-roles',    labelKey: 'admin.nav_admin_roles',                   priv: PRIV.ROLES_READ,
       url: { entity: 'role' } },
-    { id: 'data-migration', labelKey: 'admin.nav_data_migration', soon: true,    priv: PRIV.SETTINGS_READ },
-    { id: 'data-export',    labelKey: 'admin.nav_data_export',    soon: true,    priv: PRIV.AUDIT_READ },
-  ] },
-  { id: 'devices', labelKey: 'admin.nav_devices', Icon: MonitorSmartphone, secondary: true, children: [
-    // `device` is the record; `user` is a filter here ("the sessions of that
-    // account"), so it stays in the query string.
-    { id: 'device-sessions', labelKey: 'admin.nav_sessions',  priv: PRIV.SESSIONS_READ,
-      url: { entity: 'device' } },
-    // Where the live sessions come from — addresses and countries. Gated on
-    // the session key, not the settings one: it is a session listing.
-    { id: 'networks',        labelKey: 'admin.nav_networks',  priv: PRIV.SESSIONS_READ },
-  ] },
-  { id: 'reporting', labelKey: 'admin.nav_reporting', Icon: BarChart3, secondary: true, children: [
-    { id: 'event-log', labelKey: 'admin.nav_event_log', priv: PRIV.AUDIT_READ },
-    { id: 'audit',     labelKey: 'admin.nav_audit',     priv: PRIV.AUDIT_READ },
-  ] },
-  { id: 'billing', labelKey: 'admin.nav_billing', Icon: CreditCard, secondary: true, children: [
-    { id: 'subscription', labelKey: 'admin.nav_subscription', soon: true, priv: PRIV.SETTINGS_READ },
+    // Importer les données d'un autre fournisseur. Clé littérale, comme les
+    // sections voisines qui portent leur propre paire de privilèges
+    // (cf. `sections/data-migration/privileges.ts`). Adresse une campagne, dont
+    // la fiche porte le suivi compte par compte.
+    { id: 'data-migration', labelKey: 'admin.nav_data_migration',               priv: 'core.data_migration.read',
+      url: { entity: 'campaign' } },
+    // Faire SORTIR les données — le miroir de la migration juste au-dessus.
+    // Clé littérale, comme les autres sections qui portent leur propre paire de
+    // privilèges (cf. `sections/data-export/privileges.ts`) : `core.audit.read`
+    // ne convient pas, la page nomme chaque compte couvert par une archive et
+    // remet l'archive elle-même. Un enregistrement (l'export ouvert) et aucun
+    // volet : `/admin/data-export/<id>`.
+    { id: 'data-export',    labelKey: 'admin.nav_data_export',    priv: 'core.data_export.read',
+      url: { entity: 'export' } },
   ] },
   // The rule engine. `rules` keeps its original id so links minted while the
   // section was a placeholder still resolve; the run log is its own place
   // because "what did the engine actually do" is a question an operator arrives
   // with, not one they reach through the inventory.
-  { id: 'automation', labelKey: 'admin.nav_automation', Icon: Workflow, secondary: true, children: [
+  { id: 'automation', labelKey: 'admin.nav_automation', Icon: Workflow, children: [
     // The rule editor's panes — kept in step with `Pane` in `rules/RuleEditor`.
     { id: 'rules',     labelKey: 'admin.nav_rules',     priv: PRIV.RULES_READ,
       url: { entity: 'rule', panes: ['basics', 'conditions', 'actions', 'scope', 'mode', 'impact', 'history'] } },
@@ -254,6 +287,14 @@ export const ADMIN_NAV: AdminNavItem[] = [
     // in, and somebody tuning a threshold is somebody editing a rule.
     { id: 'detectors', labelKey: 'admin.nav_detectors', priv: PRIV.RULES_READ,
       url: { entity: 'detector' } },
+  ] },
+  // Filed under Facturation because that is where an operator looks for it, and
+  // deliberately NOT a billing page: the software is AGPL-3.0-or-later and is
+  // not sold — no seat, no plan, no licence to enforce. What the page shows is
+  // the licence itself, which installation this is, and whether a support
+  // contract exists (see `sections/subscription/SubscriptionSection.tsx`).
+  { id: 'billing', labelKey: 'admin.nav_billing', Icon: CreditCard, secondary: true, children: [
+    { id: 'subscription', labelKey: 'admin.nav_subscription', priv: PRIV.SETTINGS_READ },
   ] },
   // Capacity. Its own key rather than `settings.manage`: reading how full the
   // instance is, and which accounts fill it, is what a delegated operator needs;

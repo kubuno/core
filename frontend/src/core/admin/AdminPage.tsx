@@ -14,7 +14,6 @@ import AdminSearchBar from './AdminSearchBar'
 import AdminSectionBoundary, { AdminForbidden, AdminSectionNotFound } from './AdminSectionBoundary'
 import ComingSoon from './sections/ComingSoon'
 import { ADMIN_SECTIONS } from './sections/registry'
-import CriticalBanner from './health/CriticalBanner'
 import AdminBreadcrumb from './AdminBreadcrumb'
 
 /**
@@ -75,12 +74,19 @@ useToolbarStore.getState().register({
 })
 
 // Override the global shell search bar while on /admin (inert elsewhere).
+//
+// `inline`: an administration console is searched constantly — an operator who
+// knows the name of a setting types it rather than walking the tree — so the
+// field is PERMANENT here instead of hiding behind a magnifier. The rest of the
+// product keeps the magnifier and its full-screen search mode: this only
+// changes the shape of the bar under `/admin`.
 useSearchStore.getState().register({
   moduleId:        'core-admin',
   routePrefix:     '/admin',
   placeholder:     'Rechercher des utilisateurs, groupes ou paramètres',
   placeholderKey:  'admin.search_ph',
   SearchComponent: AdminSearchBar,
+  inline:          true,
 })
 
 /** Is the keystroke going into something the operator is typing in? */
@@ -146,7 +152,7 @@ export default function AdminPage() {
   if (!meta) {
     return (
       <div>
-        <h1 className="text-xl font-medium text-text-primary mb-6">{t('user.admin')}</h1>
+        <h1 className="mb-6 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>{t('user.admin')}</h1>
         <AdminSectionNotFound tab={tab} />
       </div>
     )
@@ -157,27 +163,49 @@ export default function AdminPage() {
   if (!canSeeTab(tab, can)) {
     return (
       <div>
-        <h1 className="text-xl font-medium text-text-primary mb-6">{t('user.admin')}</h1>
+        <h1 className="mb-6 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>{t('user.admin')}</h1>
         <AdminForbidden titleKey={titleKey} />
       </div>
     )
   }
 
   return (
-    <div>
-      {/* Above every administration screen while something is wrong. Critical
-          findings cannot be dismissed; warnings can be snoozed for a few days. */}
-      <CriticalBanner tab={tab} />
+    // `kb-admin` scopes the console's own type scale (see theme.css): the page
+    // title is larger here than in a module screen, and it is set once on the
+    // root rather than per heading.
+    <div className="kb-admin">
+      {/* Instance health moved to the top bar (`HealthTopbarChip`): the same
+          three facts on one line, in the band that was empty, instead of a
+          full-width callout pushing every page down. */}
 
       {/* Where you are, on one line, above every screen but the landing. Derived
           from ADMIN_NAV, so a section that moves branch cannot keep announcing
           the old one; a detail view appends its own last segment through
           `useAdminCrumbs`. */}
-      <AdminBreadcrumb tab={tab} />
+      {/* PINNED to the top of the panel, with the section's own toolbar docking
+          under it (see `ReportDocument`, which measures this element). A trail
+          that scrolls away is a trail you have to scroll back for, and above a
+          paginated report — where the page being read is four screens down —
+          that is the whole of it.
+          The negative offset is not decoration: a sticky top is measured from
+          the scrolling ancestor's PADDING box, and this panel carries 24 px of
+          it, so `top: 0` would pin the bar 24 px low and let the content show
+          through above it. The wrapper exists because `Breadcrumb` does not
+          forward unknown props, so the marker has to live on a real element.
+          The bottom spacing lives HERE rather than on the trail itself: a margin
+          outside the pinned box is 8 px the band loses the moment it sticks, and
+          a band that changes height as you start scrolling is worse than one
+          that never froze. */}
+      <div
+        data-admin-crumbs
+        className="no-print sticky -top-6 z-30 -mx-6 -mt-6 bg-surface-0 px-6 pt-6 pb-2"
+      >
+        <AdminBreadcrumb tab={tab} />
+      </div>
 
       {/* Sections with `ownHeader` render their own header (landing / title). */}
       {!section?.ownHeader && (
-        <h1 className="text-xl font-medium text-text-primary mb-6">
+        <h1 className="mb-6 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
           {titleKey ? t(titleKey) : t('user.admin')}
         </h1>
       )}

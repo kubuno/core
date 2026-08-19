@@ -4,6 +4,7 @@
 //! OpenAPI declarations keep referring to `crate::handlers::auth::<name>`.
 //!
 //! - [`login`]          — sign in / sign out (`/auth/login`, `/auth/logout`)
+//! - [`accounts`]       — Google-style multi-account (`/auth/accounts`, `/auth/switch`)
 //! - [`register`]       — public sign up (`/auth/register`)
 //! - [`tokens`]         — refresh token issuance + shared cookie helpers
 //! - [`refresh`]        — rotation, reuse detection, rotation grace (`/auth/refresh`)
@@ -13,6 +14,7 @@
 //! - [`oauth`]          — generic OIDC providers (Keycloak, GitLab, Authentik, …)
 //! - [`oauth_users`]    — SSO user lookup, linking and creation
 
+mod accounts;
 mod login;
 mod oauth;
 mod oauth_users;
@@ -23,6 +25,7 @@ mod register;
 mod tokens;
 mod totp;
 
+pub use accounts::*;
 pub use login::*;
 pub use oauth::*;
 pub use password_reset::*;

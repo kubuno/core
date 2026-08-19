@@ -83,7 +83,12 @@ impl FromRequestParts<AppState> for AuthUser {
             return Ok(existing.clone());
         }
 
-        let token = extract_bearer(&parts.headers).ok_or(AppError::Unauthorized)?;
+        // The header first; the cookie only when there is none — see
+        // [`extract_cookie_token`], which exists so a browser-performed download
+        // of an archive reaches its owner instead of a `401`.
+        let token = extract_bearer(&parts.headers)
+            .or_else(|| extract_cookie_token(&parts.headers))
+            .ok_or(AppError::Unauthorized)?;
 
         // Essai 1 : JWT access token
         let jwt = JwtService::new(
@@ -282,4 +287,35 @@ fn extract_bearer(headers: &HeaderMap) -> Option<&str> {
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
+}
+
+/// The access token carried by the `access_token` cookie, if any.
+///
+/// ## Why a cookie is accepted at all, and why only as a fallback
+///
+/// One class of request cannot carry a header: a **file download the browser
+/// performs itself**. Handing a multi-gigabyte archive over `fetch` would buffer
+/// it in the tab's memory before the browser ever offered to save it, so those
+/// downloads are full-page navigations — and a navigation sends cookies, never
+/// an `Authorization` header. Without this, `GET …/export/:id/download` answers
+/// `401` to the very person the file belongs to.
+///
+/// The cookie is the same one [`crate::modules::proxy`] has always accepted for
+/// exactly this reason, written by the client with `SameSite=Strict` and the
+/// lifetime of the access token (15 minutes). `Strict` is what makes it safe to
+/// read here: a request originating from another site never carries it, so this
+/// does not turn a state-changing route into a CSRF target.
+///
+/// It is tried **after** the header, so a call that presents one is never
+/// silently authenticated as somebody else's stale cookie.
+fn extract_cookie_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())?
+        .split(';')
+        .find_map(|part| {
+            part.trim()
+                .strip_prefix("access_token=")
+                .filter(|v| !v.is_empty())
+        })
 }

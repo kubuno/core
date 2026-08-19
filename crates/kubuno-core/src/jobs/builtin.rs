@@ -7,6 +7,10 @@
 //!   configurable `security.audit_retention_days` window. Same shape as above;
 //!   [`crate::audit::retention::purge_expired`] records its own entry in the
 //!   trail, so a purge is never an invisible deletion.
+//! * [`PURGE_MODULE_USAGE`] — periodic purge of `core.module_usage_daily`,
+//!   honouring the configurable `usage.retention_days` window. The counters say
+//!   who used which application; keeping them past their window would be the
+//!   difference between a statistic and a file on somebody.
 //! * [`SELFTEST`] — diagnostic job used to exercise the runner end to end
 //!   (execution, retry with backoff, crash recovery) on a real instance,
 //!   without waiting for a real workload. It does nothing but sleep and,
@@ -25,6 +29,10 @@ pub const STORAGE_USAGE_RECONCILE: &str = "core.storage.usage_reconcile";
 pub const SELFTEST: &str = "core.selftest";
 /// Erases accounts whose deletion grace period has run out.
 pub const PURGE_DELETED_USERS: &str = "core.purge_deleted_users";
+/// Trims `core.jobs` of its completed rows.
+pub const PURGE_FINISHED_JOBS: &str = "core.purge_finished_jobs";
+/// Trims the module attendance counters to their retention window.
+pub const PURGE_MODULE_USAGE: &str = "core.purge_module_usage";
 
 /// How often the event log is purged.
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(24 * 3_600);
@@ -44,6 +52,28 @@ const USAGE_RECONCILE_INTERVAL: Duration = Duration::from_secs(3_600);
 /// finer cadence would only move the moment of erasure inside a day nobody is
 /// watching.
 const USER_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 3_600);
+
+/// How often finished jobs are trimmed.
+const FINISHED_JOBS_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 3_600);
+
+/// How often the attendance counters are trimmed. Daily: the rows are keyed on
+/// a calendar day, so nothing finer would ever remove a different set.
+const USAGE_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 3_600);
+
+/// Retention applied when `usage.retention_days` is missing or unreadable.
+/// Same figure the migration seeds, so the code and the settings row agree even
+/// on an instance whose row was deleted by hand.
+const DEFAULT_USAGE_RETENTION_DAYS: i64 = 90;
+
+/// How long a *successful* job stays readable.
+///
+/// The table had no retention at all, which was survivable while the queue
+/// carried a handful of periodic sweeps and the odd e-mail. Event delivery
+/// (`core.events.deliver`) changed the order of magnitude: one row per event per
+/// subscribed module, forever. A week is long enough to answer "did that
+/// deletion propagate on Monday" and short enough that nobody has to think about
+/// the table again.
+const DONE_JOB_RETENTION_DAYS: i32 = 7;
 
 /// Registers the core's own job types.
 pub fn register(registry: &mut JobRegistry) {
@@ -82,6 +112,80 @@ pub fn register(registry: &mut JobRegistry) {
         // is retried by the runner, and the startup call below re-arms the
         // cycle if it ever gave up for good.
         let next = NewJob::new(CLEANUP_EVENT_LOG).delay(CLEANUP_INTERVAL);
+        queue::reschedule_after(&ctx.db, next, job.id).await?;
+        Ok(())
+    });
+
+    // Only `done` rows. A `failed` job is what an operator opens the queue to
+    // look at — the delivery a module refused, the e-mail that never went out —
+    // and a purge that swept those away would delete the evidence rather than
+    // the noise. They are cleared by hand, from the console.
+    registry.register_fn(PURGE_FINISHED_JOBS, |ctx, job| async move {
+        let deleted = sqlx::query(
+            "DELETE FROM core.jobs \
+              WHERE status = 'done' \
+                AND done_at IS NOT NULL \
+                AND done_at < NOW() - make_interval(days => $1)",
+        )
+        .bind(DONE_JOB_RETENTION_DAYS)
+        .execute(&ctx.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Purge des tâches terminées échouée");
+            e
+        })?
+        .rows_affected();
+
+        tracing::info!(purgées = deleted, "Purge des tâches de fond terminées");
+
+        let next = NewJob::new(PURGE_FINISHED_JOBS).delay(FINISHED_JOBS_PURGE_INTERVAL);
+        queue::reschedule_after(&ctx.db, next, job.id).await?;
+        Ok(())
+    });
+
+    // Attendance counters (`core.module_usage_daily`).
+    //
+    // The table says who used which application, which is the most personal
+    // thing the console counts — so it is the one whose window an operator must
+    // be able to shorten, and the purge honours the setting rather than a
+    // constant. A window of 0 keeps nothing at all: "measure nothing" has to be
+    // reachable from the settings page, not only by editing the source.
+    registry.register_fn(PURGE_MODULE_USAGE, |ctx, job| async move {
+        let raw: Option<serde_json::Value> =
+            sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'usage.retention_days'")
+                .fetch_optional(&ctx.db)
+                .await
+                .unwrap_or(None)
+                .flatten();
+        // Clamped like every other window read from a writable column: an absurd
+        // figure handed to `make_interval` is a statement that never returns.
+        let days = raw
+            .and_then(|v| v.as_i64())
+            .unwrap_or(DEFAULT_USAGE_RETENTION_DAYS)
+            .clamp(0, 3_650);
+
+        let deleted = sqlx::query(
+            "DELETE FROM core.module_usage_daily \
+              WHERE day < (CURRENT_DATE - make_interval(days => $1::int))",
+        )
+        .bind(days as i32)
+        .execute(&ctx.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Purge des compteurs de fréquentation échouée");
+            e
+        })?
+        .rows_affected();
+
+        if deleted > 0 {
+            tracing::info!(
+                purgées = deleted,
+                rétention_jours = days,
+                "Purge des compteurs de fréquentation des modules"
+            );
+        }
+
+        let next = NewJob::new(PURGE_MODULE_USAGE).delay(USAGE_PURGE_INTERVAL);
         queue::reschedule_after(&ctx.db, next, job.id).await?;
         Ok(())
     });
@@ -314,6 +418,16 @@ pub async fn schedule(db: &PgPool) {
     match queue::ensure_scheduled(db, NewJob::new(PURGE_DELETED_USERS)).await {
         Ok(Some(id)) => tracing::info!(job_id = %id, "Purge des comptes supprimés planifiée"),
         Ok(None) => tracing::debug!("Purge des comptes supprimés déjà planifiée"),
+        Err(_) => { /* already logged */ }
+    }
+    match queue::ensure_scheduled(db, NewJob::new(PURGE_FINISHED_JOBS)).await {
+        Ok(Some(id)) => tracing::info!(job_id = %id, "Purge des tâches terminées planifiée"),
+        Ok(None) => tracing::debug!("Purge des tâches terminées déjà planifiée"),
+        Err(_) => { /* already logged */ }
+    }
+    match queue::ensure_scheduled(db, NewJob::new(PURGE_MODULE_USAGE)).await {
+        Ok(Some(id)) => tracing::info!(job_id = %id, "Purge des compteurs de fréquentation planifiée"),
+        Ok(None) => tracing::debug!("Purge des compteurs de fréquentation déjà planifiée"),
         Err(_) => { /* already logged */ }
     }
     match queue::ensure_scheduled(db, NewJob::new(STORAGE_USAGE_RECONCILE)).await {

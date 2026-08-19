@@ -16,8 +16,15 @@ import { isFailing, SEVERITY_RANK } from './types'
  */
 export const HEALTH_KEY = ['admin-health-checks'] as const
 
-export function useHealthChecks() {
+/**
+ * `enabled` exists for the one caller that lives OUTSIDE the administration:
+ * the top-bar indicator is mounted by the shell, which every signed-in account
+ * renders. Without it, a regular user would fire an administration request on
+ * every page load just to be told no.
+ */
+export function useHealthChecks(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: HEALTH_KEY,
     queryFn: () => api.get<HealthReport>('/admin/health-checks').then(r => r.data),
     // The server caches its evaluation for a minute; polling faster only costs

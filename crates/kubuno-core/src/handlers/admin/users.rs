@@ -194,6 +194,17 @@ pub async fn create_user(
         return Err(AppError::Conflict("Email ou username déjà utilisé".into()));
     }
 
+    // The password policy of the unit the account is being created in
+    // (migration `000115`). An administrator is not exempt from the policy they
+    // set: an account handed out below the instance's own minimum would be a
+    // permanent exception nobody would ever notice again.
+    let policy = crate::settings::password_policy::PasswordPolicy::for_new_account(
+        &state.db,
+        dto.org_unit_id,
+    )
+    .await?;
+    policy.check(&dto.password)?;
+
     let hash = crate::crypto::password::hash_password(&dto.password)
         .map_err(AppError::Internal)?;
 
@@ -211,8 +222,9 @@ pub async fn create_user(
     let mut tx = audit.begin(&state.db).await?;
 
     let user = sqlx::query_as::<_, User>(
-        r#"INSERT INTO core.users (email, username, password_hash, display_name, role, quota_bytes, org_unit_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+        r#"INSERT INTO core.users (email, username, password_hash, display_name, role, quota_bytes,
+                                   org_unit_id, password_changed_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
            RETURNING *"#,
     )
     .bind(&dto.email)
@@ -225,6 +237,13 @@ pub async fn create_user(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| { tracing::error!(error = %e, "create_user: insertion"); AppError::Database(e) })?;
+
+    // The password the account was handed enters the history straight away:
+    // otherwise "no reuse" would let its owner change it once and set it back to
+    // the one an administrator typed — the single password most likely to have
+    // been written down or sent over a chat.
+    crate::settings::password_policy::remember(&mut tx, user.id, &hash, policy.history_depth)
+        .await?;
 
     // `role = 'admin'` on the legacy surface means "instance super-administrator";
     // materialise the assignment so the account is visible to the whole

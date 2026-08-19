@@ -923,12 +923,46 @@ pub async fn internal_module_settings(
         .ok_or(AppError::Forbidden)?
         .to_string();
 
+    build_module_settings(&state.db, &module_id).await
+}
+
+/// The same read, but the module is named by the URL rather than derived from
+/// the secret it presented.
+///
+/// This is what a module uses on an instance that has NOT enabled per-module
+/// derived secrets: every module then presents the master secret, which
+/// authenticates the caller as being inside the instance but does not IDENTIFY
+/// it, so the secret-only route above answers `403` to all of them. Here the id
+/// in the path says whose settings to return, and the internal secret is the
+/// proof of belonging — exactly the trust every other `/internal/modules/:id/*`
+/// route (heartbeat, unregister) already extends to the master secret.
+///
+/// When derived secrets ARE in force the caller is identified as well, and
+/// [`ensure_caller_is`] then holds it to its own id — a module can never read
+/// another module's settings. So the URL is a convenience for the shared-secret
+/// deployment, never a way around the isolation of the derived one.
+pub async fn internal_module_settings_by_id(
+    State(state): State<AppState>,
+    internal: InternalRequest,
+    AxumPath(module_id): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    ensure_caller_is(&internal, &module_id)?;
+    build_module_settings(&state.db, &module_id).await
+}
+
+/// The instance-scoped settings of one module, keyed by their SHORT name (the
+/// `<module>.` prefix stripped) with the effective value — the stored one, or
+/// the declared default when nothing was ever set.
+async fn build_module_settings(
+    db: &sqlx::PgPool,
+    module_id: &str,
+) -> Result<Json<serde_json::Value>, AppError> {
     let rows: Vec<(String, serde_json::Value, Option<serde_json::Value>)> = sqlx::query_as(
         "SELECT key, value, default_value FROM core.settings \
          WHERE module_id = $1 AND scope IN ('global', 'overridable')",
     )
-    .bind(&module_id)
-    .fetch_all(&state.db)
+    .bind(module_id)
+    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, module = %module_id, "réglages internes du module");

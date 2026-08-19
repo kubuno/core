@@ -56,7 +56,7 @@ pub struct TotpCodeDto {
     )
 )]
 pub async fn get_me(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     AuthUser(user): AuthUser,
     ctx: crate::authz::AdminCtx,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -70,7 +70,24 @@ pub async fn get_me(
         privileges.is_admin = true;
     }
 
-    Ok(Json(json!({ "user": user, "privileges": privileges })))
+    // Per-account feature switches: the settings that decide whether a whole
+    // surface EXISTS for this person, as opposed to what they may do inside one.
+    //
+    // Served here rather than discovered by the interface calling the feature's
+    // own route, because "is it there?" must be answered before the first paint:
+    // a section that appears half a second after the page did reads as a defect,
+    // and the answer depends on the scope chain (unit, group, account), which
+    // only the server can walk.
+    let features = json!({
+        "data_export_self_service":
+            crate::data_export::policy::self_service_enabled(&state.db, user.id).await,
+    });
+
+    Ok(Json(json!({
+        "user": user,
+        "privileges": privileges,
+        "features": features,
+    })))
 }
 
 /// Flux d'activité personnel : derniers événements de l'utilisateur connecté,
@@ -317,20 +334,43 @@ pub async fn change_password(
         ));
     }
 
+    // The policy of THIS account's scope (migration `000115`): account →
+    // groups → its unit and the units above → instance. Read before hashing so
+    // a refused password never costs an argon2id.
+    let policy =
+        crate::settings::password_policy::PasswordPolicy::for_user(&state.db, user.id).await?;
+    policy.check(&dto.new_password)?;
+    crate::settings::password_policy::reject_reuse(
+        &state.db,
+        &policy,
+        user.id,
+        &dto.new_password,
+    )
+    .await?;
+
     let new_hash = crate::crypto::password::hash_password(&dto.new_password)
         .map_err(AppError::Internal)?;
 
     let mut tx = state.db.begin().await?;
 
     // Clearing must_change_password here is what lifts the forced-change screen
-    // and re-opens administrative writes.
+    // and re-opens administrative writes. `password_changed_at` restarts the
+    // expiry clock — and is what a forced change, once made, actually resets.
     sqlx::query(
-        "UPDATE core.users SET password_hash = $1, must_change_password = FALSE WHERE id = $2",
+        "UPDATE core.users \
+            SET password_hash = $1, must_change_password = FALSE, password_changed_at = NOW() \
+          WHERE id = $2",
     )
     .bind(&new_hash)
     .bind(user.id)
     .execute(&mut *tx)
     .await?;
+
+    // In the same transaction as the change: a history that commits without the
+    // password it describes would make the no-reuse rule refuse a password the
+    // account never had, or accept one it still has.
+    crate::settings::password_policy::remember(&mut tx, user.id, &new_hash, policy.history_depth)
+        .await?;
 
     sqlx::query(
         "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'password_change'

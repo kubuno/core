@@ -133,6 +133,28 @@ pub mod keys {
     /// trusted with than "may edit a setting". Changing the *policy* stays
     /// governed by [`SETTINGS_MANAGE`], through the ordinary settings route.
     pub const BACKUP_MANAGE: &str = "core.backup.manage";
+    /// Reading the data-export history, its progress, and downloading an archive
+    /// that has been produced (`crate::data_export`).
+    ///
+    /// Its own key rather than a reuse of [`AUDIT_READ`]: the page names every
+    /// account an archive covered and hands out the archive itself. Whoever may
+    /// read the audit trail may legitimately be denied that.
+    pub const DATA_EXPORT_READ: &str = "core.data_export.read";
+    /// Triggering the production of an archive, cancelling one, deleting one.
+    ///
+    /// Held apart from every other administrative key, and granted by no seeded
+    /// role — the same treatment [`RULES_MANAGE`] gets, for the same kind of
+    /// reason. One archive concentrates everything the instance holds about
+    /// everyone, and it is meant to leave the server. "Can administer" must not
+    /// imply "can walk out with all of it", and an operator who needs this must
+    /// be given it deliberately, by somebody who can see they now hold it.
+    ///
+    /// Three further controls ride on top and are not expressible as a
+    /// privilege: every administrator is alerted the instant an export starts,
+    /// the archive cannot be downloaded until the configured hold has elapsed,
+    /// and the requesting account must meet the age and second-factor
+    /// prerequisites of the policy.
+    pub const DATA_EXPORT_EXECUTE: &str = "core.data_export.execute";
     /// Opening the alert centre (`crate::alerts`).
     pub const ALERTS_READ: &str = "core.alerts.read";
     /// Taking, assigning, closing or ignoring an alert, and running the actions
@@ -167,4 +189,16 @@ pub mod keys {
     /// to this instance and — where the registration policy is on — who may open
     /// an account at all. That is a wider power than editing a setting.
     pub const DOMAINS_MANAGE: &str = "core.domains.manage";
+    /// Opening the data-migration page: the campaigns, which source account is
+    /// mapped to which local one, and how far each has got.
+    pub const DATA_MIGRATION_READ: &str = "core.data_migration.read";
+    /// Composing a campaign, storing the source credentials, starting it,
+    /// interrupting it and retrying an account.
+    ///
+    /// Held apart from [`SETTINGS_MANAGE`] and from [`USERS_UPDATE`]: running a
+    /// migration authenticates against a third-party server on behalf of the
+    /// whole organisation and writes into other people's mailboxes. Neither of
+    /// the two neighbouring keys names that power, and granting one of them to
+    /// obtain it would grant a great deal else.
+    pub const DATA_MIGRATION_MANAGE: &str = "core.data_migration.manage";
 }

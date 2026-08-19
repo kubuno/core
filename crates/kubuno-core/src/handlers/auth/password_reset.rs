@@ -63,6 +63,19 @@ pub async fn forgot_password(
         return ok;
     };
 
+    // `auth.self_service_recovery`, resolved for THIS account (migration
+    // `000115`): an organisational unit whose people must go through a human
+    // gets no link. Read after the lookup and answered with the same `ok` as
+    // every other branch — the route stays deaf, and an administrator can still
+    // reset the password from the console.
+    if !crate::settings::password_policy::self_service_recovery_allowed(&state.db, user_id).await {
+        tracing::info!(
+            user_id = %user_id,
+            "Réinitialisation autonome refusée par la politique de la portée"
+        );
+        return ok;
+    }
+
     let (raw_token, token_hash) = token::generate_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(mailer::RESET_TOKEN_HOURS);
 
@@ -141,18 +154,44 @@ pub async fn reset_password(
     .await?
     .ok_or_else(|| AppError::Validation("Token invalide ou expiré".into()))?;
 
+    // Holding a valid link is not an exemption from the policy: this is the one
+    // route on which a password is chosen by somebody who has just proved
+    // nothing but access to a mailbox, so it is the last place to relax it.
+    // Applied before hashing, like everywhere else.
+    let policy =
+        crate::settings::password_policy::PasswordPolicy::for_user(&state.db, vt.user_id).await?;
+    policy.check(&dto.new_password)?;
+    crate::settings::password_policy::reject_reuse(
+        &state.db,
+        &policy,
+        vt.user_id,
+        &dto.new_password,
+    )
+    .await?;
+
     let new_hash = password::hash_password(&dto.new_password)
         .map_err(AppError::Internal)?;
 
     let mut tx = state.db.begin().await?;
 
-    // The user picked this password themselves: the forced-change flag is lifted.
+    // The user picked this password themselves: the forced-change flag is lifted,
+    // and the expiry clock restarts.
     sqlx::query(
-        "UPDATE core.users SET password_hash = $1, must_change_password = FALSE WHERE id = $2",
+        "UPDATE core.users \
+            SET password_hash = $1, must_change_password = FALSE, password_changed_at = NOW() \
+          WHERE id = $2",
     )
     .bind(&new_hash)
     .bind(vt.user_id)
     .execute(&mut *tx)
+    .await?;
+
+    crate::settings::password_policy::remember(
+        &mut tx,
+        vt.user_id,
+        &new_hash,
+        policy.history_depth,
+    )
     .await?;
 
     sqlx::query(

@@ -107,6 +107,8 @@ export function buildItemMenuItems(
       label: caps.trash ? (isFile ? tr('ctx.trash') : tr('ctx.trash_folder')) : tr('common.delete'),
       icon: <Trash2 size={14} />,
       danger: true,
+      // Mirrors the Delete key wired in useExplorerKeyboard (same scheduleDelete path).
+      shortcut: 'Suppr',
       disabled: trashDisabled,
       // caps.trash → onTrash (file) / onDelete (folder) ; sinon onDelete.
       onClick: () => (caps.trash && isFile ? h.onTrash : h.onDelete)(),

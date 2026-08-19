@@ -345,6 +345,7 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_login_at: None,
+            password_changed_at: None,
             totp_enabled: false,
             must_change_password: false,
             admin_2fa_grace_until: None,

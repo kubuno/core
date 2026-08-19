@@ -62,11 +62,17 @@ export interface BreadcrumbProps {
   className?: string
   /** Longest a single segment may grow before it truncates. */
   maxSegmentWidth?: string
+  /**
+   * Scale of the trail. `lg` turns it into the page's heading — which is what
+   * the file explorer's trail actually is — without touching the consoles that
+   * render it as a secondary line.
+   */
+  size?: 'sm' | 'lg'
 }
 
-const LINK =
-  'inline-flex items-center text-sm font-medium text-text-secondary hover:text-primary transition-colors ' +
-  'rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary'
+const LINK_BASE =
+  'inline-flex items-center transition-colors rounded-sm outline-none ' +
+  'focus-visible:ring-2 focus-visible:ring-primary'
 
 export function BreadcrumbBase({
   items,
@@ -75,7 +81,14 @@ export function BreadcrumbBase({
   trailing,
   className = '',
   maxSegmentWidth = '14rem',
+  size = 'sm',
 }: BreadcrumbProps) {
+  const large = size === 'lg'
+  // At heading size the medium weight reads as bold; the reference trail is set
+  // in the regular face.
+  const TEXT = large ? 'text-2xl font-normal' : 'text-sm font-medium'
+  const LINK = `${LINK_BASE} ${TEXT} text-text-secondary hover:text-primary`
+  const chevron = large ? 20 : 14
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   if (items.length === 0) return null
 
@@ -108,7 +121,7 @@ export function BreadcrumbBase({
     if (isLast) {
       return (
         <span
-          className="inline-flex items-center text-sm font-medium text-text-primary"
+          className={`inline-flex items-center ${TEXT} text-text-primary`}
           title={crumb.title}
         >
           {content}
@@ -148,11 +161,11 @@ export function BreadcrumbBase({
           const isLast = index === shown.length - 1
           return (
             <li key={index} className="inline-flex min-w-0 items-center gap-1.5" aria-current={isLast ? 'page' : undefined}>
-              {index > 0 && <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-text-tertiary" />}
+              {index > 0 && <ChevronRight size={chevron} aria-hidden="true" className="shrink-0 text-text-tertiary" />}
               {segment(crumb, isLast)}
               {index === collapseAfter && (
                 <>
-                  <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-text-tertiary" />
+                  <ChevronRight size={chevron} aria-hidden="true" className="shrink-0 text-text-tertiary" />
                   <button
                     type="button"
                     aria-label={`${hidden.length}`}

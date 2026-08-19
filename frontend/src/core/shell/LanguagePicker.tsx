@@ -24,7 +24,7 @@ export default function LanguagePicker({ compact = false, dark = false }: { comp
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <button
-          className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-full flex items-center justify-center transition-colors focus:outline-none ${
+          className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors focus:outline-none ${
             dark ? 'text-white/75 hover:bg-white/15 data-[state=open]:bg-white/15' : 'text-text-secondary hover:bg-surface-3 data-[state=open]:bg-surface-3'}`}
           aria-label={t('header.language')}
           title={t('header.language')}

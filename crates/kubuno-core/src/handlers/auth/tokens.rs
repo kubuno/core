@@ -40,6 +40,7 @@ pub(super) async fn issue_full_tokens(
     device_type: Option<&str>,
     client_type: Option<&str>,
     auth_strength: AuthStrength,
+    requested_slot: Option<u8>,
 ) -> Result<Response, AppError> {
     // Durées de session lues à chaud depuis core.settings (configurables en admin)
     let ttls = crate::config::runtime::security_ttls(&state.db, &state.settings).await;
@@ -159,19 +160,55 @@ pub(super) async fn issue_full_tokens(
         .into_response());
     }
 
+    // ── Multi-account slot (Google-style) ────────────────────────────────────
+    // Besides the active-session cookie, the refresh token is mirrored into a
+    // per-account `kb_account_<slot>` cookie: the browser's cookie jar IS the
+    // roster of signed-in accounts (`GET /auth/accounts` enumerates it,
+    // `POST /auth/switch` re-points `refresh_token` at another slot). Web
+    // tokens never rotate, so the mirror cannot drift from the active cookie.
+    let slot = resolve_account_slot(state, headers, user.id, requested_slot).await?;
+    // A previous session parked in this slot (re-connecting the same account,
+    // or a dead row being overwritten) must not linger as an orphan.
+    if let Some(previous_raw) = read_slot_cookie(headers, slot) {
+        if previous_raw != refresh_raw {
+            let previous_hash = crate::crypto::token::hash_token(&previous_raw);
+            if let Err(e) = sqlx::query(
+                "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'relogin'
+                 WHERE token_hash = $1 AND user_id = $2 AND revoked_at IS NULL",
+            )
+            .bind(&previous_hash)
+            .bind(user.id)
+            .execute(&state.db)
+            .await
+            {
+                tracing::error!(error = %e, "login: révocation de l'ancienne session du slot");
+            }
+        }
+    }
+
     let secure_flag = state.settings.server.secure_cookies;
     let secure = if secure_flag { "; Secure" } else { "" };
     let cookie = format!(
         "refresh_token={refresh_raw}; HttpOnly{secure}; Path=/api/v1/auth; SameSite=Strict; Max-Age={}",
         ttls.refresh_ttl.as_secs()
     );
+    let slot_cookie = format!(
+        "{}={refresh_raw}; HttpOnly{secure}; Path=/api/v1/auth; SameSite=Strict; Max-Age={}",
+        slot_cookie_name(slot),
+        ttls.refresh_ttl.as_secs()
+    );
 
     let mut response = (
         StatusCode::OK,
         [(header::SET_COOKIE, cookie)],
-        Json(LoginResponse { access_token, user }),
+        Json(LoginResponse { access_token, user, slot: Some(slot) }),
     )
         .into_response();
+    // APPEND, not a second tuple entry: the header-array IntoResponse inserts
+    // by name, so a duplicated SET_COOKIE key would keep only the last one.
+    if let Ok(value) = header::HeaderValue::from_str(&slot_cookie) {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
 
     // A minted correlation cookie rides on the same response. Without it the
     // next sign-in falls back to the fingerprint and the same browser appears
@@ -201,4 +238,98 @@ pub(super) fn refresh_cookie(headers: &HeaderMap) -> Option<String> {
         .unwrap_or("")
         .split(';')
         .find_map(|part| part.trim().strip_prefix("refresh_token=").map(str::to_string))
+}
+
+// ── Multi-account slots ──────────────────────────────────────────────────────
+
+/// Ten simultaneous accounts per browser, like Google.
+pub(super) const MAX_ACCOUNT_SLOTS: u8 = 10;
+
+/// Cookie holding the refresh token of the account parked in `slot`.
+pub(super) fn slot_cookie_name(slot: u8) -> String {
+    format!("kb_account_{slot}")
+}
+
+/// Value of the `kb_account_<slot>` cookie, if that slot is occupied.
+pub(super) fn read_slot_cookie(headers: &HeaderMap, slot: u8) -> Option<String> {
+    let name = slot_cookie_name(slot);
+    headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .find_map(|part| {
+            part.trim()
+                .strip_prefix(name.as_str())
+                .and_then(|rest| rest.strip_prefix('='))
+                .map(str::to_string)
+        })
+}
+
+/// A `Set-Cookie` clearing the slot's cookie.
+pub(super) fn clear_slot_cookie(slot: u8) -> String {
+    format!(
+        "{}=; HttpOnly; Path=/api/v1/auth; SameSite=Strict; Max-Age=0",
+        slot_cookie_name(slot)
+    )
+}
+
+/// Which slot a fresh web sign-in should occupy: the slot explicitly requested
+/// (re-connecting an account row from the panel), else the slot already holding
+/// a LIVE session of the same user (signing in twice must not duplicate the
+/// account), else the first slot that is empty or holds a dead session.
+async fn resolve_account_slot(
+    state: &AppState,
+    headers: &HeaderMap,
+    user_id: uuid::Uuid,
+    requested: Option<u8>,
+) -> Result<u8, AppError> {
+    if let Some(slot) = requested {
+        if slot >= MAX_ACCOUNT_SLOTS {
+            return Err(AppError::Validation("Emplacement de compte invalide".into()));
+        }
+        return Ok(slot);
+    }
+    let mut first_free: Option<u8> = None;
+    for slot in 0..MAX_ACCOUNT_SLOTS {
+        match read_slot_cookie(headers, slot) {
+            None => {
+                if first_free.is_none() {
+                    first_free = Some(slot);
+                }
+            }
+            Some(raw) => {
+                let hash = crate::crypto::token::hash_token(&raw);
+                let row: Option<(uuid::Uuid, bool)> = sqlx::query_as(
+                    "SELECT user_id, (revoked_at IS NULL AND expires_at > NOW())
+                     FROM core.refresh_tokens WHERE token_hash = $1",
+                )
+                .bind(&hash)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "login: résolution du slot de compte");
+                    AppError::Database(e)
+                })?;
+                match row {
+                    // This browser already holds a live session of this very
+                    // account → same slot (the old token gets revoked upstream).
+                    Some((uid, true)) if uid == user_id => return Ok(slot),
+                    // Live session of ANOTHER account → occupied.
+                    Some((_, true)) => {}
+                    // Dead or unknown token → reusable.
+                    _ => {
+                        if first_free.is_none() {
+                            first_free = Some(slot);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    first_free.ok_or_else(|| {
+        AppError::Validation(format!(
+            "Nombre maximal de comptes simultanés atteint ({MAX_ACCOUNT_SLOTS})"
+        ))
+    })
 }

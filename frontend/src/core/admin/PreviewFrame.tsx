@@ -38,7 +38,7 @@ export default function PreviewFrame({ theme, children }: { theme: ThemeDef; chi
     const reset = document.createElement('style')
     reset.textContent =
       ':host{display:block;-webkit-font-smoothing:antialiased}' +
-      '.kb-preview-mount{padding:1.25rem;background:var(--body-bg,#f1f4f8)}'
+      '.kb-preview-mount{padding:1.25rem;background:var(--body-bg,#f8fafd)}'
     shadow.appendChild(reset)
 
     // Clone the app's stylesheets — skip the live theme so it cannot leak in.

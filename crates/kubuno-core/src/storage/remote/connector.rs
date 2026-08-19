@@ -34,6 +34,14 @@ impl RemoteEntry {
 
 #[derive(Debug, Error)]
 pub enum RemoteError {
+    /// The mount's stored config could not be decrypted. Its key derives from
+    /// `server.internal_secret`, which is therefore the only way back: once that
+    /// secret is rotated, every config sealed with the previous one is lost for
+    /// good. Kept apart from [`RemoteError::Auth`] on purpose — nothing was sent
+    /// to the remote here, and the only way forward is to reconnect the mount.
+    #[error("Identifiants du montage illisibles")]
+    ConfigUnreadable,
+
     #[error("Authentification échouée: {0}")]
     Auth(String),
 

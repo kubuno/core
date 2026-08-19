@@ -57,7 +57,9 @@ function SidebarNavItemBase({
   // style is immune to that race. Same approach as LeftRail, which already
   // drives its hover from JS for this exact reason.
   const ACTIVE_BG = 'var(--color-primary-light, #d3e3fd)'
-  const HOVER_BG  = 'color-mix(in srgb, var(--color-primary) 12%, white)'
+  // Hover = plain grey (user request), not a primary tint; the ACTIVE row is
+  // untouched (bgFor keeps ACTIVE_BG whatever the hover state).
+  const HOVER_BG  = 'var(--kb-sidebar-hover, #e8eaed)'
   const bgFor = (a: boolean, hovered: boolean) =>
     a ? ACTIVE_BG : hovered ? HOVER_BG : 'transparent'
   const hoverHandlers = (a: boolean) => ({

@@ -27,6 +27,9 @@ pub struct TotpVerifyDto {
     pub totp_session: String,
     /// Idem qu'au login : 'native'/'desktop' reçoivent le refresh en JSON.
     pub client_type:  Option<String>,
+    /// Multi-compte : emplacement demandé (repassé depuis le login).
+    #[serde(default)]
+    pub slot:         Option<u8>,
 }
 
 /// How the second factor was cleared, for the audit trail.
@@ -170,6 +173,7 @@ pub async fn totp_verify(
         None,
         dto.client_type.as_deref(),
         strength,
+        dto.slot,
     )
     .await
 }

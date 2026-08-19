@@ -100,7 +100,24 @@ export default function AdminBreadcrumb({ tab }: { tab: string }) {
     <Breadcrumb
       items={items}
       ariaLabel={t('admin.breadcrumb')}
-      className="mb-4 min-h-6"
+      // Discreet on purpose: the trail is context, the title below it is the
+      // page. The shared component ships a 14px MEDIUM link; the weight is what
+      // made it compete with the 22px heading below, not the size — so only the
+      // weight and the colour are toned down here, and the body size (14px) is
+      // kept: a path one reads to navigate has no business being metadata-sized.
+      //
+      // Written as descendant variants (`[&_a]`) so the override wins on
+      // specificity — a second utility on the same element would be settled by
+      // the stylesheet's order, not by ours.
+      // `no-print`: a trail is a way of NAVIGATING back, and a sheet of paper
+      // has nowhere to go. It matters most above a printed report, where the
+      // document carries its own head, but it is noise on every printed admin
+      // page — so it is suppressed here rather than per section.
+      className="no-print min-h-5
+                 [&_a]:text-[length:var(--kb-text-body)] [&_a]:font-normal
+                 [&_a]:text-text-tertiary [&_a:hover]:text-primary
+                 [&_li>span]:text-[length:var(--kb-text-body)] [&_li>span]:font-normal
+                 [&_li>span]:text-text-secondary"
     />
   )
 }

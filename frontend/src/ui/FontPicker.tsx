@@ -211,11 +211,11 @@ export function FontPicker({
         className="w-full flex items-center justify-between gap-1 select-none"
         style={{
           height, padding: '0 6px 0 10px', fontSize, color: P.text,
-          // The TRIGGER always reads in Roboto Flex, whatever font is selected — the
+          // The TRIGGER always reads in the UI face, whatever font is selected — the
           // field's own label must stay legible and consistent, not morph into the
           // picked face (a serif/script value made the field itself hard to read).
           // The dropdown OPTIONS still preview each in their own font (below).
-          fontFamily: '"Roboto Flex", var(--font-family-sans, "Segoe UI"), system-ui, sans-serif',
+          fontFamily: '"Google Sans Text", var(--font-family-sans, "Segoe UI"), system-ui, sans-serif',
           background: open ? P.active : undefined,
           border: `1px solid ${ghost ? 'transparent' : P.border}`,
           borderRadius: 'var(--radius-md)', cursor: disabled ? 'not-allowed' : 'pointer',

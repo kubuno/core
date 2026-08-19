@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import { ThemeScopeContext } from '@ui'
 import { ContextMenuProvider } from './ContextMenuProvider'
-import { useToolbarStore, resolveToolbarConfig, moduleAreaPaddingStyle } from '../store/toolbarStore'
+import { useToolbarStore, resolveToolbarConfig, moduleAreaPaddingStyle, MODULE_AREA_PADDING } from '../store/toolbarStore'
 import { ModuleSettingsRegistry } from '../slots/SlotRegistry'
 import { useAppearanceStore } from '../store/appearanceStore'
 
@@ -29,9 +29,13 @@ export default function ModuleArea() {
   const isSettings    = ModuleSettingsRegistry.isSettingsRoute(pathname)
   const noPadding     = isSettings || toolbarConfig?.noPadding
   const Toolbar       = isSettings ? null : (toolbarConfig?.ToolbarComponent ?? null)
-  // Marge intérieure opt-in demandée par le module (aucune par défaut). Ignorée
-  // en mode full-bleed (`noPadding`), qui laisse le module gérer son chrome.
-  const padStyle      = noPadding ? undefined : moduleAreaPaddingStyle(toolbarConfig?.padding)
+  /* Marge intérieure de la zone centrale : 24px PAR DÉFAUT — le contenu ne doit
+   * jamais mourir contre les bords, et surtout pas contre le bas. Un module peut
+   * demander une autre valeur (`padding`) ; le mode full-bleed (`noPadding`) reste
+   * prioritaire et n'en reçoit aucune, puisqu'il gère son propre chrome. */
+  const padStyle      = noPadding
+    ? undefined
+    : (moduleAreaPaddingStyle(toolbarConfig?.padding) ?? moduleAreaPaddingStyle(MODULE_AREA_PADDING))
   // Identifiant du module actif (1er segment d'URL) → thème par module via CSS
   // (ex: [data-module="calendar"] surcharge --color-primary).
   const moduleId = pathname.split('/').filter(Boolean)[0] || 'home'

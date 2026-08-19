@@ -8,7 +8,12 @@
  * module utilities winning over the preflight reset. Order is locked here so
  * the host establishes it before any module CSS loads at runtime. */
 @layer components, properties, theme, base, kubuno-module, utilities;
-@import url("https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&family=DM+Mono:wght@400;500&display=swap");
+/* Platform faces (Google Sans Flex, Roboto Flex, Inter, DM Mono) are
+ * SELF-HOSTED: shipped with the drive module into System/Fonts and served back
+ * by its Google-Fonts-style endpoint (`/api/v1/drive/fonts/css2`) — no
+ * third-party CDN at all. Fonts are fetched lazily by the browser, so a
+ * declared-but-unused face costs nothing until some text actually uses it. */
+@import url("/api/v1/drive/fonts/css2?family=Google+Sans+Text&family=Google+Sans&family=Roboto&family=DM+Mono&display=swap");
 @import "tailwindcss";
 @import "./theme.css";
 
@@ -26,10 +31,10 @@
 /* Body font, same mechanism as the weight override above: each module bundle
  * re-declares `--font-family-sans` at :root and loads AFTER the host, so only
  * `!important` reaches all 18 of them without a rebuild.
- * TRIAL: Roboto Flex, a variable face carrying a `wdth` axis — unlike DM Sans,
- * it can actually be condensed via `font-stretch` (not applied yet). */
+ * Google's own product stack: Google Sans Text (body copy), Google Sans
+ * (display), Roboto — all three self-hosted from System/Fonts. */
 :root {
-  --font-family-sans: "Roboto Flex", "DM Sans", Inter, system-ui, sans-serif !important;
+  --font-family-sans: "Google Sans Text", "Google Sans", Roboto, Arial, sans-serif !important;
 }
 
 /* Buttons are NEVER bold — project-wide rule. Colour and fill carry the
@@ -73,6 +78,13 @@ button {
  * On borne donc en X les conteneurs à défilement VERTICAL de la sidebar. Ciblé sur ces
  * utilitaires (déjà scrollables en Y) pour ne pas transformer un `overflow-y: visible`
  * en `auto`. Non-layered → bat l'utilitaire Tailwind équivalent. */
+/* Left-sidebar rows: ONE hover colour for the whole product. The generic
+ * SidebarLink, the shared SidebarNavItem AND the bespoke sidebars of the
+ * modules (drive tree, mail labels, calendar, chat, assistant, maps) all read
+ * this token — inline styles resolve it live, so retuning it here restyles
+ * every module without a rebuild. Active rows keep their own background. */
+:root { --kb-sidebar-hover: #e8eaed; }
+
 [data-app-sidebar] .overflow-y-auto,
 [data-app-sidebar] .overflow-y-scroll,
 [data-app-sidebar] .overflow-auto,
@@ -218,7 +230,7 @@ body {
   font-size: 14px;
   font-weight: 400;
   color: var(--color-text-primary);
-  background: var(--body-bg, #f1f4f8);
+  background: var(--body-bg, #f8fafd);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -360,6 +372,22 @@ body[data-kb-dictating] [data-doc-scroll] > * { will-change: auto !important; }
  * ───────────────────────────────────────────────────────────────────────────── */
 .print-only { display: none; }
 
+/* Le document d'un rapport vit dans une TABLE, dont le `tfoot` devient le pied
+ * de page répété à l'impression (cf. `[data-report-sheet]` plus bas). À l'écran
+ * cette table ne doit rien faire : tout repasse en `block`, ce qui redonne
+ * exactement la mise en page d'avant l'enveloppe — largeur pleine, marges des
+ * blocs conservées, aucune cellule à dimensionner. */
+[data-report-sheet],
+[data-report-sheet] > tbody,
+[data-report-sheet] > tfoot,
+[data-report-sheet] > * > tr,
+[data-report-sheet] > * > tr > td {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+}
+
 @media print {
   html, body, #root {
     height: auto !important;
@@ -387,8 +415,259 @@ body[data-kb-dictating] [data-doc-scroll] > * { will-change: auto !important; }
   /* Couleurs fidèles (en-têtes intentionnels, badges, graphiques…). */
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
-  @page { margin: 1.5cm; }
+  /* ───────────────────────────────────────────────────────────────────────────
+   * MARGES DE PAGE — et pourquoi le bas est plus grand que les trois autres.
+   *
+   * Marges égales sur les quatre bords : AUCUNE bande n'est réservée ici pour
+   * le pied de page des rapports. C'est le `tfoot` de la table qui enveloppe le
+   * document qui réserve sa propre hauteur, sur chaque feuille, avant que le
+   * contenu ne soit coulé (voir `[data-report-sheet]` plus bas). Réserver en
+   * plus une bande dans `@page` ne ferait que blanchir le bas des pages.
+   * ───────────────────────────────────────────────────────────────────────── */
+  @page { margin: 15mm; }
+
+  /* Les règles « papier » des rapports ne vivent PLUS ici : elles s'appliquent
+   * aussi à l'écran, puisque la page d'un rapport EST une pile de feuilles
+   * (aperçu avant impression). Voir le bloc `[data-admin-report]` hors média,
+   * plus bas dans ce fichier. Ne restent ici que les trois choses qui n'ont de
+   * sens qu'au moment d'imprimer. */
+
+  /* Une feuille = une page. `break-after` sur toutes sauf la dernière, sinon
+     le navigateur sort une page blanche en fin de document.
+     ⚠ La pile redevient un BLOC : en `flex`, le moteur fragmente le conteneur
+     avant ses enfants et intercale des pages blanches (constaté : 4 feuilles →
+     6 pages, dont 2 vides). L'espacement d'écran (`gap`) disparaît avec, ce qui
+     est correct — sur papier, l'espace entre deux feuilles s'appelle une page
+     suivante. */
+  /* ⚠ LE DÉCALAGE QUI COÛTE UNE PAGE. Le panneau d'administration défile dans
+     un conteneur rembourré de 24 px. Sur papier ce rembourrage subsiste : la
+     première feuille commence à 24 px du bord, dépasse donc du bas et réclame
+     une deuxième page — d'où une page blanche en tête et un décompte faux (4
+     feuilles sortaient sur 5 pages, en paysage où la marge de manœuvre est la
+     plus faible). Une feuille doit commencer à l'ORIGINE de la page.
+     Mesuré, pas deviné : `Emulation.setEmulatedMedia` puis lecture des boîtes
+     — la première feuille était à `top: 24px`. */
+  /* TOUS les ancêtres d'une feuille, pas une liste de classes : le rembourrage
+     se trouvait sur le conteneur défilant du panneau, deux niveaux au-dessus de
+     `.kb-admin`, et une liste nommée l'aurait raté (elle l'a raté). `:has()`
+     désigne exactement « ce qui contient une feuille ». */
+  div:has([data-sheet]) { padding: 0 !important; margin: 0 !important; }
+
+  /* Le cadre qui borne la pile à l'écran (hauteur figée + `overflow: hidden`,
+     nécessaires parce qu'une `transform` peint plus petit sans réduire sa boîte)
+     doit se rouvrir sur papier : borné, il est MONOLITHIQUE pour le moteur
+     paginé, qui répondait par une page blanche en tête. */
+  /* Le plan de travail est une affordance d'ÉCRAN : sur papier il ne resterait
+     qu'un aplat gris coûteux en encre, sous des feuilles qui sont déjà la page. */
+  [data-sheets-frame] {
+    height: auto !important;
+    overflow: visible !important;
+    background: none !important;
+  }
+  [data-sheets] {
+    /* L'aperçu réduit la pile pour la faire tenir dans le panneau ; sur papier,
+       la feuille EST le papier — aucune mise à l'échelle. */
+    transform: none !important;
+    display: block !important;
+    gap: 0 !important;
+  }
+  [data-sheet] {
+    break-after: page;
+    box-shadow: none !important;
+    margin: 0 !important;
+    outline: 0 !important;
+  }
+  [data-sheet]:last-child { break-after: auto; }
 }
+
+/* ═════════════════════════════════════════════════════════════════════════════
+ * RAPPORTS D'ADMINISTRATION — LE PAPIER (`core/admin/reports/paged/`)
+ *
+ * Ces règles ne sont PAS dans `@media print`, et c'est le point : la page d'un
+ * rapport n'affiche plus un document long qu'on imprimera plus tard, elle
+ * affiche la PILE DE FEUILLES telle qu'elle sortira. Le même CSS habille donc
+ * l'écran et le papier — sans quoi l'aperçu mentirait sur ce qu'il montre.
+ *
+ * La pagination elle-même n'est pas ici : le CSS ne sait pas couper un tableau
+ * ailleurs qu'où le moteur le décide, et ne sait pas compter les pages. C'est
+ * `paginate.ts` qui répartit les blocs, à partir de hauteurs mesurées dans le
+ * DOM (`PagedPreview.tsx`). Ici, uniquement l'apparence.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Une feuille. Dimensions et marges viennent de `geometry.ts` en style inline
+   (elles dépendent du format choisi) ; ne restent ici que l'aspect et le fait
+   que RIEN ne dépasse : une feuille est un bord dur, à l'écran comme sur le
+   papier. Le paginateur garantit que le contenu tient en HAUTEUR ; en largeur,
+   ce sont les tableaux qui se replient (`overflow-wrap`, plus bas). */
+/* Le PLAN DE TRAVAIL, derrière les feuilles : un gris sombre, comme dans les
+   visionneuses. Une feuille blanche sur un fond blanc n'a pas de bord ; sur ce
+   gris, elle en a un, et son ombre portée veut dire quelque chose.
+   Le rembourrage est compté dans la hauteur calculée de la pile
+   (`SHEET_PAD`) : oublié là-bas, il rognerait la dernière feuille. */
+[data-sheets-frame] {
+  /* Jeton de « fond d'atelier / visionneuse », porté dans theme.css et les thèmes
+     empaquetés. Le repli en dur reste : cette feuille de style est chargée par
+     des bundles de modules qui embarquent leur propre copie de theme.css, et
+     tous ne l'auront pas au même moment. La valeur de repli n'est PAS une
+     référence à l'encre sombre d'office, qui vaut la même chose par hasard. */
+  background: var(--color-viewer-backdrop, #3c4043);
+  border-radius: var(--radius-xl, 8px);
+}
+[data-sheets] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 48px;
+}
+[data-sheet] {
+  position: relative;
+  overflow: hidden;
+  background-color: #fff;
+  color: #000;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 8px 24px rgb(0 0 0 / 12%);
+}
+[data-sheet-body] { display: flex; flex-direction: column; height: 100%; }
+
+/* Le FILIGRANE n'est pas un élément : c'est le FOND de la feuille, un SVG en
+   `data:` (cf. `paged/watermark.ts`). Un `<div>` hors flux avait l'air correct à
+   l'écran et cassait l'impression — 22 feuilles sortaient sur 17 pages. Un fond
+   ne participe à aucune mise en page, il ne peut donc pas déplacer une coupure,
+   et il se peint derrière le texte sans avoir à trier des `z-index`.
+   L'URL vit dans une variable posée UNE fois sur la pile (et sur le rail), pas
+   sur chaque feuille : une image incorporée recopiée sur vingt-deux attributs
+   `style`, ce sont vingt-deux copies de l'image dans le DOM. */
+[data-sheet][data-o='portrait'],
+[data-sheet-face][data-o='portrait']  { background-image: var(--kb-stamp-p, none); }
+[data-sheet][data-o='landscape'],
+[data-sheet-face][data-o='landscape'] { background-image: var(--kb-stamp-l, none); }
+[data-sheet],
+[data-sheet-face] {
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+}
+[data-sheet-content] { flex: 1 1 auto; min-height: 0; }
+/* Le premier bloc d'une feuille ne porte pas la marge inter-blocs : elle
+   n'existe qu'ENTRE deux blocs, et le paginateur compte exactement ainsi. */
+[data-sheet-content] > :first-child { margin-top: 0 !important; }
+
+/* Le pied de page. Une seule ligne, toujours : une hauteur qui changerait d'une
+   feuille à l'autre décalerait la coupure calculée pour toutes les suivantes. */
+[data-sheet-footer] {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8mm;
+  margin-top: 4mm;
+  padding-top: 2mm;
+  border-top: 1px solid #ddd;
+  font-size: 9pt;
+  line-height: 1.3;
+  color: #555;
+  white-space: nowrap;
+}
+[data-sheet-footer] > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* La passe de mesure est rendue à la largeur exacte de la zone de contenu du
+   papier — c'est ce qui fait que les hauteurs relevées sont celles qu'auront
+   les blocs sur la feuille. Elle ne doit rien coûter visuellement. */
+[data-paged-measure] { position: absolute; visibility: hidden; pointer-events: none; }
+/* La marge haute des blocs est comptée par le paginateur (constante `GAP`), pas
+   mesurée : on la neutralise ici pour que `getBoundingClientRect` ne rende que
+   la boîte. */
+/* ⚠ Spécificité : la règle « papier » `[data-admin-report] [data-report-card]`
+   pose `margin: 4mm 0 0 0 !important` et est déclarée plus bas — à spécificité
+   égale, elle gagnait, et chaque bloc était mesuré 15 px (4 mm) trop haut. Le
+   sélecteur ci-dessous est doublé sur l'attribut pour passer devant. */
+[data-admin-report][data-paged-measure] [data-m] > * { margin-top: 0 !important; }
+
+/* ── L'aspect du document, écran et papier confondus ────────────────────────
+ * Le thème ne s'applique pas au papier : en thème sombre, `text-text-primary`
+ * vaut un gris très clair, invisible sur blanc. On repeint donc explicitement,
+ * quel que soit le thème affiché — sans toucher aux `background` des pastilles
+ * de légende, qui portent la seule information de couleur du document.
+ * `:where()` n'ajoute aucune spécificité : c'est `!important` qui l'emporte sur
+ * les utilitaires Tailwind, pas une course aux sélecteurs. */
+/* `background-COLOR`, jamais le raccourci `background` : celui-ci remettrait
+   `background-image` à zéro, et le filigrane EST une image de fond posée en
+   style inline par `PagedPreview` — un `!important` sur le raccourci l'effaçait
+   sans bruit (visible à l'écran, absent du papier). */
+[data-admin-report] { background-color: #fff !important; color: #000 !important; }
+[data-admin-report] :where(h1, h2, h3, h4, p, span, li, dt, dd, th, td, a, strong, code, text, svg) {
+  color: #000 !important;
+}
+/* L'ÉCHAPPATOIRE. Repeindre tout en noir est juste pour du texte, faux pour ce
+   qui porte une information de couleur : une pastille qui rattache une ligne à
+   sa part de camembert, une variation en vert ou en rouge. `[data-tone]` a une
+   spécificité supérieure au sélecteur ci-dessus (`:where()` n'en ajoute
+   aucune), il l'emporte donc sans surenchère de `!important`. */
+[data-admin-report] [data-tone] { color: inherit !important; }
+
+/* La barre de part, dans la colonne « Part ». Pas un décor : elle dit d'un coup
+   d'œil ce qu'une colonne de pourcentages ne dit qu'après calcul, et elle est
+   tracée à partir du chiffre imprimé juste à côté. */
+[data-share-track] {
+  display: inline-block;
+  width: 72px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 8%);
+  overflow: hidden;
+  vertical-align: middle;
+}
+[data-share-fill] { display: block; height: 100%; border-radius: 999px; }
+
+/* Le pic de la série. Un fond très pâle plutôt qu'un gras : la ligne se repère
+   en balayant la page, sans crier plus fort que le total. */
+[data-admin-report] [data-report-table] tr[data-peak] :is(td, th) {
+  background: rgb(26 115 232 / 8%) !important;
+  font-weight: 600;
+}
+
+/* Un filet à l'accent sous chaque titre de section : c'est le seul rappel de
+   couleur qui structure la page sans coûter d'encre. */
+[data-admin-report] [data-report-card] > h2 { border-bottom-color: #c9d6ea; }
+[data-admin-report] [data-report-summary] > h2 { border-bottom-color: var(--color-primary); }
+/* Le cadre arrondi est une affordance d'écran : sur une feuille il devient du
+   bruit, et la hiérarchie des titres suffit à séparer les blocs. */
+[data-admin-report] [data-report-card] {
+  /* TRANSPARENT, pas blanc : la feuille est déjà blanche, et un fond opaque
+     recouvrait le filigrane — on ne le voyait que dans les interstices entre
+     deux blocs, ce qui donnait des fragments de lettres au milieu de la page. */
+  background-color: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 4mm 0 0 0 !important;
+  padding: 0 !important;
+}
+/* Un filet sous chaque titre de section remplace la carte. */
+[data-admin-report] [data-report-card] > h2 {
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 1mm;
+}
+[data-admin-report] svg line { stroke: #999 !important; }
+
+[data-admin-report] [data-report-table] { width: 100%; border-collapse: collapse; }
+[data-admin-report] [data-report-table] :is(th, td) {
+  border: 1px solid #ccc !important;
+  padding: 1mm 2mm !important;
+  background-color: transparent !important;
+}
+[data-admin-report] [data-report-table] th { background: #f0f0f0 !important; }
+/* Une feuille n'a pas de bord droit négociable : une colonne qui refuse de se
+   rétrécir sort du papier et se fait rogner. On autorise donc la coupure à
+   l'intérieur d'un mot — une adresse repliée sur deux lignes reste lisible, une
+   adresse tronquée ne l'est plus. */
+[data-admin-report] [data-report-table] :is(th, td) { overflow-wrap: anywhere; }
+/* Pas de barre de défilement à faire glisser sur une feuille de papier. */
+[data-admin-report] .overflow-x-auto { overflow: visible !important; }
 
 /* Bottom sheet (@ui MobileSheet) — slide-up + scrim fade. Declared here rather
    than inline so both the host and runtime-loaded modules share one definition. */
@@ -409,4 +688,36 @@ body[data-kb-dictating] [data-doc-scroll] > * { will-change: auto !important; }
     }
   }
 }
-
+/* ── « Nouveau » button — Google Drive's "New" button, per the user's paste ───
+   Faithful values from Drive's computed styles:
+   · surface #fff (--dt-surface-bright), ink/fill #1f1f1f (--dt-on-surface)
+   · radius 16px (user's adjustment over Drive's 6.25rem FAB pill)
+   · resting shadow --dt-shadow-elevation-1, hover --dt-shadow-elevation-2
+     (transition box-shadow — the element's own 200ms `transition-all` covers it,
+     it also drives the collapse morph)
+   · NO pressed/menu-open style change (explicit user choice)
+   · label: Google label-large → 0.875rem, weight 500
+   No focus ring (explicit user choice, kept from the previous design).
+   Geometry (height 56↔48, right padding) stays inline — it morphs on collapse. */
+.kb-neo-btn {
+  border: none;
+  background-color: #fff;
+  color: #1f1f1f;
+  fill: #1f1f1f;
+  border-radius: 16px;
+  box-shadow:
+    0px 3px 1px -2px rgba(0, 0, 0, 0.2),
+    0px 2px 2px 0px rgba(0, 0, 0, 0.14),
+    0px 1px 5px 0px rgba(0, 0, 0, 0.12);
+}
+.kb-neo-btn:hover {
+  box-shadow:
+    0px 2px 4px -1px rgba(0, 0, 0, 0.2),
+    0px 4px 5px 0px rgba(0, 0, 0, 0.14),
+    0px 1px 10px 0px rgba(0, 0, 0, 0.12);
+}
+.kb-neo-btn:focus,
+.kb-neo-btn:focus-visible {
+  /* No visible focus ring on this button — explicit user choice. */
+  outline: none;
+}

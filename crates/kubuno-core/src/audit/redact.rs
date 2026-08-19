@@ -46,6 +46,10 @@ pub mod target {
     pub const MARKETPLACE: &str = "marketplace_module";
     pub const ORG_UNIT: &str = "org_unit";
     pub const ROUTE: &str = "route";
+    /// A printable administration report (`/admin/reports/<panel>`). Recorded
+    /// when its RECORDS were consulted — the rows name people, and reading them
+    /// is an act of its own, like exporting the trail.
+    pub const REPORT: &str = "report";
     /// A role definition (`core.roles`) and its privilege set.
     pub const ROLE: &str = "role";
     /// One binding of subject × role × scope (`core.role_assignments`).
@@ -75,6 +79,17 @@ pub mod target {
     /// not on the whitelist below and must never be added — the trail records
     /// that a directory was reconfigured, never how to bind to it.
     pub const LDAP_DIRECTORY: &str = "ldap_directory";
+    /// The instance's support contract (`core.support_contract`). Identified by
+    /// the party it is with; the pasted key is not on the whitelist below and
+    /// must never be added — it is the bearer proof of the contract, and a trail
+    /// readable by every administrator and exported to CSV must not carry it.
+    pub const SUPPORT_CONTRACT: &str = "support_contract";
+    /// One data-migration campaign (`core.migration_campaigns`). Identified by
+    /// id and name. The source credentials of its accounts are not on the
+    /// whitelist below and must never be added — a campaign holds one password
+    /// per migrated mailbox, and a trail readable by every administrator and
+    /// exported to CSV would turn an import into a credential dump.
+    pub const MIGRATION_CAMPAIGN: &str = "migration_campaign";
 }
 
 /// Fields recorded for each target type. Everything absent is dropped.
@@ -309,6 +324,34 @@ fn allowed(target_type: &str) -> &'static [&'static str] {
             "scope_org_unit_name",
             "expires_at",
         ],
+        // Everything the console displays, and nothing else. `key_text` is
+        // absent on purpose (see the target's own comment): registering a
+        // contract must be traceable without the trail becoming a place to
+        // recover the key from.
+        target::SUPPORT_CONTRACT => &[
+            "subject",
+            "plan",
+            "perimeter",
+            "contact",
+            "expires_at",
+            "verified",
+            "key_id",
+        ],
+        // The server being read, the size of the operation and the state
+        // changes. No `password`, no `secret_enc`, no `source_login`: naming
+        // the campaign and the host is what makes the entry useful, and listing
+        // every migrated address would turn one line of the trail into the
+        // organisation's address book.
+        target::MIGRATION_CAMPAIGN => &[
+            "id",
+            "name",
+            "service",
+            "source_host",
+            "source_port",
+            "accounts",
+            "status",
+            "retried_account",
+        ],
         _ => &[],
     }
 }
@@ -344,6 +387,18 @@ const SETTING_VALUES_IN_CLEAR: &[&str] = &[
     "security.ddos_rate_per_min",
     "security.ddos_max_concurrent",
     "security.audit_retention_days",
+    // The password policy (migration `000115`). Its values are the policy
+    // itself, never a credential: "the minimum went from 12 to 8" is exactly
+    // what an audit of a weakening must be able to show, and an entry that only
+    // said "the minimum changed" would make the trail useless for the one
+    // question anybody asks of it.
+    "security.password_min_length",
+    "security.password_strong",
+    "security.password_reuse_allowed",
+    "security.password_history_depth",
+    "security.password_expiry_days",
+    "security.password_enforce_at_login",
+    "auth.self_service_recovery",
     // Outgoing mail relay. Everything about it is operational configuration an
     // operator must be able to read back from the trail — the host they pointed
     // at, the port, whether they turned encryption off — EXCEPT

@@ -40,6 +40,8 @@ pub const SRC_STORAGE: &str = "storage";
 pub const SRC_BACKUP: &str = "backup";
 /// The administration rule engine (`crate::rules`).
 pub const SRC_RULES: &str = "rules";
+/// The data export (`crate::data_export`).
+pub const SRC_DATA_EXPORT: &str = "data_export";
 
 // ── Kinds ────────────────────────────────────────────────────────────────────
 //
@@ -102,6 +104,15 @@ pub const RULE_MATCHED: &str = "rules.matched";
 pub const RULE_FEEDBACK_LOOP: &str = "rules.feedback_loop";
 /// A rule matched and its action could not be carried out.
 pub const RULE_ACTION_FAILED: &str = "rules.action_failed";
+/// An export of the instance's data has been requested.
+///
+/// The only kind in this catalogue that is raised on a **successful, authorised
+/// operation**. It is here because nothing about the request itself
+/// distinguishes a legitimate export from one triggered through a stolen
+/// administrator session, so the control cannot be a check — it is the fact that
+/// every other administrator sees it happen, while the archive is still held and
+/// can still be cancelled. See `crate::data_export::notify`.
+pub const DATA_EXPORT_STARTED: &str = "security.data_export_started";
 
 /// Every kind the core produces, in the order the filter select offers them.
 pub const ALL_KINDS: &[&str] = &[
@@ -119,6 +130,7 @@ pub const ALL_KINDS: &[&str] = &[
     RULE_FEEDBACK_LOOP,
     RULE_ACTION_FAILED,
     DEVICE_DISOWNED,
+    DATA_EXPORT_STARTED,
 ];
 
 /// The privilege that governs *reading* an alert of this kind.
@@ -143,6 +155,10 @@ pub fn read_privilege(kind: &str) -> &'static str {
         USAGE_STALE => keys::STORAGE_READ,
         // Whoever may read the backup history is who may read why one failed.
         BACKUP_FAILED => keys::BACKUP_READ,
+        // Deliberately the *read* key and not the execute one: the whole point
+        // is that administrators who cannot themselves export are the ones
+        // watching those who can.
+        DATA_EXPORT_STARTED => keys::DATA_EXPORT_READ,
         // What a rule did is readable by whoever may read the rules — otherwise
         // the queue would explain an automatic suspension to an operator who
         // cannot see the rule that caused it.
@@ -177,6 +193,7 @@ fn privilege_for_tab(tab: &str) -> &'static str {
         // The background-tasks page carries the backup policy, its history and
         // the manual trigger.
         "background-jobs" => keys::BACKUP_READ,
+        "data-export" => keys::DATA_EXPORT_READ,
         // The health report narrows itself server-side and is open to every
         // administrator; so is the alert centre's own surface.
         _ => super::keys::ALERTS_READ,
@@ -372,6 +389,41 @@ pub fn actions_for(kind: &str, payload: &Value, alert_id: Uuid) -> Vec<Action> {
             .verb("configure-backup"),
         ],
 
+        // The two things somebody who did not ask for this export needs, in the
+        // order they need them: stop it while the hold is still running, then
+        // read who asked and for what. The cancellation is a WRITE, offered only
+        // to somebody who holds the execute key — an operator who merely watches
+        // is shown the page and the audit trail, never a button that would 403.
+        DATA_EXPORT_STARTED => {
+            let mut out = Vec::new();
+            if let Some(export_id) = str_of(payload, "export_id") {
+                out.push(
+                    Action::open(
+                        "cancel-export",
+                        "data-export",
+                        "Cancel this export",
+                        keys::DATA_EXPORT_EXECUTE,
+                    )
+                    .verb("cancel")
+                    .id_param(export_id),
+                );
+            }
+            out.push(Action::open(
+                "open-data-export",
+                "data-export",
+                "Open the data-export page",
+                keys::DATA_EXPORT_READ,
+            ));
+            let mut audit =
+                Action::open("review-audit", "audit", "Read the audit entry", keys::AUDIT_READ)
+                    .param("audit_action", "core.data_export.request");
+            if let Some(actor) = str_of(payload, "actor_id") {
+                audit = audit.param("audit_actor", actor);
+            }
+            out.push(audit);
+            out
+        }
+
         DISK_LOW => vec![
             // The storage page first: it is where the consumption that filled
             // the volume is broken down, and where a quota is lowered. The
@@ -525,6 +577,11 @@ pub fn default_severity(kind: &str) -> Severity {
         RULE_FEEDBACK_LOOP => Severity::Critical,
         LOGIN_BURST | PRIVILEGE_GRANTED | SENSITIVE_SETTING | JOB_DEAD_LETTER | DISK_LOW
         | QUOTA_EXCEEDED | RULE_ACTION_FAILED | BACKUP_FAILED => Severity::Warning,
+        // Warning and not info: nothing is broken, but somebody is copying every
+        // account's data out of the instance and there is a deadline on doing
+        // something about it. An informational badge next to a stale figure is
+        // not what that deserves.
+        DATA_EXPORT_STARTED => Severity::Warning,
         // Nothing is broken for a user: a figure on one console page is ageing.
         // Raising it above informational would put it beside a full disk.
         USAGE_STALE => Severity::Info,

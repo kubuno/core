@@ -21,6 +21,13 @@ export interface SidebarConfig {
     routePrefix: string;
     newButtonLabel?: string;
     newButtonLabelKey?: string;
+    /** @deprecated IGNORÉ depuis la migration du bouton « Nouveau » vers le composant
+     *  de menu du projet (`MenuDropdown` de @ui, qui prend des DONNÉES). Un module
+     *  contribue désormais des `MenuItem[]` au point d'extension `shell.new-actions` :
+     *    ExtensionRegistry.register('shell.new-actions', '<id>',
+     *      { moduleId: '<id>', items: () => MenuItem[] })
+     *  Le champ reste déclaré pour ne pas casser le typecheck des modules pas encore
+     *  migrés ; il ne rend plus rien. Idem pour le slot `sidebar-new-actions`. */
     NewActions?: React.ComponentType;
     SidebarBody?: React.ComponentType<{
         collapsed?: boolean;

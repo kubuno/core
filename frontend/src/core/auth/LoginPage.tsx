@@ -6,11 +6,12 @@ import { useTranslation } from 'react-i18next'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { authApi } from '../api/auth'
-import { Button, KubunoLogo } from '@ui'
+import { Button } from '@ui'
 // Membranes WebGL (dégradés par pixel, fallback canvas 2D intégré).
 // Rollback : ré-importer './LoginAnimation' (style fils d'origine).
 import LoginAnimation from './LoginAnimationGL'
 import { animTuning, parseAnimParams } from './animTuning'
+import { InstanceLogo } from '../shell/InstanceLogo'
 
 function usePublicConfig() {
   return useQuery({
@@ -184,7 +185,7 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
 
         <div className="relative text-white text-center max-w-sm z-10">
           <div className="flex items-center justify-center gap-3 mb-10">
-            <KubunoLogo size={40} className="text-white" />
+            <InstanceLogo size={40} className="text-white" />
             <span className="text-4xl font-light tracking-tight text-white">Kubuno</span>
           </div>
           <h2 className="text-2xl font-normal mb-4 text-white">{t('login.tagline')}</h2>
@@ -210,7 +211,7 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
         <div className="w-full max-w-[400px]">
           {/* Logo mobile */}
           <div className="flex items-center gap-2 mb-10 lg:hidden">
-            <KubunoLogo size={26} className="text-primary" />
+            <InstanceLogo size={26} className="text-primary" />
             <span className="text-2xl font-normal text-text-secondary">Kubuno</span>
           </div>
 

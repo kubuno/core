@@ -43,7 +43,9 @@ type DragSource = 'fav' | 'all'
 
 interface Props { allApps: WaffleApp[]; compact?: boolean; dark?: boolean; fab?: boolean; onOpenChange?: (open: boolean) => void }
 
-export default function WaffleMenu({ allApps, compact = false, dark = false, fab = false, onOpenChange }: Props) {
+// `compact` stays in Props for the callers, but no longer changes the trigger
+// size — 36px circles everywhere (aligned on the office title bar).
+export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenChange }: Props) {
   const { t }      = useTranslation()
   const user       = useAuthStore(s => s.user)
   const updateUser = useAuthStore(s => s.updateUser)
@@ -369,11 +371,11 @@ export default function WaffleMenu({ allApps, compact = false, dark = false, fab
           </button>
         ) : (
           <button
-            className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-full flex items-center justify-center transition-colors focus:outline-none ${
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors focus:outline-none ${
               dark ? 'text-white/75 hover:bg-white/15 data-[state=open]:bg-white/15' : 'text-text-secondary hover:bg-surface-3 data-[state=open]:bg-surface-3'}`}
             aria-label={t('header.apps')}
           >
-            <LayoutGrid size={compact ? 18 : 20} />
+            <LayoutGrid size={18} />
           </button>
         )}
       </DropdownMenu.Trigger>

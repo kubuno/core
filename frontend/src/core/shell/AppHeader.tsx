@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { KubunoLogo, useIsMobile } from '@ui'
+import { useIsMobile } from '@ui'
 import { Link, useLocation } from 'react-router-dom'
 import { Menu, Search, ArrowLeft } from 'lucide-react'
 import { useUiStore } from '../store/uiStore'
@@ -8,6 +8,8 @@ import { useSearchStore, resolveSearchConfig } from '../store/searchStore'
 import SearchBar from './SearchBar'
 import HeaderActions from './HeaderActions'
 import { Slot } from '../slots/SlotRegistry'
+import HealthTopbarChip from '../admin/health/HealthTopbarChip'
+import { InstanceLogo } from './InstanceLogo'
 
 export default function AppHeader() {
   const { t } = useTranslation()
@@ -94,7 +96,7 @@ export default function AppHeader() {
           to="/"
           className="flex items-center gap-1.5 hover:opacity-90 transition-opacity pl-2 pr-3"
         >
-          <KubunoLogo size={22} className="text-primary" />
+          <InstanceLogo size={22} className="text-primary" />
           <span
             className="text-[22px] font-normal hidden sm:block"
             style={{ color: '#5f6368', letterSpacing: '-0.01em' }}
@@ -109,25 +111,32 @@ export default function AppHeader() {
             méthode), aucune loupe.
           - Autres : les modules y injectent leur chrome d'en-tête (nav de date de
             l'agenda…) via le slot `header-leading`. */}
-      <div className="flex items-center min-w-0 flex-1 pl-1">
+      <div className="flex items-center gap-3 min-w-0 flex-1 pl-1">
         {inlineSearch
           ? <div className="min-w-0 flex-1 max-w-2xl px-1"><SearchBar /></div>
           : <Slot name="header-leading" />}
+        {/* Santé de l'instance, sur UNE ligne, dans la bande restée vide : le
+            bandeau pleine largeur qui coiffait chaque page d'administration
+            repoussait le contenu de trois lignes. Ne rend rien hors de
+            l'administration ni pour un non-administrateur — la hauteur de la
+            barre est donc inchangée. */}
+        <HealthTopbarChip />
       </div>
 
       {/* Cluster droit, collé au bord (ml-auto). La recherche n'est plus une barre
           permanente : juste une loupe, en tête du cluster (façon Google Agenda) —
           sauf pour les modules « inline » qui gardent leur barre permanente. */}
-      <div className="ml-auto flex items-center flex-shrink-0">
+      {/* `pr-2` : même marge droite que la barre de titre office (conteneur px-2). */}
+      <div className="ml-auto flex items-center flex-shrink-0 pr-2">
         {/* Loupe — ouvre le mode recherche (desktop ET mobile). Masquée en mode inline. */}
         {!inlineSearch && (
         <button
           onClick={() => setSearchOpen(true)}
-          className="w-12 h-12 flex items-center justify-center text-text-secondary
+          className="w-9 h-9 flex items-center justify-center text-text-secondary
                      hover:bg-surface-3 rounded-full transition-colors flex-shrink-0"
           aria-label={t('common.search')}
         >
-          <Search size={20} />
+          <Search size={18} />
         </button>
         )}
 
@@ -160,7 +169,9 @@ export default function AppHeader() {
             <span className="hidden lg:block text-lg text-text-secondary pl-1 flex-shrink-0">{t('common.search')}</span>
           </div>
           <div className="flex-1 min-w-0 max-w-2xl px-2"><SearchBar /></div>
-          <div className="hidden lg:flex items-center flex-shrink-0 ml-auto">
+          {/* px-1 (overlay) + pr-1 = 8px : l'avatar garde exactement la même
+              position qu'en mode normal (pr-2). */}
+          <div className="hidden lg:flex items-center flex-shrink-0 ml-auto pr-1">
             <HeaderActions minimal />
           </div>
         </div>

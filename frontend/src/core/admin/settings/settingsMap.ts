@@ -101,6 +101,23 @@ export const SETTINGS_PAGES: SettingsPageSpec[] = [
         'security.admin_2fa_grace_days',
         'security.backup_codes_low_threshold',
       ] },
+      // What a local password must satisfy, and how long it stays valid
+      // (migration 000115). Here rather than on a page of its own because it is
+      // the second half of the same question the two blocks above ask — what an
+      // account must present to sign in — and because every key is scoped, so
+      // the scope bar of this page already governs it.
+      { id: 'password_policy', keys: [
+        'security.password_min_length',
+        'security.password_strong',
+        'security.password_reuse_allowed',
+        'security.password_history_depth',
+        'security.password_expiry_days',
+        'security.password_enforce_at_login',
+      ] },
+      // Whether somebody who has forgotten their password can get themselves
+      // back in, or must go through a person. One key, its own group: it is not
+      // a detail of the policy above, it is the escape hatch from it.
+      { id: 'account_recovery', keys: ['auth.self_service_recovery'] },
     ],
   },
 
@@ -253,6 +270,12 @@ export const SETTINGS_PAGES: SettingsPageSpec[] = [
     tab: 'audit',
     groups: [
       { id: 'audit_retention', keys: ['security.audit_retention_days'] },
+      // The dashboard's attendance counters are the most personal thing the
+      // console keeps — who used which application, by day. Their window is
+      // settable HERE, beside the other journal retentions, rather than on the
+      // dashboard: an operator shortening what is kept about people should meet
+      // every such decision on one screen.
+      { id: 'usage_retention', keys: ['usage.retention_days'] },
     ],
   },
 
@@ -268,6 +291,29 @@ export const SETTINGS_PAGES: SettingsPageSpec[] = [
       { id: 'backup_storage',   keys: ['backup.destination', 'backup.retention_count'] },
       { id: 'jobs_runtime',  keys: ['jobs.concurrency', 'jobs.poll_interval_s'] },
       { id: 'jobs_recovery', keys: ['jobs.job_timeout_s', 'jobs.stalled_after_s'] },
+    ],
+  },
+  // Export de données. Les quatre groupes suivent l'ordre dans lequel un
+  // opérateur se pose les questions : qui a le droit de déclencher, combien de
+  // temps l'archive est retenue puis conservée, où et comment elle est écrite,
+  // et enfin ce que chacun peut faire de SES propres données. Les prérequis
+  // viennent en PREMIER délibérément — ce sont eux qui décident si le bouton
+  // existe, et les enterrer sous un chemin de fichier ferait d'un contrôle de
+  // sécurité une option d'apparence.
+  //
+  // Le libre-service vient en DERNIER et forme son propre groupe : c'est le seul
+  // réglage de cette page qui se règle par unité organisationnelle (déclaré
+  // `overridable`), et le mélanger aux six autres — tous d'instance — laisserait
+  // croire que la portée s'applique à eux aussi.
+  {
+    tab: 'data-export',
+    groups: [
+      { id: 'export_prereq',    keys: ['data_export.require_2fa', 'data_export.min_admin_age_days'] },
+      { id: 'export_window',    keys: ['data_export.hold_hours', 'data_export.retention_days'] },
+      { id: 'export_archive',   keys: ['data_export.destination', 'data_export.max_file_mb',
+                                       'data_export.module_timeout_s'] },
+      { id: 'export_self',      keys: ['data_export.self_service', 'data_export.self_hold_hours',
+                                       'data_export.self_max_downloads'] },
     ],
   },
 ]
@@ -329,11 +375,23 @@ export const DEDICATED_EDITOR: Record<string, string> = {
 export const CAUTION_KEYS = new Set([
   // Switching the schedule off is silent until the day somebody needs a file.
   'backup.enabled',
+  // The hold is the whole defence against an export triggered from a stolen
+  // administrator session: the archive exists but cannot be fetched, while
+  // every other administrator has already been alerted. Setting it to zero
+  // removes that window entirely, and does so silently.
+  'data_export.hold_hours',
+  // Same class of change, one step removed: without a second factor, an export
+  // of every account is one password away.
+  'data_export.require_2fa',
   'auth.registration_open',
   // Turning it off signs nobody out, but the next sign-in of every account the
   // directory governs fails. Worth saying before the click, not after.
   'auth.directory_login_enabled',
   'security.admin_2fa_required',
+  // Existing accounts count their password's age from their creation date, so
+  // switching expiry on renews the oldest passwords of the instance at once —
+  // which is what it is for, and exactly the sort of thing to say beforehand.
+  'security.password_expiry_days',
   'security.ddos_enabled',
   'mcp.enabled',
   'rules.gate.fail_mode',

@@ -18,6 +18,16 @@ export interface User {
   totp_enabled: boolean
   /** The account still carries the password it was seeded with: a change is forced. */
   must_change_password?: boolean
+  /**
+   * When the current local password was chosen (migration `000115`). A date and
+   * nothing more — it says *when*, never anything about the password. `null` on
+   * an account that holds no local password at all.
+   *
+   * It is what makes the expiry policy legible on an account sheet: without it,
+   * "passwords expire after 90 days" is a rule nobody can check against a
+   * particular person.
+   */
+  password_changed_at?: string | null
 
   /**
    * Profile fields of migration `000114`. All six are real columns, all six are

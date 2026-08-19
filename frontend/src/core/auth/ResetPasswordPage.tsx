@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, Eye, EyeOff } from 'lucide-react'
-import { Button, Callout, Input, KubunoLogo } from '@ui'
+import { Button, Callout, Input } from '@ui'
 import { api } from '../api/client'
 import { passwordStrength } from './passwordStrength'
+import { InstanceLogo } from '../shell/InstanceLogo'
 
 /**
  * Landing page of the link sent by "forgot my password".
@@ -62,7 +63,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center p-8 bg-surface-1">
       <div className="w-full max-w-md bg-surface-0 rounded-xl shadow-sm border border-border p-8">
         <div className="flex items-center gap-2 mb-6">
-          <KubunoLogo size={26} className="text-primary" />
+          <InstanceLogo size={26} className="text-primary" />
           <span className="text-xl font-semibold text-text-primary">Kubuno</span>
         </div>
 

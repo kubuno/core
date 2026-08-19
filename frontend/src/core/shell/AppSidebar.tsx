@@ -1,6 +1,6 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useLocation, NavLink, Link } from 'react-router-dom'
-import { KubunoLogo, useIsMobile } from '@ui'
+import { MenuDropdown, useMenuDropdown, useIsMobile } from '@ui'
 import { useTranslation } from 'react-i18next'
 import {
   Home, Star, Trash2, Clock, GripVertical,
@@ -12,12 +12,14 @@ import {
   PenTool, StickyNote, TableProperties, Tv, Zap,
   type LucideIcon,
 } from 'lucide-react'
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useModulesStore } from '../store/modulesStore'
 import { useUiStore } from '../store/uiStore'
 import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
-import { Slot, SlotRegistry } from '../slots/SlotRegistry'
+import { Slot } from '../slots/SlotRegistry'
+import { ExtensionRegistry } from '../registry/ExtensionRegistry'
+import { NEW_ACTIONS, type NewActionsProvider } from '../registry/newActions'
 import type { SidebarItem } from '../types'
+import { InstanceLogo } from './InstanceLogo'
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Home, Star, Trash2, Clock, Cloud, Image, Calendar,
@@ -51,7 +53,7 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
       className={({ isActive }) =>
         `group flex items-center px-2 py-2 rounded-full text-sm font-medium relative
          overflow-hidden transition-all duration-200 ease-in-out cursor-pointer select-none
-         ${isActive ? 'bg-primary-light' : 'hover:bg-[#e4ecf7]'}`
+         ${isActive ? 'bg-primary-light' : 'hover:bg-[var(--kb-sidebar-hover,#e8eaed)]'}`
       }
     >
       {({ isActive }) => (
@@ -65,8 +67,7 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
           <span
             className="truncate transition-all duration-200 ease-in-out"
             style={{
-              color: isActive ? '#041e49' : '#5f6368',
-              fontWeight: isActive ? 600 : 400,
+              color: isActive ? 'var(--color-text-nav-active)' : 'var(--color-text-nav)',
               maxWidth: collapsed ? 0 : 180,
               opacity: collapsed ? 0 : 1,
               marginLeft: collapsed ? 0 : 8,
@@ -109,6 +110,8 @@ export default function AppSidebar() {
   // pointer moves don't re-render on every frame; the store (and its per-module
   // persistence) is written continuously so the width survives a reload mid-drag too.
   const [dragging, setDragging] = useState(false)
+  // « Nouveau » button menu.
+  const newMenu = useMenuDropdown()
   const dragStart = useRef<{ x: number; w: number } | null>(null)
 
   const onResizeDown = useCallback((e: React.PointerEvent) => {
@@ -159,16 +162,23 @@ export default function AppSidebar() {
   const mainItems      = filterItems(allMain)
   const secondaryItems = filterItems(allSecondary)
 
-  // Le bouton "Nouveau" ne s'affiche que si le MODULE ACTIF a des actions enregistrées
-  const hasSlotActions = activeConfig != null &&
-    SlotRegistry.getSlot('sidebar-new-actions')
-      .some((entry) => entry.moduleId === activeConfig.moduleId)
-  const showNewButton = !!(activeConfig?.NewActions || hasSlotActions)
+  // Actions du bouton « Nouveau » : les modules contribuent des MenuItem[] (données)
+  // au point d'extension `shell.new-actions`, consommés par LE composant de menu du
+  // projet (`MenuDropdown` de @ui). Seules les contributions du MODULE ACTIF sont
+  // retenues, comme l'ancien slot. `loadedVersion` re-évalue quand un bundle
+  // s'enregistre tardivement (le registre n'est pas réactif).
+  const loadedVersion = useModulesStore(s => s.loadedVersion)
+  const newProviders = useMemo(
+    () => (activeConfig == null ? [] : ExtensionRegistry.getAll<NewActionsProvider>(NEW_ACTIONS)
+      .filter(p => p.moduleId === activeConfig.moduleId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))),
+    [activeConfig, loadedVersion],
+  )
+  const showNewButton = newProviders.length > 0
 
-  const newButtonLabel      = activeConfig?.newButtonLabelKey
+  const newButtonLabel = activeConfig?.newButtonLabelKey
     ? tc(activeConfig.newButtonLabelKey)
     : (activeConfig?.newButtonLabel ?? tc('shell.new'))
-  const NewActionsComponent = activeConfig?.NewActions ?? null
 
   // Le panneau est « vide » quand il n'a ni corps de module (`SidebarBody`) ni
   // item de navigation à afficher.
@@ -220,7 +230,7 @@ export default function AppSidebar() {
           className={`flex items-center gap-1.5 mb-8 flex-shrink-0 hover:opacity-90 transition-opacity ${collapsed ? 'justify-center' : 'pl-2 pr-3'}`}
           style={{ height: 32 }}
         >
-          <KubunoLogo size={22} className="text-primary" />
+          <InstanceLogo size={22} className="text-primary" />
           {!collapsed && (
             <span className="text-[22px] font-normal" style={{ color: '#5f6368', letterSpacing: '-0.01em' }}>Kubuno</span>
           )}
@@ -236,35 +246,35 @@ export default function AppSidebar() {
           `px-2` constant → à 48px de large, le disque est centré dans le rail de 64. */}
       {showNewButton && (
         <div className="flex items-center px-2" style={{ height: 72 }}>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              {/* Anchor, never a <button>: the whole left panel is links. It only
-                  opens a menu, so href='#' + preventDefault. */}
-              <a
-                href="#"
-                role="button"
-                onClick={e => e.preventDefault()}
+          <>
+            {/* A real <button>, like Google's own markup (user request) — the
+                one exception to the panel's anchors-only habit. */}
+              <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={newMenu.isOpen}
+                onClick={e => {
+                  if (newMenu.isOpen) { newMenu.close(); return }
+                  // Anchor the menu under the key (or to its right when collapsed).
+                  const r = e.currentTarget.getBoundingClientRect()
+                  newMenu.openAt(collapsed ? r.right + 8 : r.left, collapsed ? r.top : r.bottom + 4)
+                }}
                 aria-label={newButtonLabel}
-                className="inline-flex items-center bg-white text-sm font-medium
-                           text-text-primary cursor-pointer overflow-hidden
+                className="kb-neo-btn inline-flex items-center
+                           cursor-pointer overflow-hidden
                            transition-all duration-200 ease-in-out"
                 style={{
-                  // Expanded = the original pill (60px tall, radius 20); collapsed =
-                  // a 48px disc. HEIGHT, radius and (right-)padding all tween, so the
-                  // button visibly grows/shrinks — not just its width.
-                  height: collapsed ? 48 : 60,
+                  // Google FAB geometry: 3.5rem tall expanded (Drive's value),
+                  // 48px disc collapsed. Surface/shadows come from `.kb-neo-btn`.
+                  height: collapsed ? 48 : 56,
                   minWidth: 48,
-                  // NO left padding, and the icon lives in a fixed 48px box (= the
-                  // collapsed disc width): its centre stays at the same x whether
-                  // expanded or collapsed, so the « + » DOES NOT slide sideways during
-                  // the tween — and it lines up with the menu icons below (all at the
-                  // rail's centre). Only the right side (label) extends.
+                  // NO left padding: the icon lives in a fixed 48px box (= the
+                  // collapsed disc width), so the « + » centre stays at the same x
+                  // in both states — immobile during the collapse tween and
+                  // aligned with the menu icons below.
                   paddingRight: collapsed ? 0 : 20,
-                  border: '1px solid #e0e0e0',
-                  borderRadius: collapsed ? 24 : 20,
-                  boxShadow: collapsed
-                    ? '0 1px 3px rgba(60,64,67,0.3), 0 4px 8px rgba(60,64,67,0.15)'
-                    : '0 1px 3px rgba(0,0,0,0.12)',
+                  fontSize: '0.875rem',
+                  userSelect: 'none',
                 }}
               >
                 <span className="flex items-center justify-center flex-shrink-0" style={{ width: 48, height: '100%' }}>
@@ -275,32 +285,27 @@ export default function AppSidebar() {
                   style={{
                     maxWidth: collapsed ? 0 : 150,
                     opacity: collapsed ? 0 : 1,
+                    // On the SPAN, not the button: the project-wide
+                    // `button { font-weight: 400 !important }` rule would zero a
+                    // weight set on the button element itself.
+                    fontWeight: 500,
                   }}
                 >
                   {newButtonLabel}
                 </span>
-              </a>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                side={collapsed ? 'right' : 'bottom'}
-                align="start"
-                sideOffset={collapsed ? 8 : 4}
-                className="min-w-52 bg-white rounded-[5px] border border-border shadow-lg py-1 z-50"
-              >
-                {NewActionsComponent ? (
-                  <NewActionsComponent />
-                ) : (
-                  <Slot
-                    name="sidebar-new-actions"
-                    fallback={
-                      <div className="px-4 py-2 text-xs text-text-tertiary">{tc('shell.no_active_module')}</div>
-                    }
-                  />
-                )}
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
+              </button>
+
+            {/* THE project's menu component (@ui MenuDropdown) — same surface,
+                same item chrome and same dismiss behaviour as every other menu in
+                the app. Items are built on open, so labels and state are fresh. */}
+            {newMenu.pos && (
+              <MenuDropdown
+                items={newProviders.flatMap(p => p.items())}
+                pos={{ ...newMenu.pos, minWidth: 208 }}
+                onClose={newMenu.close}
+              />
+            )}
+          </>
         </div>
       )}
 
@@ -380,13 +385,12 @@ export default function AppSidebar() {
   )
 }
 
-/* Plus sign for the "New" button. `currentColor` on purpose: the icon then follows the
- * button's own text colour, including on tinted or dark shells. */
+/* Google Drive's "New" plus glyph (24x24), `currentColor` so it follows the
+ * button's ink. Path taken verbatim from Drive's button markup. */
 function PlusIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <line x1="10" y1="2"  x2="10" y2="18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="2"  y1="10" x2="18" y2="10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    <svg width="24" height="24" viewBox="0 0 24 24" focusable="false" fill="currentColor" aria-hidden>
+      <path d="M20 13h-7v7h-2v-7H4v-2h7V4h2v7h7v2z" />
     </svg>
   )
 }

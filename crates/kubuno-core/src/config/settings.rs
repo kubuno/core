@@ -40,11 +40,6 @@ pub struct ServerSettings {
     pub modules_install_dir: String,
     /// Répertoire contenant les fichiers de thèmes JSON.
     pub themes_dir:      String,
-    /// Répertoire des composants WASM local-first téléchargeables (documents-core.wasm,
-    /// drive-core.wasm…), servis via `GET /api/v1/desktop/wasm[/:name]`. Un sidecar
-    /// `manifest.json` (`{ "<name>.wasm": "<version>" }`) y porte les versions.
-    #[serde(default = "default_wasm_dir")]
-    pub wasm_dir:        String,
     /// Origines CORS autorisées (séparées par des virgules). Vide = même origine uniquement.
     /// Exemple : http://localhost:5173,https://cloud.example.com
     #[serde(default)]
@@ -166,10 +161,6 @@ impl ServerSettings {
             !self.reject_master_internal_secret,
         )
     }
-}
-
-fn default_wasm_dir() -> String {
-    "/var/lib/kubuno/wasm".to_string()
 }
 
 fn default_modules_config_dir() -> String {

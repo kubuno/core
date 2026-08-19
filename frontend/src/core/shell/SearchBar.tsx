@@ -219,7 +219,7 @@ function SearchBarBase({ dark = false, compact = false }: { dark?: boolean; comp
           style={{
             background:   dark
               ? (isActive ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.07)')
-              : (isActive ? '#ffffff' : '#eaeef5'),
+              : (isActive ? '#ffffff' : 'var(--color-search-bg)'),
             boxShadow:    isActive && !dark
               ? '0 1px 3px rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.1)'
               : 'none',

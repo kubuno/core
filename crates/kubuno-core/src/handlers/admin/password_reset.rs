@@ -159,8 +159,45 @@ pub async fn reset_user_password(
     }
 
     // ── Validate before touching the database ────────────────────────────────
+    //
+    // Against the policy of the TARGET's scope (migration `000115`), not the
+    // caller's: the account that will carry this password is the one the policy
+    // is about. `MIN_PASSWORD_LEN` remains the floor the policy itself can never
+    // go under, so this route can only ever become stricter, never weaker.
+    let policy =
+        crate::settings::password_policy::PasswordPolicy::for_user(&state.db, user_id).await?;
+
     let (new_password, generated) = match dto.mode {
-        ResetMode::Generate => (password::generate_password(password::GENERATED_LENGTH), true),
+        ResetMode::Generate => {
+            // A generated password must satisfy the policy it is generated
+            // under — an operator pressing "generate" and getting something the
+            // instance then refuses would have no way to tell what happened.
+            // Length is raised to the minimum; a "strong" requirement is met by
+            // drawing again, the alphabet carrying all four families.
+            let length = policy.min_length.max(password::GENERATED_LENGTH);
+            let mut candidate = password::generate_password(length);
+            for _ in 0..16 {
+                if policy.check(&candidate).is_ok() {
+                    break;
+                }
+                candidate = password::generate_password(length);
+            }
+            // Reachable only if the policy is unsatisfiable by the generator —
+            // a minimum above what it can produce. Said plainly rather than
+            // returning a password the next line would reject.
+            policy.check(&candidate).map_err(|_| {
+                tracing::error!(
+                    min_length = policy.min_length,
+                    "reset_user_password: la politique rend la génération impossible"
+                );
+                AppError::Validation(
+                    "Impossible de générer un mot de passe satisfaisant la politique en vigueur : \
+                     assouplissez-la ou saisissez le mot de passe manuellement."
+                        .into(),
+                )
+            })?;
+            (candidate, true)
+        }
         ResetMode::Manual => {
             let supplied = dto
                 .password
@@ -176,6 +213,14 @@ pub async fn reset_user_password(
                     "Mot de passe : {MAX_PASSWORD_LEN} caractères maximum"
                 )));
             }
+            policy.check(supplied)?;
+            // Only on a typed password: a generated one is 94 bits of CSPRNG
+            // and paying N argon2id verifications to discover it is not one of
+            // the account's five previous passwords is work for nothing.
+            crate::settings::password_policy::reject_reuse(
+                &state.db, &policy, user_id, supplied,
+            )
+            .await?;
             (supplied.to_string(), false)
         }
     };
@@ -213,7 +258,9 @@ pub async fn reset_user_password(
     };
 
     sqlx::query(
-        "UPDATE core.users SET password_hash = $1, must_change_password = $2 WHERE id = $3",
+        "UPDATE core.users \
+            SET password_hash = $1, must_change_password = $2, password_changed_at = NOW() \
+          WHERE id = $3",
     )
     .bind(&hash)
     .bind(dto.require_change)
@@ -224,6 +271,10 @@ pub async fn reset_user_password(
         tracing::error!(error = %e, user_id = %user_id, "reset_user_password: écriture");
         AppError::Database(e)
     })?;
+
+    // Inside the audited transaction, like the write it describes.
+    crate::settings::password_policy::remember(&mut tx, user_id, &hash, policy.history_depth)
+        .await?;
 
     // The step that makes the reset mean anything.
     let revoked = sqlx::query(
@@ -324,6 +375,119 @@ pub async fn reset_user_password(
         "sessions_revoked": revoked,
         "email":            email_status,
     })))
+}
+
+// ── Forcing a change without replacing the password ─────────────────────────
+
+#[derive(Deserialize)]
+pub struct RequirePasswordChangeDto {
+    /// `true` arms the forced-change screen, `false` lifts it.
+    pub required: bool,
+}
+
+/// `POST /admin/users/:id/require-password-change`
+///
+/// The reset above answers "this password is gone". This one answers a
+/// different question — "this password is *suspect*" — and the two must not be
+/// the same button. Arming the flag alone leaves the account signed in, leaves
+/// its password working exactly once more, and makes the next sign-in end on the
+/// change screen (`auth::middleware` already closes every write behind that
+/// flag). An administrator who wanted to hand out a new password has the reset
+/// route; one who suspects a password was shared over a chat does not want to
+/// invent one, phone the person and dictate it.
+///
+/// Same guards as the reset: the privilege over the target's own unit, and the
+/// target must hold nothing the caller does not hold. Forcing a
+/// super-administrator to change their password is not a takeover, but it is a
+/// denial of service against the one account that can undo it.
+pub async fn require_password_change(
+    State(state): State<AppState>,
+    ctx: AdminCtx,
+    audit: AdminAudit,
+    Path(user_id): Path<Uuid>,
+    Json(dto): Json<RequirePasswordChangeDto>,
+) -> Result<Json<Value>, AppError> {
+    {
+        let mut conn = state.db.acquire().await.map_err(|e| {
+            tracing::error!(error = %e, "require_password_change: connexion");
+            AppError::Database(e)
+        })?;
+        let unit = user_org_unit(&mut conn, user_id).await?;
+        ctx.require_for_unit(keys::USER_PASSWORD, unit)?;
+        ensure_can_act_on_user(&mut conn, &ctx, user_id).await?;
+    }
+
+    let mut tx = audit.begin(&state.db).await?;
+
+    let target_user: Option<(String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT username, must_change_password, password_hash \
+         FROM core.users WHERE id = $1 FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, user_id = %user_id, "require_password_change: lecture");
+        AppError::Database(e)
+    })?;
+
+    let Some((username, was_required, password_hash)) = target_user else {
+        return Err(AppError::NotFound("Utilisateur introuvable".into()));
+    };
+
+    // An account with no local password has nothing to change: arming the flag
+    // would close every write for somebody the change screen cannot help,
+    // because that screen asks for a current password they do not have.
+    if dto.required && password_hash.is_none() {
+        return Err(AppError::Validation(
+            "Ce compte n'a pas de mot de passe local : son authentification est gouvernée \
+             par un annuaire ou un fournisseur d'identité."
+                .into(),
+        ));
+    }
+
+    if was_required == dto.required {
+        // Nothing to write, and nothing to say in the trail: an entry recording
+        // a change that did not happen is noise in the one log that must stay
+        // readable.
+        return Ok(Json(json!({ "ok": true, "user_id": user_id, "required": dto.required })));
+    }
+
+    sqlx::query("UPDATE core.users SET must_change_password = $1 WHERE id = $2")
+        .bind(dto.required)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "require_password_change: écriture");
+            AppError::Database(e)
+        })?;
+
+    tx.commit(
+        AuditEntry::new("core.users.require_password_change")
+            .target(target::USER, user_id, username)
+            .before(redact::snapshot(
+                target::USER,
+                &json!({ "must_change_password": was_required }),
+            ))
+            .after(redact::snapshot(
+                target::USER,
+                &json!({ "must_change_password": dto.required }),
+            ))
+            .detail(if dto.required {
+                "Changement de mot de passe imposé à la prochaine connexion".to_string()
+            } else {
+                "Changement de mot de passe imposé : levé".to_string()
+            }),
+    )
+    .await?;
+
+    tracing::info!(
+        user_id = %user_id, required = dto.required,
+        "Changement de mot de passe imposé modifié par un administrateur"
+    );
+
+    Ok(Json(json!({ "ok": true, "user_id": user_id, "required": dto.required })))
 }
 
 #[cfg(test)]

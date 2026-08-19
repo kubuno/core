@@ -27,7 +27,7 @@ export function useExplorerData({ src, caps, currentFolderId, acceptedMimeTypes,
   // null there) → « root » so the top level is remembered like any folder.
   const dirKey = `${src.key}:${effectiveFolderId ?? 'root'}`
 
-  const { data, isLoading: listLoading } = useQuery({
+  const { data, isLoading: listLoading, error: listError } = useQuery({
     queryKey: ['explorer', src.key, effectiveFolderId],
     queryFn: () => src.list(effectiveFolderId),
     enabled: rootResolved,
@@ -36,6 +36,26 @@ export function useExplorerData({ src, caps, currentFolderId, acceptedMimeTypes,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',
   })
+
+  // A failed listing used to be swallowed: `data` stayed undefined, so the view
+  // fell through to "empty folder" and an unreachable remote was indistinguish-
+  // able from one that holds nothing. Surface it instead, carrying the server's
+  // code so the caller can act on it (e.g. MOUNT_CONFIG_UNREADABLE).
+  const error = useMemo(() => {
+    if (!listError) return null
+    // The API client's interceptor already flattens every non-401 failure to a
+    // bare `{ code, message }` (core/api/client.ts) — reading `response.data`
+    // here yields undefined and silently loses the code. The Axios shape is kept
+    // as a fallback for any caller that bypasses that interceptor.
+    const e = listError as {
+      code?: string; message?: string
+      response?: { data?: { error?: string; message?: string } }
+    }
+    return {
+      code:    e.code ?? e.response?.data?.error ?? 'UNKNOWN',
+      message: e.message ?? e.response?.data?.message ?? '',
+    }
+  }, [listError])
   const isLoading = rootLoading || listLoading
   const folders = data?.folders ?? []
   const rawFiles = data?.files ?? []
@@ -55,5 +75,5 @@ export function useExplorerData({ src, caps, currentFolderId, acceptedMimeTypes,
     return map
   }, [folders, files])
 
-  return { rootLoading, rootResolved, effectiveFolderId, dirKey, isLoading, folders, files, itemTypeMap }
+  return { rootLoading, rootResolved, effectiveFolderId, dirKey, isLoading, error, folders, files, itemTypeMap }
 }

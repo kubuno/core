@@ -1,7 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { MENU_ATTR, useMenuDismiss } from '../../ui/useMenuDismiss'
+import React, { createContext, useCallback, useContext, useState } from 'react'
+import { MenuDropdown, type MenuItem } from '../../ui'
 import { findTextTarget } from '../../ui/textFieldMenu'
-import { Slot, SlotRegistry } from '../slots/SlotRegistry'
+import { ExtensionRegistry } from '../registry/ExtensionRegistry'
+import { CONTEXT_MENU_ITEMS, type ContextMenuItemsProvider } from '../registry/contextMenu'
 import { useModulesStore } from '../store/modulesStore'
 
 interface ContextMenuCtx {
@@ -11,6 +12,10 @@ interface ContextMenuCtx {
 const Ctx = createContext<ContextMenuCtx>({ close: () => {} })
 export const useContextMenu = () => useContext(Ctx)
 
+/** @deprecated The background context menu is DATA now: contribute `MenuItem[]`
+ *  to the `shell.context-menu-items` extension point (see `registry/contextMenu.ts`)
+ *  and the shell renders them with @ui's MenuDropdown. Kept exported so the
+ *  published SDK surface stays unbroken; no longer rendered by the provider. */
 export function ContextMenuItem({
   onClick,
   icon,
@@ -32,88 +37,67 @@ export function ContextMenuItem({
   )
 }
 
+/** @deprecated Use `{ type: 'separator' }` in the contributed `MenuItem[]`. */
 export function ContextMenuSeparator() {
   return <div className="my-[5px] h-px mx-1.5" style={{ background: 'var(--kb-black-12)' }} />
 }
 
 export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
-  const [menu, setMenu] = useState({ visible: false, x: 0, y: 0 })
-  const menuRef = useRef<HTMLDivElement>(null)
+  // Position + the items resolved for THIS right-click. Items are built on open
+  // (fresh labels/state) and kept for the lifetime of the menu.
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
 
   const activeModules = useModulesStore(s => s.activeModules)
-  const activeIds = new Set(activeModules.map(m => m.module_id))
 
-  // Only open if at least one contributor is active for the current location
-  const hasItems = SlotRegistry.getSlot('context-menu-items').some(e => activeIds.has(e.moduleId))
-
-  const close = useCallback(() => setMenu(m => ({ ...m, visible: false })), [])
-
-  useMenuDismiss(menu.visible, close)
+  const close = useCallback(() => setMenu(null), [])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     /* A text entry area owns its own default menu (TextFieldMenuHost). Bail out before
      * touching the event: `stopPropagation` here would keep it from ever reaching the
      * document-level listener that opens the field menu. */
     if (findTextTarget(e.target)) return
-    if (!hasItems) return   // no items → let the browser default (or just ignore)
+
+    /* A dialog or floating window is its own surface, and the module's background
+     * menu has no business there. React bubbles synthetic events along the
+     * COMPONENT tree rather than the DOM one, so a window portalled into <body>
+     * still reaches this handler from whichever module opened it — which is how
+     * right-clicking a form in the "Stockages distants" window raised Drive's
+     * folder menu. `role="dialog"` is what every FloatingWindow and modal sets. */
+    const el = e.target instanceof Element ? e.target : null
+    if (el?.closest('[role="dialog"]')) return
+
+    // Only ACTIVE modules contribute (ExtensionRegistry, unlike Slot, does not
+    // filter). Building here rather than on every render also means a provider
+    // reads the CURRENT path/state.
+    const activeIds = new Set(activeModules.map(m => m.module_id))
+    const items = ExtensionRegistry.getAll<ContextMenuItemsProvider>(CONTEXT_MENU_ITEMS)
+      .filter(p => activeIds.has(p.moduleId))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .flatMap(p => { try { return p.items() } catch { return [] } })
+
+    // Nothing to show → let the browser's own menu through, and never flash an
+    // empty panel (what the old post-render "is it empty?" check guarded against).
+    if (items.length === 0) return
+
     e.preventDefault()
     e.stopPropagation()
-    setMenu({ visible: true, x: e.clientX, y: e.clientY })
-  }, [hasItems])
-
-  // Close before paint if the slot rendered no interactive items.
-  // This prevents an empty popup from ever appearing on screen.
-  useLayoutEffect(() => {
-    if (!menu.visible || !menuRef.current) return
-    const hasContent = menuRef.current.querySelector('button, a, [role="menuitem"]') !== null
-    if (!hasContent) close()
-  }, [menu.visible, close])
-
-  useEffect(() => {
-    if (!menu.visible) return
-    const onMouse = (e: Event) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) close()
-    }
-    const onScroll = () => close()
-    // `pointerdown`, pas `mousedown` : un déclencheur Radix appelle `preventDefault()`
-    // sur pointerdown, ce qui SUPPRIME le mousedown de compatibilité — le menu ouvert
-    // ne voyait alors jamais le clic et restait affiché. Capture pour passer devant
-    // tout composant qui stoppe la propagation.
-    document.addEventListener('pointerdown', onMouse, true)
-    window.addEventListener('scroll', onScroll, true)
-    return () => {
-      document.removeEventListener('pointerdown', onMouse, true)
-      window.removeEventListener('scroll', onScroll, true)
-    }
-  }, [menu.visible, close])
-
-  // Keep menu within viewport
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 0
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 0
-  const menuW = 220
-  const menuH = 200
-  const x = Math.min(menu.x, vw - menuW - 8)
-  const y = Math.min(menu.y, vh - menuH - 8)
+    setMenu({ x: e.clientX, y: e.clientY, items })
+  }, [activeModules])
 
   return (
     <Ctx.Provider value={{ close }}>
       <div className="contents" onContextMenu={handleContextMenu}>
         {children}
       </div>
-      {menu.visible && hasItems && (
-        <div
-          ref={menuRef}
-          {...{ [MENU_ATTR]: '' }}
-          className="kb-frosted fixed z-[200] min-w-[200px]"
-          style={{ left: x, top: y }}
-          onContextMenu={e => e.preventDefault()}
-        >
-          <div className="kb-frost-layer" aria-hidden />
-          {/* side padding forms the gutter the highlight pill is inset by */}
-          <div style={{ padding: 5 }}>
-            <Slot name="context-menu-items" />
-          </div>
-        </div>
+      {/* THE project's menu component: same surface, submenus, dismiss handling
+          and touch bottom-sheet as every other menu. It clamps itself to the
+          viewport, so the manual 220x200 clamp is gone. */}
+      {menu && (
+        <MenuDropdown
+          items={menu.items}
+          pos={{ top: menu.y, left: menu.x }}
+          onClose={close}
+        />
       )}
     </Ctx.Provider>
   )

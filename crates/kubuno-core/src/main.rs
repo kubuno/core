@@ -117,6 +117,16 @@ async fn main() -> Result<()> {
         pool.clone(),
     ));
 
+    // Worker EventBus → modules abonnés. Met en file une livraison par module
+    // dont `subscribed_events` nomme le type — la file (core.jobs) porte les
+    // réessais, pour qu'un module redémarré reçoive quand même l'événement.
+    // Avant lui, `subscribed_events` était stocké, affiché, et lu par personne :
+    // les traitements « UserDeleted » des modules ne s'exécutaient jamais.
+    tokio::spawn(kubuno_core::events::dispatch::fanout_worker(
+        Arc::clone(&event_bus),
+        pool.clone(),
+    ));
+
     // Exécuteur de tâches de fond (core.jobs).
     // Un nouveau type de tâche s'ajoute ICI, sans toucher à l'exécuteur :
     //     job_registry.register_fn("mon.type", |ctx, job| async move { … });
@@ -129,22 +139,45 @@ async fn main() -> Result<()> {
     // configuration (évaluation de santé, volume de données), que le contexte
     // de tâche ne transporte pas — d'où la capture.
     kubuno_core::alerts::jobs::register(&mut job_registry, Arc::new(settings.clone()));
-    // Moteur de règles (core.rules.action / .backtest / .maintenance) : le secret
-    // interne est capturé car exécuter l'action d'un MODULE est un appel interne
-    // authentifié, et le contexte de tâche ne transporte qu'un pool.
+    // Moteur de règles (core.rules.action / .backtest / .maintenance) : les
+    // réglages serveur sont capturés car exécuter l'action d'un MODULE est un
+    // appel interne portant le secret dérivé DE CE MODULE, et le contexte de
+    // tâche ne transporte qu'un pool.
     kubuno_core::rules::jobs::register(
         &mut job_registry,
-        Arc::new(settings.server.internal_secret.clone()),
+        Arc::new(settings.server.clone()),
     );
     // Sauvegarde planifiée du schéma core (core.backup.run / .run_now). Écrite
     // en Rust depuis le pool : kubuno-seccomp interdit execve, donc pg_dump
     // n'est pas lançable depuis le serveur — cf. crate::backup.
     kubuno_core::backup::jobs::register(&mut job_registry);
+    // Livraison des événements aux modules (core.events.deliver). Les réglages
+    // serveur sont capturés : l'appel porte le secret interne DU MODULE VISÉ,
+    // dérivé par module, et le contexte de tâche ne transporte qu'un pool.
+    kubuno_core::events::dispatch::register(
+        &mut job_registry,
+        Arc::new(settings.server.clone()),
+    );
     // Import périodique des annuaires LDAP / Active Directory
     // (core.directory_sync). Le secret JWT est capturé : le gestionnaire doit
     // déchiffrer le mot de passe du compte de service, et un contexte de tâche
     // ne transporte qu'un pool.
     kubuno_core::directory::job::register(&mut job_registry, settings.auth.jwt_secret.clone());
+    // Migration de données (core.data_migration.step) : deux captures, car un
+    // contexte de tâche ne transporte qu'un pool. Les réglages serveur, parce
+    // que faire travailler un module est un appel interne portant le secret
+    // dérivé DE CE MODULE ; le secret JWT, parce que les identifiants du serveur
+    // source sont scellés au repos et doivent être ouverts pour être transmis.
+    kubuno_core::data_migration::jobs::register(
+        &mut job_registry,
+        Arc::new(settings.server.clone()),
+        Arc::new(settings.auth.jwt_secret.clone()),
+    );
+    // Export de données (core.data_export.run / .prune) : les réglages serveur
+    // sont capturés, car demander à un module les données d'un compte est un
+    // appel interne portant le secret dérivé DE CE MODULE, et un contexte de
+    // tâche ne transporte qu'un pool. Cf. crate::data_export::contract.
+    kubuno_core::data_export::jobs::register(&mut job_registry, Arc::new(settings.server.clone()));
     let job_cfg = kubuno_core::jobs::JobRunnerConfig::from_db(&pool).await;
     let jobs = kubuno_core::jobs::runner::start(
         pool.clone(),
@@ -167,6 +200,13 @@ async fn main() -> Result<()> {
     // propre gestionnaire, et planifiée à l'heure de la politique (jamais à
     // l'instant du démarrage : un redéploiement ne doit pas déclencher un dump).
     kubuno_core::backup::jobs::schedule(&pool).await;
+    // Une campagne de migration laissée « en cours » par un redémarrage reprend
+    // d'elle-même. Rien n'est mis en file s'il n'y a rien à migrer : cette
+    // chaîne ne tourne que tant qu'il reste du travail.
+    kubuno_core::data_migration::jobs::resume(&pool).await;
+    // Purge horaire des archives d'export dont la rétention est écoulée. Même
+    // discipline idempotente : l'entrée d'historique survit toujours au fichier.
+    kubuno_core::data_export::jobs::schedule(&pool).await;
 
     // Moteur de règles d'administration : déclare le catalogue du core, construit
     // l'index en mémoire, écoute les changements et s'abonne au bus. Démarré
@@ -194,6 +234,15 @@ async fn main() -> Result<()> {
         )
     );
 
+    // Fréquentation des applications : compteur en mémoire alimenté par le proxy,
+    // consolidé en base une fois par minute. Démarré ici pour que le compteur
+    // existe avant la première requête proxifiée.
+    let usage = Arc::new(kubuno_core::modules::usage::UsageMeter::new());
+    tokio::spawn(kubuno_core::modules::usage::flusher(
+        pool.clone(),
+        Arc::clone(&usage),
+    ));
+
     let state = AppState {
         db:       pool,
         settings: Arc::new(settings.clone()),
@@ -202,6 +251,7 @@ async fn main() -> Result<()> {
         storage,
         ws_hub,
         remote_mounts,
+        usage,
     };
 
     kubuno_core::handlers::health::init_start_time();

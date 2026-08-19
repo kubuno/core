@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use sqlx::PgPool;
 
+use crate::config::settings::ServerSettings;
 use crate::jobs::queue::{self, NewJob};
 use crate::jobs::registry::JobRegistry;
 
@@ -27,14 +28,17 @@ const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(6 * 3_600);
 
 /// Registers the three job types.
 ///
-/// `internal_secret` is captured because dispatching a **module's** action is an
+/// `server` is captured because dispatching a **module's** action is an
 /// authenticated internal call, and the job context carries a pool and nothing
 /// else — the same reason [`crate::mailer::register_jobs`] captures the JWT
-/// secret.
-pub fn register(registry: &mut JobRegistry, internal_secret: Arc<String>) {
+/// secret. The settings block travels rather than a single string because the
+/// call must present the secret **of the target module**
+/// ([`crate::config::settings::ServerSettings::module_secret`]), which is
+/// derived per module and only known here.
+pub fn register(registry: &mut JobRegistry, server: Arc<ServerSettings>) {
     // ── Actions of a matched rule ────────────────────────────────────────────
     registry.register_fn(dispatch::ACTION_JOB, move |ctx, job| {
-        let secret = Arc::clone(&internal_secret);
+        let server = Arc::clone(&server);
         async move {
             let action_job: dispatch::ActionJob = serde_json::from_value(job.payload.clone())
                 .map_err(|e| {
@@ -42,7 +46,7 @@ pub fn register(registry: &mut JobRegistry, internal_secret: Arc<String>) {
                     anyhow::anyhow!("charge du travail d'action illisible : {e}")
                 })?;
 
-            let outcome = dispatch::run_all(&ctx.db, &action_job, &secret).await;
+            let outcome = dispatch::run_all(&ctx.db, &action_job, &server).await;
             let detail = dispatch::detail_of(&outcome);
 
             store::settle_execution(

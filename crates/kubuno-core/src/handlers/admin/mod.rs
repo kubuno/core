@@ -2,6 +2,11 @@ pub mod alerts;
 pub mod audiences;
 pub mod audit;
 pub mod backup;
+pub mod dashboard;
+pub mod data_export;
+pub mod data_migration;
+/// The records behind a dashboard figure, listed by a report.
+pub mod detail;
 pub mod detectors;
 pub mod devices;
 pub mod domains;
@@ -14,10 +19,14 @@ pub mod marketplace;
 pub mod oauth_providers;
 pub mod org_units;
 pub mod password_reset;
+/// The window every dashboard reads, and the three ways of counting over it.
+pub mod period;
 pub mod resources;
 pub mod roles;
 pub mod rules;
+pub mod security_dashboard;
 pub mod setting_scopes;
 pub mod settings;
 pub mod storage;
+pub mod subscription;
 pub mod users;

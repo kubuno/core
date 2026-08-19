@@ -8,24 +8,23 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Star, MoreVertical } from 'lucide-react'
-import { FloatCheckbox, openable, useLongPress, useIsMobile } from '@ui'
+import { openable, useLongPress, useIsMobile } from '@ui'
 import { usePendingKind, pendingBoxClass, pendingBoxStyle } from '@kubuno/sdk'
 import { formatSize, type Folder, type FileItem } from '../api'
 import type { ThumbSpec } from '../storageSource'
 import { FolderGlyph } from '../FolderGlyph'
 import { LabelDots } from '../LabelDots'
 import { Thumb } from './Thumb'
-import { SelectingCtx } from './selectingContext'
 import { VersionBadge } from './VersionBadge'
 import { rowAccentShadow, withRowShadow } from './rowStyles'
 import { fileCellText, folderCellText, type DetailsColsView } from './detailsModel'
 
-export function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onToggle, onContextMenu, onLongPress, onOpen, onDragStart, density = 'normal', hideMeta = false, cols }: {
+export function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onContextMenu, onLongPress, onOpen, onDragStart, density = 'normal', hideMeta = false, cols }: {
   file: FileItem; thumb: ThumbSpec
   selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean; mergeTop?: boolean; mergeBottom?: boolean; zebra?: boolean
-  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
+  onSelect: (id: string, e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onOpen: () => void; onDragStart?: (e: React.DragEvent) => void
-  density?: 'compact' | 'normal' | 'large'; hideMeta?: boolean; cols?: DetailsColsView
+  density?: 'compact' | 'normal'; hideMeta?: boolean; cols?: DetailsColsView
 }) {
   const { t, i18n } = useTranslation('drive')
   const pendingKind = usePendingKind(file.id)
@@ -33,10 +32,9 @@ export function FileRowBase({ file, thumb, selected, preSelected, focused, canMo
   // Mobile: the date/size columns don't fit next to the name, so they collapse
   // into a subtitle under it and the row grows to a comfortable tap target.
   const isMobile = useIsMobile()
-  const pad = isMobile ? 'px-2 py-3' : density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
-  const thumbC = isMobile ? 'w-10 h-10' : density === 'large' ? 'w-12 h-12' : density === 'compact' ? 'w-6 h-6' : 'w-8 h-8'
+  const pad = isMobile ? 'px-2 py-3' : density === 'compact' ? 'px-3 py-1' : 'px-4 py-2.5'
+  const thumbC = isMobile ? 'w-10 h-10' : density === 'compact' ? 'w-6 h-6' : 'w-8 h-8'
   const longPress = useLongPress(onLongPress ?? onContextMenu)
-  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={file.id}
       draggable={canMove} onDragStart={onDragStart}
@@ -45,10 +43,6 @@ export function FileRowBase({ file, thumb, selected, preSelected, focused, canMo
       style={withRowShadow(pendingBoxStyle(pendingKind), rowAccentShadow({ selected, preSelected, focused, mergeTop, mergeBottom }))} onContextMenu={onContextMenu}
       {...longPress}
       {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(file.id, e) }, open: (e) => { e.preventDefault(); onOpen() } })}>
-      <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(file.id) }}
-        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : selecting ? 'block opacity-100' : 'hidden lg:block lg:opacity-0 lg:group-hover:opacity-100'}`}>
-        <FloatCheckbox selected={selected || !!preSelected} onToggle={() => onToggle(file.id)} />
-      </span>
       <div className={`shrink-0 ${thumbC} flex items-center justify-center rounded overflow-hidden bg-surface-2`}>
         <Thumb spec={thumb} file={file} className="w-full h-full object-cover" />
       </div>
@@ -75,9 +69,7 @@ export function FileRowBase({ file, thumb, selected, preSelected, focused, canMo
           <p className="text-xs text-text-tertiary truncate">
             {file.updated_at > '1971' && `${t('row.modified')} ${updated} · `}{formatSize(file.size_bytes)}
           </p>
-        ) : density === 'large' && (
-          <p className="text-[11px] text-text-tertiary truncate">{file.mime_type} · {formatSize(file.size_bytes)}</p>
-        )}
+        ) : null}
       </div>
       {!isMobile && !hideMeta && file.updated_at > '1971' && <span className="text-xs text-text-tertiary shrink-0 w-28 text-right">{updated}</span>}
       {!isMobile && !hideMeta && <span className="text-xs text-text-tertiary shrink-0 w-20 text-right">{formatSize(file.size_bytes)}</span>}
@@ -93,20 +85,19 @@ export function FileRowBase({ file, thumb, selected, preSelected, focused, canMo
 
 // FolderRow — pendant de FileRow pour les dossiers (vues non-icônes) : mêmes
 // opérations + cible de dépôt (déplacer DANS le dossier).
-export function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop, density = 'normal', cols }: {
+export function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop, density = 'normal', cols }: {
   folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean; mergeTop?: boolean; mergeBottom?: boolean; zebra?: boolean
-  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
+  onSelect: (id: string, e: React.MouseEvent) => void; onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void
   onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
-  density?: 'compact' | 'normal' | 'large'; cols?: DetailsColsView
+  density?: 'compact' | 'normal'; cols?: DetailsColsView
 }) {
   const { t, i18n } = useTranslation('drive')
   const pendingKind = usePendingKind(folder.id)
   const isMobile = useIsMobile()
   const updated = new Date(folder.updated_at).toLocaleDateString(i18n.language, { day: '2-digit', month: 'short', year: 'numeric' })
-  const pad = isMobile ? 'px-2 py-3' : density === 'compact' ? 'px-3 py-1' : density === 'large' ? 'px-4 py-3.5' : 'px-4 py-2.5'
+  const pad = isMobile ? 'px-2 py-3' : density === 'compact' ? 'px-3 py-1' : 'px-4 py-2.5'
   const longPress = useLongPress(onLongPress ?? onContextMenu)
-  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={folder.id}
       draggable={canMove} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
@@ -115,10 +106,6 @@ export function FolderRowBase({ folder, isDragTarget, selected, preSelected, foc
       style={withRowShadow(pendingBoxStyle(pendingKind), rowAccentShadow({ dragTarget: isDragTarget, selected, preSelected, focused, mergeTop, mergeBottom }))} onContextMenu={onContextMenu}
       {...longPress}
       {...openable<React.MouseEvent>({ select: (e) => { e.preventDefault(); onSelect(folder.id, e) }, open: (e) => { e.preventDefault(); e.stopPropagation(); onOpen() } })}>
-      <span data-no-drag onClick={e => { e.stopPropagation(); onToggle(folder.id) }}
-        className={`shrink-0 transition-opacity ${selected || preSelected ? 'opacity-100' : selecting ? 'block opacity-100' : 'hidden lg:block lg:opacity-0 lg:group-hover:opacity-100'}`}>
-        <FloatCheckbox selected={selected || !!preSelected} onToggle={() => onToggle(folder.id)} />
-      </span>
       {cols && !isMobile ? (<>
         {/* Glyph wrapped in a w-8 box so the name column lines up with file rows. */}
         <div className="shrink-0 w-8 flex items-center justify-center"><FolderGlyph folder={folder} size={20} /></div>

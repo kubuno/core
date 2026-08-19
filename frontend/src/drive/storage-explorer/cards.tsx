@@ -5,7 +5,7 @@
  */
 import React from 'react'
 import { Star, MoreVertical } from 'lucide-react'
-import { FloatCheckbox, openable, useLongPress, useIsMobile } from '@ui'
+import { openable, useLongPress, useIsMobile } from '@ui'
 import { usePendingKind, pendingBoxClass, pendingBoxStyle } from '@kubuno/sdk'
 import type { Folder, FileItem } from '../api'
 import type { ThumbSpec } from '../storageSource'
@@ -13,14 +13,13 @@ import { FolderGlyph } from '../FolderGlyph'
 import { LabelDots } from '../LabelDots'
 import { getFileIcon } from '../filesShared'
 import { Thumb } from './Thumb'
-import { SelectingCtx } from './selectingContext'
 import { VersionBadge } from './VersionBadge'
 
 // ── FolderCard ─────────────────────────────────────────────────────────────────
 
-export function FolderCardBase({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop }: {
+export function FolderCardBase({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop }: {
   folder: Folder; isDragTarget: boolean; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
-  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
+  onSelect: (id: string, e: React.MouseEvent) => void; onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
   onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
 }) {
@@ -29,7 +28,6 @@ export function FolderCardBase({ folder, isDragTarget, selected, preSelected, fo
   // Mobile: folder cards are full-width (one per line), so the name gets a
   // comfortable single truncated line and a taller tap target.
   const isMobile = useIsMobile()
-  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={folder.id}
       className={`group relative flex items-center ${isMobile ? 'gap-3 px-3 py-3' : 'gap-2.5 px-3 py-2.5'} rounded-xl border transition-all cursor-default select-none min-w-0
@@ -45,8 +43,6 @@ export function FolderCardBase({ folder, isDragTarget, selected, preSelected, fo
       })}
       {...longPress}
       onContextMenu={onContextMenu} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-      <FloatCheckbox selected={selected} onToggle={() => onToggle(folder.id)}
-        className={`absolute -top-1.5 -left-1.5 z-10 ${isMobile && !selected && !selecting ? 'hidden' : ''}`} />
       <FolderGlyph folder={folder} size={isMobile ? 24 : 20} className="shrink-0" />
       <span className={`text-text-primary flex-1 min-w-0 ${isMobile ? 'text-[15px] truncate' : 'text-sm truncate'}`}>{folder.name}</span>
       <LabelDots kind="folder" id={folder.id} size={isMobile ? 12 : 11} />
@@ -60,9 +56,9 @@ export function FolderCardBase({ folder, isDragTarget, selected, preSelected, fo
 
 // ── FileCard (vue icônes) ────────────────────────────────────────────────────────
 
-export function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, allowVideoPreview, onSelect, onToggle, onContextMenu, onLongPress, onDragStart, onOpen, thumbH = 128, iconScale = 1, dense = false }: {
+export function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, allowVideoPreview, onSelect, onContextMenu, onLongPress, onDragStart, onOpen, thumbH = 128, iconScale = 1, dense = false }: {
   file: FileItem; thumb: ThumbSpec; selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean; allowVideoPreview: boolean
-  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
+  onSelect: (id: string, e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void; onDragStart: (e: React.DragEvent) => void; onOpen: () => void
   thumbH?: number; iconScale?: number; dense?: boolean
 }) {
@@ -80,7 +76,6 @@ export function FileCardBase({ file, thumb, selected, preSelected, focused, canM
   })()
   const longPress = useLongPress(onLongPress ?? onContextMenu)
   const isMobile = useIsMobile()
-  const selecting = React.useContext(SelectingCtx)
   return (
     <div data-selectable-id={file.id}
       className={`group relative rounded-xl border hover:shadow-[0_1px_6px_rgba(0,0,0,0.1)] transition-all min-w-0 select-none cursor-default
@@ -92,8 +87,6 @@ export function FileCardBase({ file, thumb, selected, preSelected, focused, canM
         select: (e) => { e.preventDefault(); onSelect(file.id, e) },
         open:   (e) => { e.preventDefault(); onOpen() },
       })}>
-      <FloatCheckbox selected={selected} onToggle={() => onToggle(file.id)}
-        className={`absolute -top-1.5 -left-1.5 z-10 ${isMobile && !selected && !selecting ? 'hidden' : ''}`} />
       {/* En-tête : icône de type + nom + étoile + menu */}
       <div className={`flex items-center ${isMobile ? 'gap-1.5 px-2 py-1.5 items-start' : `gap-2 ${dense ? 'px-2 h-8' : 'px-3 h-10'}`}`}>
         <span className="shrink-0 flex items-center [&_svg]:w-[18px] [&_svg]:h-[18px]">{getFileIcon(file.mime_type, file.name)}</span>

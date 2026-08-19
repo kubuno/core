@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { authApi } from '../api/auth'
-import { Button, Input, KubunoLogo } from '@ui'
+import { Button, Input } from '@ui'
 import { passwordStrength } from './passwordStrength'
+import { InstanceLogo } from '../shell/InstanceLogo'
 
 export default function RegisterPage() {
   const { t } = useTranslation()
@@ -55,7 +56,7 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center p-8 bg-surface-1">
       <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-border p-8">
         <div className="flex items-center gap-2 mb-6">
-          <KubunoLogo size={26} className="text-primary" />
+          <InstanceLogo size={26} className="text-primary" />
           <span className="text-xl font-semibold text-text-primary">Kubuno</span>
         </div>
 

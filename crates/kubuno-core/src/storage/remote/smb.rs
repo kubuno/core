@@ -8,6 +8,70 @@ use super::connector::{
     RemoteQuota,
 };
 
+/// One share advertised by a server.
+pub struct SmbShare {
+    pub name:    String,
+    pub comment: String,
+}
+
+/// Enumerates the disk shares a server advertises.
+///
+/// Exists because a share's NAME and its COMMENT are different things, and the
+/// connection form has no other way to show that: a server whose share is called
+/// `home_martinien` may describe it as "Home Martinien", and entering the
+/// description gets the mount rejected with `NT_STATUS_BAD_NETWORK_NAME` — with
+/// nothing on screen to explain why.
+///
+/// Uses `-g`, smbclient's machine-readable form (`TYPE|NAME|COMMENT`), rather
+/// than the aligned table, whose column widths depend on the longest name.
+pub async fn list_shares(
+    host: &str, username: Option<&str>, password: Option<&str>, domain: Option<&str>,
+) -> Result<Vec<SmbShare>, RemoteError> {
+    let mut args: Vec<String> = vec!["-L".into(), format!("//{host}"), "-g".into()];
+    match username.filter(|u| !u.is_empty()) {
+        Some(u) => args.extend(["-U".into(), format!("{u}%{}", password.unwrap_or(""))]),
+        None    => args.push("-N".into()),
+    }
+    if let Some(d) = domain.filter(|d| !d.is_empty()) {
+        args.extend(["-W".into(), d.to_string()]);
+    }
+
+    let out = tokio::process::Command::new("smbclient")
+        .args(&args)
+        .output()
+        .await
+        .map_err(RemoteError::Io)?;
+
+    // Same trap as `run_cmd`: smbclient reports failures on stdout.
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    if let Some(code) = combined.split_whitespace().find(|w| w.starts_with("NT_STATUS_")) {
+        return Err(match code {
+            "NT_STATUS_LOGON_FAILURE" | "NT_STATUS_ACCESS_DENIED"
+            | "NT_STATUS_WRONG_PASSWORD" => RemoteError::Auth(format!("SMB: {code}")),
+            other => RemoteError::Provider(format!("SMB: {other}")),
+        });
+    }
+
+    let mut shares = Vec::new();
+    for line in combined.lines() {
+        let mut cols = line.splitn(3, '|');
+        let (Some(kind), Some(name)) = (cols.next(), cols.next()) else { continue };
+        if kind.trim() != "Disk" { continue }
+        shares.push(SmbShare {
+            name:    name.trim().to_string(),
+            comment: cols.next().unwrap_or("").trim().to_string(),
+        });
+    }
+    if shares.is_empty() && !out.status.success() {
+        return Err(RemoteError::Provider(format!("SMB: {}", combined.trim())));
+    }
+    Ok(shares)
+}
+
 /// Connecteur SMB/CIFS utilisant `smbclient` (paquet Samba, disponible sur Linux).
 /// Les partages SMB apparaissent comme des répertoires dans le VFS de Files.
 pub struct SmbConnector {
@@ -75,11 +139,30 @@ impl SmbConnector {
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
 
-        if stderr.contains("NT_STATUS_LOGON_FAILURE") || stderr.contains("NT_STATUS_ACCESS_DENIED") {
-            return Err(RemoteError::Auth(format!("SMB: {stderr}")));
+        // smbclient reports its failures on STDOUT, leaving STDERR empty (checked
+        // on 4.19: `tree connect failed: NT_STATUS_BAD_NETWORK_NAME`, stderr
+        // empty, exit 1). Scanning stderr alone therefore caught nothing, the
+        // caller filtered the NT_STATUS line out of the listing, and a refused
+        // share, a wrong path and a genuinely empty folder all came back as the
+        // same empty directory.
+        let combined = format!("{stdout}\n{stderr}");
+        if let Some(code) = combined.split_whitespace().find(|w| w.starts_with("NT_STATUS_")) {
+            return Err(match code {
+                "NT_STATUS_LOGON_FAILURE" | "NT_STATUS_ACCESS_DENIED"
+                | "NT_STATUS_WRONG_PASSWORD" | "NT_STATUS_ACCOUNT_DISABLED"
+                    => RemoteError::Auth(format!("SMB: {code}")),
+                "NT_STATUS_BAD_NETWORK_NAME" | "NT_STATUS_OBJECT_PATH_NOT_FOUND"
+                | "NT_STATUS_OBJECT_NAME_NOT_FOUND" | "NT_STATUS_NO_SUCH_FILE"
+                    => RemoteError::NotFound(format!("SMB: {code}")),
+                other => RemoteError::Provider(format!("SMB: {other}")),
+            });
         }
-        if stderr.contains("NT_STATUS_OBJECT_PATH_NOT_FOUND") || stderr.contains("NT_STATUS_NO_SUCH_FILE") {
-            return Err(RemoteError::NotFound("SMB: chemin introuvable".into()));
+        // Anything else that exited non-zero: report it rather than hand back a
+        // listing nobody parsed.
+        if !out.status.success() {
+            let detail = combined.trim();
+            let detail = if detail.is_empty() { "échec de smbclient" } else { detail };
+            return Err(RemoteError::Provider(format!("SMB: {detail}")));
         }
         Ok(stdout)
     }

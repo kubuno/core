@@ -59,6 +59,30 @@ pub async fn proxy_to_module(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| state.settings.server.authenticate_internal(s));
 
+    // ── Les routes internes d'un module ne sont pas publiques ────────────────
+    // Plus bas, le proxy REMPLACE le header X-Internal-Secret par le secret du
+    // module cible : n'importe quelle requête arrive donc au module avec un
+    // secret valide. Un module qui publie `patterns = [{ path = "/*" }]` (la
+    // plupart) verrait ainsi ses routes /internal/* — celles qui agissent au nom
+    // de l'instance, sans compte — atteignables par tout utilisateur connecté,
+    // le garde interne du module ne pouvant pas faire la différence.
+    //
+    // Le core est le seul endroit où cette distinction existe encore : ici, un
+    // appel légitime module→module s'est authentifié juste au-dessus (`caller`),
+    // un navigateur non. Les appels du core vers un module ne passent pas par ce
+    // proxy (ils visent `base_url` directement) et ne sont donc pas concernés.
+    // `stripped` porte aussi la query string : on ne compare que le chemin.
+    let stripped_path = stripped.split('?').next().unwrap_or(&stripped);
+    if caller.is_none() && (stripped_path == "/internal" || stripped_path.starts_with("/internal/")) {
+        tracing::warn!(
+            module = %module_id,
+            "Accès refusé à une route interne de module depuis une requête client"
+        );
+        return Err(AppError::NotFound(format!(
+            "Route inconnue pour le module '{module_id}'"
+        )));
+    }
+
     let internal_user_id = caller.as_ref().and_then(|c| {
         tracing::debug!(
             caller = %c.label(),
@@ -128,6 +152,17 @@ pub async fn proxy_to_module(
                 headers.insert(HeaderName::from_static("x-kubuno-user-email"), v);
             }
             annotate_origin(headers, grant.as_ref());
+
+            // Attendance. Counted HERE and nowhere else: this is the one line of
+            // the whole system where an account and an application are known at
+            // the same time, and it costs a hash-map insert — the response is
+            // never made to wait for a measurement (see `modules::usage`).
+            //
+            // Deliberately NOT counted on the module→module branch above: a call
+            // Flow makes to Drive on somebody's behalf is an automation running,
+            // not a person opening an application, and folding the two together
+            // would make a busy rule look like a popular module.
+            state.usage.record(module_id, user.id);
         }
     }
     } // fin: authentification par token (ignorée si auth interne module→module)
@@ -223,6 +258,21 @@ pub async fn proxy_ws_to_module(
         .unwrap_or(&path_and_query)
         .to_owned();
 
+    // Même règle que sur le proxy HTTP : les routes internes d'un module ne sont
+    // pas atteignables depuis un client, puisque le proxy présente plus bas le
+    // secret interne du module cible. Aucune authentification module→module
+    // n'existe sur ce chemin (une WebSocket n'en porte pas), donc le refus est
+    // inconditionnel ici.
+    let stripped_path = stripped.split('?').next().unwrap_or(&stripped);
+    if stripped_path == "/internal" || stripped_path.starts_with("/internal/") {
+        tracing::warn!(
+            module = %module_id,
+            "Accès refusé à une route interne de module depuis une WebSocket cliente"
+        );
+        return AppError::NotFound(format!("Route inconnue pour le module '{module_id}'"))
+            .into_response();
+    }
+
     // Convert http:// base_url → ws://
     let ws_base = base_url
         .replacen("https://", "wss://", 1)
@@ -263,6 +313,10 @@ pub async fn proxy_ws_to_module(
             if let Some(g) = grant.as_ref().filter(|g| !g.is_legacy) {
                 user_headers.push(("x-kubuno-token-scopes".to_owned(), g.scopes.join(",")));
             }
+            // One count per socket opened, not per frame. Chat and media are
+            // used almost entirely over this path; without it they would read as
+            // deserted on the attendance panel.
+            state.usage.record(&module_id, user.id);
         }
     }
     // Secret interne du module cible (celui qu'il détient), pas le secret maître.

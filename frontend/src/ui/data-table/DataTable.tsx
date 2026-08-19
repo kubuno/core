@@ -164,13 +164,10 @@ export function DataTable<T>({
   const pageKeys = pageRows.map(rowKey)
   const allOnPage  = pageKeys.length > 0 && pageKeys.every(k => selected.has(k))
   const someOnPage = pageKeys.some(k => selected.has(k))
-  const headCbRef  = useRef<HTMLSpanElement>(null)
-  // A partial page selection must read as "indeterminate", not as "unchecked":
-  // the tri-state is only reachable through the DOM property, never markup.
-  useEffect(() => {
-    const input = headCbRef.current?.querySelector('input')
-    if (input) input.indeterminate = someOnPage && !allOnPage
-  }, [someOnPage, allOnPage])
+  // A partial page selection must read as "indeterminate", not as "unchecked".
+  // `Checkbox` now owns that: it pushes the DOM property (the tri-state exists
+  // nowhere else) AND draws the dash, which the CSS control never did.
+  const headIndeterminate = someOnPage && !allOnPage
 
   const toggleAll = () => setSelected(
     allOnPage
@@ -352,9 +349,10 @@ export function DataTable<T>({
                 <tr className="border-b border-border bg-surface-1">
                   {selectable && (
                     <th scope="col" className="w-10 px-3 py-2.5">
-                      <span ref={headCbRef} className="flex">
+                      <span className="flex">
                         <Checkbox
                           checked={allOnPage}
+                          indeterminate={headIndeterminate}
                           onChange={toggleAll}
                           label={tr('ui.dt_select_all')}
                           labelClassName="sr-only"

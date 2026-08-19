@@ -77,9 +77,6 @@ pub async fn register(
         return Err(AppError::Conflict("Email ou nom d'utilisateur déjà utilisé".into()));
     }
 
-    let hash = password::hash_password(&dto.password)
-        .map_err(AppError::Internal)?;
-
     // A public sign-up names no unit, so it lands at the root of the tree — not
     // outside it. An account outside the tree is invisible to every DELEGATED
     // administrator (`handlers/admin/users.rs` filters by subtree) and resolves
@@ -95,10 +92,27 @@ pub async fn register(
     // accounts it was raised for.
     let quota = crate::models::user::default_quota_for(&state.db, root_unit).await;
 
+    // The password policy of the unit the account is about to land in — the
+    // most specific scope that can be known before the row exists. Resolved and
+    // applied BEFORE hashing: a refused password must not cost an argon2id, and
+    // a public route is the one an attacker can call at will.
+    //
+    // The refusal states the rule, never how close the attempt came. It is not
+    // an enumeration oracle either: the policy of the root unit is the same for
+    // everybody who signs up, whatever address they typed.
+    let policy =
+        crate::settings::password_policy::PasswordPolicy::for_new_account(&state.db, root_unit)
+            .await?;
+    policy.check(&dto.password)?;
+
+    let hash = password::hash_password(&dto.password)
+        .map_err(AppError::Internal)?;
+
     let user = sqlx::query_as::<_, crate::models::user::User>(
         r#"INSERT INTO core.users
-               (email, username, password_hash, display_name, quota_bytes, org_unit_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
+               (email, username, password_hash, display_name, quota_bytes, org_unit_id,
+                password_changed_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
            RETURNING *"#,
     )
     .bind(&dto.email)
@@ -109,6 +123,16 @@ pub async fn register(
     .bind(root_unit)
     .fetch_one(&state.db)
     .await?;
+
+    // The first password enters the history like every later one. Without it,
+    // "no reuse" would let somebody change their password once and immediately
+    // change it back to the one they signed up with.
+    let mut conn = state.db.acquire().await.map_err(|e| {
+        tracing::error!(error = %e, "register: connexion pour l'historique de mot de passe");
+        AppError::Database(e)
+    })?;
+    crate::settings::password_policy::remember(&mut conn, user.id, &hash, policy.history_depth)
+        .await?;
 
     // Ajouter l'utilisateur aux groupes par défaut
     let default_groups: Vec<uuid::Uuid> = sqlx::query_scalar(

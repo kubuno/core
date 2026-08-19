@@ -90,6 +90,24 @@ pub enum AppError {
     #[error("Quota dépassé")]
     QuotaExceeded,
 
+    /// A remote mount's stored credentials can no longer be decrypted, because
+    /// `server.internal_secret` is not the one that sealed them. Unrecoverable
+    /// by design, but not a server fault and not a dead end: the owner can
+    /// reconnect the mount. It gets its own code so the client can say that
+    /// instead of showing a bare failure.
+    #[error(
+        "Les identifiants de ce stockage distant ne sont plus déchiffrables : \
+         le secret interne de l'instance a changé depuis leur enregistrement. \
+         Reconnectez le montage pour les saisir à nouveau."
+    )]
+    RemoteMountUnreadable,
+
+    /// A remote storage provider was unreachable, refused us, or answered
+    /// something unusable. The failure is upstream: reporting it as a 500 sends
+    /// whoever reads it auditing Kubuno's own logs for a fault that is not here.
+    #[error("Stockage distant injoignable : {0}")]
+    RemoteUnavailable(String),
+
     #[error("Erreur base de données")]
     Database(#[from] sqlx::Error),
 
@@ -127,6 +145,14 @@ impl IntoResponse for AppError {
             AppError::Validation(_)   => (StatusCode::UNPROCESSABLE_ENTITY,    "VALIDATION_ERROR", self.to_string()),
             AppError::Conflict(_)     => (StatusCode::CONFLICT,                "CONFLICT",         self.to_string()),
             AppError::QuotaExceeded   => (StatusCode::INSUFFICIENT_STORAGE,    "QUOTA_EXCEEDED",   self.to_string()),
+            // 409 rather than 500: the stored state conflicts with the current
+            // secret, and the client can offer a way out of it.
+            AppError::RemoteMountUnreadable => {
+                (StatusCode::CONFLICT, "MOUNT_CONFIG_UNREADABLE", self.to_string())
+            }
+            AppError::RemoteUnavailable(_) => {
+                (StatusCode::BAD_GATEWAY, "REMOTE_UNAVAILABLE", self.to_string())
+            }
             AppError::Database(e) => {
                 tracing::error!(error = %e, "Database error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE_ERROR", "Erreur base de données".to_string())

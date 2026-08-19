@@ -147,7 +147,7 @@ export default function AdminSearchBar() {
   return (
     <div ref={rootRef} className="relative w-full">
       {/* Field. Every colour comes from a theme token: the previous hard-coded
-          #ffffff / #eaeef5 / #e0e0e0 painted a white bar on a dark theme. */}
+          #ffffff / #eaeef5 / #e0e0e0 painted a white bar on a dark theme (now via bg-search-bg). */}
       <div
         className={`flex h-12 items-center rounded-full border transition-colors
                     ${open ? 'border-border bg-surface-0' : 'border-transparent bg-search-bg'}`}

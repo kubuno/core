@@ -42,6 +42,8 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
   const isHome = pathname === '/'
   const [panelOpen, setPanelOpen]           = useState(false)
   const [addAccountOpen, setAddAccountOpen] = useState(false)
+  // Re-connecting a « Déconnecté » account row: its email + slot, handed to the modal.
+  const [addAccountPrefill, setAddAccountPrefill] = useState<{ email: string; slot: number } | undefined>()
   const avatarBtnRef = useRef<HTMLButtonElement>(null)
 
   const initials = user?.display_name
@@ -55,15 +57,18 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
     return entry ? entry.apps.map(a => ({ ...a, moduleId: entry.moduleId, moduleLabel: entry.label })) : []
   })
 
-  // Tailles : compact (barre de titre de sous-module) vs normal (AppHeader).
+  // Same metrics everywhere (AppHeader AND sub-module title bars): 36px circles,
+  // 18px glyphs — aligned on the office title bar. `compact` no longer changes
+  // sizes, it is kept because callers still pass it and it may drive future
+  // spacing tweaks.
   // `dark` : variante sombre pour les topbars PaintSharp (#111) — icônes claires sur fond
   // sombre, hover translucide ; les popovers restent des overlays blancs portés.
-  const ico = compact ? 18 : 20
+  const ico = 18
   // Pas d'anneau de focus sur ces boutons d'en-tête : `focus:outline-none` supprime le
   // cercle (outline navigateur). On NE met PAS de `focus-visible:ring` car les triggers
   // de menus Radix restaurent le focus par programme à la fermeture → le navigateur
   // applique alors `:focus-visible` et l'anneau réapparaîtrait (le « parfois » signalé).
-  const btn = `${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-full flex items-center justify-center transition-colors focus:outline-none ${
+  const btn = `w-9 h-9 rounded-full flex items-center justify-center transition-colors focus:outline-none ${
     dark ? 'text-white/75 hover:bg-white/15 data-[state=open]:bg-white/15' : 'text-text-secondary hover:bg-surface-3 data-[state=open]:bg-surface-3'}`
 
   return (
@@ -176,21 +181,25 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
         <WaffleMenu allApps={allWaffleApps} compact={compact} dark={dark} />
       </div>
 
-      {/* Avatar — ouvre le UserPanel. Même gabarit que les autres icônes (cercle 48px
-          en normal / 36px en compact) → aligné verticalement et de la même dimension
-          que les cercles gris de survol. */}
+      {/* Avatar — ouvre le UserPanel. Même gabarit que les autres icônes (cercle
+          36px partout) → aligné verticalement et de la même dimension que les
+          cercles gris de survol. */}
       <button ref={avatarBtnRef} onClick={() => setPanelOpen(v => !v)}
-        className={`${compact ? 'w-9 h-9 ml-0.5' : 'w-12 h-12 ml-1'} flex items-center justify-center flex-shrink-0 rounded-full outline-none focus:outline-none`}>
-        <Avatar.Root className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-full overflow-hidden bg-primary flex items-center justify-center`}>
+        className="w-9 h-9 ml-0.5 flex items-center justify-center flex-shrink-0 rounded-full outline-none focus:outline-none">
+        <Avatar.Root className="w-9 h-9 rounded-full overflow-hidden bg-primary flex items-center justify-center">
           {user?.avatar_url ? (
             <Avatar.Image src={user.avatar_url} alt={user.display_name ?? user.username} className="w-full h-full object-cover" />
           ) : null}
-          <Avatar.Fallback className={`text-white font-medium ${compact ? 'text-sm' : 'text-sm'}`}>{initials}</Avatar.Fallback>
+          <Avatar.Fallback className="text-white font-medium text-sm">{initials}</Avatar.Fallback>
         </Avatar.Root>
       </button>
 
-      <UserPanel open={panelOpen} onClose={() => setPanelOpen(false)} onAddAccount={() => setAddAccountOpen(true)} anchorRef={avatarBtnRef} />
-      <AddAccountModal open={addAccountOpen} onClose={() => setAddAccountOpen(false)} />
+      <UserPanel open={panelOpen} onClose={() => setPanelOpen(false)}
+        onAddAccount={prefill => { setAddAccountPrefill(prefill); setAddAccountOpen(true) }}
+        anchorRef={avatarBtnRef} />
+      <AddAccountModal open={addAccountOpen}
+        onClose={() => { setAddAccountOpen(false); setAddAccountPrefill(undefined) }}
+        prefillEmail={addAccountPrefill?.email} slot={addAccountPrefill?.slot} />
     </div>
   )
 }

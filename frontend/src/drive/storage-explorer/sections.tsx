@@ -17,7 +17,7 @@ import type { TFunc } from './types'
 export type FolderCommonProps = {
   folder: Folder; isDragTarget: boolean
   selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
-  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void; onOpen: () => void
+  onSelect: (id: string, e: React.MouseEvent) => void; onOpen: () => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
   onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
@@ -26,13 +26,13 @@ export type FolderCommonProps = {
 export type FileCommonProps = {
   file: FileItem; thumb: ThumbSpec
   selected: boolean; preSelected?: boolean; focused?: boolean; canMove: boolean
-  onSelect: (id: string, e: React.MouseEvent) => void; onToggle: (id: string) => void
+  onSelect: (id: string, e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void; onLongPress?: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void; onOpen: () => void
 }
 
-export function FoldersSection({ visibleFolders, view, compact, isMobile, selectedIds, folderRowProps, t }: {
-  visibleFolders: Folder[]; view: ViewMode; compact: boolean; isMobile: boolean
+export function FoldersSection({ visibleFolders, view, isMobile, selectedIds, folderRowProps, t }: {
+  visibleFolders: Folder[]; view: ViewMode; isMobile: boolean
   selectedIds: Set<string>; folderRowProps: (f: Folder) => FolderCommonProps; t: TFunc
 }) {
   const spec = VIEW_SPECS[view]
@@ -43,16 +43,15 @@ export function FoldersSection({ visibleFolders, view, compact, isMobile, select
       // Mobile : dossiers à pleine largeur, un par ligne (une carte
       // dossier est une puce horizontale nom+kebab — 2 colonnes
       // tronquaient le nom). Desktop : `minmax(200px,…)` auto-fill.
+      // Icon views breathe twice as wide as the other layouts. Mobile keeps the
+      // tighter spacing, where horizontal room is scarce.
       return (
-        <div className="grid gap-2" style={{ gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(200px,1fr))' }}>
+        <div className="grid" style={{ gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill,minmax(200px,1fr))', gap: isMobile ? 8 : 16 }}>
           {visibleFolders.map(f => <FolderCard key={f.id} {...common(f)} />)}
         </div>
       )
     }
     const dens = spec.multicol ? 'compact' : (spec.density ?? 'normal')
-    if (spec.kind === 'tiles') {
-      return <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 10 }}>{visibleFolders.map(f => <div key={f.id} className="border border-border rounded-lg overflow-hidden bg-white"><FolderRow {...common(f)} density="normal" /></div>)}</div>
-    }
     if (spec.multicol) {
       return <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 2 }}>{visibleFolders.map(f => <FolderRow key={f.id} {...common(f)} density="compact" />)}</div>
     }
@@ -66,9 +65,9 @@ export function FoldersSection({ visibleFolders, view, compact, isMobile, select
   )
 }
 
-export function FilesSection({ visibleFiles, filteredFiles, files, typeFilter, view, compact, isMobile, selectedIds, fileRowProps, renderFileCard, allowVideoPreview, t }: {
+export function FilesSection({ visibleFiles, filteredFiles, files, typeFilter, view, isMobile, selectedIds, fileRowProps, renderFileCard, allowVideoPreview, t }: {
   visibleFiles: FileItem[]; filteredFiles: FileItem[]; files: FileItem[]; typeFilter: string | null
-  view: ViewMode; compact: boolean; isMobile: boolean; selectedIds: Set<string>
+  view: ViewMode; isMobile: boolean; selectedIds: Set<string>
   fileRowProps: (f: FileItem) => FileCommonProps
   renderFileCard?: (file: FileItem, defaultCard: React.ReactNode) => React.ReactNode
   allowVideoPreview: boolean; t: TFunc
@@ -79,25 +78,17 @@ export function FilesSection({ visibleFiles, filteredFiles, files, typeFilter, v
   const common = fileRowProps
   const body = (() => {
     if (spec.kind === 'icons') {
+      // Icon views breathe twice as wide as the list layouts. Mobile keeps
+      // the tighter spacing, where horizontal room is scarce.
+      const gap = isMobile ? 12 : 24
       return (
-        <div className="grid" style={{ gridTemplateColumns: isMobile ? 'repeat(2,minmax(0,1fr))' : `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 12 }}>
+        <div className="grid" style={{ gridTemplateColumns: isMobile ? 'repeat(2,minmax(0,1fr))' : `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap }}>
           {visibleFiles.map(file => {
             const defaultCard = (
               <FileCard {...common(file)} allowVideoPreview={allowVideoPreview} thumbH={spec.thumbH} iconScale={spec.iconScale} dense={spec.dense} />
             )
             return <div key={file.id}>{renderFileCard ? renderFileCard(file, defaultCard) : defaultCard}</div>
           })}
-        </div>
-      )
-    }
-    if (spec.kind === 'tiles') {
-      return (
-        <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fill,minmax(${spec.min}px,1fr))`, gap: compact ? 6 : 10 }}>
-          {visibleFiles.map(file => (
-            <div key={file.id} className="border border-border rounded-lg overflow-hidden bg-white hover:border-border-strong transition-colors">
-              <FileRow {...common(file)} hideMeta />
-            </div>
-          ))}
         </div>
       )
     }

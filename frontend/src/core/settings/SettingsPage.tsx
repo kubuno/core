@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { useIsMobile } from '@ui'
 import { Slot } from '../slots/SlotRegistry'
 // Importing `navigation` also registers the /settings left panel (side effect).
-import { SETTINGS_NAV, MobileSettingsIndex, type Tab } from './navigation'
+import { useSettingsNav, MobileSettingsIndex, type Tab } from './navigation'
 import { ProfileTab } from './sections/ProfileTab'
 import { NotificationsTab } from './sections/NotificationsTab'
 import { ThemesTab } from './sections/ThemesTab'
@@ -12,6 +12,7 @@ import { ClientsTab } from './sections/ClientsTab'
 import { SecurityTab } from './sections/SecurityTab'
 import { SessionsTab } from './sections/SessionsTab'
 import { ApiTokensTab } from './sections/ApiTokensTab'
+import { MyDataTab } from './sections/my-data/MyDataTab'
 
 export default function SettingsPage() {
   const { t } = useTranslation()
@@ -21,7 +22,10 @@ export default function SettingsPage() {
   const rawTab = params.get('tab')
   const tab = (rawTab as Tab) || 'profile'
 
-  const current = SETTINGS_NAV.find(navItem => navItem.id === tab)
+  // The sections this account actually has — a tab gated off by a feature
+  // switch is absent from it, so `?tab=` cannot paint one by hand.
+  const nav = useSettingsNav()
+  const current = nav.find(navItem => navItem.id === tab)
 
   // Mobile, no section chosen → the index (see MobileSettingsIndex).
   if (isMobile && !rawTab) return <MobileSettingsIndex />
@@ -52,6 +56,7 @@ export default function SettingsPage() {
       {tab === 'security'      && <SecurityTab />}
       {tab === 'sessions'      && <SessionsTab />}
       {tab === 'api-tokens'    && <ApiTokensTab />}
+      {tab === 'my-data'       && !!current && <MyDataTab />}
 
       {/* On mobile these live in the index, not under every section. */}
       {!isMobile && <Slot name="settings-sections" />}

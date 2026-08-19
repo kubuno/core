@@ -27,7 +27,11 @@ pub const GENERATED_LENGTH: usize = 16;
 /// Uniform by construction: `gen_range` over the alphabet's length, never
 /// `random_byte % len`, which would bias the first characters of the set.
 pub fn generate_password(length: usize) -> String {
-    let length = length.clamp(12, 64);
+    // The ceiling matches `password_policy::MIN_LENGTH_CEILING`: an instance
+    // that demands 100 characters must still be able to have one generated for
+    // it, and a clamp below the policy floor would produce a password the very
+    // policy that asked for it then refuses.
+    let length = length.clamp(12, 128);
     let mut rng = rand::thread_rng();
     (0..length)
         .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)

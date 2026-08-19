@@ -2,6 +2,7 @@ use crate::{
     config::Settings,
     events::EventBus,
     modules::registry::ModuleRegistry,
+    modules::usage::UsageMeter,
     websocket::hub::WsHub,
 };
 use kubuno_storage::StorageBackend;
@@ -21,4 +22,7 @@ pub struct AppState {
     pub ws_hub:   Arc<WsHub>,
     /// Montages distants centralisés (connecteurs + cache + chiffrement).
     pub remote_mounts: Arc<RemoteMountService>,
+    /// Attendance counter fed by the module proxy — which account used which
+    /// application, aggregated by day (see [`crate::modules::usage`]).
+    pub usage: Arc<UsageMeter>,
 }
