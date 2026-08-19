@@ -9,6 +9,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-08-19
+
 ### Added
 
 - **Documents logo**: the Office documents app now has a mark of its own, served
@@ -206,4 +208,5 @@ number at release time, and CI publishes that section as the GitHub Release note
   turned the Calendar radio buttons into black discs when handed `var(--color-primary)`.
   Theme colours are now resolved before they reach the canvas.
 
-[Unreleased]: https://github.com/kubuno/core/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/kubuno/core/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/kubuno/core/releases/tag/v0.1.6
