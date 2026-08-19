@@ -65,17 +65,17 @@ number at release time, and CI publishes that section as the GitHub Release note
   changed nothing) is honoured wherever the product mark used to be hard-coded:
   sign-in, shell, and the head of every printed report.
 - Cross-module contact **@mention** infrastructure.
-- **Google-style multi-account**: several accounts can be signed into one browser at
+- **Multi-account**: several accounts can be signed into one browser at
   once, each holding its refresh token in its own HttpOnly slot cookie. New endpoints
   `GET /auth/accounts` (enumerates the browser's accounts) and `POST /auth/switch`
   (re-points the active session); `POST /auth/logout` accepts `slot` (remove one
   account) and `all` (sign out of every account). Switching hard-reloads onto the
   current module's root, so every store and cache is rebuilt under the new identity,
   and the other tabs of the browser reload too.
-- **Account panel redesigned** after Google's: clickable account rows (one click
+- **Account panel redesigned**: clickable account rows (one click
   switches), `Déconnecté` badge with re-connect/remove on dead sessions, per-account
   unread-notification badges, "Sign out of all accounts", compact sticky header on
-  scroll. Styled and positioned like the waffle-menu popup.
+  scroll. Styled and positioned like the app-grid popup.
 - Notifications are now **compartmented per account** (one bucket per user in
   localStorage): an account never sees another's bell, and the panel reads the other
   buckets for its per-row badges.
@@ -109,10 +109,10 @@ number at release time, and CI publishes that section as the GitHub Release note
   toolbar docks under it. A trail that scrolls away is a trail you scroll back for.
 - **Default interface font stack** is now `"Google Sans Text", "Google Sans", Roboto,
   Arial, sans-serif`, entirely **self-hosted**: the stylesheet loads it from the drive
-  module's Google-Fonts-style endpoint (`/api/v1/drive/fonts/css2`) — no request ever
+  module's own `css2` font endpoint (`/api/v1/drive/fonts/css2`) — no request ever
   leaves for a third-party CDN (DM Mono included), and the leftover
-  `preconnect` hints to `fonts.googleapis.com`/`fonts.gstatic.com` are gone too (a
-  preconnect still opened a connection to Google, leaking the visitor's IP for no
+  `preconnect` hints to the former third-party font CDN are gone too (a
+  preconnect still opened a connection to it, leaking the visitor's IP for no
   benefit once the fonts became local).
 - Header circular buttons (search, bell, settings, help, apps grid, avatar) unified at
   **36×36 px** with an 8 px right margin, aligned on the office title bar.
