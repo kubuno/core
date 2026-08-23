@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { SlidersHorizontal } from 'lucide-react'
+import { SlidersHorizontal, PanelRightOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Tooltip } from '@ui'
+import { Tooltip, MenuDropdown, type MenuDropdownPos } from '@ui'
 import { useRightPanelStore } from '../store/rightPanelStore'
 import { useRightRailPrefs } from '../hooks/useRightRailPrefs'
+import { useDockReopenStore } from './store/dockReopenStore'
 import RightRailCustomize from './RightRailCustomize'
 
 /**
@@ -30,11 +31,19 @@ export default function RightRail() {
   const { entries, visible, prefs, save } = useRightRailPrefs()
   const [editing, setEditing] = useState(false)
 
-  // Nothing to offer here (no module registered a panel, or the only one belongs to
-  // the module we are in): a rail holding just its own settings button is noise.
-  if (visible.length === 0) return null
+  // Closed dock panels of the active editor, published by its DockArea. The
+  // reopen control used to float over the editor viewport; the user asked for it
+  // to live here, below the module icons next to the customise button.
+  const reopenEntries = useDockReopenStore(s => s.entries)
+  const reopen = useDockReopenStore(s => s.reopen)
+  const [reopenMenu, setReopenMenu] = useState<MenuDropdownPos | null>(null)
+
+  // Nothing to offer (no module registered a panel here) AND no closed dock panel
+  // to reopen: a rail holding just its own settings button would be noise.
+  if (visible.length === 0 && reopenEntries.length === 0) return null
 
   const customiseLabel = t('shell.rail_customize', { defaultValue: 'Personnaliser le panneau' })
+  const reopenLabel = t('shell.rail_reopen_panels', { defaultValue: 'Panneaux fermés' })
 
   return (
     <>
@@ -70,20 +79,45 @@ export default function RightRail() {
           )
         })}
 
+        {/* Reopen the active editor's closed dock panels — moved here from the
+            editor viewport at the user's request, just above the customise button. */}
+        {reopenEntries.length > 0 && (
+          <Tooltip label={`${reopenLabel} (${reopenEntries.length})`} side="left">
+            <button
+              type="button"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setReopenMenu({ top: r.top, left: Math.max(8, r.left - 208), minWidth: 200 })
+              }}
+              aria-label={`${reopenLabel} (${reopenEntries.length})`}
+              className="relative mt-1 flex h-10 w-10 items-center justify-center rounded-full text-text-secondary
+                         transition-colors hover:bg-surface-2 hover:text-text-primary
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+            >
+              <PanelRightOpen size={20} />
+              <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-white">
+                {reopenEntries.length}
+              </span>
+            </button>
+          </Tooltip>
+        )}
+
         {/* Customisation lives at the BOTTOM, separated: it is not one of the panels,
             and putting it in the flow would make the rail's order look arbitrary. */}
-        <Tooltip label={customiseLabel} side="left">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            aria-label={customiseLabel}
-            className="mt-1 flex h-10 w-10 items-center justify-center rounded-full border-t border-border/60 text-text-tertiary
-                       transition-colors hover:bg-surface-2 hover:text-text-primary
-                       focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
-          >
-            <SlidersHorizontal size={18} />
-          </button>
-        </Tooltip>
+        {visible.length > 0 && (
+          <Tooltip label={customiseLabel} side="left">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              aria-label={customiseLabel}
+              className="mt-1 flex h-10 w-10 items-center justify-center rounded-full border-t border-border/60 text-text-tertiary
+                         transition-colors hover:bg-surface-2 hover:text-text-primary
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+            >
+              <SlidersHorizontal size={18} />
+            </button>
+          </Tooltip>
+        )}
       </div>
 
       {editing && (
@@ -92,6 +126,18 @@ export default function RightRail() {
           prefs={prefs}
           onSave={save}
           onClose={() => setEditing(false)}
+        />
+      )}
+
+      {reopenMenu && (
+        <MenuDropdown
+          items={reopenEntries.map(en => ({
+            type: 'action' as const,
+            label: en.label,
+            onClick: () => reopen?.(en.id),
+          }))}
+          pos={reopenMenu}
+          onClose={() => setReopenMenu(null)}
         />
       )}
     </>

@@ -18,6 +18,12 @@ import { Input as BaseInput } from './Input'
 import { NumberInput as BaseNumberInput } from './NumberInput'
 import { Textarea as BaseTextarea } from './Textarea'
 import { Editable as BaseEditable } from './Editable'
+import { OutlinedField as BaseOutlinedField } from './OutlinedField'
+import { FieldGroup as BaseFieldGroup } from './FieldGroup'
+import { PhoneField as BasePhoneField } from './PhoneField'
+import { DateField as BaseDateField } from './DateField'
+import { AddressField as BaseAddressField } from './AddressField'
+import { LabelCombobox as BaseLabelCombobox } from './LabelCombobox'
 import { RichText as BaseRichText } from './RichText'
 import { Checkbox as BaseCheckbox } from './Checkbox'
 import { Radio as BaseRadio } from './Radio'
@@ -60,6 +66,12 @@ import BaseConflictDialog from './ConflictDialog'
 export const Button = t('ui.Button', BaseButton)
 export const Badge = t('ui.Badge', BaseBadge)
 export const Input = t('ui.Input', BaseInput)
+export const OutlinedField = t('ui.OutlinedField', BaseOutlinedField)
+export const FieldGroup = t('ui.FieldGroup', BaseFieldGroup)
+export const PhoneField = t('ui.PhoneField', BasePhoneField)
+export const DateField = t('ui.DateField', BaseDateField)
+export const AddressField = t('ui.AddressField', BaseAddressField)
+export const LabelCombobox = t('ui.LabelCombobox', BaseLabelCombobox)
 export const NumberInput = t('ui.NumberInput', BaseNumberInput)
 export const Textarea = t('ui.Textarea', BaseTextarea)
 export const Editable = t('ui.Editable', BaseEditable)
@@ -111,6 +123,14 @@ export { CaretDown } from './CaretDown'
 export { RollingNumber } from './RangeSlider'
 export type { RangeSliderProps } from './RangeSlider'
 export type { EditableProps } from './Editable'
+export type { OutlinedFieldProps } from './OutlinedField'
+export type { FieldGroupProps, GroupField } from './FieldGroup'
+export type { PhoneFieldProps, PhoneValue } from './PhoneField'
+export type { DateFieldProps, DateValue } from './DateField'
+export type { AddressFieldProps, AddressValue } from './AddressField'
+export type { LabelComboboxProps } from './LabelCombobox'
+export { COUNTRIES, flagEmoji, countryOf } from './countries'
+export type { Country } from './countries'
 export type { DropdownOption } from './Dropdown'
 export type { AccordionItemDef, AccordionProps } from './Accordion'
 export type { FontPickerProps } from './FontPicker'

@@ -26,7 +26,11 @@ export default function IdentityCard({ user }: { user: User }) {
 
   const canEdit = can(PRIV.USERS_UPDATE, user.org_unit_id)
   const save = useUpdateAccount(user.id)
-  const draft = useDraft({ display_name: user.display_name ?? '' })
+  const draft = useDraft({
+    display_name: user.display_name ?? '',
+    first_name:   user.first_name ?? '',
+    last_name:    user.last_name ?? '',
+  })
 
   const stop = () => { setEditing(false); save.reset(); draft.reset() }
 
@@ -34,7 +38,11 @@ export default function IdentityCard({ user }: { user: User }) {
     // An empty name is not the empty string: the column falls back to the
     // username, and the server COALESCEs an absent field.
     save.mutate(
-      { display_name: draft.value.display_name.trim() || undefined },
+      {
+        display_name: draft.value.display_name.trim() || undefined,
+        first_name:   draft.value.first_name.trim() || null,
+        last_name:    draft.value.last_name.trim() || null,
+      },
       { onSuccess: () => { setEditing(false); save.reset() } },
     )
   }
@@ -63,6 +71,24 @@ export default function IdentityCard({ user }: { user: User }) {
               autoFocus
             />
           ) : orDash(user.display_name)}
+        </Field>
+        <Field label={t('admin.ud_first_name', { defaultValue: 'Prénom' })}>
+          {editing ? (
+            <Input
+              value={draft.value.first_name}
+              onChange={e => draft.set('first_name', e.target.value)}
+              maxLength={120}
+            />
+          ) : orDash(user.first_name)}
+        </Field>
+        <Field label={t('admin.ud_last_name', { defaultValue: 'Nom de famille' })}>
+          {editing ? (
+            <Input
+              value={draft.value.last_name}
+              onChange={e => draft.set('last_name', e.target.value)}
+              maxLength={120}
+            />
+          ) : orDash(user.last_name)}
         </Field>
         <Field label={t('admin.ud_username')}>{user.username}</Field>
         <Field label={t('admin.u_email')}>

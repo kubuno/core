@@ -324,6 +324,10 @@ pub struct UpdateUserAdminDto {
     // [`crate::models::user::UpdateUserDto::tidy_profile`] rather than
     // re-validated by hand, so the two paths cannot drift apart.
     #[serde(default, deserialize_with = "crate::models::user::double_option")]
+    pub first_name:         Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::models::user::double_option")]
+    pub last_name:          Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::models::user::double_option")]
     pub name_pronunciation: Option<Option<String>>,
     #[serde(default, deserialize_with = "crate::models::user::double_option")]
     pub pronouns:           Option<Option<String>>,
@@ -343,6 +347,8 @@ impl UpdateUserAdminDto {
     /// messages, whoever is writing.
     fn tidy_profile(&mut self, today: chrono::NaiveDate) -> Result<(), AppError> {
         let mut shared = crate::models::user::UpdateUserDto {
+            first_name:         self.first_name.take(),
+            last_name:          self.last_name.take(),
             name_pronunciation: self.name_pronunciation.take(),
             pronouns:           self.pronouns.take(),
             work_location:      self.work_location.take(),
@@ -353,6 +359,8 @@ impl UpdateUserAdminDto {
         };
         let outcome = shared.tidy_profile(today);
 
+        self.first_name         = shared.first_name;
+        self.last_name          = shared.last_name;
         self.name_pronunciation = shared.name_pronunciation;
         self.pronouns           = shared.pronouns;
         self.work_location      = shared.work_location;
@@ -370,6 +378,8 @@ impl UpdateUserAdminDto {
     /// diff and nobody could tell what had moved. **Names only, never values.**
     fn profile_fields_present(&self) -> Vec<&'static str> {
         let mut names = Vec::new();
+        if self.first_name.is_some() { names.push("first_name"); }
+        if self.last_name.is_some() { names.push("last_name"); }
         if self.name_pronunciation.is_some() { names.push("name_pronunciation"); }
         if self.pronouns.is_some() { names.push("pronouns"); }
         if self.work_location.is_some() { names.push("work_location"); }
@@ -457,12 +467,14 @@ pub async fn update_user(
                deleted_at  = CASE WHEN $3 IS TRUE THEN NULL ELSE deleted_at END,
                -- Three-state, exactly as on `PATCH /me`: the boolean says the
                -- request carried the field, so an explicit null erases it.
-               name_pronunciation = CASE WHEN $7::boolean  THEN $8::text  ELSE name_pronunciation END,
-               pronouns           = CASE WHEN $9::boolean  THEN $10::text ELSE pronouns END,
-               work_location      = CASE WHEN $11::boolean THEN $12::text ELSE work_location END,
-               introduction       = CASE WHEN $13::boolean THEN $14::text ELSE introduction END,
-               gender             = CASE WHEN $15::boolean THEN $16::text ELSE gender END,
-               birthday           = CASE WHEN $17::boolean THEN $18::date ELSE birthday END
+               first_name         = CASE WHEN $7::boolean  THEN $8::text  ELSE first_name END,
+               last_name          = CASE WHEN $9::boolean  THEN $10::text ELSE last_name END,
+               name_pronunciation = CASE WHEN $11::boolean THEN $12::text ELSE name_pronunciation END,
+               pronouns           = CASE WHEN $13::boolean THEN $14::text ELSE pronouns END,
+               work_location      = CASE WHEN $15::boolean THEN $16::text ELSE work_location END,
+               introduction       = CASE WHEN $17::boolean THEN $18::text ELSE introduction END,
+               gender             = CASE WHEN $19::boolean THEN $20::text ELSE gender END,
+               birthday           = CASE WHEN $21::boolean THEN $22::date ELSE birthday END
            WHERE id = $6
            RETURNING *"#,
     )
@@ -472,6 +484,10 @@ pub async fn update_user(
     .bind(dto.display_name.as_deref())
     .bind(dto.org_unit_id)
     .bind(id)
+    .bind(dto.first_name.is_some())
+    .bind(dto.first_name.clone().flatten())
+    .bind(dto.last_name.is_some())
+    .bind(dto.last_name.clone().flatten())
     .bind(dto.name_pronunciation.is_some())
     .bind(dto.name_pronunciation.clone().flatten())
     .bind(dto.pronouns.is_some())

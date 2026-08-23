@@ -77,7 +77,7 @@ export default function HomePage() {
             {favApps.map(app => (
               <Link
                 key={app.id}
-                to={appNavMemory.get(app.id) ?? app.path}
+                to={appNavMemory.get(app.id) ?? app.landing ?? app.path}
                 title={app.label}
                 aria-label={app.label}
                 className="group flex flex-col items-center justify-center w-20 shrink-0 gap-1 py-1.5 rounded-xl

@@ -51,6 +51,8 @@ export function ProfileTab() {
   // so there is exactly one place each of them is stored.
   const [f, setF] = useState({
     fullName:         user?.display_name ?? '',
+    firstName:        user?.first_name ?? '',
+    lastName:         user?.last_name ?? '',
     namePronunciation: user?.name_pronunciation ?? '',
     pronouns:         user?.pronouns ?? '',
     workLocation:     user?.work_location ?? '',
@@ -74,7 +76,7 @@ export function ProfileTab() {
   })
   const storedVis = (prof.visibility as Record<string, Vis>) ?? {}
   const [vis, setVis] = useState<Record<string, Vis>>({
-    fullName: 'public', namePronunciation: 'public', pronouns: 'public', emails: 'public',
+    fullName: 'public', firstName: 'public', lastName: 'public', namePronunciation: 'public', pronouns: 'public', emails: 'public',
     phone: 'private', location: 'private', workLocation: 'public',
     gender: 'private', birthday: 'private',
     website: 'private', x: 'private', bluesky: 'private', fediverse: 'private',
@@ -116,6 +118,8 @@ export function ProfileTab() {
       }
       const { data } = await api.patch<{ user: typeof user }>('/me', {
         display_name: f.fullName,
+        first_name: orNull(f.firstName),
+        last_name:  orNull(f.lastName),
         preferences,
         // Sent on every save, unchanged values included: the server refuses a
         // governed field only when the value actually MOVES, so echoing back
@@ -151,6 +155,14 @@ export function ProfileTab() {
         <Section title={t('settings.profile_sec_identity', { defaultValue: 'Identité et coordonnées' })}>
         <Field label={t('settings.profile_full_name', { defaultValue: 'Nom complet' })} vis={vis.fullName} onVis={setV('fullName')}>
           <Input value={f.fullName} onChange={e => set('fullName', e.target.value)} />
+        </Field>
+
+        <Field label={t('settings.profile_first_name', { defaultValue: 'Prénom' })} vis={vis.firstName} onVis={setV('firstName')}>
+          <Input value={f.firstName} onChange={e => set('firstName', e.target.value)} maxLength={120} />
+        </Field>
+
+        <Field label={t('settings.profile_last_name', { defaultValue: 'Nom de famille' })} vis={vis.lastName} onVis={setV('lastName')}>
+          <Input value={f.lastName} onChange={e => set('lastName', e.target.value)} maxLength={120} />
         </Field>
 
         <Field label={t('settings.profile_name_pronunciation', { defaultValue: 'Prononciation du nom' })}

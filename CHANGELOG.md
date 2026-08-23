@@ -9,6 +9,100 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Changed
+
+- **Redesigned the editors' dock chrome (shared `DockArea`).** Every dockable
+  panel is now a rounded card floating on a neutral ground, and blocks are
+  separated by a real **12 px gutter** (between docks, the viewport and stacked
+  panels) instead of a hairline splitter. The active tab is a primary-tinted
+  pill with a 3 px accent underline, the gutters carry the same resize handle as
+  the rest of the app (a neutral hairline and a grip pill that **appear only on
+  hover**), and floating windows get softer corners and a deeper shadow. The
+  default dock theme now derives from the core design tokens, so the chrome
+  **follows the active theme** — light, dark or an admin skin — instead of being
+  pinned to light; and the whole treatment (ground, cards, tabs, handle) tracks
+  whatever `DockTheme` a module passes, in either theme. Every editor (diagrams,
+  projects, maths, whiteboard, the app builder) inherits it with no change on
+  their side; the new `DockTheme` tokens (`ground`, `radius`, `gap`,
+  `tabActiveBg`) are optional overrides.
+- **The "reopen closed panels" control moved from the editor to the right rail.**
+  It used to float over the editor's canvas; it now sits in the shell's right
+  rail, just above the customise button, showing how many panels are closed and
+  opening the same list to bring one back. An editor's dock publishes its closed
+  panels to the rail, so the rail shows the control only when there is something
+  to reopen (and appears for it even when no module panel is pinned).
+
+### Fixed
+
+- **A dock panel could be opened twice.** Asking for a panel that was already on
+  screen — the ribbon's "Informations" or "Ressources" in Projects, a stale reopen
+  menu, a double click — added a second copy instead of going to the one already
+  there: the same panel rendered twice, in two places, disagreeing about which was
+  active. Opening a panel that is already docked now brings it forward — it becomes
+  the selected tab of its group, and a floating window rolled up to its title bar
+  unrolls. A saved arrangement holding a duplicate (or a panel listed both as open
+  and as closed, which is what offered to open it a second time) is repaired when
+  it is read back, so a layout that went wrong once no longer stays wrong; two
+  panel groups that ended up sharing an identifier are separated again.
+
+### Added
+
+- **Mail address attribution, core side.** A verified primary domain now
+  emits a `domain.mail_ready` signal, and an internal endpoint lets the mail
+  module read the name parts it builds an address from — so a mailbox can be
+  attributed to every account automatically. The structured names are NOT
+  added to the directory or people pickers.
+- **First and last name on every account.** Structured given and family name
+  join the profile fields: editable on your own profile, and on the
+  administration sheet where an administrator can set them for anyone. Nullable
+  and never guessed from the display name. They are the source the mail address
+  rule reads to build an address, and — like the other profile fields — never
+  disclosed by the directory or by a people picker.
+
+- **Apps can open on a landing route distinct from their identity path.** A waffle
+  app may declare `landing` alongside `path`: the launchers (Home dashboard,
+  waffle menu) open `landing` when there is no per-tab history, while `path` stays
+  the prefix `resolveByPath` matches. This lets a module whose entry point is a
+  hub (e.g. Drive opening on its "Accueil" at `/drive/home`) keep its root
+  (`/drive`) addressable for the sidebar and deep links. Falls back to `path`.
+
+- The directory search accepts **`scope=unit`**, narrowing the answer to the
+  caller's own organisational unit and its sub-units whatever the instance's
+  audience policy is. It can only ever restrict, and the `directory.enabled` gate
+  still applies first — it lets a module offer "my unit" as a group without
+  keeping its own copy of the account list.
+
+- **Illustrations in the image picker.** A new source offers Kubuno's own
+  artwork — 96 pictures across four collections, searchable — for anyone who
+  would rather pick a picture than upload one. They are drawn by the app itself,
+  so the gallery needs no network, no image bank and no licence to honour.
+
+- **Two shared form-input primitives in `@ui`, usable by every module** (every
+  module has forms): `OutlinedField`, a Material-Design outlined text field whose
+  label animates from inside the box up onto the border (notch, accent colour and
+  3px border on focus, optional leading icon); and `FieldGroup`, which stacks
+  several labelled sub-fields under ONE shared icon with a Plus/Moins chevron that
+  reveals "advanced" sub-fields (Google-Contacts "Name"/"Organisation" pattern).
+- **`PhoneField`** (`@ui`): a Google-Contacts-style phone input — leading icon, a
+  country dial-code selector (flag + searchable dropdown, 188 countries, flag
+  derived from the ISO code, no external asset), the Material number field, and an
+  optional editable "Libellé" combobox (free text + presets: Domicile, Professionnel,
+  Mobile…).
+- **`DateField`** (`@ui`): a split date field (Day / Month dropdown / optional Year)
+  with a configurable icon (cake for a birthday, calendar for a date) and the same
+  optional editable "Libellé" combobox. Plus a shared **`LabelCombobox`** primitive
+  (the free-text-with-suggestions label used by the phone and date fields).
+- **`AddressField`** (`@ui`): a Google-Contacts-style postal-address block —
+  location-pin icon, street, postal code + city, a searchable country selector,
+  a Plus/Moins chevron revealing PO box / extra line / region, and an optional
+  editable "Libellé". All these composite fields now share ONE deterministic
+  field height, so a selector box and a text field line up exactly.
+- **Impossible values are refused at the keystroke** in the composite fields:
+  the day is capped by the month (and by leap years once the year is known, a
+  day that stops existing after a month change is re-clamped), the year must be
+  a prefix of an acceptable year — a birth date refuses even a leading "9" —
+  and a phone number only accepts digits and usual separators.
+
 ## [0.1.6] - 2026-08-19
 
 ### Added
@@ -171,6 +265,12 @@ number at release time, and CI publishes that section as the GitHub Release note
   backend locally is no longer supported.
 
 ### Fixed
+
+- **Browser autofill no longer prints over a field's label.** Hovering a Chrome
+  suggestion *previews* the value into the field without firing any event, so a
+  floating label had no way to know the box was no longer empty and the two drew
+  on top of each other. Outlined fields now detect the autofilled state itself —
+  autofill keeps working rather than being switched off.
 
 - **A printed report no longer disagrees with its preview.** Four separate defects
   produced pages the preview never showed: the administration panel's padding

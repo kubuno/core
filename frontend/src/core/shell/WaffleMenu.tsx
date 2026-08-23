@@ -318,7 +318,7 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
 
   // Launching an app returns the user to the last location they visited within
   // it (this tab) instead of its root — so leaving an app doesn't lose your place.
-  const launchTarget = (app: WaffleApp) => appNavMemory.get(app.id) ?? app.path
+  const launchTarget = (app: WaffleApp) => appNavMemory.get(app.id) ?? app.landing ?? app.path
 
   // Rendu d'une cellule de la zone « toutes les apps » (non-favorites) : version
   // éditable (glissable vers les favoris) ou lien normal. Partagé par les apps

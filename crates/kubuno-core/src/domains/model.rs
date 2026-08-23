@@ -71,6 +71,23 @@ impl Domain {
         self.verified_at.is_some()
     }
 
+    /// The one domain the instance answers as its own.
+    pub fn is_primary(&self) -> bool {
+        matches!(self.kind, DomainKind::Primary)
+    }
+
+    /// At least one MX host was seen at the last probe. Stored as a JSON array.
+    pub fn has_mx(&self) -> bool {
+        self.mx_hosts.as_array().map(|a| !a.is_empty()).unwrap_or(false)
+    }
+
+    /// Ready to host mailboxes: the primary domain, ownership proven (TXT) and
+    /// mail actually routable (MX). This is the condition the mail module waits
+    /// on before provisioning an address for every account.
+    pub fn mail_ready(&self) -> bool {
+        self.is_primary() && self.is_verified() && self.has_mx()
+    }
+
     /// The TXT value to publish, prefix included.
     pub fn expected_record(&self) -> String {
         format!("{}={}", super::dns::TOKEN_PREFIX, self.verify_token)

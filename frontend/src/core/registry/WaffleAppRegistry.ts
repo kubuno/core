@@ -6,7 +6,14 @@ export interface WaffleApp {
   // Composant d'icône : une icône Lucide (monochrome, currentColor) OU un logo de
   // marque en couleur (ex. PaintsharpLogo). Les deux respectent { size, className }.
   Icon:  ComponentType<{ size?: number; className?: string }>
+  // Route prefix that identifies the app (used by `resolveByPath` to tell which
+  // app a URL belongs to, and as the launch fallback).
   path:  string
+  // Optional landing route the launchers open when there is no per-tab memory,
+  // when it should differ from `path`. A module whose entry point is a hub (e.g.
+  // Drive's "Accueil" at /drive/home) keeps `path` at its resolvable root
+  // (/drive) but opens on `landing`. Falls back to `path` when unset.
+  landing?: string
   // Renseignés au moment de l'aplatissement (HeaderActions) à partir de l'entrée de
   // module → permettent au WaffleMenu de regrouper les sous-modules par module parent.
   moduleId?:    string

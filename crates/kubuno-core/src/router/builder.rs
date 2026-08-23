@@ -551,6 +551,8 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // définit les comptes, et lui seul.
         .route("/directory/users",           get(crate::handlers::users::internal_list_users))
         .route("/directory/users/:id",       get(crate::handlers::users::internal_get_user))
+        .route("/mail/provisioning/users",     get(crate::handlers::users::internal_provisioning_users))
+        .route("/mail/provisioning/users/:id", get(crate::handlers::users::internal_provisioning_user))
         // Les domaines déclarés par l'instance, en LECTURE seule, avec leur état
         // de vérification. C'est la SEULE réponse à « ce nom est-il à nous ? » :
         // un module qui garderait sa propre liste ferait diverger les deux (le

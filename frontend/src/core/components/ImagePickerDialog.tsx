@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Link2, Upload, Camera, X, Search, Image as ImageIcon } from 'lucide-react'
+import { Link2, Upload, Camera, Palette, X, Search, Image as ImageIcon } from 'lucide-react'
 import { Button, Input } from '@ui'
 import { ImageSourceRegistry, type ImageSource, type ImageSourceProps } from '../registry/ImageSourceRegistry'
 import type { ImagePickResult } from '../store/imagePickerStore'
+import ImagePickerIllustrations from './ImagePickerIllustrations'
 
 /* ── Source: a plain URL ─────────────────────────────────────────────────── */
 function FromUrl({ onPick }: ImageSourceProps) {
@@ -114,6 +115,8 @@ export default function ImagePickerDialog({ title = 'Insérer une image', exclud
 
   const core: ImageSource[] = [
     { id: 'url',    label: "À partir d'une URL", icon: <Link2 size={18} />,  order: 0,  group: 'library', Component: FromUrl },
+    { id: 'illustrations', label: 'Illustrations', icon: <Palette size={18} />, order: 10, group: 'library',
+      searchable: true, searchPlaceholder: 'Rechercher dans les illustrations…', Component: ImagePickerIllustrations },
     { id: 'upload', label: 'Importer', icon: <Upload size={18} />, order: 30, group: 'device', Component: FromUpload },
     { id: 'webcam', label: 'Webcam',   icon: <Camera size={18} />, order: 40, group: 'device', Component: FromWebcam },
   ]

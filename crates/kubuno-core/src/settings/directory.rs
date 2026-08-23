@@ -57,6 +57,8 @@ pub const KEY_AUDIENCE: &str = "directory.audience";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileField {
     Name,
+    FirstName,
+    LastName,
     Photo,
     NamePronunciation,
     Pronouns,
@@ -70,8 +72,10 @@ impl ProfileField {
     /// Every governed field, in the order the administration card lists them.
     /// Used by the tests below to assert the invariants hold for all of them
     /// rather than for the two somebody remembered to check.
-    pub const ALL: [ProfileField; 8] = [
+    pub const ALL: [ProfileField; 10] = [
         ProfileField::Name,
+        ProfileField::FirstName,
+        ProfileField::LastName,
         ProfileField::Photo,
         ProfileField::NamePronunciation,
         ProfileField::Pronouns,
@@ -84,6 +88,8 @@ impl ProfileField {
     pub fn key(self) -> &'static str {
         match self {
             ProfileField::Name => "directory.profile_edit_name",
+            ProfileField::FirstName => "directory.profile_edit_first_name",
+            ProfileField::LastName => "directory.profile_edit_last_name",
             ProfileField::Photo => "directory.profile_edit_photo",
             ProfileField::NamePronunciation => "directory.profile_edit_name_pronunciation",
             ProfileField::Pronouns => "directory.profile_edit_pronouns",
@@ -102,6 +108,12 @@ impl ProfileField {
         match self {
             ProfileField::Name => {
                 "Le nom affiché est géré par votre administrateur : il ne peut pas être modifié ici."
+            }
+            ProfileField::FirstName => {
+                "Votre prénom est géré par votre administrateur : il ne peut pas être modifié ici."
+            }
+            ProfileField::LastName => {
+                "Votre nom de famille est géré par votre administrateur : il ne peut pas être modifié ici."
             }
             ProfileField::Photo => {
                 "La photo de profil est gérée par votre administrateur : elle ne peut pas être modifiée ici."

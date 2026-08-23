@@ -55,3 +55,8 @@ node_modules
 
 # Binaires téléchargés au build (ex. WinSW pour le service Windows)
 _cache/
+
+# Claude Code working files (agent instructions & memory) — never published
+CLAUDE.md
+AGENTS.md
+.claude/

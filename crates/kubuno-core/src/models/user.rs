@@ -86,6 +86,11 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password_hash:  Option<String>,
     pub display_name:   Option<String>,
+    /// Given name (migration `000124`). Free text, never required; the source
+    /// the mail address rule reads for `{prenom}`.
+    pub first_name:     Option<String>,
+    /// Family name (migration `000124`). Free text, never required; `{nom}`.
+    pub last_name:      Option<String>,
     pub avatar_url:     Option<String>,
     pub role:           String,
     pub quota_bytes:    i64,
@@ -197,6 +202,8 @@ where
 /// migration `000114`. Declared here because this is where a value is refused
 /// with a sentence naming the field; the column is the backstop for any path
 /// that forgets to ask.
+const MAX_FIRST_NAME: usize = 120;
+const MAX_LAST_NAME: usize = 120;
 const MAX_NAME_PRONUNCIATION: usize = 120;
 const MAX_PRONOUNS: usize = 60;
 const MAX_WORK_LOCATION: usize = 160;
@@ -221,6 +228,10 @@ pub struct UpdateUserDto {
     // are checked by [`UpdateUserDto::tidy_profile`] — which also trims, and
     // turns a blank string into an explicit erase, because that is what a form
     // sends when somebody empties a box.
+    #[serde(default, deserialize_with = "double_option")]
+    pub first_name:         Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub last_name:          Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub name_pronunciation: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
@@ -264,6 +275,8 @@ impl UpdateUserDto {
     /// Returns the sentence to answer with, never a key name: the caller turns
     /// it into a `422` and the person reads which field is at fault.
     pub fn tidy_profile(&mut self, today: NaiveDate) -> Result<(), String> {
+        tidy_text(&mut self.first_name, "Prénom", MAX_FIRST_NAME)?;
+        tidy_text(&mut self.last_name, "Nom de famille", MAX_LAST_NAME)?;
         tidy_text(&mut self.name_pronunciation, "Prononciation du nom", MAX_NAME_PRONUNCIATION)?;
         tidy_text(&mut self.pronouns, "Pronoms", MAX_PRONOUNS)?;
         tidy_text(&mut self.work_location, "Lieu de travail", MAX_WORK_LOCATION)?;
@@ -295,6 +308,8 @@ impl UpdateUserDto {
         if self.display_name.is_some() { names.push("display_name"); }
         if self.avatar_url.is_some() { names.push("avatar_url"); }
         if self.preferences.is_some() { names.push("preferences"); }
+        if self.first_name.is_some() { names.push("first_name"); }
+        if self.last_name.is_some() { names.push("last_name"); }
         if self.name_pronunciation.is_some() { names.push("name_pronunciation"); }
         if self.pronouns.is_some() { names.push("pronouns"); }
         if self.work_location.is_some() { names.push("work_location"); }

@@ -12,8 +12,9 @@
 // exactly like WorkspaceShell was generalised from `paintsharp/ui/EditorShell`.
 import { useEffect, useRef, useState, Fragment } from 'react'
 import type { ReactNode, CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { X, Plus, GripVertical, GripHorizontal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Square } from 'lucide-react'
+import { X, GripVertical, GripHorizontal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Square } from 'lucide-react'
 import { MenuDropdown, type MenuItem, type MenuDropdownPos } from '@ui'
+import { useDockReopenStore } from '../store/dockReopenStore'
 
 export type PanelId = string
 export type DockSideKey = 'left' | 'right' | 'float'
@@ -47,9 +48,29 @@ export type DockController = {
   open: (id: PanelId) => void
   close: (id: PanelId) => void
 }
-export type DockTheme = { panel:string; header:string; border:string; text:string; textDim:string; accent?:string }
+export type DockTheme = {
+  panel:string; header:string; border:string; text:string; textDim:string; accent?:string
+  // ── Material-refined chrome (Direction A) — all optional, sensible defaults
+  // are derived from the base tokens, so existing consumers get the new look
+  // without passing anything. ──
+  ground?:string       // neutral behind the floating panel cards + gutters
+  radius?:number       // panel-card corner radius (px)
+  gap?:number          // gutter between blocks (locked to 12 by the design)
+  tabActiveBg?:string  // active-tab pill background
+}
 
-const DEFAULT_THEME: DockTheme = { panel:'#f8f9fa', header:'#f1f3f4', border:'#dadce0', text:'#202124', textDim:'#5f6368', accent:'#1a73e8' }
+// Derived from the core semantic tokens (theme.css) so the default dock chrome
+// follows the active theme — light, dark or an admin skin — instead of being
+// pinned to light hex. Hex fallbacks keep it correct when a module runs
+// standalone (outside the shell that defines --color-*).
+const DEFAULT_THEME: DockTheme = {
+  panel:   'var(--color-surface-0, #ffffff)',
+  header:  'var(--color-surface-2, #f1f3f4)',
+  border:  'var(--color-border, #dadce0)',
+  text:    'var(--color-text-primary, #202124)',
+  textDim: 'var(--color-text-secondary, #5f6368)',
+  accent:  'var(--color-primary, #1a73e8)',
+}
 const MIN_W = 190, MAX_W = 480, DEF_W = 256
 const MIN_H = 60   // minimum height (px) of a stacked panel group when resizing
 
@@ -86,8 +107,24 @@ function closePanel(layout: DockLayout, id: PanelId): DockLayout {
   const L = removePanel(layout, id)
   return { ...L, closed: [...(L.closed ?? []).filter(p => p !== id), id] }
 }
+/** Is the panel currently placed anywhere in the layout? */
+function isDocked(layout: DockLayout, id: PanelId): boolean {
+  return layout.left.some(g => g.panels.includes(id))
+      || layout.right.some(g => g.panels.includes(id))
+      || layout.float.some(g => g.panels.includes(id))
+}
 function openPanel(layout: DockLayout, id: PanelId): DockLayout {
   const closed = (layout.closed ?? []).filter(p => p !== id)
+  // A panel is ONE live instance: opening one that is already on screen must
+  // SURFACE it, never add a second copy (an editor revealing a visible panel, a
+  // stale reopen menu, a double click). Two copies would render the same panel
+  // twice and fight over which one is active. Surfacing means: become the active
+  // tab of its group, and unroll a floating window rolled up to its title bar —
+  // otherwise "opening" it would change nothing on screen.
+  if (isDocked(layout, id)) {
+    const unroll = (arr: DockGroup[]) => arr.map(g => g.panels.includes(id) ? { ...g, rolled:false } : g)
+    return activatePanel({ ...layout, closed, float: unroll(layout.float) }, id)
+  }
   return { ...layout, closed, right: [...layout.right, { id:newGid(), panels:[id], active:id }] }
 }
 
@@ -98,22 +135,45 @@ function buildDefault(arr: { left?: PanelId[][]; right?: PanelId[][]; float?: Pa
 
 // Drop panels no longer in the registry; append registry panels missing from the
 // layout (so newly-added panels appear) UNLESS the user explicitly closed them.
+// Also the place where the "one panel, one place" invariant is enforced: a layout
+// read back from localStorage may hold the same panel twice (written by an older
+// build, or hand-edited), and a duplicate would otherwise persist for ever.
 function reconcile(layout: DockLayout, known: Set<PanelId>): DockLayout {
   const sides: DockSideKey[] = ['left','right','float']
   const out: DockLayout = { left:[], right:[], float:[], leftW: layout.leftW ?? DEF_W, rightW: layout.rightW ?? DEF_W, closed: [] }
   const present = new Set<PanelId>()
+  // Group ids must be unique too: a stored layout can hold two groups sharing an
+  // id (the counter restarts at each page load), which collides React keys and
+  // makes `[data-grp="…"]` match two elements when resizing a stacked group.
+  const usedGids = new Set<string>()
+  const freshGid = () => { let id = newGid(); while (usedGids.has(id)) id = newGid(); return id }
   for (const side of sides) {
     out[side] = layout[side]
       .map(g => {
-        const panels = g.panels.filter(p => known.has(p))
-        panels.forEach(p => present.add(p))
-        return { ...g, panels, active: panels.includes(g.active) ? g.active : panels[0] }
+        // Unknown panels go; already-placed ones go too — first occurrence wins,
+        // whether the repeat sits in the same group or another one.
+        const panels = g.panels.filter(p => {
+          if (!known.has(p) || present.has(p)) return false
+          present.add(p)
+          return true
+        })
+        const gid = !g.id || usedGids.has(g.id) ? freshGid() : g.id
+        usedGids.add(gid)
+        return { ...g, id: gid, panels, active: panels.includes(g.active) ? g.active : panels[0] }
       })
       .filter(g => g.panels.length > 0)
   }
-  out.closed = (layout.closed ?? []).filter(p => known.has(p))
-  out.closed.forEach(p => present.add(p))
-  for (const p of known) if (!present.has(p)) out.right.unshift({ id:newGid(), panels:[p], active:p })
+  // A docked panel is never also "closed": otherwise the reopen control offers a
+  // panel that is already on screen, and taking it up adds a second copy.
+  out.closed = (layout.closed ?? []).filter(p => {
+    if (!known.has(p) || present.has(p)) return false
+    present.add(p)
+    return true
+  })
+  for (const p of known) if (!present.has(p)) {
+    const gid = freshGid(); usedGids.add(gid)
+    out.right.unshift({ id:gid, panels:[p], active:p })
+  }
   return out
 }
 
@@ -147,12 +207,27 @@ export function DockArea({
   const [guides, setGuides] = useState<Guide[]>([])
   const [activeGuideId, setActiveGuideId] = useState<string | null>(null)
   const [tabMenu, setTabMenu] = useState<{ pos: MenuDropdownPos; panel: PanelId } | null>(null)
-  const [openMenu, setOpenMenu] = useState<MenuDropdownPos | null>(null)
+  // The reopen-closed-panels control lives in the shell's right rail now, not over
+  // the viewport: we publish the closed set there instead of holding a local menu.
+  const publishReopen = useDockReopenStore(s => s.publish)
+  const clearReopen = useDockReopenStore(s => s.clear)
   const dragPanelRef = useRef<PanelId|null>(null)
   const dragStartPt = useRef({x:0,y:0}); const dragMoved = useRef(false)
   const bodyAreaRef = useRef<HTMLDivElement>(null)
   const dragSize = useRef({ w:256, h:300 })
   useEffect(() => { try { localStorage.setItem(storageKey, JSON.stringify(layout)) } catch { /* ignore */ } }, [layout, storageKey])
+
+  // Publish closed panels to the shell so the right rail can offer to reopen them.
+  // Keyed on the closed ids so we only re-publish when the set actually changes.
+  const closedKey = (layout.closed ?? []).join('')
+  useEffect(() => {
+    if (hidden) { clearReopen(); return }
+    const cl = layout.closed ?? []
+    const entries = cl.map(p => ({ id: p, label: String((panels[p]?.label as string) ?? p) }))
+    publishReopen(entries, (id) => setLayout(prev => openPanel(prev, id)))
+    return () => clearReopen()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closedKey, hidden])
 
   const resetLayout = () => setLayout(reconcile(buildDefault(defaultArrangement), new Set(Object.keys(panels))))
   if (controllerRef) controllerRef.current = {
@@ -331,11 +406,35 @@ export function DockArea({
   ]
 
   // ── Rendering ──
+  // Direction A ("Material refined"): every dock block is a rounded card floating
+  // on a neutral ground, blocks separated by a 12px gutter; the active tab is a
+  // primary-tinted pill with a 3px accent underline. Tokens derive from the base
+  // theme so callers need not pass anything new.
+  const accent = theme.accent ?? '#1a73e8'
+  const RAD = theme.radius ?? 12
+  const GAP = theme.gap ?? 12
+  const ground = theme.ground ?? `color-mix(in srgb, ${theme.border} 45%, ${theme.panel})`
+  const tabActiveBg = theme.tabActiveBg ?? `color-mix(in srgb, ${accent} 12%, ${theme.panel})`
+  const cardShadow = '0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.06)'
+  // Handle colours derive from the SAME DockTheme tokens as the cards, so the
+  // handle follows the panels' theme (light or dark) — no mismatched grip.
+  const gripLine = `color-mix(in srgb, ${accent} 55%, ${theme.border})`
+  const gripBorder = `color-mix(in srgb, ${accent} 40%, ${theme.border})`
+
   const groupBox = (grp: DockGroup, side: DockSideKey) => (
-    <div key={grp.id} data-grp={grp.id} data-side={side} className="flex flex-col min-h-0" style={{ flex: side==='float' ? '1 1 auto' : `${grp.h ?? 1} 1 0` }}>
-      <div data-strip className="flex flex-shrink-0 flex-wrap items-stretch" style={{ background:theme.header, borderBottom:`1px solid ${theme.border}` }}>
+    <div key={grp.id} data-grp={grp.id} data-side={side} className="flex flex-col min-h-0"
+         style={{ flex: side==='float' ? '1 1 auto' : `${grp.h ?? 1} 1 0`,
+                  background: theme.panel, overflow: 'hidden',
+                  border: side==='float' ? undefined : `1px solid ${theme.border}`,
+                  borderRadius: side==='float' ? 0 : RAD,
+                  boxShadow: side==='float' ? undefined : cardShadow }}>
+      <div data-strip className="flex flex-shrink-0 flex-wrap items-stretch"
+           style={{ background: side==='float' ? `color-mix(in srgb, ${accent} 10%, ${theme.panel})` : 'transparent',
+                    borderBottom: `1px solid ${theme.border}`, gap: 4,
+                    padding: side==='float' ? '0 4px 0 0' : '6px 6px 0' }}>
         {grp.panels.map(p => {
           const active = grp.active === p
+          const r = Math.max(RAD - 4, 6)
           return (
             <div key={p}
                  onPointerDown={(e)=>startPanelDrag(p, e)}
@@ -344,33 +443,36 @@ export function DockArea({
                    : floatHere(p)}
                  onContextMenu={(e)=>{ e.preventDefault(); setTabMenu({ pos:{ top:e.clientY, left:e.clientX, minWidth:200 }, panel:p }) }}
                  title={moveTitle}
-                 className="group/tab relative flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium cursor-grab select-none"
-                 style={{ color: active?theme.text:theme.textDim, background: active?theme.panel:'transparent',
-                          borderRight:`1px solid ${theme.border}`,
-                          boxShadow: active ? `inset 0 2px 0 ${theme.accent ?? '#1a73e8'}` : undefined }}>
-              <span className="truncate max-w-[140px]">{panels[p]?.label}</span>
+                 className="group/tab relative flex items-center gap-1.5 cursor-grab select-none"
+                 style={{ height: 34, padding: '0 12px', fontSize: 13,
+                          fontWeight: active ? 600 : 500,
+                          color: active ? accent : theme.textDim,
+                          background: active ? tabActiveBg : 'transparent',
+                          borderRadius: `${r}px ${r}px 0 0` }}>
+              <span className="truncate max-w-[150px]">{panels[p]?.label}</span>
               <button type="button" title="Fermer"
                 onPointerDown={(e)=>e.stopPropagation()}
                 onClick={(e)=>{ e.stopPropagation(); setLayout(prev => closePanel(prev, p)) }}
-                className={`flex items-center justify-center rounded p-0.5 ${active ? 'opacity-60' : 'opacity-0 group-hover/tab:opacity-60'} hover:opacity-100 hover:bg-black/10`}
-                style={{ color: theme.textDim }}>
-                <X size={11} />
+                className={`flex items-center justify-center rounded-full p-0.5 ${active ? 'opacity-70' : 'opacity-0 group-hover/tab:opacity-70'} hover:opacity-100 hover:bg-black/10`}
+                style={{ color: active ? accent : theme.textDim }}>
+                <X size={12} />
               </button>
+              {active && <span aria-hidden style={{ position:'absolute', left:10, right:10, bottom:0, height:3, borderRadius:'3px 3px 0 0', background: accent }} />}
             </div>
           )
         })}
         {/* Float-only caption controls: roll-up to header + maximize to viewport. */}
         {side==='float' && (
-          <div className="ml-auto flex items-center pr-1" style={{ color: theme.textDim }}>
+          <div className="ml-auto flex items-center gap-0.5 pr-1" style={{ color: theme.textDim }}>
             <button type="button" title={grp.rolled ? 'Dérouler' : 'Enrouler'}
               onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{ e.stopPropagation(); toggleRoll(grp.id) }}
-              className="flex items-center justify-center rounded p-1 opacity-60 hover:opacity-100 hover:bg-black/10">
-              {grp.rolled ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+              className="flex items-center justify-center rounded-full w-7 h-7 opacity-70 hover:opacity-100 hover:bg-black/10">
+              {grp.rolled ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
             </button>
             <button type="button" title={grp.max ? 'Restaurer' : 'Agrandir'}
               onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{ e.stopPropagation(); toggleMax(grp.id) }}
-              className="flex items-center justify-center rounded p-1 opacity-60 hover:opacity-100 hover:bg-black/10">
-              {grp.max ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+              className="flex items-center justify-center rounded-full w-7 h-7 opacity-70 hover:opacity-100 hover:bg-black/10">
+              {grp.max ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
             </button>
           </div>
         )}
@@ -384,32 +486,38 @@ export function DockArea({
   const column = (side: 'left'|'right') => {
     const groups = layout[side]; if (!groups.length) return null
     const w = (side === 'left' ? layout.leftW : layout.rightW) ?? DEF_W
+    // 12px gutter using the shared house resize handle (@ui/ResizeHandle look):
+    // the hairline AND the grip pill are hidden at rest and reveal only on hover.
     const resizer = (
       <div key={`${side}-rz`} onPointerDown={(e)=>startColResize(side, e)}
-           className="group/rz relative flex-shrink-0 w-1.5 cursor-ew-resize"
-           style={{ order: side==='left'?1:3, background:'transparent' }}>
-        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-colors group-hover/rz:bg-primary" style={{ background:theme.border }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover/rz:opacity-100 transition" style={{ color:theme.textDim }}>
-          <GripVertical size={11} />
+           className="group/rz relative flex-shrink-0 cursor-ew-resize"
+           style={{ width: GAP, order: side==='left'?1:3 }}>
+        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[5px] rounded-full opacity-0 group-hover/rz:opacity-100 transition-opacity"
+             style={{ background: gripLine }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center
+                        h-9 w-3.5 rounded-full shadow-sm opacity-0 group-hover/rz:opacity-100 transition-opacity"
+             style={{ background: tabActiveBg, border: `1px solid ${gripBorder}`, color: accent }}>
+          <GripVertical size={13} />
         </div>
       </div>
     )
     const col = (
-      <div key={side} className="flex flex-col flex-shrink-0"
-           style={{ width:w, background:theme.panel, order: side==='left'?0:4,
-                    borderLeft: side==='right'?`1px solid ${theme.border}`:'none',
-                    borderRight: side==='left'?`1px solid ${theme.border}`:'none' }}>
+      <div key={side} className="flex flex-col flex-shrink-0" style={{ width:w, order: side==='left'?0:4 }}>
         {groups.map((grp, i) => (
           <Fragment key={grp.id}>
             {groupBox(grp, side)}
-            {/* Vertical resizer between two stacked groups (only when ≥2 in the column). */}
+            {/* 12px horizontal gutter between two stacked cards (only when ≥2):
+                same house handle, rotated. */}
             {i < groups.length - 1 && (
               <div onPointerDown={(e)=>startRowResize(side, i, e)}
-                   className="group/rzv relative flex-shrink-0 h-1.5 cursor-ns-resize"
-                   title={moveTitle}>
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px transition-colors group-hover/rzv:bg-primary" style={{ background:theme.border }} />
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover/rzv:opacity-100 transition" style={{ color:theme.textDim }}>
-                  <GripHorizontal size={11} />
+                   className="group/rzv relative flex-shrink-0 cursor-ns-resize" title={moveTitle}
+                   style={{ height: GAP }}>
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[5px] rounded-full opacity-0 group-hover/rzv:opacity-100 transition-opacity"
+                     style={{ background: gripLine }} />
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center
+                                w-9 h-3.5 rounded-full shadow-sm opacity-0 group-hover/rzv:opacity-100 transition-opacity"
+                     style={{ background: tabActiveBg, border: `1px solid ${gripBorder}`, color: accent }}>
+                  <GripHorizontal size={13} />
                 </div>
               </div>
             )}
@@ -427,29 +535,23 @@ export function DockArea({
       ? { left: bodyRect!.left, top: bodyRect!.top, width: bodyRect!.width, height: bodyRect!.height }
       : { left: grp.x, top: grp.y, width: DEF_W, maxHeight: grp.rolled ? undefined : '72vh' }
     return (
-      <div key={grp.id} data-floatgrp={grp.id} className="fixed flex flex-col shadow-2xl rounded-md overflow-hidden"
-           style={{ ...posStyle, background:theme.panel, border:`1px solid ${theme.border}`, zIndex:80 }}>
+      <div key={grp.id} data-floatgrp={grp.id} className="fixed flex flex-col overflow-hidden"
+           style={{ ...posStyle, background:theme.panel, border:`1px solid ${theme.border}`,
+                    borderRadius: RAD + 2, zIndex:80,
+                    boxShadow:'0 24px 50px -12px rgba(16,24,40,.34), 0 6px 16px -6px rgba(16,24,40,.20)' }}>
         {groupBox(grp, 'float')}
       </div>
     )
   })
 
-  const closed = layout.closed ?? []
-
   return (
     <>
-      <div className={className} style={{ ...style, position:'relative' }} ref={bodyAreaRef}>
-        <div className="flex-1 relative overflow-hidden flex flex-col min-w-0" style={{ background:viewportBg, order:2 }} ref={viewportRef}>
+      <div className={className} style={{ ...style, position:'relative', ...(hidden ? {} : { padding: GAP, background: ground }) }} ref={bodyAreaRef}>
+        <div className="flex-1 relative overflow-hidden flex flex-col min-w-0"
+             style={{ background:viewportBg, order:2,
+                      ...(hidden ? {} : { borderRadius: RAD, border:`1px solid ${theme.border}`, boxShadow: cardShadow }) }}
+             ref={viewportRef}>
           {children}
-          {/* Reopen closed panels (top-right of the viewport) */}
-          {!hidden && closed.length > 0 && (
-            <button type="button" title="Panneaux fermés"
-              onClick={(e)=>setOpenMenu({ top:e.clientY+6, left:e.clientX-160, minWidth:180 })}
-              className="absolute top-2 right-2 z-30 flex items-center gap-1 rounded-md px-2 h-7 text-[11px] shadow-sm"
-              style={{ background:theme.panel, border:`1px solid ${theme.border}`, color:theme.textDim }}>
-              <Plus size={13} /> Panneaux ({closed.length})
-            </button>
-          )}
         </div>
         {!hidden && column('left')}
         {!hidden && column('right')}
@@ -460,7 +562,7 @@ export function DockArea({
       {docking && ghostRect && (
         <div className="fixed inset-0 z-[100]" style={{ cursor:'grabbing' }}>
           <div className="absolute" style={{ left:ghostRect.left, top:ghostRect.top, width:ghostRect.width, height:ghostRect.height,
-                        background:'rgba(90,160,255,0.22)', border:'2px solid rgba(90,160,255,0.95)', borderRadius:4 }} />
+                        background:'rgba(90,160,255,0.22)', border:'2px solid rgba(90,160,255,0.95)', borderRadius:8 }} />
         </div>
       )}
 
@@ -486,13 +588,6 @@ export function DockArea({
       )}
 
       {tabMenu && <MenuDropdown items={tabMenuItems(tabMenu.panel)} pos={tabMenu.pos} onClose={()=>setTabMenu(null)} />}
-      {openMenu && (
-        <MenuDropdown
-          items={closed.length
-            ? closed.map(p => ({ type:'action' as const, label: String((panels[p]?.label as string) ?? p), onClick: () => setLayout(prev => openPanel(prev, p)) }))
-            : [{ type:'label' as const, text:'Aucun panneau fermé' }]}
-          pos={openMenu} onClose={()=>setOpenMenu(null)} />
-      )}
     </>
   )
 }

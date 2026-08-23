@@ -196,6 +196,8 @@ pub async fn update_me(
     use settings::directory::ProfileField as PF;
     let governed = [
         (dto.display_name.is_some() && dto.display_name != user.display_name, PF::Name),
+        (changed_text(&dto.first_name, &user.first_name), PF::FirstName),
+        (changed_text(&dto.last_name, &user.last_name), PF::LastName),
         (dto.avatar_url.is_some() && dto.avatar_url != user.avatar_url, PF::Photo),
         (changed_text(&dto.name_pronunciation, &user.name_pronunciation), PF::NamePronunciation),
         (changed_text(&dto.pronouns, &user.pronouns), PF::Pronouns),
@@ -231,18 +233,24 @@ pub async fn update_me(
                preferences  = CASE WHEN $3::jsonb IS NOT NULL THEN preferences || $3 ELSE preferences END,
                -- One boolean "did the request carry this field" per column, so
                -- an explicit null erases and an absent field is left alone.
-               name_pronunciation = CASE WHEN $4::boolean  THEN $5::text  ELSE name_pronunciation END,
-               pronouns           = CASE WHEN $6::boolean  THEN $7::text  ELSE pronouns END,
-               work_location      = CASE WHEN $8::boolean  THEN $9::text  ELSE work_location END,
-               introduction       = CASE WHEN $10::boolean THEN $11::text ELSE introduction END,
-               gender             = CASE WHEN $12::boolean THEN $13::text ELSE gender END,
-               birthday           = CASE WHEN $14::boolean THEN $15::date ELSE birthday END
-           WHERE id = $16
+               first_name         = CASE WHEN $4::boolean  THEN $5::text  ELSE first_name END,
+               last_name          = CASE WHEN $6::boolean  THEN $7::text  ELSE last_name END,
+               name_pronunciation = CASE WHEN $8::boolean  THEN $9::text  ELSE name_pronunciation END,
+               pronouns           = CASE WHEN $10::boolean THEN $11::text ELSE pronouns END,
+               work_location      = CASE WHEN $12::boolean THEN $13::text ELSE work_location END,
+               introduction       = CASE WHEN $14::boolean THEN $15::text ELSE introduction END,
+               gender             = CASE WHEN $16::boolean THEN $17::text ELSE gender END,
+               birthday           = CASE WHEN $18::boolean THEN $19::date ELSE birthday END
+           WHERE id = $20
            RETURNING *"#,
     )
     .bind(dto.display_name.as_deref())
     .bind(dto.avatar_url.as_deref())
     .bind(dto.preferences.as_ref())
+    .bind(dto.first_name.is_some())
+    .bind(dto.first_name.clone().flatten())
+    .bind(dto.last_name.is_some())
+    .bind(dto.last_name.clone().flatten())
     .bind(dto.name_pronunciation.is_some())
     .bind(dto.name_pronunciation.clone().flatten())
     .bind(dto.pronouns.is_some())
@@ -482,6 +490,12 @@ pub async fn revoke_all_sessions(
 pub struct SearchUsersQuery {
     pub q:     Option<String>,
     pub limit: Option<i64>,
+    /// `unit` narrows the answer to the caller's own organisational unit and its
+    /// sub-units, whatever the instance's audience policy says. It can only ever
+    /// RESTRICT: a caller asking for their unit on an instance that already
+    /// restricts gets the same list, and the `directory.enabled` gate still
+    /// applies first. Used by the address book to offer "my unit" as a group.
+    pub scope: Option<String>,
 }
 
 /// The **only** columns the directory routes may select.
@@ -540,7 +554,8 @@ pub async fn search_users(
     // fall through to the whole instance, turning the tightest policy into the
     // loosest one for exactly the accounts nobody thought about. Here it sees an
     // empty directory instead, which is the closed side of the failure.
-    let restrict = policy.audience == settings::directory::Audience::SameUnit;
+    let restrict = policy.audience == settings::directory::Audience::SameUnit
+        || q.scope.as_deref() == Some("unit");
     let anchor = caller.org_unit_id;
 
     // The projection comes from `DIRECTORY_COLUMNS`, never from a list typed
@@ -1081,6 +1096,71 @@ pub async fn internal_get_user(
         .ok_or_else(|| AppError::NotFound("Compte introuvable".into()))?;
 
     Ok(Json(directory_entry(row)))
+}
+
+/// Columns the mail provisioning reads. NOT `DIRECTORY_COLUMNS`: the directory
+/// and every people picker must keep answering `display_name`, username and
+/// photo, and adding the structured names there would disclose them everywhere.
+/// This list exists so provisioning — and provisioning alone — can read them.
+const PROVISIONING_COLUMNS: &str = "id, username, display_name, first_name, last_name";
+
+type ProvisioningRow = (uuid::Uuid, String, Option<String>, Option<String>, Option<String>);
+
+fn provisioning_entry(
+    (id, username, display_name, first_name, last_name): ProvisioningRow,
+) -> serde_json::Value {
+    json!({
+        "id":           id,
+        "username":     username,
+        "display_name": display_name,
+        "first_name":   first_name,
+        "last_name":    last_name,
+    })
+}
+
+/// `GET /internal/mail/provisioning/users` — every active account, with the name
+/// parts the mail module builds an address from.
+///
+/// Its own endpoint rather than a field on the directory read: the directory is
+/// a privacy surface that answers name/username/photo, and structured names are
+/// exactly what it must not start leaking. Internal-only, like every route under
+/// `/internal`.
+pub async fn internal_provisioning_users(
+    State(state): State<AppState>,
+    _internal: InternalRequest,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let sql = format!(
+        "SELECT {PROVISIONING_COLUMNS} FROM core.users           WHERE is_active = TRUE ORDER BY created_at ASC"
+    );
+    let rows = sqlx::query_as::<_, ProvisioningRow>(&sql)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "provisioning mail : liste des comptes impossible");
+            AppError::Database(e)
+        })?;
+    Ok(Json(json!({ "users": rows.into_iter().map(provisioning_entry).collect::<Vec<_>>() })))
+}
+
+/// `GET /internal/mail/provisioning/users/:id` — one account, same shape.
+pub async fn internal_provisioning_user(
+    State(state): State<AppState>,
+    _internal: InternalRequest,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let sql = format!(
+        "SELECT {PROVISIONING_COLUMNS} FROM core.users WHERE id = $1 AND is_active = TRUE"
+    );
+    let row = sqlx::query_as::<_, ProvisioningRow>(&sql)
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, %id, "provisioning mail : lecture d'un compte impossible");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Compte introuvable".into()))?;
+    Ok(Json(provisioning_entry(row)))
 }
 
 /// The one shape both routes answer. Shared so the two can never drift apart.

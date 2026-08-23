@@ -207,6 +207,31 @@ pub async fn verify(
     Ok(Json(json!({ "domain": domain_json(&domain) })))
 }
 
+/// Tells the mail module a domain is ready to host mailboxes.
+///
+/// Emitted the moment the PRIMARY domain has both its ownership proof (TXT) and
+/// routable mail (MX). The mail module subscribes and, on this signal,
+/// provisions an address for every account that has none — the automatic
+/// mailbox attribution the administrator configured. Idempotent on the mail
+/// side: an account that already has an address is left alone, so re-emitting
+/// (a second MX check, a re-promotion) provisions only what is new.
+async fn announce_mail_ready(state: &AppState, domain: &crate::domains::Domain) {
+    if !domain.mail_ready() {
+        return;
+    }
+    state
+        .events
+        .publish_and_log(
+            crate::events::AppEvent::Custom {
+                event_type: "domain.mail_ready".into(),
+                module_id: "core".into(),
+                payload: json!({ "domain": domain.name }),
+            },
+            &state.db,
+        )
+        .await;
+}
+
 /// `POST /admin/domains/:id/mail-check` — refresh the MX / SPF / DMARC reading.
 pub async fn mail_check(
     State(state): State<AppState>,
@@ -216,6 +241,7 @@ pub async fn mail_check(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::DOMAINS_READ)?;
     let domain = store::refresh_mail(&state.db, id).await?;
+    announce_mail_ready(&state, &domain).await;
     Ok(Json(json!({ "domain": domain_json(&domain) })))
 }
 
@@ -243,6 +269,12 @@ pub async fn promote(
             .reversible(),
     )
     .await?;
+
+    // The promoted domain may already have MX proven; a promotion is exactly when
+    // it becomes THE primary, so a mailbox back-fill can now target it.
+    if let Ok(promoted) = store::get(&state.db, id).await {
+        announce_mail_ready(&state, &promoted).await;
+    }
 
     Ok(Json(json!({ "ok": true, "primary": name, "previous": previous })))
 }

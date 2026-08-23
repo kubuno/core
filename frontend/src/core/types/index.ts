@@ -39,6 +39,8 @@ export interface User {
    * so a component must never expect to find them on a user object obtained
    * from `/users/search` or `/users/lookup`.
    */
+  first_name?: string | null
+  last_name?: string | null
   name_pronunciation?: string | null
   pronouns?: string | null
   work_location?: string | null
