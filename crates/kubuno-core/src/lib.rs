@@ -25,6 +25,7 @@ pub mod mailer;
 pub mod middleware;
 pub mod models;
 pub mod modules;
+pub mod network;
 pub mod openapi;
 pub mod push;
 pub mod router;

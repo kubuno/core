@@ -1,0 +1,19 @@
+[package]
+name        = "kubuno-modauth"
+version     = "0.1.0"
+edition     = "2021"
+description = "Signed service-identity token minted by the core for each proxied request and verified by the target module (HMAC-SHA256, short-lived, audience-bound)"
+license     = "AGPL-3.0"
+repository  = "https://github.com/kubuno/core"
+
+# Explicit (non-workspace) dependency versions on purpose: this crate is pulled
+# standalone by every module repo (its own workspace) via a git tag, so it must
+# resolve identically no matter which workspace consumes it.
+[dependencies]
+hmac       = "0.12"
+sha2       = "0.10"
+subtle     = "2"
+base64     = "0.22"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid       = { version = "1", features = ["serde"] }

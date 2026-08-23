@@ -1864,10 +1864,12 @@ dependencies = [
  "futures",
  "hex",
  "hickory-resolver",
+ "hkdf",
  "hmac",
  "ipnet",
  "jsonwebtoken",
  "kubuno-mcp",
+ "kubuno-modauth",
  "kubuno-storage",
  "ldap3",
  "lettre",
@@ -1898,6 +1900,7 @@ dependencies = [
  "utoipa",
  "uuid",
  "validator",
+ "x509-parser",
  "yrs",
  "zip",
 ]
@@ -1909,6 +1912,19 @@ dependencies = [
  "async-trait",
  "serde",
  "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "kubuno-modauth"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
  "uuid",
 ]
 

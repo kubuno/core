@@ -80,6 +80,12 @@ use tower_http::{
 };
 
 pub fn build(state: AppState, frontend_dist: String) -> Router {
+    // HSTS is emitted from live TLS state, not a constant: the header is set only
+    // when the core actually serves over HTTPS, and its value follows the
+    // `network.*` settings (see `crate::network`). An HSTS header on a
+    // plain-HTTP instance is at best ignored and at worst a foot-gun.
+    let hsts_holder = state.tls.clone();
+
     // Auth routes with rate limiting (10 req/min for login/register, 3/min for password reset)
     let auth_routes = Router::new()
         .route("/register",                  post(register))
@@ -153,6 +159,11 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/mail/settings", get(crate::handlers::admin::mail::get_mail_settings)
                                .patch(crate::handlers::admin::mail::update_mail_settings))
         .route("/mail/test",    post(crate::handlers::admin::mail::test_mail))
+        // HTTP/HTTPS termination: the toggles are ordinary `network.*` settings
+        // (edited via /settings/scoped/:key); this pair owns the certificate
+        // material and the live serving status.
+        .route("/network",             get(crate::handlers::admin::network::get_network))
+        .route("/network/certificate", post(crate::handlers::admin::network::upload_certificate))
         .route("/stats",          get(admin_stats))
         // ── Tableau de bord ───────────────────────────────────────────
         // Les mêmes faits que /stats, mais sur une FENÊTRE choisie et
@@ -643,7 +654,13 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         ))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("strict-transport-security"),
-            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+            // Closure évaluée par réponse : elle relit l'état TLS courant, si
+            // bien que l'en-tête n'est émis qu'en HTTPS et suit les réglages
+            // réseau à chaud (cf. `network::runtime::refresh_runtime`).
+            {
+                let holder = hsts_holder.clone();
+                move |_: &Response<_>| holder.hsts()
+            },
         ))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("content-security-policy"),

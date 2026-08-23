@@ -42,6 +42,12 @@ pub enum RemoteError {
     #[error("Identifiants du montage illisibles")]
     ConfigUnreadable,
 
+    /// The config could not be sealed (AES-GCM encryption failed). Distinct from
+    /// [`RemoteError::ConfigUnreadable`]: nothing was stored, so the caller must
+    /// not persist a row that would be unreadable forever.
+    #[error("Chiffrement de la configuration échoué")]
+    ConfigSealFailed,
+
     #[error("Authentification échouée: {0}")]
     Auth(String),
 

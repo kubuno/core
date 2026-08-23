@@ -38,6 +38,7 @@ aes-gcm.workspace      = true
 rand.workspace         = true
 sha2.workspace         = true
 hmac.workspace         = true
+hkdf.workspace         = true
 subtle.workspace       = true
 base64.workspace       = true
 
@@ -76,7 +77,9 @@ lettre.workspace            = true
 ldap3.workspace              = true
 rustls-pemfile.workspace     = true
 rustls-native-certs.workspace = true
+x509-parser.workspace        = true
 tokio-tungstenite.workspace = true
 kubuno-storage.workspace    = true
 kubuno-mcp.workspace        = true
+kubuno-modauth.workspace    = true
 utoipa.workspace            = true

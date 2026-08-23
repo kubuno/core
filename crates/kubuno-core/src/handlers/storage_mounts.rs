@@ -141,7 +141,7 @@ pub async fn create(
 
     // Valide la config en construisant le connecteur.
     state.remote_mounts.connector_from(&dto.provider, &dto.config).map_err(config_err)?;
-    let config_enc = state.remote_mounts.encrypt_config(&dto.config);
+    let config_enc = state.remote_mounts.encrypt_config(&dto.config).map_err(config_err)?;
 
     let id: Uuid = sqlx::query_scalar(
         r#"INSERT INTO core.remote_mounts (owner_id, name, provider, config_enc, mount_name)
@@ -305,7 +305,7 @@ pub async fn update(
             let stored = state.remote_mounts.decrypt_config(&row.1);
             let merged = merge_secrets(config, stored.as_ref());
             state.remote_mounts.connector_from(&provider, &merged).map_err(config_err)?;
-            Some(state.remote_mounts.encrypt_config(&merged))
+            Some(state.remote_mounts.encrypt_config(&merged).map_err(config_err)?)
         }
         None => None,
     };

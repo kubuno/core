@@ -243,6 +243,11 @@ async fn main() -> Result<()> {
         Arc::clone(&usage),
     ));
 
+    // Live TLS state — shared with the response layer (HSTS) and the admin
+    // handlers (hot certificate reload). Populated below once the serving mode
+    // is decided.
+    let tls_runtime = Arc::new(kubuno_core::network::TlsRuntime::new());
+
     let state = AppState {
         db:       pool,
         settings: Arc::new(settings.clone()),
@@ -252,76 +257,122 @@ async fn main() -> Result<()> {
         ws_hub,
         remote_mounts,
         usage,
+        tls:      Arc::clone(&tls_runtime),
     };
 
     kubuno_core::handlers::health::init_start_time();
 
     let frontend_dist = settings.server.frontend_dist.clone();
+    // The DB handle is needed after `state` is moved into the router, to resolve
+    // the console-managed network configuration.
+    let db = state.db.clone();
     let app = builder::build(state, frontend_dist);
 
-    let addr: std::net::SocketAddr = format!("{}:{}", settings.server.host, settings.server.port)
+    let http_addr: std::net::SocketAddr = format!("{}:{}", settings.server.host, settings.server.port)
         .parse()
         .with_context(|| format!("Adresse d'écoute invalide : {}:{}", settings.server.host, settings.server.port))?;
 
-    let tls = &settings.server.tls;
-    let serve_result: Result<()> = if tls.enabled {
-        // Terminaison TLS native (HTTPS) dans le core.
-        // Provider crypto explicite (ring) — rustls 0.23 exige un provider par
-        // défaut installé au niveau du process, sinon panique au handshake.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
-        let rustls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-            &tls.cert_path,
-            &tls.key_path,
-        )
-        .await
-        .with_context(|| format!(
-            "Chargement du certificat/clé TLS ({} / {})",
-            tls.cert_path, tls.key_path
-        ))?;
-
-        // Redirection optionnelle HTTP → HTTPS.
-        if tls.redirect_http_from_port > 0 {
-            spawn_https_redirect(settings.server.host.clone(), tls.redirect_http_from_port, addr.port());
-        }
-
-        if !settings.server.secure_cookies {
+    let secure_cookies = settings.server.secure_cookies;
+    let warn_insecure_cookies = |reason: &str| {
+        if !secure_cookies {
             tracing::warn!(
-                "server.tls.enabled = true mais server.secure_cookies = false — \
-                 activez secure_cookies pour que les cookies (refresh token) soient marqués Secure."
+                "{reason} mais server.secure_cookies = false — activez secure_cookies \
+                 pour que les cookies (refresh token) soient marqués Secure."
             );
         }
+    };
 
-        // Arrêt en douceur : axum-server pilote la fin de service via un Handle.
-        let handle = axum_server::Handle::new();
-        {
-            let handle = handle.clone();
-            tokio::spawn(async move {
-                shutdown_signal().await;
-                tracing::info!("Signal d'arrêt reçu — fin de service HTTPS en douceur");
-                handle.graceful_shutdown(Some(std::time::Duration::from_secs(15)));
-            });
+    let file_tls = &settings.server.tls;
+    let serve_result: Result<()> = if file_tls.enabled {
+        // ── Legacy path: TLS pinned in config.toml. An explicit operator file
+        //    override always wins over the console; the panel reports it as
+        //    file-managed and read-only. ──
+        kubuno_core::network::runtime::install_crypto_provider();
+        let rustls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+            &file_tls.cert_path,
+            &file_tls.key_path,
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "Chargement du certificat/clé TLS ({} / {})",
+                file_tls.cert_path, file_tls.key_path
+            )
+        })?;
+        tls_runtime.set_reload(rustls_config.clone());
+        set_hsts_from_db(&db, &tls_runtime).await;
+        if file_tls.redirect_http_from_port > 0 {
+            spawn_https_redirect(
+                settings.server.host.clone(),
+                file_tls.redirect_http_from_port,
+                http_addr.port(),
+            );
         }
-
-        tracing::info!("Serveur démarré sur https://{addr} (TLS natif)");
-        axum_server::bind_rustls(addr, rustls_config)
-            .handle(handle)
-            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .await
-            .context("Erreur du serveur HTTPS")
+        warn_insecure_cookies("server.tls.enabled = true");
+        serve_https(http_addr, rustls_config, app).await
     } else {
-        let listener = tokio::net::TcpListener::bind(&addr)
-            .await
-            .with_context(|| format!("Bind sur {addr}"))?;
-
-        tracing::info!("Serveur démarré sur http://{addr}");
-        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .with_graceful_shutdown(async {
-                shutdown_signal().await;
-                tracing::info!("Signal d'arrêt reçu — fin de service HTTP en douceur");
-            })
-            .await
-            .context("Erreur du serveur HTTP")
+        // ── Console-managed path: the serving mode is read from the instance's
+        //    `network.*` settings and the active certificate in the database. ──
+        let net = kubuno_core::network::NetworkConfig::load(&db).await;
+        if net.https_enabled {
+            match kubuno_core::network::cert::active_material(&db, &settings.auth.jwt_secret).await {
+                Some((cert_pem, key_pem)) => {
+                    match kubuno_core::network::runtime::build_server_config(
+                        cert_pem.as_bytes(),
+                        key_pem.as_bytes(),
+                        net.tls_min_version,
+                    ) {
+                        Ok(server_config) => {
+                            let rustls_config =
+                                axum_server::tls_rustls::RustlsConfig::from_config(server_config);
+                            tls_runtime.set_reload(rustls_config.clone());
+                            if let Some(hv) = net
+                                .hsts
+                                .header_value()
+                                .and_then(|s| axum::http::HeaderValue::from_str(&s).ok())
+                            {
+                                tls_runtime.set_hsts(Some(hv));
+                            }
+                            let https_addr: std::net::SocketAddr =
+                                format!("{}:{}", settings.server.host, net.https_port)
+                                    .parse()
+                                    .with_context(|| {
+                                        format!(
+                                            "Adresse HTTPS invalide : {}:{}",
+                                            settings.server.host, net.https_port
+                                        )
+                                    })?;
+                            if net.http_redirect_to_https {
+                                spawn_https_redirect(
+                                    settings.server.host.clone(),
+                                    net.http_redirect_port,
+                                    https_addr.port(),
+                                );
+                            }
+                            warn_insecure_cookies("network.https_enabled = true");
+                            serve_https(https_addr, rustls_config, app).await
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                "réseau : certificat actif inexploitable — démarrage en HTTP. \
+                                 Ré-importez un certificat depuis la console."
+                            );
+                            serve_http(http_addr, app).await
+                        }
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        "network.https_enabled = true mais aucun certificat actif — démarrage en HTTP. \
+                         Importez un certificat depuis la console puis redémarrez le service."
+                    );
+                    serve_http(http_addr, app).await
+                }
+            }
+        } else {
+            serve_http(http_addr, app).await
+        }
     };
 
     // L'exécuteur de tâches s'arrête APRÈS le serveur : il cesse de réclamer de
@@ -360,6 +411,64 @@ async fn shutdown_signal() {
         _ = ctrl_c    => {}
         _ = terminate => {}
     }
+}
+
+/// Sert l'application en HTTPS (TLS natif via rustls) avec arrêt en douceur.
+async fn serve_https(
+    addr: std::net::SocketAddr,
+    config: axum_server::tls_rustls::RustlsConfig,
+    app: axum::Router,
+) -> Result<()> {
+    // Arrêt en douceur : axum-server pilote la fin de service via un Handle.
+    let handle = axum_server::Handle::new();
+    {
+        let handle = handle.clone();
+        tokio::spawn(async move {
+            shutdown_signal().await;
+            tracing::info!("Signal d'arrêt reçu — fin de service HTTPS en douceur");
+            handle.graceful_shutdown(Some(std::time::Duration::from_secs(15)));
+        });
+    }
+
+    tracing::info!("Serveur démarré sur https://{addr} (TLS natif)");
+    axum_server::bind_rustls(addr, config)
+        .handle(handle)
+        .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+        .await
+        .context("Erreur du serveur HTTPS")
+}
+
+/// Sert l'application en HTTP nu avec arrêt en douceur.
+async fn serve_http(addr: std::net::SocketAddr, app: axum::Router) -> Result<()> {
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("Bind sur {addr}"))?;
+
+    tracing::info!("Serveur démarré sur http://{addr}");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        shutdown_signal().await;
+        tracing::info!("Signal d'arrêt reçu — fin de service HTTP en douceur");
+    })
+    .await
+    .context("Erreur du serveur HTTP")
+}
+
+/// Seeds the HSTS header holder from the instance's `network.*` settings, for a
+/// server that is about to serve over HTTPS.
+async fn set_hsts_from_db(
+    db: &sqlx::PgPool,
+    tls_runtime: &std::sync::Arc<kubuno_core::network::TlsRuntime>,
+) {
+    let net = kubuno_core::network::NetworkConfig::load(db).await;
+    let hv = net
+        .hsts
+        .header_value()
+        .and_then(|s| axum::http::HeaderValue::from_str(&s).ok());
+    tls_runtime.set_hsts(hv);
 }
 
 /// Lance, en tâche de fond, un petit serveur HTTP qui redirige (308) tout le

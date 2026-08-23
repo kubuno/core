@@ -7,6 +7,7 @@ members  = [
     "crates/kubuno-storage",
     "crates/kubuno-mcp",
     "crates/kubuno-seccomp",
+    "crates/kubuno-modauth",
 ]
 
 [workspace.package]
@@ -27,6 +28,10 @@ axum        = { version = "0.7",  features = ["macros", "ws", "multipart"] }
 # rester aligné sur le provider crypto de sqlx (évite de tirer aws-lc-rs/C).
 axum-server = { version = "0.7",  default-features = false, features = ["tls-rustls"] }
 rustls      = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# Certificate metadata (subject, SAN, validity) for the admin HTTPS panel. No
+# cryptography of its own: rustls remains the sole TLS engine. (PEM parsing uses
+# the existing `rustls-pemfile` dependency declared further down.)
+x509-parser    = "0.18"
 tower       = { version = "0.5",  features = ["full"] }
 tower-http  = { version = "0.6",  features = ["cors", "compression-gzip", "trace", "limit", "fs", "set-header", "timeout"] }
 async-trait = "0.1"
@@ -46,6 +51,7 @@ rand         = "0.8"
 sha2         = "0.10"
 hmac         = "0.12"
 subtle       = "2"
+hkdf         = "0.12"
 base64       = "0.22"
 
 # HTTP Client (pour proxy modules + CLI upload)
@@ -66,6 +72,7 @@ tokio-util         = { version = "0.7", features = ["io"] }
 kubuno-storage     = { path = "crates/kubuno-storage" }
 kubuno-mcp         = { path = "crates/kubuno-mcp" }
 kubuno-seccomp     = { path = "crates/kubuno-seccomp" }
+kubuno-modauth     = { path = "crates/kubuno-modauth" }
 
 # Erreurs
 thiserror = "1"

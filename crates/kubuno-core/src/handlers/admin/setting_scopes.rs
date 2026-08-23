@@ -290,6 +290,12 @@ async fn apply_side_effects(state: &AppState, key: &str, scope: &SettingScope) {
     if key.starts_with("security.ddos_") {
         crate::auth::ddos::reload_from_db(&state.db).await;
     }
+    // HSTS and the minimum TLS version reach the live listener without a
+    // restart; the port/enable toggles cannot (they bind a socket) and the panel
+    // says so. Cheap and safe when no HTTPS listener is running.
+    if key.starts_with("network.") {
+        crate::network::runtime::refresh_runtime(state).await;
+    }
     crate::health::invalidate();
 }
 

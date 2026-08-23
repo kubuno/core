@@ -16,6 +16,7 @@ pub mod holidays;
 pub mod ldap;
 pub mod mail;
 pub mod marketplace;
+pub mod network;
 pub mod oauth_providers;
 pub mod org_units;
 pub mod password_reset;

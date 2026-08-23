@@ -9,6 +9,30 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Security
+
+- **The identity the core forwards to a module is now cryptographically signed.**
+  Every proxied request (HTTP and WebSocket) carries a short-lived, module-scoped
+  `X-Kubuno-Auth` token — HMAC-SHA256 over the caller's id, role and email, keyed
+  by the target module's own internal secret and bound to that module as audience
+  (new shared crate `kubuno-modauth`). A process reaching a module's loopback port
+  directly can no longer forge `X-Kubuno-User-*` headers to impersonate a user
+  (an administrator included), and a token minted for one module does not validate
+  at another. The plain identity headers are still sent so modules can migrate to
+  verification one at a time. The proxy also now strips any client-supplied
+  identity headers on non-internal requests, closing a path where a forged header
+  could reach a public module route unresolved.
+- **Remote-mount credentials are now sealed with an HKDF-derived key.** The
+  AES-256-GCM key for stored mount configurations is derived with HKDF-SHA256
+  (RFC 5869) and a domain-separating label, replacing an ad-hoc
+  `SHA-256(secret ‖ label)`. Configurations sealed before this change stay
+  readable (the previous key is still accepted for decryption), so no reconnection
+  is required.
+- **A failed encryption of a remote-mount configuration is now reported instead
+  of silently stored.** Sealing errors previously produced an empty, permanently
+  undecryptable blob that only surfaced on the next browse; the save now fails
+  cleanly and nothing is persisted.
+
 ### Changed
 
 - **Redesigned the editors' dock chrome (shared `DockArea`).** Every dockable

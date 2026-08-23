@@ -59,6 +59,22 @@ pub async fn proxy_to_module(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| state.settings.server.authenticate_internal(s));
 
+    // ── Strip client-supplied identity headers ───────────────────────────────
+    // Only an authenticated internal caller (a module presenting a valid secret,
+    // `caller` above) may carry a pre-set X-Kubuno-User-* — that is how one
+    // module acts on a user's behalf. For everyone else these headers are the
+    // core's to set from the verified token, and the signed X-Kubuno-Auth is the
+    // core's alone to mint: an incoming copy is a forgery and is dropped here,
+    // before any code path could forward it unresolved (e.g. an anonymous
+    // request to a public module route, which no branch below overwrites).
+    if caller.is_none() {
+        let h = req.headers_mut();
+        h.remove("x-kubuno-user-id");
+        h.remove("x-kubuno-user-role");
+        h.remove("x-kubuno-user-email");
+        h.remove(kubuno_modauth::TOKEN_HEADER);
+    }
+
     // ── Les routes internes d'un module ne sont pas publiques ────────────────
     // Plus bas, le proxy REMPLACE le header X-Internal-Secret par le secret du
     // module cible : n'importe quelle requête arrive donc au module avec un
@@ -167,11 +183,48 @@ pub async fn proxy_to_module(
     }
     } // fin: authentification par token (ignorée si auth interne module→module)
 
+    // ── Sign the forwarded identity (core → module trust boundary) ───────────
+    // The per-module secret both authenticates the hop and keys a short-lived,
+    // audience-bound identity token (kubuno-modauth). Binding the identity to the
+    // secret is what closes the forgery: a process reaching the module's loopback
+    // port directly can set X-Kubuno-User-* freely, but cannot produce a valid
+    // X-Kubuno-Auth without the module's secret, and a token minted for one
+    // module does not validate at another. The plain X-Kubuno-User-* headers are
+    // still forwarded for modules not yet migrated to verify the token.
+    let module_secret = state.settings.server.module_secret(module_id);
+    let signed_identity = {
+        let h = req.headers();
+        h.get("x-kubuno-user-id")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            .map(|id| {
+                let role = h
+                    .get("x-kubuno-user-role")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("user")
+                    .to_owned();
+                let email = h
+                    .get("x-kubuno-user-email")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_owned();
+                let user = kubuno_modauth::ModuleUser { id, role, email };
+                kubuno_modauth::sign(module_secret.as_bytes(), &user, module_id)
+            })
+    };
+
     // Remplacer Authorization par le secret interne du module cible (celui qu'il
     // possède : le module compare le header reçu à sa propre valeur).
     let headers = req.headers_mut();
     headers.remove("authorization");
-    if let Ok(v) = HeaderValue::from_str(&state.settings.server.module_secret(module_id)) {
+    // Re-mint from scratch: the client must never supply a token of its own.
+    headers.remove(kubuno_modauth::TOKEN_HEADER);
+    if let Some(token) = signed_identity {
+        if let Ok(v) = HeaderValue::from_str(&token) {
+            headers.insert(HeaderName::from_static(kubuno_modauth::TOKEN_HEADER), v);
+        }
+    }
+    if let Ok(v) = HeaderValue::from_str(&module_secret) {
         headers.insert(HeaderName::from_static("x-internal-secret"), v);
     }
 
@@ -294,6 +347,9 @@ pub async fn proxy_ws_to_module(
                     .map(|(_, v)| v.into_owned()))
         });
 
+    // Per-module secret: authenticates the hop AND keys the identity token below.
+    let module_secret = state.settings.server.module_secret(&module_id);
+
     let mut user_headers: Vec<(String, String)> = Vec::new();
     if let Some(token) = bearer {
         let (resolved_user, grant) = resolve_caller(&state, &token).await;
@@ -304,8 +360,20 @@ pub async fn proxy_ws_to_module(
                 None => user.role.clone(),
             };
             user_headers.push(("x-kubuno-user-id".to_owned(), user.id.to_string()));
-            user_headers.push(("x-kubuno-user-role".to_owned(), role));
+            user_headers.push(("x-kubuno-user-role".to_owned(), role.clone()));
             user_headers.push(("x-kubuno-user-email".to_owned(), user.email.clone()));
+            // Signed, audience-bound identity — same trust boundary as the HTTP
+            // path (see kubuno-modauth). A WebSocket forged directly against the
+            // module's loopback port cannot produce this without the secret.
+            let mu = kubuno_modauth::ModuleUser {
+                id: user.id,
+                role,
+                email: user.email.clone(),
+            };
+            user_headers.push((
+                kubuno_modauth::TOKEN_HEADER.to_owned(),
+                kubuno_modauth::sign(module_secret.as_bytes(), &mu, &module_id),
+            ));
             user_headers.push((
                 "x-kubuno-auth-origin".to_owned(),
                 if grant.is_some() { "api_token" } else { "session" }.to_owned(),
@@ -320,10 +388,7 @@ pub async fn proxy_ws_to_module(
         }
     }
     // Secret interne du module cible (celui qu'il détient), pas le secret maître.
-    user_headers.push((
-        "x-internal-secret".to_owned(),
-        state.settings.server.module_secret(&module_id),
-    ));
+    user_headers.push(("x-internal-secret".to_owned(), module_secret));
 
     // Extract WebSocketUpgrade from the request parts
     let (mut parts, _body) = req.into_parts();

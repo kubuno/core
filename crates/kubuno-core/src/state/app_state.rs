@@ -3,6 +3,7 @@ use crate::{
     events::EventBus,
     modules::registry::ModuleRegistry,
     modules::usage::UsageMeter,
+    network::TlsRuntime,
     websocket::hub::WsHub,
 };
 use kubuno_storage::StorageBackend;
@@ -25,4 +26,7 @@ pub struct AppState {
     /// Attendance counter fed by the module proxy — which account used which
     /// application, aggregated by day (see [`crate::modules::usage`]).
     pub usage: Arc<UsageMeter>,
+    /// Live TLS state: the reloadable rustls config the HTTPS listener serves
+    /// and the HSTS header the response layer emits (see [`crate::network`]).
+    pub tls: Arc<TlsRuntime>,
 }
