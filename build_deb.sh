@@ -189,7 +189,9 @@ setup_core() {
         "${PKG_DIR}/usr/share/man/man1" \
         "${PKG_DIR}/etc/kubuno" \
         "${PKG_DIR}/etc/logrotate.d" \
-        "${PKG_DIR}/lib/systemd/system"
+        "${PKG_DIR}/lib/systemd/system" \
+        "${PKG_DIR}/usr/lib/kubuno/modules" \
+        "${PKG_DIR}/var/backups/kubuno"
 
     install -m 755 target/release/kubuno-core "${PKG_DIR}/usr/bin/kubuno-core"
     install -m 755 target/release/kubuno       "${PKG_DIR}/usr/bin/kubuno"
@@ -263,7 +265,11 @@ ProtectSystem=strict
 # (crate::backup). Sans cette entrée, ProtectSystem=strict rend le
 # répertoire en lecture seule et chaque exécution échoue sur
 # « Read-only file system » — une politique armée qui ne produit rien.
-ReadWritePaths=/var/lib/kubuno /etc/kubuno /var/log/kubuno /usr/lib/kubuno/modules /var/backups/kubuno
+# Chaque chemin est préfixé de « - » : sans cela, un répertoire absent fait
+# échouer la mise en place du namespace et le service ne démarre pas du tout
+# (« 226/NAMESPACE »), sur une machine neuve où aucun module n'est encore
+# installé par exemple. Le préfixe dit à systemd d'ignorer ce qui n'existe pas.
+ReadWritePaths=-/var/lib/kubuno -/etc/kubuno -/var/log/kubuno -/usr/lib/kubuno/modules -/var/backups/kubuno
 
 [Install]
 WantedBy=multi-user.target
@@ -291,6 +297,10 @@ if ! id -u kubuno &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin kubuno
 fi
 mkdir -p /var/lib/kubuno/drive /var/lib/kubuno/themes
+# Répertoire des modules : l'unité le veut accessible en écriture, et une
+# installation du seul core n'en contient encore aucun. Absent, systemd refusait
+# de construire le namespace et le service ne démarrait pas (226/NAMESPACE).
+mkdir -p /usr/lib/kubuno/modules
 # Destination par défaut des sauvegardes. 0700 : le fichier contient les
 # empreintes de mots de passe de tous les comptes de l'instance.
 mkdir -p /var/backups/kubuno
@@ -309,10 +319,17 @@ chown kubuno:adm /var/log/kubuno
 chmod 750 /var/log/kubuno
 if [ ! -f /etc/kubuno/config.toml ]; then
     cp /etc/kubuno/config.toml.example /etc/kubuno/config.toml
-    echo "→ /etc/kubuno/config.toml créé. Renseignez database.url, auth.jwt_secret et server.internal_secret."
+    echo "→ /etc/kubuno/config.toml créé (valeurs d'exemple)."
+    echo "→ Kubuno n'est pas encore installé : ouvrez http://<cette-machine>:8080/ dans un"
+    echo "  navigateur, l'assistant d'installation vous guidera (base de données, compte"
+    echo "  administrateur). Le jeton d'installation est dans /var/lib/kubuno/setup-token"
+    echo "  et dans « journalctl -u kubuno -n 40 »."
 fi
+# Le service écrit lui-même ce fichier au terme de l'assistant d'installation :
+# il doit donc lui appartenir. 0640 le garde illisible hors du groupe — il porte
+# le mot de passe de la base et le secret JWT.
 chmod 640 /etc/kubuno/config.toml
-chown root:kubuno /etc/kubuno/config.toml
+chown kubuno:kubuno /etc/kubuno/config.toml
 systemctl daemon-reload || true
 systemctl enable kubuno || true
 systemctl reset-failed kubuno 2>/dev/null || true

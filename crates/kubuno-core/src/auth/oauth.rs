@@ -1,8 +1,9 @@
+use crate::crypto::datakey;
+use sha2::{Digest, Sha256};
 use anyhow::Context;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::Rng;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, Instant};
@@ -11,10 +12,11 @@ use std::time::{Duration, Instant};
 // Client secrets are stored AES-256-GCM encrypted; the key is derived from the
 // JWT secret with domain separation (same pattern as TOTP secrets).
 pub fn secret_key(jwt_secret: &str) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(b"kubuno:oidc:");
-    h.update(jwt_secret.as_bytes());
-    h.finalize().into()
+    // The key comes from the data-encryption root, not from the token-signing
+    // secret, so rotating the latter leaves what is stored readable. The root is
+    // seeded with the JWT secret on first boot, so existing values keep the same
+    // derivation; `jwt_secret` is only the fallback when the root was never loaded.
+    datakey::key(b"kubuno:oidc:", jwt_secret)
 }
 
 // ── PKCE + state ──────────────────────────────────────────────────────────────

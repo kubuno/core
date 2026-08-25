@@ -18,6 +18,7 @@ pub fn cli() -> Command {
              db:status          Affiche la connectivité et les migrations\n\
              app:reset          Remet toute l'application à zéro\n\
              auth:recover       Rétablit l'accès d'un compte (second facteur perdu)\n\
+             security:rekey     Renouvelle la clé de chiffrement des données\n\
              status             Affiche l'état du serveur et des modules\n\
              modules:commands   Liste les commandes CLI des modules installés\n\
              \n\
@@ -34,6 +35,44 @@ pub fn cli() -> Command {
         )
         .subcommand_required(true)
         .arg_required_else_help(true)
+        // ── security:rekey ──
+        .subcommand(
+            Command::new("security:rekey")
+                .about("Renouvelle la clé de chiffrement des données")
+                .long_about(
+                    "Tire une nouvelle clé de chiffrement des données et re-chiffre tout ce\n\
+                     qu'elle protège : mot de passe SMTP, mot de passe de liaison de l'annuaire,\n\
+                     secrets clients OpenID Connect, secrets de double authentification,\n\
+                     identifiants des campagnes de migration.\n\
+                     \n\
+                     Cette clé vit dans son propre fichier (/var/lib/kubuno/data.key) et est\n\
+                     amorcée, au premier démarrage, avec le secret JWT alors en vigueur. Si ce\n\
+                     secret était faible, partagé ou resté à la valeur d'exemple, la clé de\n\
+                     données l'est aussi : cette commande est le seul moyen de la renouveler.\n\
+                     \n\
+                     Arrêtez le service et sauvegardez la base ET le fichier de clé avant de\n\
+                     lancer l'opération. Tout est écrit dans une seule transaction, et la\n\
+                     nouvelle clé n'est posée qu'une fois celle-ci validée.",
+                )
+                .arg(
+                    Arg::new("force")
+                        .long("force")
+                        .action(ArgAction::SetTrue)
+                        .help("Ne pas demander de confirmation"),
+                )
+                .arg(
+                    Arg::new("check")
+                        .long("check")
+                        .action(ArgAction::SetTrue)
+                        .help("Vérifier seulement que tout est lisible, sans rien écrire"),
+                )
+                .arg(
+                    Arg::new("config")
+                        .long("config")
+                        .value_name("FICHIER")
+                        .help("Configuration de l'instance (défaut : /etc/kubuno/config.toml)"),
+                ),
+        )
         // ── db:backup ──
         .subcommand(
             Command::new("db:backup")

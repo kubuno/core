@@ -1,15 +1,12 @@
-//! The instance's HTTP/HTTPS configuration, read from `core.settings`, and the
-//! encryption of the one field that never travels in clear: the private key.
+//! The instance's HTTP/HTTPS configuration, read from `core.settings`.
 //!
-//! The private key is stored as an AES-256-GCM blob keyed by a domain-separated
-//! derivation of the JWT secret — the same construction the SMTP relay, the OIDC
-//! client secrets and the LDAP service password use. The domains differ, so one
-//! secret leaking never unlocks another.
+//! Only non-secret knobs live here — ports, protocol floor, HSTS, which mode
+//! issues the certificate. The key material itself is deliberately absent: it is
+//! held on disk by [`super::store`], never in the database.
 
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
-use crate::{crypto::encryption, errors::AppError};
+use crate::errors::AppError;
 
 // ── Setting keys (declared by migration 000125) ──────────────────────────────
 pub const KEY_HTTPS_ENABLED: &str = "network.https_enabled";
@@ -23,37 +20,11 @@ pub const KEY_HSTS_INCLUDE_SUBDOMAINS: &str = "network.hsts_include_subdomains";
 pub const KEY_HSTS_PRELOAD: &str = "network.hsts_preload";
 pub const KEY_CERT_MODE: &str = "network.cert_mode";
 
-/// Key used to encrypt a TLS private key at rest. Domain-separated from every
-/// other subsystem's key so a leak stays contained.
-pub fn secret_key(jwt_secret: &str) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(b"kubuno:tls:");
-    h.update(jwt_secret.as_bytes());
-    h.finalize().into()
-}
-
-/// Encrypts a private-key PEM for storage.
-pub fn encrypt_key(jwt_secret: &str, key_pem: &str) -> Result<String, AppError> {
-    encryption::encrypt(&secret_key(jwt_secret), key_pem.as_bytes()).map_err(AppError::Internal)
-}
-
-/// Decrypts a stored private-key blob.
-///
-/// A blob that no longer decrypts means the JWT secret was rotated: the instance
-/// says so, once and loudly, and carries on in HTTP rather than refusing to
-/// boot. The operator re-uploads the certificate from the console.
-pub fn decrypt_key(jwt_secret: &str, blob: &str) -> Option<String> {
-    match encryption::decrypt(&secret_key(jwt_secret), blob) {
-        Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
-        Err(e) => {
-            tracing::error!(
-                error = %e,
-                "réseau : clé privée TLS indéchiffrable (secret JWT changé ?) — le HTTPS ne démarrera pas tant qu'un certificat n'est pas ré-importé"
-            );
-            None
-        }
-    }
-}
+// The TLS private key is NOT stored in the database and therefore not encrypted
+// with a derived key any more: it lives on disk under the service's own state
+// directory, protected by POSIX permissions like every other web server does
+// (see `super::store`). That also removes a real failure mode — material sealed
+// with the JWT secret became unreadable the day that secret was rotated.
 
 /// The minimum TLS version the core will accept. rustls cannot speak anything
 /// older than 1.2 regardless, so this chooses between "1.2 and up" and "1.3
@@ -84,13 +55,22 @@ pub struct HstsConfig {
     pub preload: bool,
 }
 
+/// Upper bound on the HSTS max-age, in days (two years — above what any
+/// preload list asks for).
+///
+/// Clamped at the point of USE rather than only at the point of write: the value
+/// comes from the database, where a row can predate the validation or be edited
+/// by other means, and `days * 86_400` on an unbounded `i64` overflows — which
+/// panics in a debug build and wraps to a negative max-age in release.
+const MAX_HSTS_DAYS: i64 = 730;
+
 impl HstsConfig {
     /// The `Strict-Transport-Security` value, or `None` when disabled.
     pub fn header_value(&self) -> Option<String> {
         if !self.enabled {
             return None;
         }
-        let max_age = self.max_age_days.max(0) * 86_400;
+        let max_age = self.max_age_days.clamp(0, MAX_HSTS_DAYS) * 86_400;
         let mut v = format!("max-age={max_age}");
         if self.include_subdomains {
             v.push_str("; includeSubDomains");
@@ -163,31 +143,168 @@ impl NetworkConfig {
     }
 }
 
+/// Refuses a `network.*` value the declared type cannot describe.
+///
+/// The schema says "a string" or "a number"; it cannot say "an https URL that is
+/// not pointing back inside the infrastructure", nor "a port in range". Called
+/// from the settings write path, before anything is stored.
+pub fn validate_setting(key: &str, value: &serde_json::Value) -> Result<(), AppError> {
+    match key {
+        super::acme::KEY_DIRECTORY_URL => {
+            validate_acme_directory_url(value.as_str().unwrap_or_default())
+        }
+        KEY_HTTPS_PORT | KEY_HTTP_REDIRECT_PORT => {
+            let n = value.as_i64().unwrap_or(0);
+            if !(1..=65_535).contains(&n) {
+                return Err(AppError::Validation(
+                    "Port invalide : un entier entre 1 et 65535 est attendu".into(),
+                ));
+            }
+            Ok(())
+        }
+        KEY_HSTS_MAX_AGE_DAYS => {
+            let n = value.as_i64().unwrap_or(-1);
+            if !(0..=MAX_HSTS_DAYS).contains(&n) {
+                return Err(AppError::Validation(format!(
+                    "Durée HSTS invalide : entre 0 et {MAX_HSTS_DAYS} jours"
+                )));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The ACME directory must be an `https` URL naming a public host.
+///
+/// Two reasons, and both matter even though only an administrator can write it:
+///   * `http` would expose the whole ACME dialogue (including the account key's
+///     use) to anyone on the path;
+///   * a URL naming loopback, a link-local or a private address turns this
+///     endpoint into a request forwarder aimed at the infrastructure behind the
+///     server — the cloud metadata service being the classic target, with the
+///     answer partly readable from the console's "last attempt" detail.
+///
+/// This blocks address LITERALS. A hostname that resolves to an internal address
+/// cannot be caught here without resolving it, and a resolution done at write
+/// time says nothing about the one done at connect time; the value is an
+/// administrator-only setting, and this closes the direct path.
+pub fn validate_acme_directory_url(raw: &str) -> Result<(), AppError> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err(AppError::Validation(
+            "L'URL du répertoire ACME est requise".into(),
+        ));
+    }
+    let url = url::Url::parse(raw)
+        .map_err(|_| AppError::Validation("URL du répertoire ACME invalide".into()))?;
+    if url.scheme() != "https" {
+        return Err(AppError::Validation(
+            "Le répertoire ACME doit être en https (le dialogue avec l'autorité ne doit pas circuler en clair)".into(),
+        ));
+    }
+    let host = url
+        .host()
+        .ok_or_else(|| AppError::Validation("URL du répertoire ACME sans hôte".into()))?;
+
+    let refuse = || {
+        Err(AppError::Validation(
+            "Le répertoire ACME ne peut pas désigner une adresse interne (bouclage, lien-local ou réseau privé)".into(),
+        ))
+    };
+    match host {
+        url::Host::Domain(d) => {
+            let d = d.trim_end_matches('.').to_ascii_lowercase();
+            if d == "localhost" || d.ends_with(".localhost") {
+                return refuse();
+            }
+        }
+        url::Host::Ipv4(ip) => {
+            if ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified() {
+                return refuse();
+            }
+        }
+        url::Host::Ipv6(ip) => {
+            // `is_unique_local` / `is_unicast_link_local` are still unstable for
+            // Ipv6Addr, so the two ranges are matched on their prefixes: fc00::/7
+            // (unique local) and fe80::/10 (link local).
+            let seg = ip.segments()[0];
+            if ip.is_loopback()
+                || ip.is_unspecified()
+                || (seg & 0xfe00) == 0xfc00
+                || (seg & 0xffc0) == 0xfe80
+            {
+                return refuse();
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn the_key_round_trips_and_the_blob_hides_it() {
-        let jwt = "un-secret-jwt-suffisamment-long-pour-le-test";
-        let pem = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n";
-        let blob = encrypt_key(jwt, pem).expect("chiffrement");
-        assert!(!blob.contains("BEGIN PRIVATE KEY"));
-        assert_eq!(decrypt_key(jwt, &blob).as_deref(), Some(pem));
+    fn the_acme_directory_must_be_https_and_public() {
+        assert!(validate_acme_directory_url("https://acme-v02.api.letsencrypt.org/directory").is_ok());
+        assert!(validate_acme_directory_url(
+            "https://acme-staging-v02.api.letsencrypt.org/directory"
+        )
+        .is_ok());
+        // Plain HTTP would expose the dialogue.
+        assert!(validate_acme_directory_url("http://acme-v02.api.letsencrypt.org/directory").is_err());
+        // Internal targets: the request-forwarding case.
+        for internal in [
+            "https://127.0.0.1/directory",
+            "https://localhost/directory",
+            "https://169.254.169.254/latest/meta-data/",
+            "https://10.0.0.5/directory",
+            "https://192.168.1.1/directory",
+            "https://172.16.0.1/directory",
+            "https://[::1]/directory",
+            "https://[fe80::1]/directory",
+            "https://[fd00::1]/directory",
+        ] {
+            assert!(
+                validate_acme_directory_url(internal).is_err(),
+                "doit refuser {internal}"
+            );
+        }
+        assert!(validate_acme_directory_url("").is_err());
+        assert!(validate_acme_directory_url("pas une url").is_err());
     }
 
     #[test]
-    fn a_blob_from_another_secret_yields_none() {
-        let pem = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n";
-        let blob = encrypt_key("le-premier-secret-jwt-assez-long", pem).expect("chiffrement");
-        assert_eq!(decrypt_key("un-tout-autre-secret-jwt-long", &blob), None);
+    fn ports_and_hsts_duration_are_bounded_at_the_write() {
+        use serde_json::json;
+        assert!(validate_setting(KEY_HTTPS_PORT, &json!(443)).is_ok());
+        assert!(validate_setting(KEY_HTTPS_PORT, &json!(0)).is_err());
+        assert!(validate_setting(KEY_HTTPS_PORT, &json!(70_000)).is_err());
+        assert!(validate_setting(KEY_HSTS_MAX_AGE_DAYS, &json!(365)).is_ok());
+        assert!(validate_setting(KEY_HSTS_MAX_AGE_DAYS, &json!(-1)).is_err());
+        // The overflow case: days that would wrap `days * 86_400`.
+        assert!(validate_setting(KEY_HSTS_MAX_AGE_DAYS, &json!(i64::MAX / 86_400)).is_err());
     }
 
+    /// A stored value that predates the validation must still produce a sane
+    /// header rather than panicking or wrapping.
     #[test]
-    fn the_tls_key_differs_from_the_ldap_key() {
-        let jwt = "le-meme-secret-pour-les-deux-sous-systemes";
-        assert_ne!(secret_key(jwt), crate::directory::config::secret_key(jwt));
+    fn an_absurd_stored_hsts_duration_is_clamped_not_overflowed() {
+        let h = HstsConfig {
+            enabled: true,
+            max_age_days: i64::MAX,
+            include_subdomains: false,
+            preload: false,
+        };
+        assert_eq!(
+            h.header_value().as_deref(),
+            Some(format!("max-age={}", MAX_HSTS_DAYS * 86_400).as_str())
+        );
     }
+
+
+
 
     #[test]
     fn hsts_header_is_built_from_its_parts() {

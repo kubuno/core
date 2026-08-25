@@ -32,6 +32,25 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config!
 
+    // ── Instance pas encore installée ───────────────────────────────────────
+    // Avant la toute première installation, le core ne sert que l'assistant : il
+    // répond 503 { setup_required } à tout le reste de l'API. On y va, plutôt
+    // que d'afficher une erreur incompréhensible sur une instance neuve. Rien
+    // n'est interrogé en plus au démarrage : c'est le premier appel d'API qui
+    // nous l'apprend.
+    if (
+      error.response?.status === 503 &&
+      (error.response?.data as { setup_required?: boolean } | undefined)?.setup_required &&
+      // Tout le parcours d'installation, pas seulement sa première page : une
+      // étape porte son propre chemin (/setup/database…), et une comparaison
+      // stricte renvoyait l'assistant à l'accueil au moindre appel d'API — ce
+      // qui vidait l'étape en cours à chaque rechargement.
+      !window.location.pathname.startsWith('/setup')
+    ) {
+      window.location.replace('/setup')
+      return new Promise(() => {})   // la navigation est en cours : ne pas rejeter
+    }
+
     // ── Réauthentification avant action sensible ────────────────────────────
     // Le core refuse par un 403 PORTEUR D'UN CODE (`REAUTH_REQUIRED`) — c'est ce
     // qui distingue ce refus d'un « accès refusé » ordinaire et permet de

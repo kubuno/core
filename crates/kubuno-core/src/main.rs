@@ -48,20 +48,58 @@ async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
 
     // Parser les arguments — affiche l'aide et quitte proprement sur --help / --version
-    let _cli = Cli::parse();
+    let cli = Cli::parse();
 
-    let settings = Settings::load().context("Chargement de la configuration")?;
+    // Read the configuration WITHOUT validating it first: a freshly installed
+    // package still carries the example's placeholders, which is exactly what
+    // `Settings::load()` refuses to start on — and the state the installation
+    // wizard exists to leave behind.
+    let raw = Settings::load_unvalidated_from(cli.config.as_deref())
+        .context("Lecture de la configuration")?;
 
     // Initialiser le logging (stdout + fichiers access.log / error.log)
     // Les guards doivent rester en vie jusqu'à la fin du processus.
-    let _log_guards = kubuno_core::logging::init(&settings.logging);
+    let _log_guards = kubuno_core::logging::init(&raw.logging);
 
     tracing::info!("Kubuno Core v{} démarrage…", env!("CARGO_PKG_VERSION"));
+
+    // Not installed yet: serve the wizard on the normal port until it succeeds,
+    // then carry on with the configuration it has just written. Nothing has to
+    // be restarted — same behaviour under systemd, Docker and in development.
+    if kubuno_core::setup::needs_setup(&raw).await {
+        tracing::warn!(
+            manquant = ?kubuno_core::setup::missing(&raw),
+            "Instance non installée — assistant d'installation"
+        );
+        if !kubuno_core::setup::run_wizard(&raw).await? {
+            tracing::info!("Arrêt avant la fin de l'installation");
+            return Ok(());
+        }
+    }
+
+    let settings = Settings::load_from(cli.config.as_deref())
+        .context("Chargement de la configuration")?;
 
     // Mandataires inverses autorisés à définir X-Forwarded-For / X-Real-IP.
     // À installer AVANT le démarrage du serveur : toute résolution d'adresse
     // client (limitation de débit, anti-DDoS, sessions, journal d'accès) en dépend.
     kubuno_core::auth::client_ip::init(&settings.server.trusted_proxy_cidrs);
+
+    // Load the key that protects data at rest — SMTP and directory passwords,
+    // OIDC client secrets, TOTP secrets. It lives in its own file so that
+    // rotating the token-signing secret, which is a thing an administrator
+    // SHOULD be able to do, no longer makes every stored secret and every
+    // enrolled second factor unreadable. On an instance that predates the file,
+    // it is seeded with the JWT secret in force, so nothing already encrypted
+    // has to be touched. Must run before anything decrypts.
+    if let Err(e) = kubuno_core::crypto::datakey::init(&settings.auth.jwt_secret) {
+        tracing::error!(erreur = %e, "Clé de chiffrement des données illisible");
+        return Err(e);
+    }
+
+    // Install the audit hash-chain key (derived from the internal secret, never
+    // stored in the database) before any audit row can be written.
+    kubuno_core::audit::chain::init_audit_key(&settings.server.internal_secret);
 
     // Pool PostgreSQL
     let pool = create_pool(&settings.database)
@@ -92,6 +130,14 @@ async fn main() -> Result<()> {
     seed::ensure_default_admin(&pool)
         .await
         .context("Création du compte administrateur initial")?;
+
+    // An administrator whose account predates this repair holds the `role`
+    // flag but no role assignment, and the console — which reads the assignment
+    // — showed them almost nothing. The migration that granted it ran before
+    // their account existed, so only a check at start can put it right.
+    if let Err(e) = kubuno_core::authz::bootstrap::reconcile_superadmins(&pool).await {
+        tracing::error!(error = %e, "Vérification des attributions de super-administration");
+    }
 
     // Infrastructure
     let event_bus = Arc::new(EventBus::new(1024));
@@ -260,6 +306,9 @@ async fn main() -> Result<()> {
         tls:      Arc::clone(&tls_runtime),
     };
 
+    // Automatic ACME certificate renewal (no-op unless cert_mode = acme).
+    tokio::spawn(kubuno_core::network::acme::renewal_worker(state.clone()));
+
     kubuno_core::handlers::health::init_start_time();
 
     let frontend_dist = settings.server.frontend_dist.clone();
@@ -272,6 +321,12 @@ async fn main() -> Result<()> {
         .parse()
         .with_context(|| format!("Adresse d'écoute invalide : {}:{}", settings.server.host, settings.server.port))?;
 
+    // HSTS is seeded for EVERY serving mode, not just the ones that terminate
+    // TLS here: an instance behind a TLS-terminating reverse proxy serves plain
+    // HTTP at this socket and must still send the header (the response layer
+    // decides per request — see `network::runtime::response_is_over_tls`).
+    set_hsts_from_db(&db, &tls_runtime).await;
+
     let secure_cookies = settings.server.secure_cookies;
     let warn_insecure_cookies = |reason: &str| {
         if !secure_cookies {
@@ -282,13 +337,25 @@ async fn main() -> Result<()> {
         }
     };
 
+    // ── Which sockets to open ────────────────────────────────────────────────
+    //
+    // Like any ordinary web server, the core listens on HTTP **and** HTTPS at the
+    // same time when both are configured (Apache's `Listen 80` + `Listen 443`).
+    // Enabling HTTPS therefore never takes the HTTP port away — which would cut
+    // off a reverse proxy, a health probe or a module talking to the loopback
+    // port. What the HTTP socket *serves* is the choice: the application, or a
+    // redirect to HTTPS.
     let file_tls = &settings.server.tls;
-    let serve_result: Result<()> = if file_tls.enabled {
-        // ── Legacy path: TLS pinned in config.toml. An explicit operator file
-        //    override always wins over the console; the panel reports it as
-        //    file-managed and read-only. ──
+    let net = kubuno_core::network::NetworkConfig::load(&db).await;
+
+    // The TLS listener, if any, and the port it answers on.
+    let mut https: Option<(axum_server::tls_rustls::RustlsConfig, u16)> = None;
+    if file_tls.enabled {
+        // Legacy path: TLS pinned in config.toml. An explicit operator file
+        // override wins over the console, which reports itself as read-only.
+        // Historically this served HTTPS on `server.port`, and that is kept.
         kubuno_core::network::runtime::install_crypto_provider();
-        let rustls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+        let cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(
             &file_tls.cert_path,
             &file_tls.key_path,
         )
@@ -299,81 +366,171 @@ async fn main() -> Result<()> {
                 file_tls.cert_path, file_tls.key_path
             )
         })?;
-        tls_runtime.set_reload(rustls_config.clone());
-        set_hsts_from_db(&db, &tls_runtime).await;
-        if file_tls.redirect_http_from_port > 0 {
-            spawn_https_redirect(
-                settings.server.host.clone(),
-                file_tls.redirect_http_from_port,
-                http_addr.port(),
-            );
-        }
+        tls_runtime.set_reload(cfg.clone());
         warn_insecure_cookies("server.tls.enabled = true");
-        serve_https(http_addr, rustls_config, app).await
-    } else {
-        // ── Console-managed path: the serving mode is read from the instance's
-        //    `network.*` settings and the active certificate in the database. ──
-        let net = kubuno_core::network::NetworkConfig::load(&db).await;
-        if net.https_enabled {
-            match kubuno_core::network::cert::active_material(&db, &settings.auth.jwt_secret).await {
-                Some((cert_pem, key_pem)) => {
-                    match kubuno_core::network::runtime::build_server_config(
-                        cert_pem.as_bytes(),
-                        key_pem.as_bytes(),
-                        net.tls_min_version,
-                    ) {
-                        Ok(server_config) => {
-                            let rustls_config =
-                                axum_server::tls_rustls::RustlsConfig::from_config(server_config);
-                            tls_runtime.set_reload(rustls_config.clone());
-                            if let Some(hv) = net
-                                .hsts
-                                .header_value()
-                                .and_then(|s| axum::http::HeaderValue::from_str(&s).ok())
-                            {
-                                tls_runtime.set_hsts(Some(hv));
-                            }
-                            let https_addr: std::net::SocketAddr =
-                                format!("{}:{}", settings.server.host, net.https_port)
-                                    .parse()
-                                    .with_context(|| {
-                                        format!(
-                                            "Adresse HTTPS invalide : {}:{}",
-                                            settings.server.host, net.https_port
-                                        )
-                                    })?;
-                            if net.http_redirect_to_https {
-                                spawn_https_redirect(
-                                    settings.server.host.clone(),
-                                    net.http_redirect_port,
-                                    https_addr.port(),
-                                );
-                            }
-                            warn_insecure_cookies("network.https_enabled = true");
-                            serve_https(https_addr, rustls_config, app).await
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                error = %e,
-                                "réseau : certificat actif inexploitable — démarrage en HTTP. \
-                                 Ré-importez un certificat depuis la console."
-                            );
-                            serve_http(http_addr, app).await
-                        }
+        https = Some((cfg, http_addr.port()));
+    } else if net.https_enabled {
+        match kubuno_core::network::cert::active_material(
+            &kubuno_core::network::store::Paths::from_settings(&settings.server.tls),
+        ) {
+            Some((cert_pem, key_pem)) => {
+                match kubuno_core::network::runtime::build_server_config(
+                    cert_pem.as_bytes(),
+                    key_pem.as_bytes(),
+                    net.tls_min_version,
+                ) {
+                    Ok(server_config) => {
+                        let cfg =
+                            axum_server::tls_rustls::RustlsConfig::from_config(server_config);
+                        tls_runtime.set_reload(cfg.clone());
+                        warn_insecure_cookies("network.https_enabled = true");
+                        https = Some((cfg, net.https_port));
                     }
-                }
-                None => {
-                    tracing::warn!(
-                        "network.https_enabled = true mais aucun certificat actif — démarrage en HTTP. \
-                         Importez un certificat depuis la console puis redémarrez le service."
-                    );
-                    serve_http(http_addr, app).await
+                    Err(e) => tracing::error!(
+                        error = %e,
+                        "réseau : certificat actif inexploitable — HTTPS non démarré. \
+                         Ré-importez un certificat depuis la console."
+                    ),
                 }
             }
+            None => tracing::warn!(
+                "network.https_enabled = true mais aucun certificat actif — HTTPS non démarré. \
+                 Importez un certificat depuis la console puis redémarrez le service."
+            ),
+        }
+    }
+
+    let https_port: Option<u16> = https.as_ref().map(|(_, p)| *p);
+
+    // Redirect only makes sense once something answers in HTTPS.
+    let redirect_to_https = https_port.is_some()
+        && (if file_tls.enabled {
+            file_tls.redirect_http_from_port > 0
         } else {
-            serve_http(http_addr, app).await
+            net.http_redirect_to_https
+        });
+
+    // Plain-HTTP ports. `server.port` always — the main listener, whose failure
+    // to bind is fatal. In the legacy file mode `server.port` carries the TLS
+    // listener instead, so only the extra port is plain HTTP.
+    let mut http_ports: Vec<u16> = Vec::new();
+    if !file_tls.enabled {
+        http_ports.push(http_addr.port());
+    }
+    // The EXTRA port (typically 80) exists only to receive the redirect. It is
+    // added only when redirection is actually on: `network.http_redirect_port`
+    // defaults to 80, and binding it unconditionally would make every instance
+    // fail to start without CAP_NET_BIND_SERVICE.
+    let extra_http_port = if redirect_to_https {
+        if file_tls.enabled {
+            file_tls.redirect_http_from_port
+        } else {
+            net.http_redirect_port
+        }
+    } else {
+        0
+    };
+    let extra_http_port = if extra_http_port > 0
+        && !http_ports.contains(&extra_http_port)
+        // Never collide with the TLS socket.
+        && https_port != Some(extra_http_port)
+    {
+        Some(extra_http_port)
+    } else {
+        None
+    };
+
+    // Hosts this instance legitimately answers for — the active certificate's
+    // subject alternative names, plus the domains ACME is configured for. Used
+    // to keep the HTTP→HTTPS redirect from being pointed at somebody else's
+    // domain by a forged `Host` header (see `network::redirect`).
+    let canonical_hosts: Vec<String> = {
+        let mut hosts: Vec<String> = kubuno_core::network::cert::active(&db)
+            .await
+            .ok()
+            .flatten()
+            .map(|c| c.san)
+            .unwrap_or_default();
+        for d in kubuno_core::network::acme::AcmeConfig::load(&db).await.domains {
+            if !hosts.contains(&d) {
+                hosts.push(d);
+            }
+        }
+        hosts
+    };
+
+    // ── Bind every socket BEFORE serving ─────────────────────────────────────
+    // A port that is taken (or privileged, e.g. 80/443 without
+    // CAP_NET_BIND_SERVICE) must fail at startup with a clear message rather
+    // than inside a detached task nobody reads.
+    let mut set: tokio::task::JoinSet<Result<()>> = tokio::task::JoinSet::new();
+
+    if let Some((tls_config, port)) = https {
+        let addr = std::net::SocketAddr::new(http_addr.ip(), port);
+        let listener = std::net::TcpListener::bind(addr)
+            .with_context(|| format!("Bind HTTPS sur {addr}"))?;
+        listener
+            .set_nonblocking(true)
+            .context("Socket HTTPS en mode non bloquant")?;
+        let app = app.clone();
+        set.spawn(async move { serve_https(addr, listener, tls_config, app).await });
+    }
+
+    let redirect_target_port = https_port.unwrap_or(443);
+    // The router served on a plain-HTTP socket: the application, or the redirect
+    // to HTTPS. The redirect must NOT swallow the ACME challenge — proving domain
+    // control happens over plain HTTP, and answering a renewal check with a 308
+    // to the very certificate being renewed is how automatic renewal quietly
+    // stops working (see `network::redirect`).
+    let http_router = || {
+        if redirect_to_https {
+            kubuno_core::network::redirect::wrap(
+                app.clone(),
+                redirect_target_port,
+                canonical_hosts.clone(),
+            )
+        } else {
+            app.clone()
         }
     };
+
+    for port in http_ports {
+        let addr = std::net::SocketAddr::new(http_addr.ip(), port);
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .with_context(|| format!("Bind HTTP sur {addr}"))?;
+        let router = http_router();
+        set.spawn(async move { serve_http(addr, listener, router).await });
+    }
+
+    // The extra port is a convenience, never a condition of starting: 80 without
+    // CAP_NET_BIND_SERVICE, or a port another service already holds, must cost a
+    // loud log line — not the instance.
+    if let Some(port) = extra_http_port {
+        let addr = std::net::SocketAddr::new(http_addr.ip(), port);
+        match tokio::net::TcpListener::bind(&addr).await {
+            Ok(listener) => {
+                let router = http_router();
+                set.spawn(async move { serve_http(addr, listener, router).await });
+            }
+            Err(e) => tracing::error!(
+                error = %e,
+                "réseau : port de redirection {addr} non disponible — la redirection HTTP→HTTPS \
+                 n'y répondra pas (un port < 1024 exige la capacité CAP_NET_BIND_SERVICE). \
+                 Le reste du service démarre normalement."
+            ),
+        }
+    }
+
+    // Every listener stops on the same signal; the first error is reported.
+    let mut serve_result: Result<()> = Ok(());
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => serve_result = Err(e),
+            Err(e) => serve_result = Err(anyhow::anyhow!("Tâche de service interrompue : {e}")),
+        }
+    }
 
     // L'exécuteur de tâches s'arrête APRÈS le serveur : il cesse de réclamer de
     // nouvelles tâches puis laisse celles en cours se terminer. Une tâche coupée
@@ -413,9 +570,12 @@ async fn shutdown_signal() {
     }
 }
 
-/// Sert l'application en HTTPS (TLS natif via rustls) avec arrêt en douceur.
+/// Sert l'application en HTTPS (TLS natif via rustls) avec arrêt en douceur, sur
+/// une socket déjà liée (le bind a lieu au démarrage pour qu'un port occupé
+/// échoue tout de suite, avec un message).
 async fn serve_https(
     addr: std::net::SocketAddr,
+    listener: std::net::TcpListener,
     config: axum_server::tls_rustls::RustlsConfig,
     app: axum::Router,
 ) -> Result<()> {
@@ -431,19 +591,20 @@ async fn serve_https(
     }
 
     tracing::info!("Serveur démarré sur https://{addr} (TLS natif)");
-    axum_server::bind_rustls(addr, config)
+    axum_server::from_tcp_rustls(listener, config)
         .handle(handle)
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await
         .context("Erreur du serveur HTTPS")
 }
 
-/// Sert l'application en HTTP nu avec arrêt en douceur.
-async fn serve_http(addr: std::net::SocketAddr, app: axum::Router) -> Result<()> {
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .with_context(|| format!("Bind sur {addr}"))?;
-
+/// Sert un routeur en HTTP nu (application ou redirecteur) avec arrêt en
+/// douceur, sur une socket déjà liée.
+async fn serve_http(
+    addr: std::net::SocketAddr,
+    listener: tokio::net::TcpListener,
+    app: axum::Router,
+) -> Result<()> {
     tracing::info!("Serveur démarré sur http://{addr}");
     axum::serve(
         listener,
@@ -471,51 +632,3 @@ async fn set_hsts_from_db(
     tls_runtime.set_hsts(hv);
 }
 
-/// Lance, en tâche de fond, un petit serveur HTTP qui redirige (308) tout le
-/// trafic vers HTTPS. Le domaine est repris de l'en-tête `Host` de la requête
-/// (à défaut, l'hôte d'écoute configuré). Le port HTTPS n'est ajouté que s'il
-/// diffère de 443.
-fn spawn_https_redirect(bind_host: String, http_port: u16, https_port: u16) {
-    use axum::{
-        extract::OriginalUri,
-        http::{header, HeaderMap},
-        response::Redirect,
-        routing::any,
-        Router,
-    };
-    tokio::spawn(async move {
-        let fallback_host = bind_host.clone();
-        let handler = move |headers: HeaderMap, OriginalUri(uri): OriginalUri| {
-            let fallback_host = fallback_host.clone();
-            async move {
-                let host_hdr = headers
-                    .get(header::HOST)
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("");
-                let domain = host_hdr
-                    .split(':')
-                    .next()
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(fallback_host.as_str());
-                let authority = if https_port == 443 {
-                    domain.to_string()
-                } else {
-                    format!("{domain}:{https_port}")
-                };
-                let path = uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
-                Redirect::permanent(&format!("https://{authority}{path}"))
-            }
-        };
-        let app = Router::new().fallback(any(handler));
-        let addr = format!("{bind_host}:{http_port}");
-        match tokio::net::TcpListener::bind(&addr).await {
-            Ok(listener) => {
-                tracing::info!("Redirection HTTP→HTTPS active sur http://{addr}");
-                if let Err(e) = axum::serve(listener, app).await {
-                    tracing::error!("Serveur de redirection HTTP→HTTPS arrêté : {e}");
-                }
-            }
-            Err(e) => tracing::error!("Bind du port de redirection {addr} échoué : {e}"),
-        }
-    });
-}

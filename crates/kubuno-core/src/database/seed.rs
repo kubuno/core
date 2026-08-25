@@ -41,28 +41,60 @@ pub async fn root_org_unit<'e, E: sqlx::PgExecutor<'e>>(db: E) -> Option<Uuid> {
     }
 }
 
-/// Password used when `KUBUNO_ADMIN_PASSWORD` is not provided. Accounts seeded
-/// with it are flagged `must_change_password` so it cannot silently survive.
-const DEFAULT_ADMIN_PASSWORD: &str = "kubuno";
+/// Where the generated first password is left for the operator when they did
+/// not supply one. Readable by the service only (0600), and deleted as soon as
+/// the account changes its password.
+fn initial_password_file() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("KUBUNO_INITIAL_PASSWORD_FILE") {
+        if !p.trim().is_empty() {
+            return std::path::PathBuf::from(p);
+        }
+    }
+    let state = std::path::Path::new("/var/lib/kubuno");
+    if state.is_dir() {
+        return state.join("initial-admin-password");
+    }
+    std::path::PathBuf::from("initial-admin-password")
+}
+
+/// A first password nobody can guess.
+///
+/// There is NO default password any more. A value shipped in the source is
+/// known to everyone who can read the source, and an instance reachable before
+/// its owner's first sign-in is an instance anyone can take. So one is drawn at
+/// random, written where only the service can read it, and never logged — the
+/// project's rule on secrets in logs holds here too.
+fn generate_initial_password() -> String {
+    // Ambiguous glyphs left out: this is meant to be retyped from a terminal.
+    const ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut bytes = [0u8; 20];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+    bytes.iter().map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char).collect()
+}
 
 /// Creates the default administrator account if it does not exist yet.
 ///
-/// The credentials are configurable via environment variables (handy for Docker
-/// / CI), falling back to the historical defaults `admin` / `kubuno`:
+/// The credentials come from the environment (handy for Docker / CI):
 ///   - `KUBUNO_ADMIN_USER`     (default: `admin`)
-///   - `KUBUNO_ADMIN_PASSWORD` (default: `kubuno`)
+///   - `KUBUNO_ADMIN_PASSWORD` (no default — see below)
 ///   - `KUBUNO_ADMIN_EMAIL`    (default: `admin@kubuno.local`)
 ///
-/// When the password comes from the hard-coded default (nothing supplied by the
-/// operator), the account is created with `must_change_password = TRUE`: the
-/// frontend then forces a password change before anything else and the backend
-/// refuses administrative writes until it is done. An operator who supplied
-/// `KUBUNO_ADMIN_PASSWORD` chose their own secret and is left alone.
+/// **There is no default password.** When none is supplied, one is drawn at
+/// random and written to a file only the service can read; the account is
+/// created with `must_change_password = TRUE`, so the frontend forces a change
+/// before anything else and the backend refuses administrative writes until it
+/// is done. An operator who supplied `KUBUNO_ADMIN_PASSWORD` chose their own
+/// secret and is left alone.
+///
+/// Note that this path only runs when the instance is configured but has no
+/// administrator — an unattended deployment, typically. A fresh installation
+/// goes through the setup wizard instead, where the operator picks the password
+/// on screen and nothing is ever generated.
 pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
     let username = env_or("KUBUNO_ADMIN_USER", "admin");
-    let (password, is_default_password) = match env_value("KUBUNO_ADMIN_PASSWORD") {
+    let (password, is_generated) = match env_value("KUBUNO_ADMIN_PASSWORD") {
         Some(v) => (v, false),
-        None => (DEFAULT_ADMIN_PASSWORD.to_string(), true),
+        None => (generate_initial_password(), true),
     };
     let email = env_or("KUBUNO_ADMIN_EMAIL", "admin@kubuno.local");
 
@@ -104,7 +136,7 @@ pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
     .bind(&email)
     .bind(&username)
     .bind(&password_hash)
-    .bind(is_default_password)
+    .bind(is_generated)
     .bind(root_unit)
     .execute(pool)
     .await
@@ -113,6 +145,51 @@ pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
     })
     .context("Creating the initial administrator account")?;
 
+    // `role = 'admin'` is only the cache; what the console reads is the role
+    // ASSIGNMENT. Without this the first administrator is admitted to the
+    // console holding nothing, sees the two or three pages that require no
+    // privilege and gets a 403 on all the rest.
+    let admin_id: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT id FROM core.users WHERE email = $1")
+            .bind(&email)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+    if let Some(id) = admin_id {
+        if let Err(e) = crate::authz::bootstrap::grant_instance_superadmin(pool, id).await {
+            tracing::error!(error = %e, "Attribution de la super-administration à l'administrateur initial");
+        }
+    }
+
+    // The generated password is handed over through a file, never through the
+    // log: logs are collected, shipped and read by more people than the machine's
+    // owner. The path is logged, the value is not.
+    if is_generated {
+        let path = initial_password_file();
+        match std::fs::write(&path, format!("{password}\n")) {
+            Ok(()) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+                }
+                tracing::warn!(
+                    username = %username,
+                    file = %path.display(),
+                    "Compte administrateur créé avec un mot de passe ALÉATOIRE — il est dans ce fichier, \
+                     à changer à la première connexion"
+                );
+            }
+            Err(e) => {
+                // Better to say so loudly than to leave an unusable account: the
+                // operator can still reset it with `kubuno reset-admin`.
+                tracing::error!(
+                    error = %e, file = %path.display(),
+                    "Mot de passe administrateur initial NON écrit — utilisez « kubuno reset-admin »"
+                );
+            }
+        }
+    }
     tracing::info!(username = %username, "Initial administrator account created");
     warn_if_password_change_pending(pool).await;
     Ok(())

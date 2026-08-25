@@ -40,6 +40,12 @@ pub fn unique_dir_name(desired: &str, existing: &[String]) -> String {
     unreachable!()
 }
 
+
+/// Nom de fichier sans son extension (ex. "Budget 2026.kbcal" → "Budget 2026").
+pub fn strip_ext(name: &str) -> String {
+    std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,9 +89,4 @@ mod tests {
         let existing = vec!["Documents".into(), "Documents (2)".into()];
         assert_eq!(unique_dir_name("Documents", &existing), "Documents (3)");
     }
-}
-
-/// Nom de fichier sans son extension (ex. "Budget 2026.kbcal" → "Budget 2026").
-pub fn strip_ext(name: &str) -> String {
-    std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string()
 }

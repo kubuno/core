@@ -98,6 +98,10 @@ pub async fn update_settings(
     // accepted here would be a policy the resolver then quietly reads as 8.
     for (key, value) in &updates {
         super::setting_scopes::validate_password_policy_value(key, value)?;
+        // Same reason, for the network keys: this route writes them too, and an
+        // ACME directory URL or a listener port that only the scoped route
+        // checked would simply be written through this one instead.
+        crate::network::config::validate_setting(key, value)?;
     }
 
     // Bounds declared by a module (`min`/`max` on an int) are enforced here and

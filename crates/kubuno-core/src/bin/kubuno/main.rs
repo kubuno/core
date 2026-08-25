@@ -8,6 +8,7 @@
 //!   - [`db`]      : commandes `db:*`
 //!   - [`reset`]   : `app:reset` et `<module>:reset`
 //!   - [`auth`]    : `auth:recover` — voie de secours locale (jamais exposée par HTTP)
+//!   - [`rekey`]   : `security:rekey` — renouvellement de la clé de chiffrement des données
 //!   - [`modules`] : commandes des modules, dispatch et `status`
 
 use anyhow::Result;
@@ -18,6 +19,7 @@ mod db;
 mod display;
 mod modules;
 mod pgconn;
+mod rekey;
 mod reset;
 
 use cli::external_args;
@@ -40,6 +42,14 @@ async fn main() -> Result<()> {
         Some(("db:status",        _))   => db::cmd_db_status().await,
         Some(("app:reset",        sub)) => reset::cmd_app_reset(sub).await,
         Some(("auth:recover",     sub)) => auth::cmd_auth_recover(sub).await,
+        Some(("security:rekey",   sub)) => {
+            rekey::cmd_security_rekey(
+                sub.get_flag("force"),
+                sub.get_flag("check"),
+                sub.get_one::<String>("config").map(String::as_str),
+            )
+            .await
+        }
         Some(("status",           _))   => modules::cmd_status().await,
         Some(("modules:commands", _))   => modules::cmd_modules_commands().await,
         // Réinitialisation d'un module : kubuno <module>:reset [--force] [--keep-files]

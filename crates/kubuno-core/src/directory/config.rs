@@ -7,7 +7,7 @@
 //! (`crate::auth::oauth`) use. The three keys differ, so one of them leaking
 //! never unlocks another.
 
-use sha2::{Digest, Sha256};
+use crate::crypto::datakey;
 use sqlx::PgPool;
 
 use crate::{crypto::encryption, errors::AppError};
@@ -23,10 +23,11 @@ pub const KEY_PROVISION_ON_LOGIN: &str = "auth.directory_provision_on_login";
 
 /// Key used to encrypt the service-account password.
 pub fn secret_key(jwt_secret: &str) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(b"kubuno:ldap:");
-    h.update(jwt_secret.as_bytes());
-    h.finalize().into()
+    // The key comes from the data-encryption root, not from the token-signing
+    // secret, so rotating the latter leaves what is stored readable. The root is
+    // seeded with the JWT secret on first boot, so existing values keep the same
+    // derivation; `jwt_secret` is only the fallback when the root was never loaded.
+    datakey::key(b"kubuno:ldap:", jwt_secret)
 }
 
 /// Encrypts a service password. An empty one stays empty rather than becoming a

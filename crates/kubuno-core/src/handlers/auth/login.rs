@@ -76,6 +76,21 @@ pub async fn login(
         }
     }
 
+    // ── Account-level throttle (credential stuffing / brute force) ───────────
+    //
+    // Persistent, per account, shared across instances (`core.login_throttle`) —
+    // the in-memory per-IP limiter cannot cap attempts against one account. A
+    // known account already in backoff is refused now, with the same generic
+    // answer and the same timing (the argon2 verify above always runs, so a
+    // locked account is indistinguishable from a wrong password). Recording of
+    // failures and the reset on success happen on the local and directory paths
+    // below, where the outcome is actually known.
+    if let Some(candidate) = user_opt.as_ref() {
+        if crate::auth::login_throttle::is_locked(&state.db, candidate.id).await {
+            return Err(invalid());
+        }
+    }
+
     // ── Which methods this account may use ───────────────────────────────────
     //
     // An administrator's decision, resolved per organisational unit
@@ -109,6 +124,8 @@ pub async fn login(
                     provisioning = found.how.as_str(),
                     "Connexion par annuaire"
                 );
+                // Credentials verified: clear any backoff on this account.
+                crate::auth::login_throttle::record_success(&state.db, found.user.id).await;
                 if found.user.role == "admin" {
                     let ctx = login_context(&headers, client_ip, &found.user);
                     ctx.record(
@@ -146,7 +163,15 @@ pub async fn login(
             // Same wording as every other failure: whether the directory refused
             // the bind, is unreachable, or knows nobody by that name, the person
             // at the form is told the same thing.
-            Ok(None) => return Err(invalid()),
+            Ok(None) => {
+                // A definite authentication failure counts against the account
+                // (when it exists locally). A directory *outage* (the `Err` arm
+                // below) does not, so a provider being down cannot lock users out.
+                if let Some(candidate) = user_opt.as_ref() {
+                    crate::auth::login_throttle::record_failure(&state.db, candidate.id).await;
+                }
+                return Err(invalid());
+            }
             Err(e) => {
                 tracing::error!(error = %e, "Authentification par annuaire impossible");
                 return Err(invalid());
@@ -155,7 +180,11 @@ pub async fn login(
     }
 
     let mut user = user_opt.ok_or_else(invalid)?;
-    if !ok || user.password_hash.is_none() { return Err(invalid()); }
+    if !ok || user.password_hash.is_none() {
+        // Wrong local password on a known account: count it against the account.
+        crate::auth::login_throttle::record_failure(&state.db, user.id).await;
+        return Err(invalid());
+    }
 
     // The account holds a hash and it matched — but the policy for its unit may
     // not accept a local password at all (and the administrative fallback may
@@ -168,6 +197,11 @@ pub async fn login(
         );
         return Err(invalid());
     }
+
+    // Local password verified: clear any backoff on this account (NIST — a
+    // successful sign-in resets the failure count). Done before the TOTP branch:
+    // the password, which is what brute force targets, has been proven correct.
+    crate::auth::login_throttle::record_success(&state.db, user.id).await;
 
     // ── The password policy, applied to a password that already exists ───────
     //

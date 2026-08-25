@@ -5,8 +5,17 @@
 #   Développement : copiez en config.toml dans la racine du projet
 #   Production    : copiez en /etc/kubuno/config.toml
 #
-# Les valeurs marquées OBLIGATOIRE n'ont pas de défaut raisonnable
-# et doivent impérativement être renseignées avant le démarrage.
+# Les valeurs marquées OBLIGATOIRE n'ont pas de défaut raisonnable.
+#
+# Vous n'êtes PAS obligé de les renseigner à la main : sur une instance neuve,
+# le core détecte qu'il n'est pas installé et sert un ASSISTANT D'INSTALLATION
+# sur son port habituel (http://<machine>:8080/). L'assistant demande la base de
+# données et le premier administrateur, écrit ce fichier (commentaires compris)
+# puis démarre l'instance — sans redémarrage. Le jeton qu'il réclame est dans
+# /var/lib/kubuno/setup-token et dans « journalctl -u kubuno ».
+#
+# Les renseigner ici reste possible : une configuration complète fait
+# simplement l'impasse sur l'assistant (c'est le mode Docker / CI).
 #
 # Surcharge ponctuelle possible via variables d'environnement :
 #   KV__SECTION__CLE=valeur  (double underscore comme séparateur)
@@ -126,14 +135,32 @@ secure_cookies = false
 # Active la terminaison TLS native (HTTPS) dans le core.
 enabled = false
 
+# ⚠️ Le MATÉRIEL CRYPTOGRAPHIQUE (clé privée TLS, compte ACME) est stocké sur
+# DISQUE, jamais en base de données : une clé privée est l'identité de
+# l'instance, et une base est lue par l'API d'administration, copiée par les
+# sauvegardes et répliquée. Les fichiers appartiennent au service et ne sont
+# lisibles que par lui (0600, dans un répertoire 0700), comme le font Apache
+# (SSLCertificateKeyFile), nginx (ssl_certificate_key) et certbot.
+#
+# Emplacement par défaut, utilisé si les deux chemins ci-dessous restent vides :
+#   /var/lib/kubuno/tls/cert.pem          (chaîne, publique)
+#   /var/lib/kubuno/tls/key.pem           (clé privée, 0600)
+#   /var/lib/kubuno/tls/acme-account.json (compte ACME, 0600)
+# C'est là que le panneau d'administration écrit quand vous importez un
+# certificat ou qu'ACME en obtient un.
+
 # Certificat PEM (chaîne complète : feuille + intermédiaires).
-# OBLIGATOIRE si enabled = true. Let's Encrypt : fullchain.pem
+# Laissez vide pour l'emplacement par défaut ci-dessus. Renseignez-le pour
+# pointer vers des fichiers gérés par vos propres outils (certbot :
+# /etc/letsencrypt/live/<domaine>/fullchain.pem).
 # Auto-signé pour un test :
 #   openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
 cert_path = ""
 
-# Clé privée PEM (PKCS#8 ou RSA, NON chiffrée). OBLIGATOIRE si enabled = true.
-# Let's Encrypt : privkey.pem
+# Clé privée PEM (PKCS#8 ou RSA, NON chiffrée).
+# Laissez vide pour l'emplacement par défaut. certbot : privkey.pem
+# Le service doit pouvoir LIRE ce fichier — et l'ÉCRIRE si vous importez les
+# certificats depuis le panneau d'administration.
 key_path = ""
 
 # Si > 0, écoute AUSSI en HTTP nu sur ce port et redirige (308) vers HTTPS.

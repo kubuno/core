@@ -12,10 +12,10 @@
 //! the count. Re-running the same cursor is safe by contract (see the module
 //! header), which is what makes "record late" the correct side to err on.
 
+use crate::crypto::datakey;
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
@@ -37,10 +37,11 @@ const CAMPAIGN_COLUMNS: &str = "id, name, service, module_id, source_kind, sourc
 /// every other secret at rest in the core (`mailer::config`, `directory::config`):
 /// one compromised subsystem must not hand an attacker the others' plaintext.
 fn secret_key(jwt_secret: &str) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(b"kubuno:data-migration:");
-    hasher.update(jwt_secret.as_bytes());
-    hasher.finalize().into()
+    // The key comes from the data-encryption root, not from the token-signing
+    // secret, so rotating the latter leaves what is stored readable. The root is
+    // seeded with the JWT secret on first boot, so existing values keep the same
+    // derivation; `jwt_secret` is only the fallback when the root was never loaded.
+    datakey::key(b"kubuno:data-migration:", jwt_secret)
 }
 
 pub fn seal(jwt_secret: &str, plain: &str) -> Result<String, AppError> {

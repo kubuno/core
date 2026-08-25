@@ -572,7 +572,7 @@ fn parse_manifest(raw: &str) -> Option<ThemeManifest> {
     serde_json::from_str::<ThemeManifest>(raw).ok()
 }
 
-fn load_all_themes(themes_dir: &str, trusted: &HashSet<String>) -> Vec<ThemeEntry> {
+pub(crate) fn load_all_themes(themes_dir: &str, trusted: &HashSet<String>) -> Vec<ThemeEntry> {
     let mut entries: Vec<ThemeEntry> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 

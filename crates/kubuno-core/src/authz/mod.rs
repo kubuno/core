@@ -38,6 +38,7 @@
 //! * [`guard`] — the `/admin/*` layer and the `AdminCtx` extractor;
 //! * [`guards`] — the five anti-escalation guards.
 
+pub mod bootstrap;
 pub mod cache;
 pub mod catalog;
 pub mod context;

@@ -18,7 +18,7 @@ use crate::{
     auth::middleware::AdminUser,
     authz::{keys, AdminCtx},
     errors::AppError,
-    network::{cert, config::TlsMinVersion, NetworkConfig},
+    network::{acme, cert, config::TlsMinVersion, store, NetworkConfig},
     state::AppState,
 };
 
@@ -43,7 +43,10 @@ pub async fn get_network(
     ctx.require(keys::SETTINGS_READ)?;
 
     let net = NetworkConfig::load(&state.db).await;
-    let certificate = cert::active(&state.db).await?;
+    let certificates = cert::list(&state.db).await?;
+    let certificate = certificates.iter().find(|c| c.is_active).cloned();
+    let acme_cfg = acme::AcmeConfig::load(&state.db).await;
+    let acme_state = acme::state(&state.db).await;
 
     // An explicit `[server.tls]` in config.toml overrides the console: the panel
     // reports the fact and treats itself as read-only in that case.
@@ -69,12 +72,113 @@ pub async fn get_network(
             },
         },
         "certificate": certificate,
+        // The retired ones too: their metadata is kept as a history (the private
+        // keys were destroyed when they were replaced), and the console offers
+        // to delete them.
+        "certificates": certificates,
         "runtime": {
             "https_live":       https_live,
             "file_override":    file_override,
             "restart_required": restart_required,
         },
+        "acme": {
+            "directory_url": acme_cfg.directory_url,
+            "email":         acme_cfg.email,
+            "domains":       acme_cfg.domains,
+            "tos_agreed":    acme_cfg.tos_agreed,
+            "last_order_status": acme_state.last_order_status,
+            "last_order_detail": acme_state.last_order_detail,
+            "last_attempt_at":   acme_state.last_attempt_at,
+        },
     })))
+}
+
+/// POST /admin/network/acme/request — obtain or renew the certificate over ACME
+/// now. Synchronous: the response carries the outcome so the operator sees the
+/// authority's own answer on failure. May take up to a minute.
+pub async fn request_acme(
+    State(state): State<AppState>,
+    audit: AdminAudit,
+    ctx: AdminCtx,
+) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::SETTINGS_MANAGE)?;
+
+    // Every attempt is audited, successful or not: asking a public authority to
+    // certify this instance's domains is a privileged, outward-facing act, and a
+    // failed attempt is exactly the kind a trail must keep.
+    let outcome = acme::issue(&state).await;
+    let entry = match &outcome {
+        Ok(stored) => AuditEntry::new("core.network.acme.request")
+            .target_kind(
+                "network.certificate",
+                stored.subject.clone().unwrap_or_else(|| "certificat".into()),
+            )
+            .after(json!({
+                "subject":   stored.subject,
+                "san":       stored.san,
+                "not_after": stored.not_after,
+                "source":    stored.source,
+            })),
+        Err(e) => AuditEntry::new("core.network.acme.request")
+            .target_kind("network.certificate", "certificat")
+            .failed(e.to_string()),
+    };
+    let tx = audit.begin(&state.db).await?;
+    tx.commit(entry).await?;
+
+    let stored = outcome?;
+    let https_live = state.tls.is_https_live();
+    let net = NetworkConfig::load(&state.db).await;
+
+    let message = if https_live {
+        "Certificat obtenu et rechargé à chaud."
+    } else if net.https_enabled {
+        "Certificat obtenu. Redémarrez le service pour activer le HTTPS."
+    } else {
+        "Certificat obtenu. Activez le HTTPS puis redémarrez le service pour l'utiliser."
+    };
+
+    Ok(Json(json!({
+        "certificate": stored,
+        "https_live":  https_live,
+        "message":     message,
+    })))
+}
+
+/// DELETE /admin/network/certificate/:id — remove a stored certificate.
+///
+/// Deleting the active one is refused while HTTPS is enabled (see
+/// [`cert::delete`]): the instance would be left configured to serve TLS with no
+/// certificate, and would silently fall back to plain HTTP at the next restart.
+pub async fn delete_certificate(
+    State(state): State<AppState>,
+    audit: AdminAudit,
+    ctx: AdminCtx,
+    axum::extract::Path(id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::SETTINGS_MANAGE)?;
+
+    let net = NetworkConfig::load(&state.db).await;
+    let paths = store::Paths::from_settings(&state.settings.server.tls);
+    let removed = cert::delete(&state.db, &paths, id, net.https_enabled).await?;
+
+    let entry = AuditEntry::new("core.network.certificate.delete")
+        .target_kind(
+            "network.certificate",
+            removed.subject.clone().unwrap_or_else(|| "certificat".into()),
+        )
+        .before(json!({
+            "subject":   removed.subject,
+            "issuer":    removed.issuer,
+            "san":       removed.san,
+            "not_after": removed.not_after,
+            "source":    removed.source,
+            "was_active": removed.is_active,
+        }));
+    let tx = audit.begin(&state.db).await?;
+    tx.commit(entry).await?;
+
+    Ok(Json(json!({ "message": "Certificat supprimé" })))
 }
 
 #[derive(Deserialize)]
@@ -111,7 +215,7 @@ pub async fn upload_certificate(
     let admin_id = audit.admin.id;
     let stored = cert::store_active(
         &mut tx,
-        &state.settings.auth.jwt_secret,
+        &store::Paths::from_settings(&state.settings.server.tls),
         "upload",
         &dto.cert_pem,
         &dto.key_pem,

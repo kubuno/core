@@ -32,6 +32,11 @@ rustls      = { version = "0.23", default-features = false, features = ["ring", 
 # cryptography of its own: rustls remains the sole TLS engine. (PEM parsing uses
 # the existing `rustls-pemfile` dependency declared further down.)
 x509-parser    = "0.18"
+# ACME (Let's Encrypt) client for automatic certificates. ring only — NO
+# aws-lc-rs (default features off) to keep the single ring provider the core
+# already links; rcgen for the finalize key, hyper-rustls for the built-in
+# client. Terminates over rustls, like everything else.
+instant-acme   = { version = "0.8", default-features = false, features = ["hyper-rustls", "ring", "rcgen"] }
 tower       = { version = "0.5",  features = ["full"] }
 tower-http  = { version = "0.6",  features = ["cors", "compression-gzip", "trace", "limit", "fs", "set-header", "timeout"] }
 async-trait = "0.1"

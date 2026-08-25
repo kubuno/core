@@ -45,6 +45,26 @@ pub async fn list_audit(
     })))
 }
 
+/// `GET /api/v1/admin/audit/verify` — recompute the tamper-evidence hash chain.
+///
+/// Returns how many chained rows were checked and, if the chain is broken, the id
+/// of the first offending row and a short reason (`content` = a row was edited,
+/// `link` = a row was reordered or one before it removed).
+pub async fn verify_audit(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+) -> Result<Json<serde_json::Value>, AppError> {
+    ctx.require(keys::AUDIT_READ)?;
+    let report = crate::audit::chain::verify_chain(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audit: vérification de la chaîne impossible");
+            AppError::Database(e)
+        })?;
+    Ok(Json(json!({ "report": report })))
+}
+
 /// `GET /api/v1/admin/audit/:id` — one entry plus its field-by-field diff.
 pub async fn get_audit_entry(
     State(state): State<AppState>,

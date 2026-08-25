@@ -63,6 +63,14 @@ function ensureAutofillStyles(): void {
 
 // Resting → floated is driven by focus OR a non-empty value: a filled field
 // keeps its label up even unfocused (capture 3).
+/** Is the document read right-to-left?
+ *
+ *  Read at render time rather than kept in state: the language switch re-renders
+ *  the tree that owns this field, so the value is always the current one. */
+function useIsRtl(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.dir === 'rtl'
+}
+
 export function OutlinedField({
   label, value, onChange, icon, type = 'text', placeholder,
   primaryColor, required, autoFocus, multiline, large, inputMode, readOnly, trailing,
@@ -84,6 +92,7 @@ export function OutlinedField({
   // legend stay in agreement. `pad` is the box's left padding — the resting
   // label sits exactly on the text it replaces.
   const fontSize = large ? 20 : 14
+  const rtl = useIsRtl()
   const padX = 12
   const padY = large ? 14 : 11
   // Deterministic outer height so every field (and the selector boxes built on
@@ -93,8 +102,13 @@ export function OutlinedField({
 
   // Colours per state, read off the captures: primary on focus, dark grey once
   // filled, medium grey at rest.
-  const borderColor = focused ? primaryColor : floated ? '#3c4043' : '#9aa0a6'
-  const labelColor  = focused ? primaryColor : '#5f6368'
+  // Through the theme tokens, not fixed hex: the same field has to stay legible
+  // when a dark theme repaints the page around it. The historic values remain as
+  // fallbacks for a module rendering outside the shell.
+  const borderColor = focused
+    ? primaryColor
+    : floated ? 'var(--color-border-strong, #3c4043)' : 'var(--color-text-tertiary, #9aa0a6)'
+  const labelColor  = focused ? primaryColor : 'var(--color-text-secondary, #5f6368)'
 
   // The floated label must read at exactly 12px whatever the resting size, so
   // the scale is derived from the base font (12/fontSize) rather than a fixed
@@ -132,13 +146,16 @@ export function OutlinedField({
   }
   const labelStyle: React.CSSProperties = {
     position: 'absolute',
-    left: padX,
+    // Logical, not physical: under `dir="rtl"` the notch (a real <legend>)
+    // follows the writing direction to the right, and a label pinned to `left`
+    // ended up over the border on the wrong side.
+    insetInlineStart: padX,
     top: 0,
     color: labelColor,
     fontSize,
     lineHeight: 1,
     pointerEvents: 'none',
-    transformOrigin: 'top left',
+    transformOrigin: rtl ? 'top right' : 'top left',
     transform: floated
       ? `translateY(${multiline ? -(large ? 8 : 7) : -6}px) scale(${FLOAT_SCALE})`
       : `translateY(${multiline ? padY + (large ? 8 : 6) : (FIELD_H - fontSize) / 2}px)`,
@@ -154,7 +171,7 @@ export function OutlinedField({
     outline: 'none',
     background: 'transparent',
     fontSize,
-    color: '#202124',
+    color: 'var(--color-text-primary, #202124)',
     fontFamily: 'inherit',
     cursor: readOnly ? 'pointer' : 'text',
   }
@@ -172,7 +189,9 @@ export function OutlinedField({
     ...commonInput,
     boxSizing: 'border-box',
     lineHeight: `${linePx}px`,
-    padding: `${padV + OPTICAL}px ${trailing ? 34 : padX}px ${padV - OPTICAL}px ${padX}px`,
+    paddingBlock: `${padV + OPTICAL}px ${padV - OPTICAL}px`,
+    paddingInlineStart: padX,
+    paddingInlineEnd: trailing ? 34 : padX,
   }
   // Multiline keeps its intrinsic, padded height.
   const textareaStyle: React.CSSProperties = {
@@ -215,7 +234,7 @@ export function OutlinedField({
   return (
     <div style={{ display: 'flex', alignItems: multiline ? 'flex-start' : 'center', gap: 12 }}>
       {icon && (
-        <span style={{ color: '#5f6368', flexShrink: 0, marginTop: multiline ? padY + 4 : 0, display: 'flex' }}>
+        <span style={{ color: 'var(--color-text-secondary, #5f6368)', flexShrink: 0, marginTop: multiline ? padY + 4 : 0, display: 'flex' }}>
           {icon}
         </span>
       )}
@@ -225,10 +244,10 @@ export function OutlinedField({
             <span style={{ display: 'inline-block', padding: '0 5px' }}>{label}{required ? ' *' : ''}</span>
           </legend>
         </fieldset>
-        <label htmlFor={id} style={labelStyle}>{label}{required && <span style={{ color: '#d93025' }}> *</span>}</label>
+        <label htmlFor={id} style={labelStyle}>{label}{required && <span style={{ color: 'var(--color-danger, #d93025)' }}> *</span>}</label>
         {control}
         {trailing && (
-          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none', color: '#5f6368' }}>{trailing}</span>
+          <span style={{ position: 'absolute', insetInlineEnd: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none', color: 'var(--color-text-secondary, #5f6368)' }}>{trailing}</span>
         )}
       </div>
     </div>

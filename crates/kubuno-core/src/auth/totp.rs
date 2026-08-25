@@ -1,14 +1,15 @@
+use crate::crypto::datakey;
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::crypto::encryption;
 
 fn totp_key(jwt_secret: &str) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(b"kubuno:totp:");
-    h.update(jwt_secret.as_bytes());
-    h.finalize().into()
+    // The key comes from the data-encryption root, not from the token-signing
+    // secret, so rotating the latter leaves what is stored readable. The root is
+    // seeded with the JWT secret on first boot, so existing values keep the same
+    // derivation; `jwt_secret` is only the fallback when the root was never loaded.
+    datakey::key(b"kubuno:totp:", jwt_secret)
 }
 
 /// Generate a new TOTP secret. Returns (base32_secret, otpauth_uri, encrypted_blob).

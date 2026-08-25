@@ -327,6 +327,10 @@ pub async fn set_scoped_value(
     if key == crate::auth::methods::KEY_METHODS {
         crate::auth::methods::MethodSet::validate(&dto.value)?;
     }
+    // The declared `value_type` says "a string"; it cannot say "an https URL not
+    // pointing back inside the infrastructure", nor "a port in range". An ACME
+    // directory aimed at a private address would make this server fetch it.
+    crate::network::config::validate_setting(&key, &dto.value)?;
     // The declared `value_type` says "an integer"; it cannot say "at least 8".
     // The resolver clamps out-of-range values so a stale row can never make the
     // policy fail open — but a console that accepts "3" and silently enforces 8

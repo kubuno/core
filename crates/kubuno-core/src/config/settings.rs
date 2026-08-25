@@ -351,7 +351,13 @@ pub enum LogRotation {
 }
 
 impl Settings {
-    pub fn load() -> Result<Self, ConfigError> {
+    /// Builds the merged configuration sources (defaults → config.toml →
+    /// /etc/kubuno/config.toml → KV__ environment).
+    /// `explicit` is the file named by `--config` / `KV_CONFIG_FILE`: when given
+    /// it REPLACES the default file lookup, the way a daemon's `-c` does, so an
+    /// instance can be run against a configuration of its own without the system
+    /// one leaking into it.
+    fn build_config(explicit: Option<&str>) -> Result<Config, ConfigError> {
         let cfg = Config::builder()
             // Defaults
             .set_default("server.host", "0.0.0.0")?
@@ -386,9 +392,13 @@ impl Settings {
             .set_default("logging.max_log_files", 30u32)?
             // Ordre de priorité croissante :
             // 1. config.toml (répertoire courant — développement)
-            .add_source(File::with_name("config").required(false))
             // 2. /etc/kubuno/config.toml (installation système)
-            .add_source(File::with_name("/etc/kubuno/config").required(false))
+            //    …ou UNIQUEMENT le fichier demandé explicitement.
+            .add_source(File::with_name(explicit.unwrap_or("config")).required(explicit.is_some()))
+            .add_source(
+                File::with_name(if explicit.is_some() { "/dev/null/none" } else { "/etc/kubuno/config" })
+                    .required(false),
+            )
             // 3. Variables d'environnement KV__ (Docker / surcharge ponctuelle)
             //    Exemple : KV__DATABASE__URL=postgres://...
             //    Les réglages de type liste se donnent séparés par des virgules :
@@ -403,7 +413,30 @@ impl Settings {
             )
             .build()?;
 
-        let settings: Settings = cfg.try_deserialize()?;
+        Ok(cfg)
+    }
+
+    /// Merged configuration WITHOUT the checks `load()` applies. A fresh
+    /// installation is precisely the state `load()` rejects — no database, the
+    /// shipped placeholder secrets — and the first-run installer has to read it
+    /// to know it must offer the wizard.
+    pub fn load_unvalidated() -> Result<Self, ConfigError> {
+        Self::load_unvalidated_from(None)
+    }
+
+    /// As `load_unvalidated`, against the configuration file named by
+    /// `--config` / `KV_CONFIG_FILE` when there is one.
+    pub fn load_unvalidated_from(explicit: Option<&str>) -> Result<Self, ConfigError> {
+        Self::build_config(explicit)?.try_deserialize()
+    }
+
+    pub fn load() -> Result<Self, ConfigError> {
+        Self::load_from(None)
+    }
+
+    /// As `load`, against an explicitly named configuration file.
+    pub fn load_from(explicit: Option<&str>) -> Result<Self, ConfigError> {
+        let settings = Self::load_unvalidated_from(explicit)?;
         settings.database.validate()
             .map_err(ConfigError::Message)?;
         settings.server.tls.validate()

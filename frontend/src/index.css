@@ -8,12 +8,32 @@
  * module utilities winning over the preflight reset. Order is locked here so
  * the host establishes it before any module CSS loads at runtime. */
 @layer components, properties, theme, base, kubuno-module, utilities;
-/* Platform faces (Google Sans Flex, Roboto Flex, Inter, DM Mono) are
- * SELF-HOSTED: shipped with the drive module into System/Fonts and served back
- * by its Google-Fonts-style endpoint (`/api/v1/drive/fonts/css2`) — no
- * third-party CDN at all. Fonts are fetched lazily by the browser, so a
- * declared-but-unused face costs nothing until some text actually uses it. */
-@import url("/api/v1/drive/fonts/css2?family=Google+Sans+Text&family=Google+Sans&family=Roboto&family=DM+Mono&display=swap");
+/* The shell's own faces, SERVED BY THE CORE ITSELF (`/fonts/*.woff2`).
+ *
+ * They used to be imported from the drive module's endpoint. That made the
+ * product's typography depend on another process being installed and running:
+ * before the first installation, and on any instance where drive is stopped,
+ * the import failed and everything fell back to Arial — the sign-in page and
+ * the installation wizard included. A platform cannot borrow its own typeface
+ * from one of its modules.
+ *
+ * Subset to latin + latin-ext and re-encoded as woff2: 368 KB for the whole
+ * set, against 6.3 MB of TTF. Drive keeps its font library and its css2
+ * endpoint for the fonts USERS pick in documents — a different job. */
+@font-face { font-family: "Google Sans Text"; font-style: normal; font-weight: 400;
+  src: url("/fonts/GoogleSansText-Regular.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Google Sans Text"; font-style: normal; font-weight: 500 600;
+  src: url("/fonts/GoogleSansText-Medium.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Google Sans Text"; font-style: normal; font-weight: 700;
+  src: url("/fonts/GoogleSansText-Bold.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Google Sans Text"; font-style: italic; font-weight: 400;
+  src: url("/fonts/GoogleSansText-Italic.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Google Sans"; font-style: normal; font-weight: 400 700;
+  src: url("/fonts/GoogleSans-Regular.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Roboto"; font-style: normal; font-weight: 100 900;
+  src: url("/fonts/Roboto.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "DM Mono"; font-style: normal; font-weight: 400;
+  src: url("/fonts/DMMono-Regular.woff2") format("woff2"); font-display: swap; }
 @import "tailwindcss";
 @import "./theme.css";
 

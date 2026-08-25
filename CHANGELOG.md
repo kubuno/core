@@ -11,6 +11,218 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **Rotating the token-signing secret no longer destroys what is stored.**
+  `auth.jwt_secret` was doing two jobs at once: signing sessions, and deriving
+  the keys that encrypt the SMTP password, the directory bind password, OIDC
+  client secrets, migration credentials and every user's second-factor secret.
+  The two have opposite lifetimes — a signing key should be rotatable, a
+  data key must not be — so changing it silently made all of those unreadable
+  and locked every user out of their own two-factor enrolment. The data keys now
+  come from their own file (`/var/lib/kubuno/data.key`, 0600), and rotating the
+  signing secret costs nothing beyond signing everyone out.
+  Upgrading is free and needs no action: the file is seeded, on first start,
+  with the signing secret then in force, so everything already stored keeps
+  decrypting with exactly the same derivation. Nothing is re-encrypted.
+- **New command `kubuno security:rekey`** — draws a fresh data key and
+  re-encrypts everything it protects. An instance whose signing secret was weak,
+  shared, or left at the value shipped in the example file inherited a data key
+  just as weak; this is how it is replaced. Everything is rewritten in one
+  transaction and the new key file is only written once that transaction has
+  committed, so an interruption leaves the instance exactly as it was. The
+  previous key is kept beside it as `data.key.old`. `--check` answers the
+  narrower question — can this instance still read everything it has stored? —
+  by decrypting every value and writing nothing, which is what you want after an
+  upgrade or a rotation.
+
+### Fixed
+
+- **A fresh installation gave its administrator an empty console.** What the
+  administration console shows, and what its routes accept, comes from a role
+  *assignment*; `users.role = 'admin'` is only a cache of it. Both paths that
+  create the very first administrator — the installation wizard and the headless
+  seed — wrote the cache and never the assignment, and the migration that grants
+  it had already run, back when the instance had no accounts at all. The
+  operator was therefore admitted to the console holding nothing: three pages
+  that require no privilege, and a refusal on everything else — users, settings,
+  applications, security. Both paths now grant it. Instances already installed
+  this way repair themselves at the next start, so no manual step is needed.
+- **The service could refuse to start on a fresh machine** (`226/NAMESPACE`). The
+  systemd unit lists the directories it may write to, and two of them —
+  `/usr/lib/kubuno/modules`, `/var/backups/kubuno` — do not exist on a machine
+  where no module has been installed yet. systemd then refuses to build the
+  process's namespace and the service never runs, with an error that says
+  nothing about the cause. The package now ships both directories, the
+  post-install step creates them, and the unit tolerates a missing path instead
+  of failing.
+- **An installed instance can no longer be offered the installation wizard.** The
+  wizard used to be decided on the configuration file alone, so an instance whose
+  configuration lost a value — or still carried the example secret — would come
+  back up as if it were new, taking a working service off the air. The database is
+  now consulted, in one direction only: an administrator already recorded there
+  means the instance is installed, the wizard stays away, and the missing values
+  are reported as the misconfiguration they are. An unreachable database changes
+  nothing, so an outage can never open the wizard.
+
+### Security
+
+- **There is no default administrator password any more.** An instance that came
+  up without one used to create `admin` / `kubuno` — a password printed in the
+  source, the README and the installer's output, and therefore known to everyone
+  who can reach the port before its owner's first sign-in. Now: a fresh
+  installation has the operator choose it in the setup wizard; a headless
+  deployment either takes `KUBUNO_ADMIN_PASSWORD`, or the instance **generates
+  one at random** (20 characters) and writes it to
+  `/var/lib/kubuno/initial-admin-password`, readable by the service account only.
+  The password is never written to the log — only the path to it — and the
+  account still has to change it at first sign-in. `kubuno reset-admin` and
+  `kubuno db seed` follow the same rule.
+
+### Added
+
+- **A fresh install now sets itself up from the browser, like WordPress or
+  Nextcloud.** Until now a new instance had to be configured by hand — edit
+  `/etc/kubuno/config.toml`, invent two secrets, create the database and its
+  schema — before it would start at all. It now notices it is not installed yet
+  and serves an **installation wizard** on its usual port: it checks the database
+  connection you give it (and offers to create the database when the account may),
+  creates the schema, creates the first administrator with the password you choose,
+  names the instance, and writes the configuration for you — **secrets generated,
+  comments of the shipped example preserved, previous file kept as `.bak`**. The
+  instance then starts on the same port with no restart, and the wizard is gone.
+  Configuring everything by hand still works and simply skips the wizard, which is
+  what a Docker or CI deployment does.
+- **The installation asks for a one-time token**, written to
+  `/var/lib/kubuno/setup-token` and printed in the service log. Between the first
+  boot and the end of the installation an instance has no accounts, and this is the
+  one moment when whoever reaches the port could claim it: the token means claiming
+  it requires access to the machine. It is deleted once the installation succeeds.
+- Pointing the wizard at a database that already carries a Kubuno schema is
+  supported and says so: the schema is reused rather than destroyed, and an
+  administrator already recorded there is kept — which makes the wizard a way to
+  rebuild a lost configuration file, not only to install.
+
+### Fixed
+
+- **`--config` / `KV_CONFIG_FILE` now does what the help says.** The option was
+  parsed and then ignored, so an instance could not be run against a configuration
+  file of its own — the system one was read regardless. It now replaces the default
+  lookup, as a daemon's `-c` does.
+
+
+- **Security policy and CI quality gate.** A `SECURITY.md` documents how to
+  report vulnerabilities, and a CI workflow enforces `clippy -D warnings`, a
+  dependency-vulnerability audit (`cargo audit`) and the frontend typecheck/tests.
+
+- **HTTP/HTTPS can now be configured from the administration console** (System →
+  Network). An administrator with no shell access can enable the core's native
+  TLS termination, choose the HTTPS port, turn on an HTTP→HTTPS redirect, set the
+  minimum TLS version (1.2 or 1.3) and tune HSTS (max-age, sub-domains, preload) —
+  all as ordinary instance settings. TLS is still terminated by rustls; nothing
+  about the TLS engine was reimplemented. rustls does not offer SSLv3 / TLS 1.0 /
+  TLS 1.1 at all, so the instance can never negotiate a legacy protocol.
+- **HTTP and HTTPS are served at the same time**, the way an ordinary web server
+  does (`Listen 80` + `Listen 443`). Enabling HTTPS never takes the HTTP port
+  away, so a reverse proxy, a health probe or anything else reaching the core in
+  plain HTTP keeps working. An extra HTTP port (typically 80) can be opened
+  alongside; if it cannot be bound — port 80 without `CAP_NET_BIND_SERVICE`, or a
+  port another service holds — the instance still starts and says so in the log
+  instead of failing.
+- **Certificates can be deleted from the console**, with the history of retired
+  ones listed next to the active certificate. Deleting the certificate HTTPS is
+  currently serving is refused while HTTPS is enabled, rather than leaving the
+  instance configured for TLS with nothing to serve.
+- **Certificate management from the console.** Upload a PEM certificate chain and
+  its private key from the Network page; the pair is validated (a mismatched or
+  unusable key is refused with a clear message), its expiry and domains are shown,
+  and the private key is stored encrypted at rest and never returned by the API.
+  Replacing a certificate **destroys the previous private key** (its metadata is
+  kept for the history): key material nobody can use any more is only a
+  liability, and the history itself is bounded so renewals cannot grow the table
+  without end.
+  Replacing the certificate is applied **live, without dropping connections or
+  restarting**, when HTTPS is already running (the path automatic ACME renewals
+  will reuse). Enabling/disabling HTTPS or changing the port still requires a
+  restart, and the panel says so.
+- **Automatic certificates over ACME / Let's Encrypt.** Set the certificate mode
+  to *automatic* on the Network page, enter a contact address and the domains,
+  accept the authority's terms, and the core obtains a certificate on its own and
+  installs it hot — then **renews it automatically** 30 days before expiry. Domain
+  control is proved over HTTP-01 (the core answers `/.well-known/acme-challenge/…`
+  on its HTTP listener), so each domain must resolve to the instance and be
+  reachable on port 80. The directory URL is configurable (default Let's Encrypt
+  production; point it at the staging directory to try it out). The ACME account
+  key is stored encrypted at rest, every attempt (successful or not) is written
+  to the administrative audit trail, and only one issuance runs at a time so a
+  double click cannot burn the authority's rate limits. The directory URL must be
+  `https` and may not name a loopback, link-local or private address, so the
+  setting cannot turn the server into a request forwarder aimed at the
+  infrastructure behind it. The protocol is handled by the audited `instant-acme`
+  crate over rustls — no ACME or cryptography is reimplemented.
+
+### Changed
+
+- **HSTS is now emitted only on requests that actually arrived over TLS**, and
+  its value (max-age, sub-domains, preload) follows the Network settings instead
+  of being a fixed header on every response — including plain-HTTP ones, where a
+  browser ignores it. Both ways of being reached over TLS count: this process
+  terminating it, and a **reverse proxy** terminating it and saying so with
+  `X-Forwarded-Proto`. As everywhere else in the core, that header is believed
+  only when the socket peer is inside `server.trusted_proxy_cidrs`, so it cannot
+  be forged into the header by a direct client.
+- **HSTS is no longer announced for `localhost` or a loopback address.** A
+  browser remembers HSTS per host, and `localhost` is shared by every project on
+  a machine: one instance sending it there pinned `http://localhost:<any port>`
+  to HTTPS for every other local server, with a certificate error and a manual
+  purge as the only way back. Real domains are unaffected.
+- **The HTTP→HTTPS redirect no longer redirects what must not be redirected.**
+  A request a trusted reverse proxy reports as already encrypted
+  (`X-Forwarded-Proto: https`) is served normally instead of being sent to HTTPS
+  again — previously that turned an instance behind nginx into a redirect the
+  visitor could not escape. The ACME challenge path is likewise always served in
+  the clear, without which automatic renewal would break the moment redirection
+  was switched on. The redirect target is also no longer taken from the request's
+  `Host` header when the instance knows its own names (the certificate's SANs,
+  the configured ACME domains): a forged `Host` gets the canonical name rather
+  than turning the instance into an open redirector.
+- An explicit `[server.tls]` section in `config.toml` keeps working and now takes
+  precedence over the console; the Network page reports when file configuration is
+  in effect.
+
+### Security
+
+- **The TLS private key and the ACME account key are no longer stored in the
+  database.** They now live in files owned by the service and readable by nobody
+  else (`0600` in a `0700` directory, under `/var/lib/kubuno/tls/` by default,
+  overridable with `[server.tls] cert_path` / `key_path`) — the way Apache,
+  nginx and certbot have always held this material. Encrypted-at-rest in a table
+  was still the instance's identity sitting somewhere an administrative API
+  reads, a `pg_dump` copies wholesale and a replica ships elsewhere; a TLS key
+  lets whoever holds it *be* the instance and decrypt traffic recorded earlier,
+  and the ACME key lets them mint new certificates for its domains. The columns
+  are dropped, so nothing can write a secret back into them, and the database
+  keeps only what the console displays (subject, SAN, validity, source). Doing
+  this also removes a real failure mode: material sealed with the JWT secret
+  became permanently unreadable the day that secret was rotated. **An instance
+  that already held a certificate must re-import it** (or let ACME re-issue) —
+  an SQL migration cannot move key material into a file. Each entry is linked
+  to the previous one by an HMAC hash chain, keyed by a secret derived from the
+  instance's internal secret and never stored in the database, so a row that is
+  edited, reordered or removed from the middle of the trail no longer goes
+  unnoticed. The table is also made append-only (only the undo back-links may be
+  written after the fact). A new admin endpoint, `GET /api/v1/admin/audit/verify`,
+  recomputes the chain and reports the first tampered entry, if any. (Detecting a
+  wholesale truncation of the oldest rows requires anchoring the chain head
+  outside the database — noted as follow-up.)
+- **Sign-in is now throttled per account, persistently.** After 5 consecutive
+  failures an account enters an exponential backoff (starting above one minute
+  and doubling, capped at 15 minutes), with a daily attempt ceiling — state kept
+  in the database so it survives a restart and is shared across instances, unlike
+  the previous in-memory per-IP limit alone. A successful sign-in clears it, and a
+  password reset always reopens the account, so this never becomes a lock-out an
+  attacker can trigger against someone by guessing their address. Locked accounts
+  get the same generic answer and the same response timing as a wrong password,
+  so the throttle cannot be used to tell whether an account exists. Follows OWASP,
+  NIST SP 800-63B and the ANSSI/CNIL recommendations.
 - **The identity the core forwards to a module is now cryptographically signed.**
   Every proxied request (HTTP and WebSocket) carries a short-lived, module-scoped
   `X-Kubuno-Auth` token — HMAC-SHA256 over the caller's id, role and email, keyed
@@ -106,8 +318,9 @@ number at release time, and CI publishes that section as the GitHub Release note
   label animates from inside the box up onto the border (notch, accent colour and
   3px border on focus, optional leading icon); and `FieldGroup`, which stacks
   several labelled sub-fields under ONE shared icon with a Plus/Moins chevron that
-  reveals "advanced" sub-fields (Google-Contacts "Name"/"Organisation" pattern).
-- **`PhoneField`** (`@ui`): a Google-Contacts-style phone input — leading icon, a
+  reveals "advanced" sub-fields (the "Name" / "Organisation" pattern of a
+  contact form).
+- **`PhoneField`** (`@ui`): a contact-book phone input — leading icon, a
   country dial-code selector (flag + searchable dropdown, 188 countries, flag
   derived from the ISO code, no external asset), the Material number field, and an
   optional editable "Libellé" combobox (free text + presets: Domicile, Professionnel,
@@ -116,7 +329,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   with a configurable icon (cake for a birthday, calendar for a date) and the same
   optional editable "Libellé" combobox. Plus a shared **`LabelCombobox`** primitive
   (the free-text-with-suggestions label used by the phone and date fields).
-- **`AddressField`** (`@ui`): a Google-Contacts-style postal-address block —
+- **`AddressField`** (`@ui`): a contact-book postal-address block —
   location-pin icon, street, postal code + city, a searchable country selector,
   a Plus/Moins chevron revealing PO box / extra line / region, and an optional
   editable "Libellé". All these composite fields now share ONE deterministic

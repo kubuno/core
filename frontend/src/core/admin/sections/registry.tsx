@@ -16,6 +16,7 @@ import AdminRolesPanel from '../AdminRolesPanel'
 import SettingsGroupPanel from '../settings/SettingsGroupPanel'
 import SettingsMovedNotice from '../settings/SettingsMovedNotice'
 import MailSettingsPanel from '../MailSettingsPanel'
+import NetworkPanel from '../NetworkPanel'
 import ThemesPanel from '../ThemesPanel'
 import LoginAnimationPanel from '../LoginAnimationPanel'
 import SpeechToTextPanel from '../SpeechToTextPanel'
@@ -263,6 +264,8 @@ export const ADMIN_SECTIONS: Record<string, AdminSection> = {
       Panel: () => <LoginAnimationPanel /> },
   ], { settings: true }) },
   'email':         { Component: MailSettingsPanel },
+  // HTTP/HTTPS termination: certificate + live status + the `network.*` toggles.
+  'network':       { Component: NetworkPanel, ownHeader: true },
   // Voice search — a core capability, not a module. See `adminNav` core-features.
   'voice-search':   { Component: SpeechToTextPanel },
   // Renders the inventory or one device's sheet, each with its own header.

@@ -205,6 +205,37 @@ export const SETTINGS_PAGES: SettingsPageSpec[] = [
     ],
   },
 
+  // ── System ▸ Network (HTTP / HTTPS) ───────────────────────────────────────
+  // The certificate itself is not a setting; the dedicated NetworkPanel owns it
+  // and renders these groups beneath it.
+  {
+    tab: 'network',
+    groups: [
+      { id: 'http_https', keys: [
+        'network.https_enabled',
+        'network.https_port',
+        'network.tls_min_version',
+        'network.cert_mode',
+      ] },
+      { id: 'acme', keys: [
+        'network.acme_directory_url',
+        'network.acme_email',
+        'network.acme_domains',
+        'network.acme_tos_agreed',
+      ] },
+      { id: 'http_redirect', keys: [
+        'network.http_redirect_to_https',
+        'network.http_redirect_port',
+      ] },
+      { id: 'hsts', keys: [
+        'network.hsts_enabled',
+        'network.hsts_max_age_days',
+        'network.hsts_include_subdomains',
+        'network.hsts_preload',
+      ] },
+    ],
+  },
+
   // ── Security ▸ Alert centre ───────────────────────────────────────────────
   // Under the queue itself: a threshold is only readable next to what it fired.
   {
@@ -462,6 +493,14 @@ export const ENUM_OPTIONS: Record<string, ComboboxOption[]> = {
     { value: 'normal', label: 'admin.opt_margin_normal' },
     { value: 'narrow', label: 'admin.opt_margin_narrow' },
     { value: 'wide',   label: 'admin.opt_margin_wide' },
+  ],
+  'network.tls_min_version': [
+    { value: '1.2', label: 'admin.opt_tls_12' },
+    { value: '1.3', label: 'admin.opt_tls_13' },
+  ],
+  'network.cert_mode': [
+    { value: 'manual', label: 'admin.opt_certmode_manual' },
+    { value: 'acme',   label: 'admin.opt_certmode_acme' },
   ],
 }
 

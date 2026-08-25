@@ -33,6 +33,7 @@
 //! It can also be run on demand from SQL: `SELECT core.purge_admin_audit(400);`
 //! — though that path bypasses the trail entry the job writes.
 
+pub mod chain;
 pub mod context;
 pub mod model;
 pub mod query;

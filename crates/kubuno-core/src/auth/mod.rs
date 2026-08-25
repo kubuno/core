@@ -4,6 +4,7 @@ pub mod client_ip;
 pub mod ddos;
 pub mod internal_secret;
 pub mod jwt;
+pub mod login_throttle;
 pub mod methods;
 pub mod middleware;
 pub mod oauth;

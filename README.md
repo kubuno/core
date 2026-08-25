@@ -87,7 +87,9 @@ The fastest way to self-host Kubuno (core + all modules) is the all-in-one Docke
 git clone https://github.com/kubuno/docker && cd docker
 cp .env.docker.example .env     # set POSTGRES_PASSWORD, KUBUNO_JWT_SECRET, KUBUNO_INTERNAL_SECRET
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-# → http://localhost:8080   (default admin: admin / kubuno — change it!)
+# → http://localhost:8080
+#   A fresh instance greets you with the setup wizard: it asks for the database
+#   and the first administrator, so YOU choose the password. There is no default.
 ```
 
 Prefer building the image yourself? Run `docker compose up --build`. The full guide,

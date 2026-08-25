@@ -8,6 +8,7 @@ import { RouteRegistry } from './core/registry/RouteRegistry'
 import Shell from './core/shell/Shell'
 import { DocumentTitle } from './core/shell/DocumentTitle'
 import LoginPage from './core/auth/LoginPage'
+import SetupWizard from './core/setup/SetupWizard'
 import RegisterPage from './core/auth/RegisterPage'
 import ResetPasswordPage from './core/auth/ResetPasswordPage'
 import OAuthCallback from './core/auth/OAuthCallback'
@@ -117,6 +118,11 @@ export default function App() {
     <DocumentTitle />
     <Routes>
       {/* Pages publiques core — redirigent vers l'accueil si déjà connecté */}
+      {/* Installation initiale — servie AVANT toute authentification : sur une
+          instance neuve, il n'existe aucun compte. */}
+      <Route path="/setup" element={<SetupWizard />} />
+      <Route path="/setup/:step" element={<SetupWizard />} />
+
       <Route path="/login"           element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
       <Route path="/register"        element={<PublicOnlyRoute><RegisterPage /></PublicOnlyRoute>} />
       <Route path="/forgot-password" element={<PublicOnlyRoute><LoginPage initialStep="forgot" /></PublicOnlyRoute>} />

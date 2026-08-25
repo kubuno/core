@@ -6,6 +6,7 @@
 //! TLS 1.0 / TLS 1.1 — so the "disable the old protocols" hardening an Apache
 //! operator applies by hand is, here, structural.
 
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use axum::http::HeaderValue;
@@ -68,12 +69,18 @@ pub fn build_server_config(
 ///
 /// `reload` holds the axum-server config the HTTPS listener actually serves —
 /// `Some` only when the process bound an HTTPS socket at boot. `hsts` holds the
-/// `Strict-Transport-Security` value the response layer emits, kept out of
-/// plain-HTTP responses.
+/// **configured** `Strict-Transport-Security` value (`None` when the setting is
+/// off); whether a given response actually carries it is decided per request by
+/// [`response_is_over_tls`], because an instance can be reached over TLS without
+/// terminating it itself.
 #[derive(Default)]
 pub struct TlsRuntime {
     reload: RwLock<Option<RustlsConfig>>,
     hsts: RwLock<Option<HeaderValue>>,
+    /// Pending ACME HTTP-01 challenge responses: token → key authorization.
+    /// The public `/.well-known/acme-challenge/:token` route reads it; the ACME
+    /// client fills it for the duration of an order and clears it afterwards.
+    acme_challenges: RwLock<HashMap<String, String>>,
 }
 
 impl TlsRuntime {
@@ -104,6 +111,162 @@ impl TlsRuntime {
     pub fn hsts(&self) -> Option<HeaderValue> {
         self.hsts.read().ok().and_then(|g| g.clone())
     }
+
+    /// Registers the response for one ACME HTTP-01 challenge token.
+    pub fn set_acme_challenge(&self, token: String, key_authorization: String) {
+        if let Ok(mut g) = self.acme_challenges.write() {
+            g.insert(token, key_authorization);
+        }
+    }
+
+    /// The response for a challenge token, if one is pending.
+    pub fn acme_challenge(&self, token: &str) -> Option<String> {
+        self.acme_challenges
+            .read()
+            .ok()
+            .and_then(|g| g.get(token).cloned())
+    }
+
+    /// Drops one challenge token once its order has moved on.
+    pub fn clear_acme_challenge(&self, token: &str) {
+        if let Ok(mut g) = self.acme_challenges.write() {
+            g.remove(token);
+        }
+    }
+}
+
+/// Did THIS request reach the instance over TLS?
+///
+/// Two ways are legitimate and both must count, or HSTS would be dropped on the
+/// most common production layout:
+///   * the core terminated the TLS itself (`tls_live`);
+///   * a reverse proxy terminated it and says so with `X-Forwarded-Proto`.
+///
+/// That header is forgeable by anyone who can open a socket, so it is believed
+/// only when the socket peer sits in `server.trusted_proxy_cidrs` — the same
+/// rule [`crate::auth::client_ip`] applies to `X-Forwarded-For`, and the one
+/// `handlers::admin::health` already uses. A comma-separated chain keeps the
+/// FIRST hop: the scheme the browser actually used.
+pub fn response_is_over_tls(
+    headers: &axum::http::HeaderMap,
+    peer: Option<std::net::IpAddr>,
+    tls_live: bool,
+) -> bool {
+    if tls_live {
+        return true;
+    }
+    let Some(peer) = peer else { return false };
+    if !crate::auth::client_ip::is_trusted_proxy(peer) {
+        return false;
+    }
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|raw| raw.split(',').next())
+        .map(|first| first.trim().eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
+}
+
+/// Should HSTS be announced for this `Host`?
+///
+/// Never for a loopback name. HSTS is remembered by the browser per host, and
+/// `localhost` is shared by every project on the machine: one instance that
+/// serves it once pins `http://localhost:<any port>` to HTTPS for every other
+/// local server the developer runs, with an unhelpful certificate error and a
+/// purge through `chrome://net-internals/#hsts` as the only way back. Browsers
+/// ignore HSTS on bare IP addresses anyway, so nothing is lost by not sending
+/// it there either.
+pub fn hsts_applies_to_host(host: Option<&str>) -> bool {
+    let Some(host) = host else { return true };
+    let host = host.trim();
+    // An IPv6 literal is bracketed and full of colons, so the port cannot be
+    // found by splitting on the last one: take what is inside the brackets.
+    let name = match host.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(""),
+        None => host.rsplit_once(':').map_or(host, |(head, _)| head),
+    }
+    .to_ascii_lowercase();
+
+    !(name == "localhost"
+        || name.ends_with(".localhost")
+        || name == "::1"
+        || name.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+    use std::net::IpAddr;
+
+    #[test]
+    fn hsts_is_never_announced_for_a_loopback_name() {
+        for local in [
+            "localhost",
+            "localhost:8080",
+            "LOCALHOST:8443",
+            "app.localhost",
+            "127.0.0.1",
+            "127.0.0.1:8080",
+            "127.1.2.3",
+            "[::1]",
+            "[::1]:8080",
+        ] {
+            assert!(
+                !hsts_applies_to_host(Some(local)),
+                "ne doit pas épingler {local}"
+            );
+        }
+    }
+
+    #[test]
+    fn hsts_is_announced_for_a_real_domain() {
+        for real in ["cloud.example", "cloud.example:8443", "dev.kubuno.com"] {
+            assert!(hsts_applies_to_host(Some(real)), "doit s'appliquer à {real}");
+        }
+        // No Host header at all: nothing says it is local, so keep the header.
+        assert!(hsts_applies_to_host(None));
+    }
+
+    fn headers(proto: Option<&str>) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        if let Some(p) = proto {
+            h.insert("x-forwarded-proto", HeaderValue::from_str(p).unwrap());
+        }
+        h
+    }
+
+    #[test]
+    fn local_tls_is_enough() {
+        assert!(response_is_over_tls(&headers(None), None, true));
+    }
+
+    #[test]
+    fn plain_http_without_a_proxy_is_not_tls() {
+        assert!(!response_is_over_tls(&headers(None), None, false));
+        let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(!response_is_over_tls(&headers(Some("http")), Some(loopback), false));
+    }
+
+    /// The header alone must never be enough: an untrusted peer can forge it.
+    #[test]
+    fn an_untrusted_peer_claiming_https_is_not_believed() {
+        crate::auth::client_ip::init(&["127.0.0.0/8".to_string()]);
+        let public: IpAddr = "203.0.113.7".parse().unwrap();
+        assert!(!response_is_over_tls(&headers(Some("https")), Some(public), false));
+    }
+
+    #[test]
+    fn a_trusted_proxy_claiming_https_is_believed() {
+        // `init` is process-global and idempotent after the first call; the
+        // default list already contains loopback, which is what this asserts.
+        crate::auth::client_ip::init(&["127.0.0.0/8".to_string()]);
+        let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(response_is_over_tls(&headers(Some("https")), Some(loopback), false));
+        // A chain keeps the first hop.
+        assert!(response_is_over_tls(&headers(Some("https, http")), Some(loopback), false));
+        assert!(!response_is_over_tls(&headers(Some("http, https")), Some(loopback), false));
+    }
 }
 
 /// Recomputes the HSTS header and applies a minimum-version change to the live
@@ -113,16 +276,14 @@ pub async fn refresh_runtime(state: &AppState) {
     let cfg = NetworkConfig::load(&state.db).await;
     let live = state.tls.is_https_live();
 
-    // HSTS only means anything over HTTPS; never announce it on a plain-HTTP
-    // instance.
-    let hsts = if live {
+    // The CONFIGURED value; whether a given response carries it is decided per
+    // request by `response_is_over_tls` — an instance behind a TLS-terminating
+    // reverse proxy serves plain HTTP here and must still send HSTS.
+    state.tls.set_hsts(
         cfg.hsts
             .header_value()
-            .and_then(|s| HeaderValue::from_str(&s).ok())
-    } else {
-        None
-    };
-    state.tls.set_hsts(hsts);
+            .and_then(|s| HeaderValue::from_str(&s).ok()),
+    );
 
     // A minimum-version change reaches the live listener without a restart.
     if live {
@@ -146,7 +307,7 @@ async fn reload_active_certificate(state: &AppState, min: TlsMinVersion) -> bool
         return false;
     };
     let Some((cert_pem, key_pem)) =
-        cert::active_material(&state.db, &state.settings.auth.jwt_secret).await
+        cert::active_material(&super::store::Paths::from_settings(&state.settings.server.tls))
     else {
         tracing::warn!("réseau : rechargement TLS demandé mais aucun certificat actif exploitable");
         return false;

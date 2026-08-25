@@ -13,9 +13,12 @@
 //! needs a restart; replacing the certificate and changing HSTS take effect
 //! live via [`runtime::reload_certificate`] and [`runtime::refresh_runtime`].
 
+pub mod acme;
 pub mod cert;
 pub mod config;
+pub mod redirect;
 pub mod runtime;
+pub mod store;
 
 pub use config::{NetworkConfig, TlsMinVersion};
 pub use runtime::TlsRuntime;

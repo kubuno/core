@@ -30,16 +30,51 @@ async fn insert(
     ctx: &AuditContext,
     entry: &AuditEntry,
 ) -> Result<i64, sqlx::Error> {
+    use super::chain;
+
     let ip_owned = ctx.ip.map(|ip| ip.to_string());
+    // Server-set timestamp, chosen here (not by the column default) so the exact
+    // value that is stored is the one the hash covers. Truncated to microseconds
+    // — PostgreSQL `timestamptz` keeps only microseconds, so hashing the raw
+    // nanosecond `now()` would not match the value read back at verification.
+    let occurred_at = chrono::Utc::now();
+    let occurred_at =
+        chrono::DateTime::from_timestamp_micros(occurred_at.timestamp_micros()).unwrap_or(occurred_at);
+
+    // ── Hash chaining (tamper-evidence) ──────────────────────────────────────
+    // Only when the key is installed (it is not in unit tests / tools, and then
+    // the hash columns stay NULL). The advisory lock serialises appenders so two
+    // concurrent writers cannot read the same tip and both link to it; it is an
+    // xact lock, released at commit — both call sites run inside a transaction.
+    let (prev_hash, row_hash): (Option<Vec<u8>>, Option<Vec<u8>>) = match chain::audit_key() {
+        Some(key) => {
+            sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                .bind(chain::CHAIN_LOCK)
+                .execute(&mut *conn)
+                .await?;
+            let prev: Vec<u8> = sqlx::query_scalar::<_, Vec<u8>>(
+                "SELECT row_hash FROM core.admin_audit \
+                 WHERE row_hash IS NOT NULL ORDER BY id DESC LIMIT 1",
+            )
+            .fetch_optional(&mut *conn)
+            .await?
+            .unwrap_or_else(|| chain::GENESIS.to_vec());
+            let fields = chain::canonical_of_write(ctx, entry, occurred_at, ip_owned.as_deref());
+            let hash = chain::row_hash(key, &chain::canonical(&fields), &prev);
+            (Some(prev), Some(hash))
+        }
+        None => (None, None),
+    };
 
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO core.admin_audit
                (actor_id, actor_label, actor_role, actor_origin, actor_token_id,
                 ip_address, user_agent,
                 action, module_id, target_type, target_id, target_label,
-                before, after, outcome, detail, reversible, reverts_entry_id)
+                before, after, outcome, detail, reversible, reverts_entry_id,
+                occurred_at, prev_hash, row_hash)
            VALUES ($1, $2, $3, $4, $5, $6::inet, $7, $8, $9, $10, $11, $12,
-                   $13, $14, $15, $16, $17, $18)
+                   $13, $14, $15, $16, $17, $18, $19, $20, $21)
            RETURNING id"#,
     )
     .bind(ctx.actor.id)
@@ -60,6 +95,9 @@ async fn insert(
     .bind(entry.detail.as_deref())
     .bind(entry.reversible)
     .bind(entry.reverts_entry_id)
+    .bind(occurred_at)
+    .bind(prev_hash)
+    .bind(row_hash)
     .fetch_one(&mut *conn)
     .await?;
 
@@ -99,16 +137,22 @@ impl AuditContext {
     /// Best-effort by design: an audit failure must not turn a refusal into a
     /// 500. The error is logged loudly instead.
     pub async fn record(&self, db: &PgPool, entry: AuditEntry) -> Option<i64> {
-        let mut conn = match db.acquire().await {
-            Ok(c) => c,
+        // A transaction, not a bare connection: the hash chain takes an
+        // xact-scoped advisory lock, which only serialises appenders when it is
+        // held for the duration of the read-tip-then-insert, i.e. inside a tx.
+        let mut tx = match db.begin().await {
+            Ok(t) => t,
             Err(e) => {
                 tracing::error!(error = %e, action = %entry.action, "audit: connexion indisponible, entrée perdue");
                 return None;
             }
         };
-        match insert(&mut conn, self, &entry).await {
+        match insert(&mut tx, self, &entry).await {
             Ok(id) => {
-                drop(conn);
+                if let Err(e) = tx.commit().await {
+                    tracing::error!(error = %e, action = %entry.action, "audit: commit de l'entrée impossible");
+                    return None;
+                }
                 publish_fact(db, self, &entry).await;
                 Some(id)
             }

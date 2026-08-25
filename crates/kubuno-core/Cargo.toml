@@ -78,6 +78,7 @@ ldap3.workspace              = true
 rustls-pemfile.workspace     = true
 rustls-native-certs.workspace = true
 x509-parser.workspace        = true
+instant-acme.workspace       = true
 tokio-tungstenite.workspace = true
 kubuno-storage.workspace    = true
 kubuno-mcp.workspace        = true

@@ -31,6 +31,7 @@ pub mod push;
 pub mod router;
 pub mod rules;
 pub mod settings;
+pub mod setup;
 pub mod state;
 pub mod storage;
 /// The licence this software carries, and the support contract an instance may

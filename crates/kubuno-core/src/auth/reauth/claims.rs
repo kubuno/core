@@ -143,6 +143,8 @@ mod tests {
             password_hash: None,
             display_name: None,
             avatar_url: None,
+            first_name: None,
+            last_name: None,
             role: "admin".into(),
             quota_bytes: 0,
             used_bytes: 0,

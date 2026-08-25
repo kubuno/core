@@ -80,10 +80,10 @@ use tower_http::{
 };
 
 pub fn build(state: AppState, frontend_dist: String) -> Router {
-    // HSTS is emitted from live TLS state, not a constant: the header is set only
-    // when the core actually serves over HTTPS, and its value follows the
-    // `network.*` settings (see `crate::network`). An HSTS header on a
-    // plain-HTTP instance is at best ignored and at worst a foot-gun.
+    // HSTS comes from live state rather than a constant: its value follows the
+    // `network.*` settings (see `crate::network`), and it is emitted only on
+    // requests that actually arrived over TLS — whether this process terminated
+    // it or a trusted reverse proxy did.
     let hsts_holder = state.tls.clone();
 
     // Auth routes with rate limiting (10 req/min for login/register, 3/min for password reset)
@@ -164,6 +164,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // material and the live serving status.
         .route("/network",             get(crate::handlers::admin::network::get_network))
         .route("/network/certificate", post(crate::handlers::admin::network::upload_certificate))
+        .route("/network/certificate/:id",
+               delete(crate::handlers::admin::network::delete_certificate))
+        .route("/network/acme/request", post(crate::handlers::admin::network::request_acme))
         .route("/stats",          get(admin_stats))
         // ── Tableau de bord ───────────────────────────────────────────
         // Les mêmes faits que /stats, mais sur une FENÊTRE choisie et
@@ -244,6 +247,7 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/audit/export",    get(crate::handlers::admin::audit::export_audit_csv))
         .route("/audit/facets",    get(crate::handlers::admin::audit::audit_facets))
         .route("/audit/retention", get(crate::handlers::admin::audit::audit_retention))
+        .route("/audit/verify",    get(crate::handlers::admin::audit::verify_audit))
         .route("/audit/:id",       get(crate::handlers::admin::audit::get_audit_entry))
         // ── Centre d'alertes ──────────────────────────────────────
         // Mêmes précautions d'ordre que pour /audit : les segments statiques
@@ -431,6 +435,12 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .nest("/admin", admin_routes)
         // ── Config publique ──────────────────────────────────────
         .route("/config",                   get(public_config))
+        // Counterpart of the installer's endpoint: an installed instance says so
+        // plainly instead of letting the request fall through to the SPA, which
+        // would answer 200 with HTML and read as "not installed" to a client.
+        .route("/setup/status",              get(|| async {
+            axum::Json(serde_json::json!({ "setup_required": false }))
+        }))
         // ── Spec OpenAPI + doc interactive (publiques) ───────────
         .route("/openapi.json", get(crate::openapi::openapi_json))
         .route("/docs",         get(crate::openapi::docs))
@@ -625,6 +635,10 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready",  get(ready))
+        // Public ACME HTTP-01 challenge — unauthenticated by design, answers only
+        // tokens the core itself is currently proving (see crate::network::acme).
+        .route("/.well-known/acme-challenge/:token",
+               get(crate::handlers::acme::http01_challenge))
         .route("/ws",     get(ws_handler))
         .route("/collab/:room/sync", get(crate::collab::collab_handler))
         .route("/mcp",    post(crate::handlers::mcp::mcp_endpoint))
@@ -652,16 +666,47 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
             HeaderName::from_static("referrer-policy"),
             HeaderValue::from_static("strict-origin-when-cross-origin"),
         ))
-        .layer(SetResponseHeaderLayer::overriding(
-            HeaderName::from_static("strict-transport-security"),
-            // Closure évaluée par réponse : elle relit l'état TLS courant, si
-            // bien que l'en-tête n'est émis qu'en HTTPS et suit les réglages
-            // réseau à chaud (cf. `network::runtime::refresh_runtime`).
-            {
-                let holder = hsts_holder.clone();
-                move |_: &Response<_>| holder.hsts()
-            },
-        ))
+        // HSTS : évalué PAR REQUÊTE, car il faut connaître la requête (et pas
+        // seulement la réponse) pour savoir si elle est arrivée en TLS. Deux cas
+        // comptent : le core a terminé le TLS lui-même, ou un mandataire inverse
+        // de confiance l'a fait et l'annonce (`X-Forwarded-Proto`). Émettre
+        // l'en-tête sur du HTTP en clair non mandaté n'a aucun effet ; ne PAS
+        // l'émettre derrière nginx supprimerait la protection là où elle sert.
+        .layer(middleware::from_fn({
+            let holder = hsts_holder.clone();
+            move |req: Request<Body>, next: Next| {
+                let holder = holder.clone();
+                async move {
+                    let configured = holder.hsts();
+                    let over_tls = configured.is_some().then(|| {
+                        let peer = req
+                            .extensions()
+                            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                            .map(|ci| ci.0.ip());
+                        let host = req
+                            .headers()
+                            .get(axum::http::header::HOST)
+                            .and_then(|v| v.to_str().ok());
+                        crate::network::runtime::hsts_applies_to_host(host)
+                            && crate::network::runtime::response_is_over_tls(
+                                req.headers(),
+                                peer,
+                                holder.is_https_live(),
+                            )
+                    }) == Some(true);
+                    let mut response = next.run(req).await;
+                    if over_tls {
+                        if let Some(value) = configured {
+                            response.headers_mut().insert(
+                                HeaderName::from_static("strict-transport-security"),
+                                value,
+                            );
+                        }
+                    }
+                    response
+                }
+            }
+        }))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("content-security-policy"),
             // Fermeture évaluée par réponse : elle relit le hash de l'import map

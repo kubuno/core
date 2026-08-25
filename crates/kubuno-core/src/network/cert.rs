@@ -102,11 +102,12 @@ fn parse_metadata(cert_pem: &[u8]) -> Result<CertMeta, AppError> {
 /// writes never leaves two active — or zero — certificates behind.
 ///
 /// The pair is validated first (rustls refuses a mismatched or unusable pair)
-/// and its metadata parsed for display. The private key is encrypted at rest and
-/// never returned by any route.
+/// and its metadata parsed for display. **The key material is written to disk**
+/// (`super::store`), never to the database: the row holds subject, SAN and
+/// validity, none of which is a secret.
 pub async fn store_active(
     conn: &mut sqlx::PgConnection,
-    jwt_secret: &str,
+    paths: &super::store::Paths,
     source: &str,
     cert_pem: &str,
     key_pem: &str,
@@ -121,8 +122,15 @@ pub async fn store_active(
     )?;
 
     let meta = parse_metadata(cert_pem.as_bytes())?;
-    let key_enc = config::encrypt_key(jwt_secret, key_pem)?;
 
+    // Disk first: if the material cannot be written there is nothing to record,
+    // and the transaction the caller opened is simply dropped. The reverse order
+    // would leave a row claiming a certificate the server cannot serve.
+    super::store::write_material(paths, cert_pem, key_pem)?;
+
+    // The previous certificate is retired. Only its metadata survives — the key
+    // material it referred to has just been overwritten on disk, and there is no
+    // rollback path that would want an old key back.
     sqlx::query("UPDATE core.tls_certificates SET is_active = FALSE WHERE is_active = TRUE")
         .execute(&mut *conn)
         .await
@@ -131,15 +139,27 @@ pub async fn store_active(
             AppError::Database(e)
         })?;
 
+    // Bounded history. An ACME renewal lands here every ~60 days for the life of
+    // the instance; without a ceiling the table grows without end.
+    sqlx::query(
+        "DELETE FROM core.tls_certificates WHERE is_active = FALSE AND id NOT IN ( \
+             SELECT id FROM core.tls_certificates WHERE is_active = FALSE \
+             ORDER BY created_at DESC LIMIT 20 )",
+    )
+    .execute(&mut *conn)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "réseau : élagage de l'historique des certificats");
+        AppError::Database(e)
+    })?;
+
     let row = sqlx::query(
         "INSERT INTO core.tls_certificates \
-             (source, cert_pem, key_encrypted, subject, issuer, san, not_before, not_after, is_active, uploaded_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9) \
+             (source, subject, issuer, san, not_before, not_after, is_active, uploaded_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7) \
          RETURNING id, source, subject, issuer, san, not_before, not_after, is_active, created_at",
     )
     .bind(source)
-    .bind(cert_pem)
-    .bind(&key_enc)
     .bind(&meta.subject)
     .bind(&meta.issuer)
     .bind(&meta.san)
@@ -157,6 +177,86 @@ pub async fn store_active(
         tracing::error!(error = %e, "réseau : décodage du certificat inséré");
         AppError::Database(e)
     })
+}
+
+/// Every stored certificate, newest first — the active one and the retired ones
+/// whose metadata is kept for the history (their keys are already destroyed).
+pub async fn list(db: &PgPool) -> Result<Vec<StoredCert>, AppError> {
+    let rows = sqlx::query(
+        "SELECT id, source, subject, issuer, san, not_before, not_after, is_active, created_at \
+         FROM core.tls_certificates ORDER BY is_active DESC, created_at DESC",
+    )
+    .fetch_all(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "réseau : liste des certificats");
+        AppError::Database(e)
+    })?;
+
+    rows.iter()
+        .map(StoredCert::from_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            tracing::error!(error = %e, "réseau : décodage de la liste des certificats");
+            AppError::Database(e)
+        })
+}
+
+/// Deletes one certificate, key material included.
+///
+/// Refuses to delete the ACTIVE certificate while HTTPS is switched on: that
+/// would leave the instance configured to serve TLS with nothing to serve it
+/// with, and the failure would only appear at the next restart — as an instance
+/// that silently fell back to plain HTTP. Turning HTTPS off first is an explicit
+/// act; this keeps it from happening by accident.
+pub async fn delete(
+    db: &PgPool,
+    paths: &super::store::Paths,
+    id: Uuid,
+    https_enabled: bool,
+) -> Result<StoredCert, AppError> {
+    let cert = sqlx::query(
+        "SELECT id, source, subject, issuer, san, not_before, not_after, is_active, created_at \
+         FROM core.tls_certificates WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "réseau : lecture du certificat à supprimer");
+        AppError::Database(e)
+    })?
+    .ok_or_else(|| AppError::NotFound("Certificat introuvable".into()))?;
+
+    let cert = StoredCert::from_row(&cert).map_err(|e| {
+        tracing::error!(error = %e, "réseau : décodage du certificat à supprimer");
+        AppError::Database(e)
+    })?;
+
+    if cert.is_active && https_enabled {
+        return Err(AppError::Validation(
+            "Ce certificat est celui que sert le HTTPS : désactivez d'abord le HTTPS, \
+             ou installez un autre certificat à sa place"
+                .into(),
+        ));
+    }
+
+    sqlx::query("DELETE FROM core.tls_certificates WHERE id = $1")
+        .bind(id)
+        .execute(db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "réseau : suppression du certificat");
+            AppError::Database(e)
+        })?;
+
+    // Only the ACTIVE row owns the files on disk; a retired row is metadata for
+    // a certificate whose material was overwritten when it was replaced.
+    if cert.is_active {
+        super::store::delete_material(paths)?;
+    }
+
+    Ok(cert)
 }
 
 /// The active certificate's metadata, or `None` when the instance holds none.
@@ -180,21 +280,12 @@ pub async fn active(db: &PgPool) -> Result<Option<StoredCert>, AppError> {
         })
 }
 
-/// The active certificate's usable material (chain PEM + decrypted key PEM), for
-/// the server to bind or reload. `None` when there is no active certificate or
-/// its key can no longer be decrypted.
-pub async fn active_material(db: &PgPool, jwt_secret: &str) -> Option<(String, String)> {
-    let row = sqlx::query("SELECT cert_pem, key_encrypted FROM core.tls_certificates WHERE is_active = TRUE")
-        .fetch_optional(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "réseau : lecture du matériel du certificat actif");
-            e
-        })
-        .ok()??;
-
-    let cert_pem: String = row.try_get("cert_pem").ok()?;
-    let key_enc: String = row.try_get("key_encrypted").ok()?;
-    let key_pem = config::decrypt_key(jwt_secret, &key_enc)?;
-    Some((cert_pem, key_pem))
+/// The usable material (chain PEM + private key PEM) the server binds or
+/// reloads, read from disk. `None` when the instance holds none.
+///
+/// Deliberately does not consult the database: the files are the material, and a
+/// row that disagreed with them would be a second source of truth for the one
+/// thing that must have only one.
+pub fn active_material(paths: &super::store::Paths) -> Option<(String, String)> {
+    super::store::read_material(paths)
 }
