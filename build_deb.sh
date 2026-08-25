@@ -241,7 +241,11 @@ LOGROTATE
 Description=Kubuno Core — plateforme cloud self-hosted
 Documentation=https://github.com/kubuno/kubuno
 After=network.target postgresql.service
-Requires=postgresql.service
+# Wants, not Requires: a great many instances keep their database on another
+# machine, and `Requires` makes the service refuse to start when no local
+# postgresql.service exists — which is exactly the supported remote setup. The
+# RPM has always used Wants; this aligns the two.
+Wants=postgresql.service
 StartLimitIntervalSec=60
 StartLimitBurst=10
 

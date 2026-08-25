@@ -193,6 +193,64 @@ pub fn hsts_applies_to_host(host: Option<&str>) -> bool {
         || name.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback()))
 }
 
+
+/// Recomputes the HSTS header and applies a minimum-version change to the live
+/// listener. Called after any `network.*` setting changes. Cheap and safe to
+/// call when no HTTPS listener is running (it just clears HSTS).
+pub async fn refresh_runtime(state: &AppState) {
+    let cfg = NetworkConfig::load(&state.db).await;
+    let live = state.tls.is_https_live();
+
+    // The CONFIGURED value; whether a given response carries it is decided per
+    // request by `response_is_over_tls` — an instance behind a TLS-terminating
+    // reverse proxy serves plain HTTP here and must still send HSTS.
+    state.tls.set_hsts(
+        cfg.hsts
+            .header_value()
+            .and_then(|s| HeaderValue::from_str(&s).ok()),
+    );
+
+    // A minimum-version change reaches the live listener without a restart.
+    if live {
+        reload_active_certificate(state, cfg.tls_min_version).await;
+    }
+}
+
+/// Rebuilds the served `ServerConfig` from the active certificate and swaps it
+/// into the live listener, with no dropped connections. Returns whether a swap
+/// actually happened (false when no HTTPS listener is running).
+pub async fn reload_certificate(state: &AppState) -> bool {
+    if !state.tls.is_https_live() {
+        return false;
+    }
+    let min = NetworkConfig::load(&state.db).await.tls_min_version;
+    reload_active_certificate(state, min).await
+}
+
+async fn reload_active_certificate(state: &AppState, min: TlsMinVersion) -> bool {
+    let Some(handle) = state.tls.reload_handle() else {
+        return false;
+    };
+    let Some((cert_pem, key_pem)) =
+        cert::active_material(&super::store::Paths::from_settings(&state.settings.server.tls))
+    else {
+        tracing::warn!("réseau : rechargement TLS demandé mais aucun certificat actif exploitable");
+        return false;
+    };
+    match build_server_config(cert_pem.as_bytes(), key_pem.as_bytes(), min) {
+        Ok(sc) => {
+            handle.reload_from_config(sc);
+            tracing::info!("réseau : certificat TLS rechargé à chaud");
+            true
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "réseau : rechargement du certificat TLS échoué");
+            false
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,61 +324,5 @@ mod tests {
         // A chain keeps the first hop.
         assert!(response_is_over_tls(&headers(Some("https, http")), Some(loopback), false));
         assert!(!response_is_over_tls(&headers(Some("http, https")), Some(loopback), false));
-    }
-}
-
-/// Recomputes the HSTS header and applies a minimum-version change to the live
-/// listener. Called after any `network.*` setting changes. Cheap and safe to
-/// call when no HTTPS listener is running (it just clears HSTS).
-pub async fn refresh_runtime(state: &AppState) {
-    let cfg = NetworkConfig::load(&state.db).await;
-    let live = state.tls.is_https_live();
-
-    // The CONFIGURED value; whether a given response carries it is decided per
-    // request by `response_is_over_tls` — an instance behind a TLS-terminating
-    // reverse proxy serves plain HTTP here and must still send HSTS.
-    state.tls.set_hsts(
-        cfg.hsts
-            .header_value()
-            .and_then(|s| HeaderValue::from_str(&s).ok()),
-    );
-
-    // A minimum-version change reaches the live listener without a restart.
-    if live {
-        reload_active_certificate(state, cfg.tls_min_version).await;
-    }
-}
-
-/// Rebuilds the served `ServerConfig` from the active certificate and swaps it
-/// into the live listener, with no dropped connections. Returns whether a swap
-/// actually happened (false when no HTTPS listener is running).
-pub async fn reload_certificate(state: &AppState) -> bool {
-    if !state.tls.is_https_live() {
-        return false;
-    }
-    let min = NetworkConfig::load(&state.db).await.tls_min_version;
-    reload_active_certificate(state, min).await
-}
-
-async fn reload_active_certificate(state: &AppState, min: TlsMinVersion) -> bool {
-    let Some(handle) = state.tls.reload_handle() else {
-        return false;
-    };
-    let Some((cert_pem, key_pem)) =
-        cert::active_material(&super::store::Paths::from_settings(&state.settings.server.tls))
-    else {
-        tracing::warn!("réseau : rechargement TLS demandé mais aucun certificat actif exploitable");
-        return false;
-    };
-    match build_server_config(cert_pem.as_bytes(), key_pem.as_bytes(), min) {
-        Ok(sc) => {
-            handle.reload_from_config(sc);
-            tracing::info!("réseau : certificat TLS rechargé à chaud");
-            true
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "réseau : rechargement du certificat TLS échoué");
-            false
-        }
     }
 }

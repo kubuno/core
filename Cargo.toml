@@ -67,7 +67,7 @@ config  = "0.14"
 dotenvy = "0.15"
 
 # Validation
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.21", features = ["derive"] }
 
 # Logging & Tracing
 tracing            = "0.1"
@@ -138,7 +138,7 @@ ldap3               = { version = "0.12", default-features = false, features = [
 # 1.82 as its floor — a dependency must not silently raise what the product
 # claims to build on. Default features are exactly what is needed (tokio, plus
 # the system resolver configuration read from /etc/resolv.conf).
-hickory-resolver    = "0.25"
+hickory-resolver    = "0.26"
 # Reading a private certificate authority supplied by the operator: `rustls` on
 # its own parses no PEM. Same crate `rustls` itself recommends, no extra stack.
 rustls-pemfile      = "2"

@@ -24,7 +24,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use hickory_resolver::proto::rr::RecordType;
-use hickory_resolver::{name_server::TokioConnectionProvider, Resolver};
+use hickory_resolver::TokioResolver;
 use serde::Serialize;
 
 /// The prefix of the TXT value an administrator publishes. Named after the
@@ -39,7 +39,7 @@ pub const TOKEN_PREFIX: &str = "kubuno-domain-verification";
 /// front of. The failure is reported, not retried into a hang.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
-type SharedResolver = Resolver<TokioConnectionProvider>;
+type SharedResolver = TokioResolver;
 
 static RESOLVER: OnceLock<Option<SharedResolver>> = OnceLock::new();
 
@@ -50,8 +50,8 @@ static RESOLVER: OnceLock<Option<SharedResolver>> = OnceLock::new();
 /// could not check, which is the truth, rather than reporting a failed check.
 fn resolver() -> Option<&'static SharedResolver> {
     RESOLVER
-        .get_or_init(|| match Resolver::builder_tokio() {
-            Ok(builder) => Some(builder.build()),
+        .get_or_init(|| match TokioResolver::builder_tokio().and_then(|b| b.build()) {
+            Ok(resolver) => Some(resolver),
             Err(e) => {
                 tracing::error!(
                     error = %e,
@@ -116,20 +116,20 @@ async fn lookup(name: &str, record_type: RecordType) -> Result<Vec<String>, Prob
     };
 
     let mut out = Vec::new();
-    for record in response.record_iter() {
-        match record.data() {
+    for record in response.answers() {
+        match &record.data {
             // A TXT value can be split into several strings by the zone file;
             // they are one value and must be joined before being compared.
             hickory_resolver::proto::rr::RData::TXT(txt) => {
                 let joined: String = txt
-                    .txt_data()
+                    .txt_data
                     .iter()
                     .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
                     .collect();
                 out.push(joined);
             }
             hickory_resolver::proto::rr::RData::MX(mx) => {
-                out.push(format!("{} {}", mx.preference(), mx.exchange()));
+                out.push(format!("{} {}", mx.preference, mx.exchange));
             }
             other => out.push(other.to_string()),
         }

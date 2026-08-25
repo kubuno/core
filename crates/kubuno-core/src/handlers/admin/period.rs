@@ -607,7 +607,7 @@ mod tests {
     fn only_a_report_lifts_the_slice_ceiling() {
         assert_eq!(slice_limit(false, 8), 8);
         assert_eq!(slice_limit(true, 8), FULL_SLICES);
-        assert!(FULL_SLICES > 8);
+        const { assert!(FULL_SLICES > 8) };
     }
 
     /// The day-keyed sources are read over the same calendar their rows were

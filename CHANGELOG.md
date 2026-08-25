@@ -9,6 +9,33 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Security
+
+- **Dependencies carrying published advisories upgraded.** The HTTP/2 layer
+  (unbounded empty DATA frames, RUSTSEC-2026-0258), the DNS resolver used to
+  prove domain ownership (CPU exhaustion on message encoding and an unbounded
+  loop on NSEC3 validation, RUSTSEC-2026-0119 and -0118) and the validation
+  crate, which was pulling a punycode flaw (RUSTSEC-2024-0421). The one
+  remaining advisory is written down in `.cargo/audit.toml` with the reason it
+  cannot apply here: it belongs to a MySQL driver this build never compiles.
+
+### Fixed
+
+- **The continuous-integration gate is green again.** Two lints in test code
+  broke the run that guards every push, which meant nothing else it checks was
+  being reported either.
+
+
+### Fixed
+
+- **A Debian/Ubuntu install could not use a database on another machine.** The
+  systemd unit declared `Requires=postgresql.service`, so the server refused to
+  start on any host without a local PostgreSQL service — which is precisely the
+  supported setup where the database lives elsewhere, and it failed with a
+  dependency error that said nothing about the cause. The unit now declares
+  `Wants=`, as the RPM always has: a local database is still started first when
+  there is one, and its absence is no longer fatal.
+
 ## [0.1.7] - 2026-08-25
 
 ### Security
