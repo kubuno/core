@@ -37,6 +37,9 @@ argon2.workspace       = true
 aes-gcm.workspace      = true
 rand.workspace         = true
 sha2.workspace         = true
+# Ed25519 verification for the signed catalogue manifest. `ring` is already in
+# the tree (rustls, ACME): using it adds no new implementation to audit.
+ring = "0.17"
 hmac.workspace         = true
 hkdf.workspace         = true
 subtle.workspace       = true

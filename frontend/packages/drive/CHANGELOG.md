@@ -6,6 +6,13 @@ under the published version number.
 
 ## [Unreleased]
 
+
+### Added
+
+- `FileItem.is_protected` — the flag the platform's own files carry. Drive's
+  interface already read it, and the type surface did not declare it, so any
+  module typechecking against the published package failed on a field its own
+  API returns.
 ### Added
 
 - `FileInfoContent`: the body of the details window, on its own, so it can be

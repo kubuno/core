@@ -169,7 +169,13 @@ build_deb() {
 
   $SETUP_FN "${PKG_DIR}" "${PACKAGE}" "${DESCRIPTION}"
 
-  dpkg-deb --build "${PKG_DIR}" "${OUTPUT}"
+  # --root-owner-group: without it, dpkg-deb records the uid/gid of whoever
+  # built the package, and dpkg restores those NUMERIC ids on the target. A
+  # package built by uid 1000 therefore installed /usr/lib/kubuno/modules and
+  # /etc/kubuno owned by whatever account happens to be uid 1000 over there —
+  # a build-machine account leaking into every installation. Ownership is set
+  # deliberately in postinst instead.
+  dpkg-deb --root-owner-group --build "${PKG_DIR}" "${OUTPUT}"
   rm -rf "${WORK_DIR}"
   echo "  ✓ ${OUTPUT}"
 }
@@ -305,6 +311,13 @@ mkdir -p /var/lib/kubuno/drive /var/lib/kubuno/themes
 # installation du seul core n'en contient encore aucun. Absent, systemd refusait
 # de construire le namespace et le service ne démarrait pas (226/NAMESPACE).
 mkdir -p /usr/lib/kubuno/modules
+# The service installs modules from the marketplace and writes each module's
+# configuration itself, so both directories must belong to it. Left to root they
+# made every hot install fail — the module landed in the writable store but its
+# configuration directory could not be created.
+mkdir -p /etc/kubuno/modules
+chown kubuno:kubuno /usr/lib/kubuno/modules /etc/kubuno/modules
+chmod 750 /usr/lib/kubuno/modules /etc/kubuno/modules
 # Destination par défaut des sauvegardes. 0700 : le fichier contient les
 # empreintes de mots de passe de tous les comptes de l'instance.
 mkdir -p /var/backups/kubuno

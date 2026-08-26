@@ -25,6 +25,8 @@ export interface FileItem {
     size_bytes: number;
     mime_type: string;
     is_starred: boolean;
+    /** Shipped with the platform — the interface must refuse to delete or rename it. */
+    is_protected?: boolean;
     is_trashed: boolean;
     has_thumbnail: boolean;
     versioning_enabled: boolean;

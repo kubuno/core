@@ -9,6 +9,111 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+
+### Fixed
+
+- **A built package could be thrown away instead of published.** The job that
+  attaches a package to the release waited ten minutes for another workflow to
+  create that release, then gave up with "release never appeared — build.yml
+  likely failed". The diagnosis was wrong: on a repository whose `.deb` takes
+  longer than ten minutes to build, the release simply did not exist yet, and a
+  package that had built perfectly was discarded. Four modules reached v0.1.6
+  with packages missing for some systems because of it. The job now creates the
+  release itself when it is missing, so it no longer depends on another workflow
+  finishing first.
+### Added
+
+- **`@kubuno/drive` 0.1.6 declares `FileItem.is_protected`.** Drive's own
+  interface reads that flag on files the platform ships, and the published type
+  surface did not declare it — so a module typechecking against the package
+  failed on a field its own API returns. Publishing this package is what unblocks
+  Drive's quality gate.
+- **A module's executable is found whatever the system names it.** A module
+  declares one `entrypoint` for every system — `kubuno-drive` — while the
+  Windows package installs `kubuno-drive.exe`. The server joined the declared
+  name and nothing else, so on Windows it looked for a file that does not exist
+  and failed as if the binary were missing. It now falls back to the `.exe`
+  variant, on every system, so a package built for Windows behaves the same
+  wherever it is inspected.
+- **The server installs the single `.kbpkg` package format.** No change was
+  needed to read it: a `.kbpkg` is a ZIP whose root is the module directory as
+  the server already expects to find it, so what it unpacks needs no
+  translation. It is also the only format the server opens **without an external
+  tool** — `.deb` and `.tar.gz` are handed to `dpkg-deb` and `tar`, which is
+  precisely why installing a module ever worked only on Debian-like systems. The
+  catalogue offers it ahead of a system package when a module publishes one.
+- **An artefact is only ever downloaded over HTTPS.** The catalogue is
+  authenticated by its signature, but the artefact is fetched elsewhere: in the
+  clear, anyone on the path can swap it. The digest would catch that, and no
+  security should rest on a single wall. The loopback address stays allowed —
+  it has no network path to divert, and without it the mechanism could not be
+  exercised.
+
+### Security
+
+- **The catalogue's list of checksums is now signed, and the server checks the
+  signature.** A checksum authenticates a file against a list; nothing
+  authenticated the list. Whoever took control of the catalogue could rewrite a
+  checksum and point it at their own file, and every instance would have verified
+  it happily — the attacker having computed both halves. The catalogue now
+  publishes one Ed25519 signature covering every module, every platform and every
+  digest, and the server refuses to believe a manifest whose signature does not
+  hold. The private key lives with the administration panel, which is never
+  deployed; the public server only ever holds the signature, so a compromise
+  there can alter what is served but cannot make the alteration verify.
+- **A checksum, or a signature, can no longer quietly disappear.** A missing
+  digest used to be a warning, and the install went ahead unverified — so
+  deleting one line from the catalogue disabled the whole check. A module that
+  has once been installed with a verified digest is now refused without one, and
+  the same rule applies to signatures: what has been signed once may not come
+  back unsigned. Unsigned modules are still accepted, loudly, which is the point
+  of the rule — a warning nobody can strip.
+
+### Added
+
+- **The catalogue answers according to the system asking.** A server now tells
+  the catalogue which system and architecture it runs on, and the catalogue
+  replies with the artefacts for that system and names the one to install. The
+  choice therefore belongs to the catalogue, which can improve its rule — prefer
+  the single package format over a system package, say — without every deployed
+  instance having to be upgraded first. A server asking from Windows is now told
+  plainly that a module publishing only a system installer cannot be installed
+  there, instead of discovering it halfway through.
+- **The catalogue now says where each module's binaries are**, per platform, with
+  their size and digest, and the server uses that instead of guessing. It used to
+  work the artefact out by itself, by looking for a file name ending in a
+  per-platform suffix — a guess that only ever matched on Linux, which is why
+  one-click installation silently failed on Windows and macOS. When a module
+  publishes nothing the server can unpack for the running platform, it now says
+  so plainly, naming what the module does publish, instead of failing further
+  down the line. This is the first step of the packaging decision below.
+- **A decision document on how modules are packaged**
+  (`DECISION-empaquetage-des-modules.md`). It records what was found while fixing
+  the marketplace: the server already opens module packages itself and never calls
+  the system package manager, one-click installation only ever worked on Linux
+  because the expected file names were never produced for Windows or macOS, and
+  the catalogue carries no artefact information at all. It proposes a single
+  `.kbpkg` format installed by the server, keeps native packages for the server
+  itself, and lays out a three-step migration. Proposed, not yet decided.
+
+### Fixed
+
+- **Installing a module from the marketplace left it dead on arrival.** The module
+  was downloaded, verified and unpacked correctly, then started with a working
+  directory — its own configuration directory — that did not exist, because the
+  service was not allowed to create it. A missing working directory and a missing
+  executable produce the exact same error, so the log blamed the binary, which
+  had been there all along. The server now starts a module only from a directory
+  that exists, falling back to the module's own directory and saying so, and the
+  failure message names both the executable and the working directory instead of
+  neither.
+- **Packages carried the ownership of whoever built them.** The `.deb` recorded
+  the build account's numeric user id, and dpkg restored it on the target
+  machine, so `/usr/lib/kubuno/modules` and `/etc/kubuno` ended up owned by
+  whatever unrelated account happens to hold that id there — leaving the service
+  unable to write where it must. Packages are now sealed as `root`, and the
+  directories the service owns are granted to it explicitly at install time.
+
 ### Security
 
 - **Dependencies carrying published advisories upgraded.** The HTTP/2 layer

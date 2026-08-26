@@ -29,6 +29,60 @@ pub struct InstallReport {
     pub dependencies: Vec<String>,
 }
 
+/// Ce module a-t-il déjà été installé avec une empreinte vérifiée ?
+///
+/// En cas d'erreur de base, on répond `true` : mieux vaut refuser une
+/// installation qu'on ne sait pas justifier que l'accepter faute d'information.
+async fn was_verified_before(db: &PgPool, id: &str) -> bool {
+    match sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM core.module_integrity WHERE module_id = $1",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    {
+        Ok(n) => n > 0,
+        Err(e) => {
+            tracing::error!(module_id = %id, error = %e, "Lecture de l'historique d'intégrité impossible");
+            true
+        }
+    }
+}
+
+/// Retient qu'une empreinte a bien été vérifiée pour ce module.
+async fn was_signed_before(db: &PgPool, id: &str) -> bool {
+    match sqlx::query_scalar::<_, bool>(
+        "SELECT signed FROM core.module_integrity WHERE module_id = $1",
+    )
+    .bind(id)
+    .fetch_optional(db)
+    .await
+    {
+        Ok(v) => v.unwrap_or(false),
+        Err(e) => {
+            tracing::error!(module_id = %id, error = %e, "Lecture de l'historique de signature impossible");
+            // Comme pour l'empreinte : dans le doute, refuser plutôt qu'accepter.
+            true
+        }
+    }
+}
+
+async fn remember_verified(db: &PgPool, id: &str, sha256: &str, signed: bool) {
+    if let Err(e) = sqlx::query(
+        "INSERT INTO core.module_integrity (module_id, last_sha256, signed) VALUES ($1, $2, $3) \
+         ON CONFLICT (module_id) DO UPDATE SET last_sha256 = EXCLUDED.last_sha256, \
+             signed = core.module_integrity.signed OR EXCLUDED.signed, last_seen_at = NOW()",
+    )
+    .bind(id)
+    .bind(sha256)
+    .bind(signed)
+    .execute(db)
+    .await
+    {
+        tracing::error!(module_id = %id, error = %e, "Enregistrement de l'empreinte vérifiée impossible");
+    }
+}
+
 /// `true` si le module est déjà présent sur disque (store OU paquet système), donc
 /// utilisable comme dépendance sans réinstallation.
 fn is_available(settings: &Settings, id: &str) -> bool {
@@ -48,7 +102,7 @@ struct Materialized {
 
 /// Télécharge, vérifie (SHA-256), extrait et relocalise un module dans le store.
 /// Ne le démarre pas. Applique la garde de confiance (officiel + dépôt kubuno).
-async fn materialize(settings: &Settings, id: &str) -> Result<Materialized, AppError> {
+async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Materialized, AppError> {
     validate_id(id)?;
     let http = client()?;
 
@@ -66,7 +120,27 @@ async fn materialize(settings: &Settings, id: &str) -> Result<Materialized, AppE
     //    directe fournie par la marketplace (à terme, kubuno.com — supposée déjà
     //    résolue pour la plateforme). Repli : asset de la Release GitHub choisi selon
     //    `std::env::consts::OS/ARCH`.
-    let asset = match detail.download_url.clone() {
+    // Le catalogue dit ce que le module publie, plateforme par plateforme : c'est
+    // la source la plus fiable, et la seule qui fonctionne ailleurs que sur Linux.
+    let asset = if let Some(a) = detail.artifact.as_ref().and_then(super::artifact::from_recommendation) {
+        // Le catalogue a choisi pour cette plateforme : on suit sa recommandation.
+        a
+    } else if let Some(a) = super::artifact::from_catalogue(&detail.artifacts) {
+        // Catalogue plus ancien, qui liste sans recommander : on trie ici.
+        a
+    } else if !detail.artifacts.is_empty() {
+        // Le catalogue décrit bien ce module, mais rien d'installable ici : le
+        // dire franchement vaut mieux que retomber sur une devinette qui, au
+        // mieux, téléchargerait un installateur système que le core ne sait pas
+        // piloter.
+        let dispo: Vec<String> = detail.artifacts.iter()
+            .map(|a| format!("{} {}/{}", a.kind, a.os, a.arch)).collect();
+        return Err(AppError::Validation(format!(
+            "« {id} » ne publie rien d'installable depuis la console pour {}/{} (disponible : {}). \
+             Installez-le par son paquet système.",
+            std::env::consts::OS, std::env::consts::ARCH, dispo.join(", ")
+        )));
+    } else { match detail.download_url.clone() {
         Some(url) => {
             if !url.starts_with("https://") {
                 return Err(AppError::Validation("URL d'artefact non sécurisée (HTTPS requis)".into()));
@@ -76,7 +150,7 @@ async fn materialize(settings: &Settings, id: &str) -> Result<Materialized, AppE
             Artifact { url, kind, sha256: detail.sha256.as_deref().map(|s| s.trim_start_matches("sha256:").to_ascii_lowercase()) }
         }
         None => resolve_artifact(&http, &repo, &detail.version).await?,
-    };
+    } };
     tracing::info!(module_id = %id, version = %detail.version, os = std::env::consts::OS, arch = std::env::consts::ARCH, kind = ?asset.kind, url = %asset.url, "Marketplace : téléchargement de l'artefact");
     set_phase(id, "downloading", "Téléchargement de l'artefact…");
     let bytes = http
@@ -92,7 +166,25 @@ async fn materialize(settings: &Settings, id: &str) -> Result<Materialized, AppE
     // 2b) Vérification d'intégrité SHA-256 (empreinte publiée par GitHub). Échec DUR
     //     en cas de divergence ; simple avertissement si aucune empreinte n'est fournie.
     set_phase(id, "verifying", "Vérification de l'intégrité…");
-    match asset.sha256.as_deref() {
+    // Le manifeste signé, quand il est disponible ET valide, fait autorité sur
+    // l'empreinte : c'est la seule que quelqu'un ait signée. À défaut, on garde
+    // celle que le catalogue annonce — et la règle de non-régression ci-dessous
+    // empêche qu'une signature ou une empreinte disparaisse sans conséquence.
+    let signed = super::manifest::fetch_signed(&http, &super::catalog::catalog_base()).await;
+    let signed_digest = signed.as_ref().and_then(|s| s.digest_for(id, &asset.url).map(str::to_string));
+    if signed_digest.is_none() && was_signed_before(db, id).await {
+        // Deux situations très différentes derrière la même absence.
+        return if signed.is_none() {
+            tracing::error!(module_id = %id, "Marketplace : manifeste signé indisponible pour un module déjà signé — installation reportée");
+            Err(super::manifest::unavailable_error(id))
+        } else {
+            tracing::error!(module_id = %id, "Marketplace : ce module était signé, le manifeste actuel ne le couvre plus — installation refusée");
+            Err(super::manifest::downgrade_error(id))
+        };
+    }
+    let asset_sha = signed_digest.clone().or_else(|| asset.sha256.clone());
+
+    match asset_sha.as_deref() {
         Some(expected) => {
             let actual = sha256_hex(&bytes);
             if actual != expected {
@@ -102,8 +194,34 @@ async fn materialize(settings: &Settings, id: &str) -> Result<Materialized, AppE
                 )));
             }
             tracing::info!(module_id = %id, sha256 = %actual, "Marketplace : intégrité SHA-256 vérifiée");
+            // Ce module est désormais de ceux dont on sait qu'ils s'accompagnent
+            // d'une empreinte : une version ultérieure qui n'en aurait plus sera
+            // refusée (voir la branche `None`).
+            remember_verified(db, id, &actual, signed_digest.is_some()).await;
+            if signed_digest.is_some() {
+                tracing::info!(module_id = %id, "Marketplace : empreinte attestée par le manifeste signé du catalogue");
+            } else {
+                // Politique retenue : on accepte, mais on le dit — et la règle de
+                // non-régression ci-dessus empêche d'en profiter deux fois.
+                tracing::warn!(module_id = %id, "Marketplace : origine NON SIGNÉE — empreinte vérifiée, mais rien n'atteste qui l'a produite");
+            }
         }
-        None => tracing::warn!(module_id = %id, "Marketplace : aucune empreinte SHA-256 publiée — intégrité non vérifiée"),
+        None => {
+            // Une empreinte absente n'est tolérable que si ce module n'en a
+            // jamais eu. Sinon c'est une régression, et la retirer du catalogue
+            // suffirait à désactiver toute la vérification.
+            if was_verified_before(db, id).await {
+                tracing::error!(
+                    module_id = %id,
+                    "Marketplace : empreinte SHA-256 absente alors que ce module en avait une — installation refusée"
+                );
+                return Err(AppError::Validation(format!(
+                    "« {id} » a déjà été installé avec une empreinte vérifiée ; l'artefact proposé n'en a plus. \
+                     Installation refusée : une empreinte qui disparaît est une régression, pas une nouveauté."
+                )));
+            }
+            tracing::warn!(module_id = %id, "Marketplace : aucune empreinte SHA-256 publiée — intégrité non vérifiée");
+        }
     }
 
     // 3) Staging dans le store (inscriptible par le core).
@@ -185,7 +303,7 @@ fn install_node<'a>(
         }
 
         // 1) Matérialise CE module (téléchargement/extraction/relocalisation).
-        let mat = materialize(&settings, id).await?;
+        let mat = materialize(&settings, &db, id).await?;
         let deps = mat.manifest.module.dependencies.clone();
 
         // 2) Installe les dépendances absentes du disque, AVANT de démarrer ce module.

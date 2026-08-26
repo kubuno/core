@@ -90,8 +90,32 @@ impl ModuleManifest {
 
     /// Construit la commande tokio selon le runtime.
     /// `module_dir` : /usr/lib/kubuno/modules/<id>/
+    /// L'exécutable à lancer, tel qu'il existe RÉELLEMENT sur le disque.
+    ///
+    /// Un module déclare un seul `entrypoint` — `kubuno-drive` — pour tous les
+    /// systèmes, mais sur Windows le fichier livré s'appelle `kubuno-drive.exe`.
+    /// Joindre le nom déclaré sans plus de façons donnerait un chemin qui
+    /// n'existe pas, et l'échec ressemblerait à un binaire manquant.
+    ///
+    /// On préfère donc le nom déclaré quand il existe, et on retombe sur la
+    /// variante `.exe`. Le repli vaut sur tous les systèmes : un module
+    /// empaqueté pour Windows et inspecté ailleurs se comporte pareil.
+    pub fn entrypoint_path(&self, module_dir: &Path) -> PathBuf {
+        let declared = module_dir.join(&self.process.entrypoint);
+        if declared.is_file() {
+            return declared;
+        }
+        let with_exe = module_dir.join(format!("{}.exe", self.process.entrypoint));
+        if with_exe.is_file() {
+            return with_exe;
+        }
+        // Ni l'un ni l'autre : on rend le nom déclaré pour que le message
+        // d'erreur parle du chemin attendu, pas d'une variante inventée.
+        declared
+    }
+
     pub fn build_tokio_command(&self, module_dir: &Path) -> tokio::process::Command {
-        let entrypoint = module_dir.join(&self.process.entrypoint);
+        let entrypoint = self.entrypoint_path(module_dir);
 
         let mut cmd = match self.module.runtime.as_str() {
             "python" => {

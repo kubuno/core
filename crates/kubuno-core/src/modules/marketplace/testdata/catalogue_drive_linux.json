@@ -1,0 +1,62 @@
+{
+ "id": "drive",
+ "name": "Drive",
+ "author": "Kubuno",
+ "official": true,
+ "category": "Bureautique",
+ "accent": "#1e8e3e",
+ "version": "0.1.6",
+ "rating": null,
+ "reviews": 0,
+ "downloads": 0,
+ "installs": "123",
+ "installs_count": 123,
+ "updated": "Aperçu",
+ "tags": [
+  "officiel",
+  "AGPLv3"
+ ],
+ "summary": "Stockage de fichiers, partage, recherche et montages distants.",
+ "description": "Stockage de fichiers, partage, recherche et montages distants.",
+ "license": "AGPL-3.0",
+ "featured": false,
+ "installable": true,
+ "artifact": {
+  "os": "linux",
+  "arch": "x86_64",
+  "kind": "deb",
+  "filename": "kubuno-drive_0.1.6-37.g4b53eec_amd64.deb",
+  "url": "https://github.com/kubuno/drive/releases/download/v0.1.6/kubuno-drive_0.1.6-37.g4b53eec_amd64.deb",
+  "size": 41074710,
+  "sha256": "d56153527bc65df853c72a2e78c94f2eae68c985ce5b731162237187cff01541",
+  "release": "v0.1.6"
+ },
+ "artifacts": [
+  {
+   "os": "linux",
+   "arch": "x86_64",
+   "kind": "deb",
+   "filename": "kubuno-drive_0.1.6-37.g4b53eec_amd64.deb",
+   "url": "https://github.com/kubuno/drive/releases/download/v0.1.6/kubuno-drive_0.1.6-37.g4b53eec_amd64.deb",
+   "size": 41074710,
+   "sha256": "d56153527bc65df853c72a2e78c94f2eae68c985ce5b731162237187cff01541",
+   "release": "v0.1.6"
+  },
+  {
+   "os": "linux",
+   "arch": "x86_64",
+   "kind": "rpm",
+   "filename": "kubuno-drive-0.1.6-1.x86_64.rpm",
+   "url": "https://github.com/kubuno/drive/releases/download/v0.1.6/kubuno-drive-0.1.6-1.x86_64.rpm",
+   "size": 53953555,
+   "sha256": "a5ce757e6c5d3ba893bc7b50ccd58233a899d9719339d13dcacbf61cbfea5593",
+   "release": "v0.1.6"
+  }
+ ],
+ "links": {
+  "self": "http://192.168.1.220/kubuno.com/api/v1/modules/drive",
+  "html": "http://192.168.1.220/kubuno.com/marketplace/drive",
+  "repo": "https://github.com/kubuno/drive",
+  "homepage": null
+ }
+}

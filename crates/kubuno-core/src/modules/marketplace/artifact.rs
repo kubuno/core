@@ -52,6 +52,95 @@ pub(super) struct Artifact {
     pub kind:   ArtifactKind,
 }
 
+/// Une URL d'artefact est-elle acceptable ?
+///
+/// HTTPS exigé : le catalogue est authentifié par sa signature, mais l'artefact
+/// se télécharge ailleurs — en clair, n'importe qui sur le chemin le remplace.
+/// L'empreinte le rattraperait, sauf qu'on ne veut pas dépendre d'un seul
+/// rempart. Exception faite de la boucle locale, qui n'a pas de chemin réseau à
+/// détourner et sans laquelle on ne peut pas éprouver le dispositif.
+fn acceptable_url(url: &str) -> bool {
+    if url.starts_with("https://") {
+        return true;
+    }
+    url.starts_with("http://127.0.0.1")
+        || url.starts_with("http://localhost")
+        || url.starts_with("http://[::1]")
+}
+
+/// Traduit la recommandation du catalogue en artefact téléchargeable.
+///
+/// Le catalogue a déjà fait le tri pour la plateforme annoncée ; il reste à
+/// vérifier que le core sait ouvrir ce format — refuser franchement vaut mieux
+/// que télécharger cinquante mégaoctets pour buter dessus.
+pub(super) fn from_recommendation(a: &crate::modules::marketplace::catalog::CatalogArtifact)
+    -> Option<Artifact>
+{
+    if !acceptable_url(&a.url) {
+        tracing::error!(url = %a.url, "Marketplace : artefact proposé hors HTTPS — ignoré");
+        return None;
+    }
+    let kind = match a.kind.to_ascii_lowercase().as_str() {
+        "kbpkg" | "zip" => ArtifactKind::Zip,
+        "deb"           => ArtifactKind::Deb,
+        "tar.gz" | "tgz" => ArtifactKind::TarGz,
+        other => {
+            tracing::warn!(kind = %other, asset = %a.filename,
+                "Marketplace : format recommandé par le catalogue que le core ne sait pas ouvrir");
+            return None;
+        }
+    };
+    tracing::info!(asset = %a.filename, kind = %a.kind, "Marketplace : artefact recommandé par le catalogue");
+    Some(Artifact { url: a.url.clone(), sha256: a.sha256.as_ref().map(|h| h.to_ascii_lowercase()), kind })
+}
+
+/// Choisit, parmi ce que le catalogue annonce, l'artefact installable ici.
+///
+/// Le catalogue dit ce que chaque module publie réellement ; il n'y a donc plus
+/// à deviner d'après un nom de fichier. Deux refus explicites valent mieux qu'un
+/// choix approximatif :
+///   - un artefact d'une autre plateforme n'est jamais retenu ;
+///   - un installateur système (`.exe`, `.rpm`, `.pkg`) n'est pas retenu non
+///     plus : le core sait déballer une archive, pas piloter l'installateur d'un
+///     système. Tant qu'un module ne publie que cela pour une plateforme,
+///     l'installation depuis la console y est impossible — c'est précisément ce
+///     que le format `.kbpkg` doit résoudre.
+pub(super) fn from_catalogue(arts: &[crate::modules::marketplace::catalog::CatalogArtifact])
+    -> Option<Artifact>
+{
+    let os   = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    // Par ordre de préférence : le format unique d'abord, puis les archives que
+    // le core sait ouvrir.
+    for wanted in ["kbpkg", "deb", "tar.gz", "zip"] {
+        let Some(hit) = arts.iter().find(|a| {
+            acceptable_url(&a.url)
+                && a.kind.eq_ignore_ascii_case(wanted)
+                && a.os.eq_ignore_ascii_case(os)
+                && (a.arch.eq_ignore_ascii_case(arch) || a.arch.eq_ignore_ascii_case("universal"))
+        }) else {
+            continue; // ce format n'est pas publié ici : on essaie le suivant
+        };
+        // `kbpkg` est une archive ZIP ; les autres portent déjà leur format.
+        let kind = match wanted {
+            "kbpkg" | "zip" => ArtifactKind::Zip,
+            "deb"           => ArtifactKind::Deb,
+            _               => ArtifactKind::TarGz,
+        };
+        tracing::info!(
+            asset = %hit.filename, kind = %hit.kind,
+            "Marketplace : artefact désigné par le catalogue pour {os}/{arch}"
+        );
+        return Some(Artifact {
+            url: hit.url.clone(),
+            sha256: hit.sha256.as_ref().map(|h| h.to_ascii_lowercase()),
+            kind,
+        });
+    }
+    None
+}
+
 /// Suffixes de nom d'asset acceptés pour l'OS/arch **du core**, par ordre de
 /// préférence. Le téléchargement dépend donc de la plateforme d'exécution du core
 /// (Windows → binaires Windows, macOS → macOS, Linux → .deb/tar.gz).
@@ -133,4 +222,99 @@ pub(super) async fn resolve_artifact(
         "aucun artefact {}/{} dans les releases de {owner}/{name}",
         std::env::consts::OS, std::env::consts::ARCH
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::marketplace::catalog::{CatalogArtifact, MarketModule};
+
+    fn art(os: &str, arch: &str, kind: &str) -> CatalogArtifact {
+        CatalogArtifact {
+            os: os.into(), arch: arch.into(), kind: kind.into(),
+            filename: format!("kubuno-drive.{kind}"),
+            url: format!("https://example.test/kubuno-drive.{kind}"),
+            size: 1, sha256: Some("ABCDEF".into()),
+        }
+    }
+
+    /// The catalogue's own payload must deserialize, artefacts included —
+    /// otherwise the server silently falls back to guessing.
+    #[test]
+    fn reads_a_real_catalogue_payload() {
+        let json = include_str!("testdata/catalogue_drive.json");
+        let m: MarketModule = serde_json::from_str(json).expect("payload du catalogue");
+        assert_eq!(m.id, "drive");
+        assert!(!m.artifacts.is_empty(), "les artefacts doivent être lus");
+        assert!(m.artifacts.iter().any(|a| a.kind == "deb" && a.os == "linux"));
+    }
+
+    #[test]
+    fn ignores_other_platforms() {
+        let other = if std::env::consts::OS == "linux" { "windows" } else { "linux" };
+        assert!(from_catalogue(&[art(other, std::env::consts::ARCH, "deb")]).is_none());
+    }
+
+    /// A module that only ships a system installer for this platform cannot be
+    /// installed from the console: the server unpacks archives, it does not drive
+    /// an operating system's installer.
+    #[test]
+    fn refuses_system_installers() {
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        assert!(from_catalogue(&[art(os, arch, "exe"), art(os, arch, "pkg"), art(os, arch, "rpm")]).is_none());
+    }
+
+    #[test]
+    fn prefers_the_single_format_then_falls_back() {
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        let chosen = from_catalogue(&[art(os, arch, "deb"), art(os, arch, "kbpkg")]).expect("un artefact");
+        assert!(chosen.url.ends_with(".kbpkg"), "le format unique passe avant le reste");
+        assert_eq!(chosen.kind, ArtifactKind::Zip);
+        // Sans kbpkg, une archive que le core sait ouvrir fait l'affaire.
+        let fallback = from_catalogue(&[art(os, arch, "deb")]).expect("repli");
+        assert_eq!(fallback.kind, ArtifactKind::Deb);
+        // L'empreinte est normalisée en minuscules pour la comparaison.
+        assert_eq!(fallback.sha256.as_deref(), Some("abcdef"));
+    }
+
+    #[test]
+    fn accepts_a_universal_build() {
+        let os = std::env::consts::OS;
+        assert!(from_catalogue(&[art(os, "universal", "kbpkg")]).is_some());
+    }
+}
+
+#[cfg(test)]
+mod recommendation_tests {
+    use super::*;
+    use crate::modules::marketplace::catalog::MarketModule;
+
+    /// The catalogue, asked from a given platform, answers about that platform:
+    /// it narrows the list and names the artefact to install. The server must
+    /// read that answer — otherwise it goes back to sorting things out itself.
+    #[test]
+    fn follows_the_catalogue_recommendation() {
+        let json = include_str!("testdata/catalogue_drive_linux.json");
+        let m: MarketModule = serde_json::from_str(json).expect("charge utile par plateforme");
+        let rec = m.artifact.as_ref().expect("le catalogue recommande un artefact");
+        assert_eq!(rec.os, "linux");
+        let chosen = from_recommendation(rec).expect("format connu du core");
+        assert_eq!(chosen.kind, ArtifactKind::Deb);
+        assert!(chosen.url.ends_with(".deb"));
+        assert!(chosen.sha256.is_some(), "l'empreinte accompagne la recommandation");
+    }
+
+    /// A system installer is never followed, even when recommended: the server
+    /// unpacks archives, it does not drive an operating system's installer.
+    #[test]
+    fn declines_a_format_it_cannot_open() {
+        let a = crate::modules::marketplace::catalog::CatalogArtifact {
+            os: std::env::consts::OS.into(), arch: std::env::consts::ARCH.into(),
+            kind: "pkg".into(), filename: "x.pkg".into(),
+            url: "https://example.test/x.pkg".into(), size: 1, sha256: None,
+        };
+        assert!(from_recommendation(&a).is_none());
+    }
 }

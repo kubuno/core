@@ -5,7 +5,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 
-const CATALOG_BASE: &str = "https://www.kubuno.com/api/v1/modules";
+/// Base du catalogue public.
+///
+/// Le catalogue a quitté `www.kubuno.com/api/v1` pour son propre service, sur
+/// `api.kubuno.com/v1` : l'ancienne adresse répond désormais 404. Elle est
+/// surchargeable par `KUBUNO_MARKETPLACE_URL`, ce qui sert à deux choses —
+/// éprouver un core contre un catalogue local, et permettre à une instance de
+/// suivre un catalogue qui n'est pas celui de kubuno.com.
+const CATALOG_DEFAULT: &str = "https://api.kubuno.com/v1/modules";
+
+pub(super) fn catalog_base() -> String {
+    std::env::var("KUBUNO_MARKETPLACE_URL")
+        .ok()
+        .map(|v| v.trim().trim_end_matches('/').to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| CATALOG_DEFAULT.to_string())
+}
 const USER_AGENT: &str = "Kubuno-Core/marketplace";
 
 // ── Modèles du catalogue ─────────────────────────────────────────────────────
@@ -20,6 +35,24 @@ pub struct MarketLinks {
     pub repo: Option<String>,
     #[serde(default)]
     pub homepage: Option<String>,
+}
+
+/// Un artefact publié par un module, tel que le catalogue le décrit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogArtifact {
+    /// `linux` | `windows` | `macos`
+    pub os:   String,
+    /// `x86_64` | `aarch64` | `universal`
+    pub arch: String,
+    /// `kbpkg` | `deb` | `rpm` | `exe` | `pkg`
+    pub kind: String,
+    #[serde(default)]
+    pub filename: String,
+    pub url:  String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +88,18 @@ pub struct MarketModule {
     /// (+ `sha256`) pour que le core télécharge directement, SANS modification.
     #[serde(default, alias = "artifact_url", alias = "download")]
     pub download_url: Option<String>,
+    /// Ce que le module publie réellement, par plateforme. Renseigné par le
+    /// catalogue à partir des releases du module : sans lui, le core doit
+    /// DEVINER l'artefact d'après un suffixe de nom de fichier, une devinette qui
+    /// n'a jamais correspondu à ce que produisent Windows et macOS.
+    #[serde(default)]
+    pub artifacts: Vec<CatalogArtifact>,
+    /// Ce que le catalogue recommande d'installer **pour la plateforme annoncée
+    /// dans la requête**. Le choix appartient au catalogue : il peut ainsi
+    /// changer de règle — préférer le format unique à un paquet système — sans
+    /// qu'aucune instance déjà déployée n'ait à être mise à jour.
+    #[serde(default)]
+    pub artifact: Option<CatalogArtifact>,
     /// Empreinte SHA-256 hex de l'artefact `download_url` (vérification d'intégrité).
     #[serde(default, alias = "sha256sum", alias = "checksum")]
     pub sha256:       Option<String>,
@@ -70,6 +115,16 @@ pub(super) fn client() -> Result<reqwest::Client, AppError> {
         .map_err(|e| AppError::Internal(anyhow::anyhow!("client HTTP marketplace: {e}")))
 }
 
+/// Plateforme du core, telle qu'annoncée au catalogue.
+///
+/// Sans elle, le catalogue renverrait les artefacts de tous les systèmes et il
+/// reviendrait à chaque core de trier — ce qu'il faisait, mal, en devinant
+/// d'après un suffixe de nom de fichier.
+fn platform_query() -> String {
+    // Les noms de la bibliothèque standard sont déjà ceux qu'attend le catalogue.
+    format!("os={}&arch={}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
 #[derive(Deserialize)]
 struct Envelope<T> {
     data: T,
@@ -78,7 +133,7 @@ struct Envelope<T> {
 /// Récupère le catalogue complet des modules disponibles.
 pub async fn fetch_catalog() -> Result<Vec<MarketModule>, AppError> {
     let resp = client()?
-        .get(CATALOG_BASE)
+        .get(format!("{}?{}", catalog_base(), platform_query()))
         .send()
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("appel catalogue marketplace: {e}")))?;
@@ -98,7 +153,7 @@ pub async fn fetch_catalog() -> Result<Vec<MarketModule>, AppError> {
 /// Récupère le détail d'un module du catalogue.
 pub async fn fetch_detail(id: &str) -> Result<MarketModule, AppError> {
     validate_id(id)?;
-    let url = format!("{CATALOG_BASE}/{id}");
+    let url = format!("{}/{id}?{}", catalog_base(), platform_query());
     let resp = client()?
         .get(&url)
         .send()

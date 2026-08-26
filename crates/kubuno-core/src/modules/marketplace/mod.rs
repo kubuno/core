@@ -23,6 +23,7 @@ mod artifact;
 mod catalog;
 mod extract;
 mod install;
+mod manifest;
 mod progress;
 
 pub use catalog::{fetch_catalog, fetch_detail, validate_id, MarketLinks, MarketModule};

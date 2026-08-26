@@ -248,6 +248,27 @@ async fn supervise(
         tracing::warn!(module_id = %module_id, dir = %data_dir, error = %e, "Création du répertoire de données du module impossible");
     }
 
+    // Working directory: `spawn` reports a missing CWD as ENOENT — the very same
+    // error as a missing executable — so a module whose configuration directory
+    // could not be created died five times over with a message pointing at the
+    // binary, which was there all along. Only a directory that EXISTS is handed
+    // to the child; the module's own directory is the last resort, and it is
+    // always present since that is where the binary was found.
+    let work_dir = [config_dir.as_str(), data_dir.as_str()]
+        .into_iter()
+        .find(|d| Path::new(d).is_dir())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| module_dir.clone());
+    if work_dir.as_os_str() != config_dir.as_str() {
+        tracing::warn!(
+            module_id = %module_id,
+            prevu     = %config_dir,
+            retenu    = %work_dir.display(),
+            "Répertoire de configuration du module inaccessible — le module démarre \
+             depuis un répertoire de repli et n'aura pas sa configuration propre"
+        );
+    }
+
     let mut consecutive_failures: u32 = 0;
 
     loop {
@@ -272,7 +293,7 @@ async fn supervise(
             .env("KUBUNO_DB_USER",         &db_credentials.user)
             .env("KUBUNO_DB_PASSWORD",     &db_credentials.password)
             .env("KUBUNO_DB_NAME",         &db_credentials.database)
-            .current_dir(&config_dir)
+            .current_dir(&work_dir)
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());
 
@@ -322,10 +343,13 @@ async fn supervise(
             Err(e) => {
                 consecutive_failures += 1;
                 tracing::error!(
-                    module_id = %module_id,
-                    error     = %e,
-                    attempt   = consecutive_failures,
-                    "Impossible de lancer le module"
+                    module_id   = %module_id,
+                    error       = %e,
+                    executable  = %manifest.entrypoint_path(&module_dir).display(),
+                    repertoire  = %work_dir.display(),
+                    attempt     = consecutive_failures,
+                    "Impossible de lancer le module (vérifiez l'exécutable ET le répertoire de travail : \
+                     les deux manquants donnent la même erreur « No such file or directory »)"
                 );
                 if consecutive_failures >= 5 {
                     tracing::error!(
