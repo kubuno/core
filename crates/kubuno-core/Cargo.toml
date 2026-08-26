@@ -65,7 +65,7 @@ chrono.workspace = true
 hickory-resolver.workspace = true
 chrono-tz.workspace = true
 ipnet.workspace  = true
-libc.workspace   = true
+
 bytes.workspace   = true
 zip.workspace     = true
 futures.workspace = true
@@ -87,3 +87,11 @@ kubuno-storage.workspace    = true
 kubuno-mcp.workspace        = true
 kubuno-modauth.workspace    = true
 utoipa.workspace            = true
+
+# POSIX only: `statvfs` and friends. Declared per platform because calling it
+# unconditionally is what kept the server from compiling for Windows.
+[target.'cfg(unix)'.dependencies]
+libc.workspace   = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

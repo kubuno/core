@@ -9,6 +9,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+
+### Fixed
+
+- **The server would not compile for Windows at all.** The disk-space probe
+  called `statvfs` unconditionally — a POSIX function absent there — so the
+  Windows installer had stopped being produced, silently, while the release kept
+  shipping the three other packages. The probe now has one implementation per
+  system, `GetDiskFreeSpaceExW` answering the same two figures on Windows, and
+  `libc` is declared as the POSIX-only dependency it is.
 ## [0.1.8] - 2026-08-26
 
 

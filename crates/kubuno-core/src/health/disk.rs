@@ -5,6 +5,7 @@
 //! read of filesystem metadata: nothing is spawned, so the seccomp filter
 //! (which refuses `execve`/`execveat`) is unaffected.
 
+#[cfg(unix)]
 use std::ffi::CString;
 use std::path::Path;
 
@@ -44,6 +45,12 @@ pub fn usage_of(path: &Path) -> Option<DiskUsage> {
     // directory that has not been created yet — which is exactly the volume the
     // operator cares about.
     let target = first_existing_ancestor(path)?;
+    usage_of_existing(&target)
+}
+
+/// The POSIX answer.
+#[cfg(unix)]
+fn usage_of_existing(target: &Path) -> Option<DiskUsage> {
     let raw = CString::new(target.as_os_str().as_encoded_bytes()).ok()?;
 
     // SAFETY: `raw` is a valid NUL-terminated C string that outlives the call,
@@ -71,6 +78,43 @@ pub fn usage_of(path: &Path) -> Option<DiskUsage> {
         total_bytes: (stat.f_blocks as u64).saturating_mul(unit),
         available_bytes: (stat.f_bavail as u64).saturating_mul(unit),
     })
+}
+
+/// The Windows answer.
+///
+/// `statvfs` does not exist there, and calling it unconditionally is what kept
+/// the server from compiling for Windows at all. `GetDiskFreeSpaceExW` reports
+/// the same two figures, with one difference worth knowing: it answers for the
+/// calling user's quota when one is in force, which is the honest number for a
+/// service that writes as itself.
+#[cfg(windows)]
+fn usage_of_existing(target: &Path) -> Option<DiskUsage> {
+    use std::os::windows::ffi::OsStrExt;
+
+    // A NUL-terminated wide string, as every Windows path API expects.
+    let wide: Vec<u16> = target.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut available: u64 = 0;
+    let mut total: u64 = 0;
+
+    // SAFETY: `wide` is NUL-terminated and outlives the call; both outputs are
+    // owned here and only read once the call reports success.
+    let ok = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut available,
+            &mut total,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        tracing::warn!(
+            path = %target.display(),
+            error = %std::io::Error::last_os_error(),
+            "health: espace libre du volume de données indisponible",
+        );
+        return None;
+    }
+    Some(DiskUsage { total_bytes: total, available_bytes: available })
 }
 
 /// Walks up until something exists. A relative `./data/files` on a fresh
