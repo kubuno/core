@@ -9,6 +9,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-26
+
 
 ### Fixed
 
@@ -690,7 +692,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   turned the Calendar radio buttons into black discs when handed `var(--color-primary)`.
   Theme colours are now resolved before they reach the canvas.
 
-[Unreleased]: https://github.com/kubuno/core/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/kubuno/core/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/kubuno/core/releases/tag/v0.1.9
 [0.1.8]: https://github.com/kubuno/core/releases/tag/v0.1.8
 [0.1.7]: https://github.com/kubuno/core/releases/tag/v0.1.7
 [0.1.6]: https://github.com/kubuno/core/releases/tag/v0.1.6
