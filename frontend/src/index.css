@@ -232,14 +232,18 @@ button {
      theme.css). Un thème peut toujours imposer `--kb-window-titlebar`. */
   background: var(--kb-window-titlebar, var(--color-primary));
   color: var(--kb-window-title-fg);
-  border-radius: var(--kb-window-inner-radius) var(--kb-window-inner-radius) 0 0;
-  /* Hairline Chromium : aux zooms fractionnaires, le bord clippé de la fenêtre
-     (overflow hidden + radius) et le tracé du bandeau s'arrondissent au pixel
-     différemment → un filet clair d'1px peut apparaître le long des côtés du
-     bandeau. On fait déborder le bandeau d'1px de chaque côté DANS SA PROPRE
-     couleur ; le clip arrondi de la fenêtre contient ce débord. */
-  box-shadow: 1px 0 0 var(--kb-window-titlebar, var(--color-primary)),
-              -1px 0 0 var(--kb-window-titlebar, var(--color-primary));
+  /* No radius of its own: the window's rounded overflow clip shapes the top
+     corners. A self-drawn curve, once the band is widened below, would no
+     longer coincide with the clip's curve and leave 1px ears. */
+  /* Chromium hairline: the band used to end EXACTLY on the window's clip edge
+     (padding 0, no border), so the band's own antialiased edge could leave a
+     1px light seam against the white surface at fractional zoom/DPR — and a
+     box-shadow bleed is useless there, `overflow: hidden` clips it away.
+     Widen the band 1px past each side instead: its painted edge now lies
+     BEYOND the clip boundary, so the rounded clip always cuts through solid
+     band colour and no seam can exist. */
+  margin-left: -1px;
+  margin-right: -1px;
 }
 /* Title actions were written for a light bar and carry their own dark utility
  * colours; on an accent band those are unreadable. Two class selectors beat a
