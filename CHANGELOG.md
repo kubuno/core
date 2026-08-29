@@ -23,6 +23,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Classic window-caption glyphs on dock groups.** Maximize is now a plain
+  square and restore two overlapping squares, instead of diagonal double
+  arrows.
+
 - **New logos for every Office sub-module** — Documents, Spreadsheets,
   Presentations, Projects, Diagrams, Data, Script, Maths and Whiteboard —
   served as the

@@ -12,7 +12,7 @@
 // exactly like WorkspaceShell was generalised from `paintsharp/ui/EditorShell`.
 import { useEffect, useRef, useState, Fragment } from 'react'
 import type { ReactNode, CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { X, GripVertical, GripHorizontal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Square } from 'lucide-react'
+import { X, GripVertical, GripHorizontal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Copy, Square } from 'lucide-react'
 import { MenuDropdown, type MenuItem, type MenuDropdownPos } from '@ui'
 import { useDockReopenStore } from '../store/dockReopenStore'
 
@@ -472,7 +472,7 @@ export function DockArea({
             <button type="button" title={grp.max ? 'Restaurer' : 'Agrandir'}
               onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{ e.stopPropagation(); toggleMax(grp.id) }}
               className="flex items-center justify-center rounded-full w-7 h-7 opacity-70 hover:opacity-100 hover:bg-black/10">
-              {grp.max ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              {grp.max ? <Copy size={12} /> : <Square size={12} />}
             </button>
           </div>
         )}
