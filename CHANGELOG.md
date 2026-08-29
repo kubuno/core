@@ -11,14 +11,14 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
-- **Hairline seams beside floating-window title bands are gone.** The accent
-  band used to end exactly on the window's rounded clip edge, so its own
-  antialiased edge could leave a 1px light line along both sides at fractional
-  zoom/DPR. The band is now drawn 1px wider than the window on each side — the
-  clip always cuts through solid band colour — and its top corners are shaped
-  by the window's clip instead of a radius of its own. Windows also snap to
-  whole pixels at mount instead of sitting on the half-pixel positions the
-  initial centring could produce.
+- **Hairline seams beside floating-window title bands are gone.** With rounded
+  corners plus `overflow: hidden`, some GPUs make Chromium apply the rounded
+  clip as an antialiased mask over the whole path — straight sides included —
+  so the clipped accent band lost its outermost pixel column and the white
+  surface showed through as 1px vertical lines. Floating windows no longer
+  clip their children at all: the band and the content area round their own
+  corners instead, so every edge stays crisp. Windows also snap to whole
+  pixels at mount instead of sitting on half-pixel positions.
 
 
 ### Changed

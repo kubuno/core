@@ -232,18 +232,14 @@ button {
      theme.css). Un thème peut toujours imposer `--kb-window-titlebar`. */
   background: var(--kb-window-titlebar, var(--color-primary));
   color: var(--kb-window-title-fg);
-  /* No radius of its own: the window's rounded overflow clip shapes the top
-     corners. A self-drawn curve, once the band is widened below, would no
-     longer coincide with the clip's curve and leave 1px ears. */
-  /* Chromium hairline: the band used to end EXACTLY on the window's clip edge
-     (padding 0, no border), so the band's own antialiased edge could leave a
-     1px light seam against the white surface at fractional zoom/DPR — and a
-     box-shadow bleed is useless there, `overflow: hidden` clips it away.
-     Widen the band 1px past each side instead: its painted edge now lies
-     BEYOND the clip boundary, so the rounded clip always cuts through solid
-     band colour and no seam can exist. */
-  margin-left: -1px;
-  margin-right: -1px;
+  /* The band draws its own top corners. The window root deliberately does NOT
+     clip its children (no overflow:hidden + radius): on some GPUs Chromium
+     applies that rounded clip as an antialiased MASK over the WHOLE path,
+     straight sides included — the masked band then loses its outermost pixel
+     column and the white surface behind shows through as 1px vertical lines
+     (observed on the user's machine; the lines vanish with the radius). Each
+     region rounding itself keeps every edge crisp with no mask at all. */
+  border-radius: var(--kb-window-inner-radius) var(--kb-window-inner-radius) 0 0;
 }
 /* Title actions were written for a light bar and carry their own dark utility
  * colours; on an accent band those are unreadable. Two class selectors beat a
@@ -274,6 +270,9 @@ button {
 
 .kb-window-content {
   background: var(--kb-window-content);
+  /* Own bottom corners: the root no longer clips (see the band note above),
+     so the content must not poke past the window's rounded bottom. */
+  border-radius: 0 0 var(--kb-window-inner-radius) var(--kb-window-inner-radius);
 }
 /* The footer the window draws itself: one rule, one look, everywhere. */
 .kb-window-footer {

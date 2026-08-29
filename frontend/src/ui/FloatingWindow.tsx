@@ -471,8 +471,12 @@ export function FloatingWindow({
         aria-modal={backdrop && !isStandalone}
         // Full-bleed IS the OS window / the phone screen: it must stay opaque, there is
         // nothing meaningful behind it to show through. Only a floating card gets glass.
-        className={`${posCls} flex flex-col overflow-hidden no-print ${className} ${
-          fullBleed ? 'inset-0 bg-white' : 'kb-window'
+        // No overflow-hidden on the floating card: a rounded clip is applied by
+        // Chromium as an antialiased mask over the whole path on some GPUs,
+        // leaving 1px light seams along the band. Band and content round their
+        // own corners instead (index.css).
+        className={`${posCls} flex flex-col no-print ${className} ${
+          fullBleed ? 'overflow-hidden inset-0 bg-white' : 'kb-window'
         }`}
         style={fullBleed ? {
           // Full-bleed: fill the OS window edge-to-edge, no chrome, no clamps.
