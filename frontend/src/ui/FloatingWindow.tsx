@@ -542,8 +542,8 @@ export function FloatingWindow({
               }}
               onMouseDown={e => e.stopPropagation()}
               title="Détacher dans une fenêtre"
-              className="flex-shrink-0 p-1.5 rounded-lg text-current opacity-80
-                         hover:opacity-100 hover:bg-white/20 transition-colors"
+              className="flex-shrink-0 grid place-items-center w-[30px] h-[30px] rounded-[5px]
+                         text-current opacity-80 transition-colors hover:opacity-100 hover:bg-white/20"
             >
               <SquareArrowOutUpRight size={14} />
             </button>

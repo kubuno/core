@@ -253,6 +253,24 @@ button {
 .kb-window-titlebar .kb-window-actions a,
 .kb-window-titlebar .kb-window-actions svg,
 .kb-window-titlebar .kb-window-actions span { color: inherit; }
+/* Caption buttons: every title action gets the close button's EXACT geometry
+ * and hover (30x30, 5px radius, white veil) — same two-class specificity trick,
+ * so whatever utility classes a module wrote can no longer drift. */
+.kb-window-titlebar .kb-window-actions button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 5px;
+  opacity: .8;
+  transition: opacity .15s, background-color .15s;
+  background-color: transparent;
+}
+.kb-window-titlebar .kb-window-actions button:hover {
+  opacity: 1;
+  background-color: rgb(255 255 255 / .2);
+}
 
 .kb-window-content {
   background: var(--kb-window-content);

@@ -23,6 +23,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Uniform caption buttons on floating-window bands.** Every title-bar action
+  now shares the close button's exact geometry and hover (30x30, 5px radius,
+  white veil) and the same spacing, whatever the module drew — enforced by one
+  core rule, pop-out button included.
 - **Classic window-caption glyphs on dock groups.** Maximize is now a plain
   square and restore two overlapping squares, instead of diagonal double
   arrows.
