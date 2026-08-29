@@ -15,7 +15,9 @@ number at release time, and CI publishes that section as the GitHub Release note
   zoom levels Chromium could round the window's clipped edge and the band's
   paint differently, leaving 1px light vertical lines along both sides of the
   accent band. The band now bleeds 1px sideways in its own colour, contained by
-  the window's rounded clip.
+  the window's rounded clip — and the real culprit is fixed too: the initial
+  `translate(-50%, -33%)` centring put windows on half-pixel positions, so they
+  now snap to whole pixels at mount.
 
 
 ### Changed

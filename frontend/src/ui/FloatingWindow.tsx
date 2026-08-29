@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useContext, useMemo, useState } from 'react'
+import { useRef, useEffect, useCallback, useContext, useMemo, useState, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { TFunction } from 'i18next'
 import { SquareArrowOutUpRight, X } from 'lucide-react'
@@ -179,16 +179,26 @@ export function FloatingWindow({
     setZIndex(useWindowZStore.getState().next())
   }, [])
 
-  // Passe en mode pixel (left/top px, transform: none)
-  // Appelé une seule fois, au premier drag, pour "détacher" du centrage CSS
+  // Passe en mode pixel (left/top px ENTIERS, transform: none).
+  // Le centrage CSS `translate(-50%, -33%)` pose la fenêtre sur des DEMI-pixels
+  // dès que sa largeur est impaire : le clip arrondi (overflow hidden) et le
+  // tracé du bandeau se snappent alors différemment → filets verticaux d'1px le
+  // long du bandeau. On détache donc du centrage dès le montage, en arrondissant
+  // à des coordonnées entières.
   const switchToPixelMode = useCallback(() => {
     const el = windowRef.current
     if (!el || inPxMode.current) return
     const rect = el.getBoundingClientRect()
     el.style.transform = 'none'
-    el.style.left      = `${rect.left}px`
-    el.style.top       = `${rect.top}px`
+    el.style.left      = `${Math.round(rect.left)}px`
+    el.style.top       = `${Math.round(rect.top)}px`
     inPxMode.current   = true
+  }, [])
+
+  // Dès le montage (fenêtre flottante seulement) : jamais de position fractionnaire.
+  useLayoutEffect(() => {
+    if (!fullBleed) switchToPixelMode()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Drag ───────────────────────────────────────────────────────────────────
