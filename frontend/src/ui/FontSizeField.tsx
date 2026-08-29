@@ -174,7 +174,7 @@ export function FontSizeField({
   font, onFontChange, fonts, recentFonts,
   size, onSizeChange, sizes,
   minSize = 1, maxSize = 999,
-  height = 30, fontWidth = 150, sizeWidth = 62, fontSize = 14,
+  height = 30, fontWidth = 150, sizeWidth = 62, fontSize = 13.5,
   disabled = false, className, theme = 'light',
 }: FontSizeFieldProps) {
   return (

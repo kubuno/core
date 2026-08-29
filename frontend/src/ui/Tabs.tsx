@@ -126,7 +126,7 @@ export function Tabs<T extends string = string>({
     variant === 'stretched' && 'flex-1 justify-center',
 
     // pills
-    variant === 'pills' && 'rounded-full',
+    variant === 'pills' && 'rounded-md',
     variant === 'pills' && active(id)  && 'bg-primary-light text-primary',
     variant === 'pills' && !active(id) && 'text-text-secondary hover:bg-surface-2',
   )

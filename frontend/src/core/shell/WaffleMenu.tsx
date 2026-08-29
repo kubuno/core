@@ -427,10 +427,10 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
               {editing ? (
                 <div className="px-4 pt-4 pb-1">
                   <div className="flex items-center justify-between">
-                    <Button variant="ghost" onClick={cancel} className="rounded-full px-5 bg-surface-2 hover:bg-surface-3">
+                    <Button variant="ghost" onClick={cancel} className="rounded-md px-5 bg-surface-2 hover:bg-surface-3">
                       {t('common.cancel')}
                     </Button>
-                    <Button variant="primary" onClick={confirm} className="rounded-full px-6">
+                    <Button variant="primary" onClick={confirm} className="rounded-md px-6">
                       {t('shell.ok')}
                     </Button>
                   </div>
@@ -559,7 +559,7 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
               <DropdownMenu.Item asChild>
                 <Link
                   to={adminUrl({ tab: 'marketplace' })}
-                  className="mx-5 mt-3 mb-4 flex items-center justify-center rounded-full
+                  className="mx-5 mt-3 mb-4 flex items-center justify-center rounded-md
                              border border-border px-4 py-2.5 text-center text-xs text-primary
                              hover:bg-black/[0.04] transition-colors outline-none"
                 >

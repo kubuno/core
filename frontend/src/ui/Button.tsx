@@ -23,7 +23,11 @@ const BASE = [
 // Buttons are never bold: colour and fill carry the hierarchy, weight does not.
 const VARIANT: Record<ButtonVariant, string> = {
   primary:   'bg-primary text-white hover:bg-primary-hover active:bg-primary-hover',
-  secondary: 'bg-white border border-border text-text-primary hover:bg-surface-1 active:bg-surface-2',
+  // `border-strong` rather than the plain border token: a button is an actionable
+  // target and needs a firmer outline than the hairlines that merely separate
+  // cards, rows and fields. Reuses the existing step of the scale instead of
+  // introducing a fourth grey.
+  secondary: 'bg-white border border-border-strong text-text-primary hover:bg-surface-1 active:bg-surface-2',
   ghost:     'bg-transparent text-text-secondary hover:bg-surface-2 active:bg-surface-3',
   // The accent, without a fill: what a dialog's confirming action looks like in
   // a footer where the cancel is `ghost`. Distinct from `primary` (filled), which

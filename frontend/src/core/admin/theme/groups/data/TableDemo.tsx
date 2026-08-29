@@ -113,7 +113,7 @@ export default function TableDemo() {
             key={s.id}
             type="button"
             onClick={() => setState(s.id)}
-            className={`rounded-full px-2.5 py-1 transition-colors ${
+            className={`rounded-md px-2.5 py-1 transition-colors ${
               state === s.id ? 'bg-primary-light text-primary' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'
             }`}
             style={{ fontSize: 'var(--kb-text-meta)' }}

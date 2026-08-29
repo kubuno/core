@@ -83,12 +83,12 @@ fn build_header(hash: Option<&str>) -> HeaderValue {
     };
     let csp = format!(
         "default-src 'self'; {script_src}; \
-         style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; \
+         style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; \
          img-src 'self' data: blob: https:; \
          media-src 'self' blob:; \
          connect-src 'self' ws: wss: blob: https: http:; \
          worker-src 'self' blob:; \
-         font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; \
+         font-src 'self' data: https://cdn.jsdelivr.net; \
          frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com; \
          object-src 'none'; base-uri 'self'; form-action 'self'"
     );

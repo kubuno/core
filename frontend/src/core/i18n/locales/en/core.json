@@ -2335,7 +2335,7 @@
     "net_cert_upload": "Upload a certificate",
     "net_cert_chain": "Certificate (PEM chain: leaf + intermediates)",
     "net_cert_key": "Private key (PEM, unencrypted)",
-    "net_cert_key_note": "The private key is encrypted before storage and is never returned by the interface. Replacing a certificate is applied live if HTTPS is already active.",
+    "net_cert_key_note": "The private key is written to the server's disk, readable by the service alone (0600), and is never returned by the interface. Replacing a certificate is applied live if HTTPS is already active.",
     "net_cert_installing": "Installing…",
     "net_cert_install": "Install certificate",
     "net_cert_installed": "Certificate installed.",

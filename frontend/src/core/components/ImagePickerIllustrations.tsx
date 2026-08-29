@@ -25,7 +25,7 @@ export default function ImagePickerIllustrations({ onPick, query }: ImageSourceP
 
   const chip = (id: string | null, label: string) => (
     <button key={id ?? 'all'} type="button" onClick={() => setCollection(id)}
-      className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
+      className={`px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors ${
         collection === id ? 'bg-primary-light text-primary' : 'text-text-secondary hover:bg-surface-2'}`}>
       {label}
     </button>

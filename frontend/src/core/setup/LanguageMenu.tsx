@@ -33,7 +33,7 @@ export function LanguageMenu({ value, onChange }: { value: string; onChange: (ln
           const r = btn.current?.getBoundingClientRect()
           if (r) setPos({ top: r.bottom + 6, left: Math.max(8, r.right - 200), minWidth: 200 })
         }}
-        className="flex h-9 items-center gap-2 rounded-full px-3 text-sm transition-colors"
+        className="flex h-9 items-center gap-2 rounded-md px-3 text-sm transition-colors"
         style={{ color: 'var(--color-text-secondary)', background: 'transparent', border: 0, cursor: 'pointer' }}
       >
         <Globe size={18} />

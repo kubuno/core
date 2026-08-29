@@ -180,7 +180,7 @@ export function OutlinedField({
   // low). height = linePx + 2*padV = FIELD_H.
   const linePx = Math.round(fontSize * 1.35)
   const padV = (FIELD_H - linePx) / 2
-  // Optical correction, measured on the platform font (Google Sans Text): with
+  // Optical correction, measured on the platform font (Outfit): with
   // the line box mathematically centred, the DIGIT glyphs sit 1px high (large
   // font ascent, no descender on digits: glyph gaps measured 17px above vs
   // 19px below). Tilting the padding by 1px centres the visible glyph band.

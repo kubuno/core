@@ -90,7 +90,7 @@ export function stampUrl(g: PageGeometry, w: WatermarkSpec): string | undefined 
     body =
       `<text x="${cx}" y="${cy}" transform="${turn}" text-anchor="middle" ` +
       `dominant-baseline="central" ` +
-      `font-family="Google Sans Text, Google Sans, Roboto, Arial, sans-serif" ` +
+      `font-family="Outfit, Roboto, Arial, sans-serif" ` +
       `font-size="${size.toFixed(1)}" font-weight="700" letter-spacing="2" ` +
       `fill="black" fill-opacity="${w.opacity}">${escapeXml(w.text)}</text>`
   } else {

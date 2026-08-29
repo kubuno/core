@@ -26,7 +26,7 @@
   --color-search-bg: #e9eef6;
 
   /* ── Texte ─────────────────────────────────────────────── */
-  --color-text-primary:   #202124;
+  --color-text-primary:   #444444;
   --color-text-secondary: #5f6368;
   --color-text-tertiary:  #80868b;
   --color-text-nav:        #1f1f1f;  /* texte item nav au repos */
@@ -227,18 +227,18 @@
    * pas mais doit être maintenu partout.
    *
    * Le haut de l'échelle était tassé (18, 20 et 22 en 4px, dont deux échelons
-   * qui ne servaient que 2 fois chacun) ; il saute désormais de 16 à 22.
+   * qui ne servaient que 2 fois chacun) ; il saute désormais de 15,5 à 21,5.
    *
    * AVANT D'EN AJOUTER UNE : les rôles peuvent PARTAGER une taille — ce qui
-   * distingue un libellé d'un titre de carte à 14px, c'est la graisse et la
+   * distingue un libellé d'un titre de carte à 13,5px, c'est la graisse et la
    * couleur, pas un pixel de plus. Un besoin nouveau se résout presque toujours
    * en réutilisant un échelon avec une autre graisse. */
-  --kb-text-micro:   11px;  /* pastilles, compteurs */
-  --kb-text-meta:    12px;  /* métadonnées, légendes */
-  --kb-text-body:    14px;  /* corps : libellés, champs, menus, onglets */
-  --kb-text-heading: 16px;  /* en-têtes de section, titres de carte */
-  --kb-text-title:   22px;  /* nom d'un objet en tête de panneau, gros titre */
-  --kb-text-page:    22px;  /* titre de page (h1) — 28px en administration */
+  --kb-text-micro:   10.5px;  /* pastilles, compteurs */
+  --kb-text-meta:    11.5px;  /* métadonnées, légendes */
+  --kb-text-body:    13.5px;  /* corps : libellés, champs, menus, onglets */
+  --kb-text-heading: 15.5px;  /* en-têtes de section, titres de carte */
+  --kb-text-title:   21.5px;  /* nom d'un objet en tête de panneau, gros titre */
+  --kb-text-page:    22.5px;  /* titre de page (h1) — 27.5px en administration */
 
   /* L'administration porte des titres plus grands que le reste du produit : une
      console se parcourt par grandes sections, et le titre est le repère qui dit
@@ -262,5 +262,5 @@
 
 /* Portée « console d'administration » — voir la note sur `--kb-text-page`. */
 .kb-admin {
-  --kb-text-page: 28px;
+  --kb-text-page: 27.5px;
 }

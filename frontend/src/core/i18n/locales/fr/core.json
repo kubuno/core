@@ -2379,7 +2379,7 @@
     "net_cert_upload": "Importer un certificat",
     "net_cert_chain": "Certificat (chaîne PEM : feuille + intermédiaires)",
     "net_cert_key": "Clé privée (PEM, non chiffrée)",
-    "net_cert_key_note": "La clé privée est chiffrée avant stockage et n'est jamais renvoyée par l'interface. Le remplacement d'un certificat est appliqué à chaud si le HTTPS est déjà actif.",
+    "net_cert_key_note": "La clé privée est écrite sur le disque du serveur, lisible par le seul service (0600), et n'est jamais renvoyée par l'interface. Le remplacement d'un certificat est appliqué à chaud si le HTTPS est déjà actif.",
     "net_cert_installing": "Installation…",
     "net_cert_install": "Installer le certificat",
     "net_cert_installed": "Certificat installé.",

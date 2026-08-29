@@ -75,7 +75,7 @@ export function Dropdown({
   value, onChange, options,
   width, dropdownMinWidth,
   placeholder, disabled = false,
-  height = 36, fontSize = 14,
+  height = 36, fontSize = 13.5,
   className, variant = 'default', buttonStyle,
   focusable = false,
 }: DropdownProps) {

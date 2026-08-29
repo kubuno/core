@@ -47,7 +47,7 @@ export function ViewMenu({ value, onChange, showHidden, onShowHidden, t }: ViewM
       {/* Segmented switch: the four modes are visible at once, so changing view
           is one click instead of open-menu-then-pick. The active segment carries
           a tick — the icon alone reads as "available", not as "current". */}
-      <div role="group" className="inline-flex items-center rounded-full border border-border overflow-hidden">
+      <div role="group" className="inline-flex items-center rounded-md border border-border overflow-hidden">
         {MODES.map((m, i) => {
           const active = value === m.value
           const label  = t(m.labelKey, { defaultValue: m.fallback })

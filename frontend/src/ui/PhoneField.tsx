@@ -102,7 +102,7 @@ function CountrySelect({ value, onChange, primaryColor, large }: {
               onChange={e => setQuery(e.target.value)}
               placeholder="Rechercher un pays"
               style={{
-                width: '100%', height: 34, padding: '0 10px', fontSize: 14,
+                width: '100%', height: 34, padding: '0 10px', fontSize: 13.5,
                 border: '1px solid #dadce0', borderRadius: 6, outline: 'none', boxSizing: 'border-box',
               }}
             />
@@ -120,7 +120,7 @@ function CountrySelect({ value, onChange, primaryColor, large }: {
                   width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                   padding: '9px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
                   background: active ? 'var(--color-primary-light, #e8f0fe)' : 'transparent',
-                  fontSize: 14, color: '#202124',
+                  fontSize: 13.5, color: '#202124',
                 }}
                 onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = '#f1f3f4' }}
                 onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}

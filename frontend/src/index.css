@@ -17,19 +17,23 @@
  * the installation wizard included. A platform cannot borrow its own typeface
  * from one of its modules.
  *
- * Subset to latin + latin-ext and re-encoded as woff2: 368 KB for the whole
- * set, against 6.3 MB of TTF. Drive keeps its font library and its css2
- * endpoint for the fonts USERS pick in documents — a different job. */
-@font-face { font-family: "Google Sans Text"; font-style: normal; font-weight: 400;
-  src: url("/fonts/GoogleSansText-Regular.woff2") format("woff2"); font-display: swap; }
-@font-face { font-family: "Google Sans Text"; font-style: normal; font-weight: 500 600;
-  src: url("/fonts/GoogleSansText-Medium.woff2") format("woff2"); font-display: swap; }
-@font-face { font-family: "Google Sans Text"; font-style: normal; font-weight: 700;
-  src: url("/fonts/GoogleSansText-Bold.woff2") format("woff2"); font-display: swap; }
-@font-face { font-family: "Google Sans Text"; font-style: italic; font-weight: 400;
-  src: url("/fonts/GoogleSansText-Italic.woff2") format("woff2"); font-display: swap; }
-@font-face { font-family: "Google Sans"; font-style: normal; font-weight: 400 700;
-  src: url("/fonts/GoogleSans-Regular.woff2") format("woff2"); font-display: swap; }
+ * Both faces are VARIABLE fonts, so one file covers a whole weight range where
+ * a static family would need one file per weight. Drive keeps its font library
+ * and its css2 endpoint for the fonts USERS pick in documents — a different job.
+ *
+ * Plus Jakarta Sans is the platform's face; it ships its own drawn ITALIC, so
+ * emphasis is a real cut rather than a slant the browser fakes. Outfit stays
+ * available (documents and pickers already offer it).
+ *
+ * Licence: SIL Open Font License 1.1 for both (`/fonts/*-OFL.txt`), which allows
+ * redistribution inside this product — a condition the platform's own typeface
+ * has to meet, since it is packaged and published with every release. */
+@font-face { font-family: "Plus Jakarta Sans"; font-style: normal; font-weight: 200 800;
+  src: url("/fonts/PlusJakartaSans.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Plus Jakarta Sans"; font-style: italic; font-weight: 200 800;
+  src: url("/fonts/PlusJakartaSans-Italic.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Outfit"; font-style: normal; font-weight: 100 900;
+  src: url("/fonts/Outfit.woff2") format("woff2"); font-display: swap; }
 @font-face { font-family: "Roboto"; font-style: normal; font-weight: 100 900;
   src: url("/fonts/Roboto.woff2") format("woff2"); font-display: swap; }
 @font-face { font-family: "DM Mono"; font-style: normal; font-weight: 400;
@@ -48,13 +52,38 @@
   --font-weight-medium: 600 !important;
 }
 
+/* The body text step, same mechanism as the weight override above.
+ *
+ * `text-sm` is the project's body class (~570 files across the host and the 18
+ * modules) and Tailwind resolves it to `var(--text-sm)`. Every module bundle
+ * re-declares that variable at :root with Tailwind's own value, and loads
+ * AFTER the host — so only `!important` moves all of them at once, and only a
+ * variable avoids rewriting hundreds of files with an arbitrary `text-[15px]`.
+ *
+ * Expressed in px, not rem: the scale is a fixed design step here, not something
+ * that should drift with the root font size. */
+:root {
+  --text-sm: 13.5px !important;
+}
+
+/* The secondary text step, same mechanism and same reason as `--text-sm` above.
+ * `text-xs` carries the deliberately smaller text — metadata lines, table
+ * headers, hints, pills — and each module bundle re-declares it at :root with
+ * Tailwind's own value. Kept in step with `--kb-text-meta`.
+ * NOT to be confused with `--kb-text-micro` (10.5px): counters and badges stay
+ * where they are. */
+:root {
+  --text-xs: 11.5px !important;
+}
+
 /* Body font, same mechanism as the weight override above: each module bundle
  * re-declares `--font-family-sans` at :root and loads AFTER the host, so only
  * `!important` reaches all 18 of them without a rebuild.
- * Google's own product stack: Google Sans Text (body copy), Google Sans
- * (display), Roboto — all three self-hosted from System/Fonts. */
+ * Plus Jakarta Sans is the platform's own face — an openly licensed family this
+ * product may actually ship, rather than a vendor's product typeface. Outfit
+ * follows as the second choice, then Roboto for the glyphs neither covers. */
 :root {
-  --font-family-sans: "Google Sans Text", "Google Sans", Roboto, Arial, sans-serif !important;
+  --font-family-sans: "Plus Jakarta Sans", Outfit, Roboto, Arial, sans-serif !important;
 }
 
 /* Buttons are NEVER bold — project-wide rule. Colour and fill carry the
@@ -64,9 +93,12 @@
  * and their CSS loads AFTER the host's — only `!important` reaches them all
  * without a rebuild.
  * Scoped to the button element itself: a child element that is deliberately
- * bold (a badge, a count) keeps its own weight. */
+ * bold (a badge, a count) keeps its own weight.
+ * The value tracks `body`'s weight: the rule forbids a button from being BOLDER
+ * than running text, not from matching it — a button lighter than the sentence
+ * next to it would read as disabled. */
 button {
-  font-weight: var(--font-weight-normal, 400) !important;
+  font-weight: 500 !important;
 }
 
 /* Corner-radius scale, same mechanism as the weight override above: every
@@ -201,6 +233,13 @@ button {
   background: var(--kb-window-titlebar, var(--color-primary));
   color: var(--kb-window-title-fg);
   border-radius: var(--kb-window-inner-radius) var(--kb-window-inner-radius) 0 0;
+  /* Hairline Chromium : aux zooms fractionnaires, le bord clippé de la fenêtre
+     (overflow hidden + radius) et le tracé du bandeau s'arrondissent au pixel
+     différemment → un filet clair d'1px peut apparaître le long des côtés du
+     bandeau. On fait déborder le bandeau d'1px de chaque côté DANS SA PROPRE
+     couleur ; le clip arrondi de la fenêtre contient ce débord. */
+  box-shadow: 1px 0 0 var(--kb-window-titlebar, var(--color-primary)),
+              -1px 0 0 var(--kb-window-titlebar, var(--color-primary));
 }
 /* Title actions were written for a light bar and carry their own dark utility
  * colours; on an accent band those are unreadable. Two class selectors beat a
@@ -246,9 +285,11 @@ body {
   margin: 0;
   font-family: var(--font-family-sans);
   /* Project-wide default text size. Anything without an explicit text-* utility
-   * inherits it — Dropdown, MenuDropdown, Tooltip and most module markup do. */
-  font-size: 14px;
-  font-weight: 400;
+   * inherits it — Dropdown, MenuDropdown, Tooltip and most module markup do.
+   * Kept in step with `--text-sm` above: the two are the same body step, one for
+   * inherited text and one for the utility class. */
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--color-text-primary);
   background: var(--body-bg, #f8fafd);
   -webkit-font-smoothing: antialiased;

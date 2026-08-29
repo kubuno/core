@@ -118,7 +118,7 @@ function MonthSelect({ value, onChange, primaryColor, large }: {
                 style={{
                   width: '100%', textAlign: 'left', padding: '10px 16px', border: 'none',
                   background: active ? 'var(--color-primary-light, #e8f0fe)' : 'transparent',
-                  cursor: 'pointer', fontSize: 14, color: '#202124',
+                  cursor: 'pointer', fontSize: 13.5, color: '#202124',
                 }}
                 onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = '#f1f3f4' }}
                 onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}

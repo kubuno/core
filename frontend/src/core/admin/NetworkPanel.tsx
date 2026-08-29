@@ -18,7 +18,7 @@ import SettingsGroupPanel from './settings/SettingsGroupPanel'
  *
  * The core keeps terminating TLS with rustls; nothing here implements any part
  * of TLS. The private key goes IN in clear over the authenticated admin channel,
- * is stored encrypted, and never comes back OUT.
+ * is written to a file only the service can read, and never comes back OUT.
  */
 
 interface StoredCert {
@@ -297,7 +297,7 @@ export default function NetworkPanel() {
           <p className="text-xs text-text-tertiary">
             {t(
               'admin.net_cert_key_note',
-              'La clé privée est chiffrée avant stockage et n’est jamais renvoyée par l’interface. Le remplacement d’un certificat est appliqué à chaud si le HTTPS est déjà actif.',
+              'La clé privée est écrite sur le disque du serveur, lisible par le seul service (0600), et n’est jamais renvoyée par l’interface. Le remplacement d’un certificat est appliqué à chaud si le HTTPS est déjà actif.',
             )}
           </p>
           <Button

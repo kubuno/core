@@ -117,7 +117,7 @@ function ProviderForm({
                 display_name: prev.display_name || p.display,
                 scopes: p.scopes,
               }))}
-              className="px-3 py-1.5 rounded-full text-xs font-medium border border-border hover:bg-surface-2 transition-colors"
+              className="px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-surface-2 transition-colors"
             >
               {p.label}
             </button>

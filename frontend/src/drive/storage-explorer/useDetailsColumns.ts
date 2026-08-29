@@ -31,7 +31,7 @@ export function useDetailsColumns({ details, persistDetails, sortedFolders, filt
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    ctx.font = '12px "Google Sans", Inter, system-ui, sans-serif'
+    ctx.font = '12px Outfit, Inter, system-ui, sans-serif'
     const w = (s: string) => ctx.measureText(s).width
     persistDetails(s => {
       const widths = { ...s.widths }

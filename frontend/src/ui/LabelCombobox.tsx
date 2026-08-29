@@ -51,7 +51,7 @@ export function LabelCombobox({ value, onChange, primaryColor, presets, label = 
               onMouseDown={e => { e.preventDefault(); onChange(p); setOpen(false) }}
               style={{
                 width: '100%', textAlign: 'left', padding: '10px 16px', border: 'none',
-                background: 'transparent', cursor: 'pointer', fontSize: 14, color: '#202124',
+                background: 'transparent', cursor: 'pointer', fontSize: 13.5, color: '#202124',
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f1f3f4' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}

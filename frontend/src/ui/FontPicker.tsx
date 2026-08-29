@@ -101,7 +101,7 @@ function highlightMatch(text: string, q: string): React.ReactNode {
  */
 export function FontPicker({
   value, onChange, fonts, recent = [],
-  width = 150, height = 36, fontSize = 14,
+  width = 150, height = 36, fontSize = 13.5,
   disabled = false, className, variant = 'default',
   placeholder = '', buttonStyle, sampleText = 'AaBbCc', theme = 'light',
 }: FontPickerProps) {
@@ -215,7 +215,7 @@ export function FontPicker({
           // field's own label must stay legible and consistent, not morph into the
           // picked face (a serif/script value made the field itself hard to read).
           // The dropdown OPTIONS still preview each in their own font (below).
-          fontFamily: '"Google Sans Text", var(--font-family-sans, "Segoe UI"), system-ui, sans-serif',
+          fontFamily: 'Outfit, var(--font-family-sans, "Segoe UI"), system-ui, sans-serif',
           background: open ? P.active : undefined,
           border: `1px solid ${ghost ? 'transparent' : P.border}`,
           borderRadius: 'var(--radius-md)', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -249,7 +249,7 @@ export function FontPicker({
               ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); setHi(0) }} onKeyDown={onKey}
               placeholder="Rechercher une police…" aria-label="Rechercher une police"
               aria-controls={listId} aria-autocomplete="list"
-              className="flex-1 outline-none bg-transparent" style={{ color: P.text, fontSize: 12 }}
+              className="flex-1 outline-none bg-transparent" style={{ color: P.text, fontSize: 11.5 }}
             />
             {query && (
               <button type="button" onClick={() => { setQuery(''); setHi(0); searchRef.current?.focus() }}
@@ -261,7 +261,7 @@ export function FontPicker({
           <div ref={listRef} id={listId} role="listbox" aria-activedescendant={options[hi] ? `${listId}-opt-${hi}` : undefined}
             style={{ maxHeight: 340, overflowY: 'auto', padding: '4px 0' }}>
             {options.length === 0 && (
-              <div className="px-4 py-6 text-center" style={{ color: P.ter, fontSize: 12 }}>
+              <div className="px-4 py-6 text-center" style={{ color: P.ter, fontSize: 11.5 }}>
                 Aucune police pour « {q} »
               </div>
             )}

@@ -9,6 +9,22 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hairline seams beside floating-window title bands are gone.** At fractional
+  zoom levels Chromium could round the window's clipped edge and the band's
+  paint differently, leaving 1px light vertical lines along both sides of the
+  accent band. The band now bleeds 1px sideways in its own colour, contained by
+  the window's rounded clip.
+
+
+### Changed
+
+- **New logos for every Office sub-module** — Documents, Spreadsheets,
+  Presentations, Projects, Diagrams, Data, Script, Maths and Whiteboard —
+  served as the
+  browser-tab icons under `/office/<sub-module>`.
+
 ## [0.1.9] - 2026-08-26
 
 
@@ -307,6 +323,87 @@ number at release time, and CI publishes that section as the GitHub Release note
   crate over rustls — no ACME or cryptography is reimplemented.
 
 ### Changed
+
+- **Pill-shaped buttons are gone from the interface.** Filter chips, view
+  segments, tab selectors and action buttons that were drawn as pills now use the
+  same 4 px corner radius as every other button — the shape set them apart for no
+  reason other than habit. Round buttons that hold a lone icon, avatars, status
+  dots and non-clickable badges keep their shape: a circle around a single glyph
+  is not a pill.
+
+- **Secondary buttons get a firmer outline.** The `secondary` variant of `@ui`'s
+  Button now draws its border from `--color-border-strong` (#bdc1c6) instead of
+  the plain border token: a button is an actionable target and needs more
+  definition than the hairlines that merely separate cards, rows and fields. No
+  new grey was introduced — this reuses a step already in the scale, and cards,
+  inputs, tables and separators are untouched.
+
+
+- **Default typography retuned**: text renders at **weight 500** and in
+  **#444** rather than 400/#202124, and the scale moves to half-pixel steps —
+  micro 10.5, metadata 11.5, body 13.5, heading 15.5, title 21.5, page 22.5
+  (27.5 in the administration console). Buttons follow the body weight: the rule
+  that keeps a button from being BOLDER than running text should not make it
+  lighter either.
+- The text colour is changed **at the token**, in each `theme.css` and in the
+  reference theme — not as a hard-coded `body { color }`. A theme is applied as
+  inline custom properties on `<html>`, so a hard-coded colour (or an
+  `!important` one) would have overridden every theme, starting with the dark
+  one, whose text is deliberately light. Themes with their own identity (macOS,
+  OneDrive, forest, dark) keep their own text colour.
+
+- **Plus Jakarta Sans becomes the platform's typeface**, with Outfit kept
+  available behind it. Both are variable fonts under the SIL Open Font License
+  and both ship with the product; Plus Jakarta Sans additionally has a **drawn
+  italic**, so emphasis is a real cut rather than a slant the browser fakes. The
+  core serves both faces itself, so the sign-in page and the installation wizard
+  never depend on a module being installed.
+- **The type scale is retuned** to micro 11 px, metadata 12 px, body 14 px,
+  heading 16 px, title 22 px and page 23 px (28 px in the administration
+  console), with the `text-xs`/`text-sm` utility steps kept in step at 12 and
+  14 px.
+
+- **The `--kb-text-*` type scale is retuned**: micro 11→12 px, heading 16→17 px,
+  title 22→23 px, page 22→24 px (29 px in the administration console). The body
+  (15 px) and metadata (13 px) steps are unchanged. Only the core declares these
+  tokens — modules read them from the host — so no module rebuild is needed.
+
+- **The secondary text step goes from 12 px to 13 px**, alongside the body step
+  above. Same two levers: the `--text-xs` Tailwind variable (the `text-xs` class
+  carries metadata lines, table headers, hints and pills) and the
+  `--kb-text-meta` token, plus the two hard-coded sizes in `FontPicker`'s search
+  field and empty state. `--kb-text-micro` (11 px, counters and badges) is
+  deliberately unchanged, and the font specimens in the picker keep their own
+  size.
+
+- **The body text step goes from 14 px to 15 px.** Four levers move together, and
+  all four are needed: the `body` size (everything that inherits — dropdowns,
+  menus, tooltips, most module markup), the `--text-sm` Tailwind variable (the
+  `text-sm` class is the project's body class, used in ~570 files), the
+  `--kb-text-body` token (sizes driven by token rather than by class), and the
+  `fontSize` prop defaults of `Dropdown`, `FontPicker` and `FontSizeField`.
+  `--text-sm` is overridden at `:root` with `!important` for the same reason the
+  weight and family overrides are: every module bundle re-declares it and loads
+  after the host, so nothing else reaches all 18 of them without a rebuild.
+  Line height follows on its own (Tailwind derives it from the step), and the
+  `fontSize: 14` values left in `MenuDropdown` and `Dropdown` are glyphs — a
+  tick and an icon in a fixed-width span — not text.
+
+- **The platform's typeface is now Outfit, shipped with the product.** The
+  interface used Google's own product faces (Google Sans / Google Sans Text).
+  Those are replaced everywhere by **Outfit**, under the SIL Open Font License —
+  a licence that actually permits redistribution inside a product that is
+  packaged and published. Outfit is a variable font: one 45 KB file covers the
+  whole 100–900 weight range, where the previous stack needed five files, so the
+  shell also loads less. The licence text ships beside it
+  (`/fonts/Outfit-OFL.txt`), as the OFL requires.
+- **The Content-Security-Policy no longer allows Google's font CDN.**
+  `fonts.googleapis.com` and `fonts.gstatic.com` are out of `style-src` and
+  `font-src`: the browser now refuses any such request instead of merely not
+  making one. Loading fonts from that CDN hands every reader's IP address to a
+  third party just by opening a page — the practice a German court found
+  unlawful under the GDPR in 2022 — and a self-hosted instance has no business
+  doing it.
 
 - **HSTS is now emitted only on requests that actually arrived over TLS**, and
   its value (max-age, sub-domains, preload) follows the Network settings instead
