@@ -9,10 +9,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+
+### Changed
+
+- **New Mail module logo** served at `/mail-logo.png` (replacing the old
+  `mail-logo.svg`) — used as the Mail favicon and app icon.
+
+- **New Documents logo** among the module icons the host serves
+  (`office-documents-logo.png`, replacing the previous SVG).
 ### Added
 
 - **The administration console now has its own logo, and its own tile in the
-  app launcher.** A blue badge — a person over a gear — heads the console's
+  app launcher.** A blue hexagonal badge holding a gear heads the console's
   sidebar (beside "Administration") and its collapsed icon rail, giving the
   surface an identity of its own and signalling at a glance that the sidebar has
   switched from a module's navigation to the console. The same badge appears as
@@ -44,7 +52,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **New logos for every Office sub-module** — Documents, Spreadsheets,
   Presentations, Projects, Diagrams, Data, Script, Maths and Whiteboard —
   served as the
-  browser-tab icons under `/office/<sub-module>`.
+  browser-tab icons under `/office/<sub-module>`. Every Office
+  sub-module icon is a raster PNG (`office-<id>-logo.png`) instead of SVG.
 
 - **New PaintSharp browser-tab icon** — the monogram now sits inside a purple
   hexagonal badge, matching the tile the app launcher shows for the module.
