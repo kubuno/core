@@ -203,8 +203,12 @@
      sur le voile sombre — c'est l'ombre qui détache la fenêtre de la page.
      `--kb-window-border` n'est pas défini : la règle accepte une bordure complète
      en surcharge si un thème en veut une. */
-  --kb-window-radius:       6px;                     /* extérieur */
-  --kb-window-inner-radius: 6px;                     /* = extérieur : sans bordure,
+  /* Coins DROITS (décision 2026-08-30) : quel que soit le chemin de rendu
+     (clip arrondi, arrondis par zone), certains GPU laissaient des filets
+     verticaux 1px le long du bandeau. Les fenêtres volantes n'ont donc plus
+     d'arrondi du tout — c'est aussi le look des fenêtres d'OS classiques. */
+  --kb-window-radius:       0px;                     /* extérieur */
+  --kb-window-inner-radius: 0px;                     /* = extérieur : sans bordure,
                                                         le bandeau doit remplir l'angle */
   --kb-window-inset:        0px;                     /* plus de cadre */
   /* ⚠️ `--kb-window-titlebar` n'est PAS défini ici, et c'est délibéré : une

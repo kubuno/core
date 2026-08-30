@@ -236,7 +236,7 @@ export default function DashboardSection({ navigate }: AdminSectionProps) {
 
       {/* ── The grid ── */}
       {data && visible.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-2 xl:grid-cols-3">
           {visible.map((id, i) => {
             const def = panelDef(id)
             const panel = received.get(id)
@@ -271,7 +271,7 @@ export default function DashboardSection({ navigate }: AdminSectionProps) {
 
       {/* ── Put back what was put away ── */}
       {editing && data && (
-        <div className="mt-6 rounded-xl border border-border bg-surface-1 p-4">
+        <div className="mt-10 rounded-xl border border-border bg-surface-1 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-text-primary" style={{ fontSize: 'var(--kb-text-heading)' }}>
               {t('admin.sec_hidden_panels')}
@@ -320,7 +320,7 @@ export default function DashboardSection({ navigate }: AdminSectionProps) {
       )}
 
       {/* ── What the modules add to this page ── */}
-      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Slot name="dashboard-stats-cards" />
       </div>
       <Slot name="dashboard-widgets" />

@@ -9,16 +9,26 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Added
+
+- **The administration console now has its own logo, and its own tile in the
+  app launcher.** A blue badge — a person over a gear — heads the console's
+  sidebar (beside "Administration") and its collapsed icon rail, giving the
+  surface an identity of its own and signalling at a glance that the sidebar has
+  switched from a module's navigation to the console. The same badge appears as
+  an **Administration** tile in the app launcher (waffle), opening the console
+  in one click. That tile is shown **only to administrators** — anyone who may
+  actually enter the console — so no one is offered a door that would only
+  refuse them.
+
 ### Fixed
 
-- **Hairline seams beside floating-window title bands are gone.** With rounded
-  corners plus `overflow: hidden`, some GPUs make Chromium apply the rounded
-  clip as an antialiased mask over the whole path — straight sides included —
-  so the clipped accent band lost its outermost pixel column and the white
-  surface showed through as 1px vertical lines. Floating windows no longer
-  clip their children at all: the band and the content area round their own
-  corners instead, so every edge stays crisp. Windows also snap to whole
-  pixels at mount instead of sitting on half-pixel positions.
+- **Floating windows now have square corners.** Rounded corners left 1px light
+  vertical seams along the title band on some GPUs (an antialiased clip/paint
+  edge that no workaround reliably removed), so every floating window — dialogs,
+  the mail composer, chat popups, media players, the macro editor — is now
+  square, matching classic OS windows. Windows also snap to whole pixels at
+  mount.
 
 
 ### Changed
@@ -35,6 +45,24 @@ number at release time, and CI publishes that section as the GitHub Release note
   Presentations, Projects, Diagrams, Data, Script, Maths and Whiteboard —
   served as the
   browser-tab icons under `/office/<sub-module>`.
+
+- **New PaintSharp browser-tab icon** — the monogram now sits inside a purple
+  hexagonal badge, matching the tile the app launcher shows for the module.
+
+- **Tinted cards on the administration landing.** The shortcut cards (Users,
+  Applications, Storage, Security, Alerts, Groups, Instance identity, Reports)
+  now sit on a soft blue-grey (`#F0F4F9`) instead of plain white, setting them
+  apart from the page and from the "Getting started" card above them.
+
+- **Wider, consistent spacing between admin blocks.** Page-level cards and
+  panels are now separated by 40px — on the landing (the shortcut cards, and the
+  gap under "Getting started") and on the dashboard (its chart panels) — so the
+  console breathes and keeps one rhythm between blocks. Compact metric tiles stay
+  grouped tightly, as a cluster distinct from the blocks around them.
+
+- **Even card heights on the administration landing.** Cards on the same row
+  now share the height of the tallest, so a shorter card (e.g. Storage) no
+  longer leaves a ragged gap beneath it next to its taller neighbours.
 
 ## [0.1.9] - 2026-08-26
 

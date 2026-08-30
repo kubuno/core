@@ -110,7 +110,7 @@ export default function GettingStartedCard() {
 
   return (
     <Card
-      className="mb-4"
+      className="mb-10"
       icon={<HeartPulse size={18} />}
       title={t('admin.hc_getting_started')}
       subtitle={t('admin.hc_getting_started_sub')}

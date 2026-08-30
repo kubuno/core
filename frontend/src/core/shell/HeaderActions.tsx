@@ -13,7 +13,7 @@ import { useModulesStore } from '../store/modulesStore'
 import { useNotificationStore } from '../store/notificationStore'
 import { useAlertFeed } from './useAlertFeed'
 import { Slot, SlotRegistry } from '../slots/SlotRegistry'
-import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
+import { useWaffleApps } from './useWaffleApps'
 import UserPanel from './UserPanel'
 import AddAccountModal from '../components/AddAccountModal'
 import WaffleMenu from './WaffleMenu'
@@ -50,12 +50,7 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
     ? user.display_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
     : user?.username?.slice(0, 2).toUpperCase() ?? '?'
 
-  const allWaffleApps = activeModules.flatMap((m) => {
-    const entry = WaffleAppRegistry.get(m.module_id)
-    // On rattache moduleId/moduleLabel à chaque app pour que le WaffleMenu puisse
-    // regrouper les sous-modules d'un même module (ex. Office, PaintSharp).
-    return entry ? entry.apps.map(a => ({ ...a, moduleId: entry.moduleId, moduleLabel: entry.label })) : []
-  })
+  const allWaffleApps = useWaffleApps()
 
   // Same metrics everywhere (AppHeader AND sub-module title bars): 36px circles,
   // 18px glyphs — aligned on the office title bar. `compact` no longer changes

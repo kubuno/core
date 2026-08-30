@@ -13,6 +13,7 @@ import {
 import { usePrivileges } from '../authz/usePrivileges'
 import { useAdminPins } from './nav/adminPins'
 import { moduleGlyph, type ModuleGlyph } from './nav/moduleGlyph'
+import { AdminLogo } from './AdminLogo'
 
 // Rendered inside AppSidebar as the left panel while on /admin (replaces the
 // module navigation), like the Settings sidebar. Which entry is current comes
@@ -208,6 +209,14 @@ export default function AdminNavTree({ collapsed }: { collapsed?: boolean }) {
   if (collapsed) {
     return (
       <nav className="flex-1 min-h-0 overflow-y-auto px-2">
+        {/* The console's mark, at the head of the rail — the one thing that says
+            "administration" once every label is hidden. Links back to the landing. */}
+        <Link
+          to={adminPath()} title={t('user.admin')}
+          className="mb-1 flex h-10 items-center justify-center rounded-full hover:bg-surface-2 transition-colors"
+        >
+          <AdminLogo size={24} />
+        </Link>
         {nav.map(it => (
           <Link
             key={it.id} to={adminPath(firstLeafOf(it))} title={t(it.labelKey)}
@@ -448,6 +457,20 @@ export default function AdminNavTree({ collapsed }: { collapsed?: boolean }) {
     // over an administration console states the obvious while pushing every row
     // down and, with its own padding, to the right.
     <nav className="flex-1 min-h-0 overflow-y-auto px-2 pt-2 pb-2">
+      {/* The console's own mark, at the head of its panel. The word
+          "Administration" over an administration console would state the obvious
+          — but a LOGO gives the surface an identity the shell's Kubuno wordmark
+          (still up top) does not, and marks at a glance that the sidebar has
+          switched from a module's navigation to the console's. Links to the
+          landing, like the collapsed rail's badge. */}
+      <Link
+        to={adminPath()} title={t('user.admin')}
+        className="mb-2 flex items-center gap-2.5 rounded-full px-2 py-1.5 hover:bg-surface-2 transition-colors"
+      >
+        <AdminLogo size={26} />
+        <span className="text-base font-medium text-text-primary">{t('user.admin')}</span>
+      </Link>
+
       {/* The pages this operator chose, above the tree they would otherwise
           have to walk — the shortcut list of the reference console. */}
       {pinned.length > 0 && (

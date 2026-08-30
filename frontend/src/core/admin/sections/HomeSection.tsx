@@ -15,7 +15,7 @@ import AlertsCard from '../alerts/AlertsCard'
 
 // ── Admin home landing (Workspace-style card dashboard) ──────────────────────
 function HomeCard({ children }: { children: ReactNode }) {
-  return <div className="bg-white rounded-xl border border-border p-5">{children}</div>
+  return <div className="bg-[#F0F4F9] rounded-xl border border-border p-5">{children}</div>
 }
 
 function CardHeader({ Icon, title, manageTab }: { Icon: LucideIcon; title: string; manageTab?: string }) {
@@ -68,7 +68,10 @@ export default function HomeSection() {
           instance is judged by what is still wrong, not by a wall of tiles. */}
       <GettingStartedCard />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+      {/* `items-stretch` (the grid default): cards on the same row take the
+          height of the tallest one, so a row never looks ragged. Each card is a
+          direct grid item, so it stretches on its own — no inner `h-full`. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-10 items-stretch">
         {/* Users */}
         {sees('users') && (
           <HomeCard>

@@ -27,7 +27,7 @@ export default function AlertsCard() {
   const top = (data?.pages?.[0]?.alerts ?? []).slice(0, 3)
 
   return (
-    <div className="rounded-xl border border-border bg-surface-0 p-5">
+    <div className="rounded-xl border border-border bg-[#F0F4F9] p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <Bell size={20} className="shrink-0 text-text-secondary" />

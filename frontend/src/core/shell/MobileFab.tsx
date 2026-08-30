@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useIsMobile, useIsLandscape } from '@ui'
 import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
-import { useModulesStore } from '../store/modulesStore'
-import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
+import { useWaffleApps } from './useWaffleApps'
 import WaffleMenu from './WaffleMenu'
 
 /**
@@ -16,7 +15,6 @@ import WaffleMenu from './WaffleMenu'
 export default function MobileFab() {
   const { pathname } = useLocation()
   const { configs } = useSidebarStore()
-  const { activeModules } = useModulesStore()
   // Landscape phones have no bottom bar (the nav is a left rail), so the FAB
   // drops to a normal bottom margin instead of clearing the 56px bar.
   // ⚠️ Call BOTH hooks unconditionally — `useIsMobile() && useIsLandscape()`
@@ -37,12 +35,8 @@ export default function MobileFab() {
   // (ruban mobile Office) : en paysage on garde alors la surélévation.
   const immersive = !!activeConfig?.hideSidebar
 
-  // Toutes les apps du waffle (mêmes données que la grille d'apps de l'en-tête) :
-  // on rattache moduleId/moduleLabel pour le regroupement des sous-modules.
-  const allWaffleApps = activeModules.flatMap((m) => {
-    const entry = WaffleAppRegistry.get(m.module_id)
-    return entry ? entry.apps.map(a => ({ ...a, moduleId: entry.moduleId, moduleLabel: entry.label })) : []
-  })
+  // Mêmes tuiles que la grille d'apps de l'en-tête (modules + tuile admin).
+  const allWaffleApps = useWaffleApps()
   if (allWaffleApps.length === 0) return null
 
   return (
