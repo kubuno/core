@@ -212,7 +212,7 @@ if [ \$1 -ge 1 ] ; then
 fi
 
 %changelog
-* Mon Jun 29 2026 Kubuno Contributors <contact@kubuno.io> - ${VERSION}-${RELEASE}
+* Mon Jun 29 2026 Martinien OLINGA <kubuno@martinienolinga.com> - ${VERSION}-${RELEASE}
 - Paquet RPM (parité layout avec le .deb).
 SPEC
 

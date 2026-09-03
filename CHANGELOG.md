@@ -14,6 +14,16 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 
 
+
+- **The RPM package now names the same maintainer as the Debian one.** Its
+  changelog entry read `Kubuno Contributors <contact@kubuno.io>`, an address on
+  a domain the project does not use; it now reads
+  `Martinien OLINGA <kubuno@martinienolinga.com>`, matching the `.deb`. Nothing
+  about what the package installs changes.
+
+- **The manual page credits the current maintainer.** Its AUTHORS section
+  listed an address on a domain the project does not use.
+
 - **Security reports now go to `security@martinienolinga.com`.** The address
   published in `SECURITY.md` moved to the project's own domain; the previous
   one is retired. Reporting through GitHub Security Advisories is unaffected.
