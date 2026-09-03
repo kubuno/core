@@ -12,6 +12,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+
+- **The README now opens with the Kubuno logo.** The public README on
+  GitHub now shows the Kubuno crest at the top of the page. The image ships
+  in-repo, under `.github/logo.svg`, so it renders even when the repo is
+  browsed offline.
+
 - **New Mail module logo** served at `/mail-logo.png` (replacing the old
   `mail-logo.svg`) — used as the Mail favicon and app icon.
 

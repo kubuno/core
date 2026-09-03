@@ -5,6 +5,8 @@
 
 <div align="center">
 
+<img src=".github/logo.svg" alt="Kubuno logo" width="128" height="128">
+
 # Kubuno — Core
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
@@ -131,7 +133,7 @@ bash build_windows.sh    # → dist/kubuno-core-setup-*.exe   (cross-build, NSIS
 bash build_macos.sh      # → dist/kubuno-core-*.pkg         (on a Mac)
 ```
 
-Configuration: copy `config.toml.example` → `config.toml` (or use `KV_`-prefixed env vars). See [`CLAUDE.md`](CLAUDE.md) for details.
+Configuration: copy [`config.toml.example`](config.toml.example) → `config.toml` (every option is documented inline) or override with `KV_`-prefixed environment variables.
 
 ## 📦 Tech stack
 
