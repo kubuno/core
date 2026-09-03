@@ -688,10 +688,10 @@ function SetupFooter({ version }: { version?: string }) {
         <Trans
           t={t}
           i18nKey="footer.poweredBy"
-          values={{ brand: 'Toiledev' }}
+          values={{ brand: 'Martinien OLINGA' }}
           components={{
             1: (
-              <a href="https://toiledev.com" target="_blank" rel="noreferrer noopener"
+              <a href="https://martinienolinga.com" target="_blank" rel="noreferrer noopener"
                  style={{ color: 'var(--color-text-secondary)', textDecoration: 'none' }} />
             ),
           }}

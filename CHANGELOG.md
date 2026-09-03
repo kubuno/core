@@ -13,6 +13,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 ### Changed
 
 
+
+- **Security reports now go to `security@martinienolinga.com`.** The address
+  published in `SECURITY.md` moved to the project's own domain; the previous
+  one is retired. Reporting through GitHub Security Advisories is unaffected.
+
+- **The installation wizard names Martinien OLINGA.** The footer shown to
+  whoever is installing the platform credits Martinien OLINGA and links to
+  `martinienolinga.com`.
+
 - **The README now opens with the Kubuno logo.** The public README on
   GitHub now shows the Kubuno crest at the top of the page. The image ships
   in-repo, under `.github/logo.svg`, so it renders even when the repo is

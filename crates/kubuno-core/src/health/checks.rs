@@ -1467,7 +1467,7 @@ mod tests {
         assert_eq!(one(&f, "identity.instance_name").status, Status::Todo);
 
         f.instance_name_chosen = true;
-        f.instance_name = "Toiledev".into();
+        f.instance_name = "Martinien OLINGA".into();
         assert_eq!(one(&f, "identity.instance_name").status, Status::Ok);
 
         // Chosen but blanked out is not named either.
