@@ -1,3 +1,4 @@
+import { formatRelative } from '../../core/intl/datetime'
 import { useRef, useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
@@ -5,13 +6,12 @@ import {
 } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Avatar from '@radix-ui/react-avatar'
-import { formatDistanceToNow } from 'date-fns'
-import { fr } from 'date-fns/locale'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { useNotificationStore } from '../store/notificationStore'
 import { useAlertFeed } from './useAlertFeed'
+import { useModuleNotifications } from './useModuleNotifications'
 import { Slot, SlotRegistry } from '../slots/SlotRegistry'
 import { useWaffleApps } from './useWaffleApps'
 import UserPanel from './UserPanel'
@@ -37,6 +37,10 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
   // called, so the panel was empty on every instance. The hook only queries
   // for callers holding `core.alerts.read` and announces each alert once.
   useAlertFeed()
+  // Second producer: real-time notifications from every module (forum replies,
+  // mentions, moderation…) land in the same shared bell instead of each module
+  // growing its own.
+  useModuleNotifications()
   const navigate = useNavigate()
   const pathname = useLocation().pathname
   const isHome = pathname === '/'
@@ -82,9 +86,14 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
             aria-label={t('header.notifications')}
           >
             <Bell size={ico} />
+            {/* Counter pinned OUTSIDE the button's top-right corner, never over
+                the glyph: at `top-1.5 right-1.5` a 16px badge sat squarely on
+                the 18px bell and swallowed it. Sitting above the corner also
+                lets a three-digit count widen leftwards without reaching the
+                bell, which is why the "+" only kicks in past 999. */}
             {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-0.5 bg-danger text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-                {unreadCount > 9 ? '9+' : unreadCount}
+              <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-[4px] bg-danger text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none whitespace-nowrap">
+                {unreadCount > 999 ? '999+' : unreadCount}
               </span>
             )}
           </button>
@@ -116,7 +125,7 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-sm leading-snug truncate ${notif.read ? 'font-normal text-text-secondary' : 'font-semibold text-text-primary'}`}>{notif.title}</p>
-                        <span className="text-[10px] text-text-tertiary shrink-0 mt-0.5">{formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true, locale: fr })}</span>
+                        <span className="text-[10px] text-text-tertiary shrink-0 mt-0.5">{formatRelative(new Date(notif.createdAt))}</span>
                       </div>
                       <p className="text-xs text-text-tertiary mt-0.5 line-clamp-2">{notif.body}</p>
                     </div>

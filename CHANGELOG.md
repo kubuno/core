@@ -13,29 +13,146 @@ number at release time, and CI publishes that section as the GitHub Release note
 ### Changed
 
 
-
-
-- **The RPM package now names the same maintainer as the Debian one.** Its
-  changelog entry read `Kubuno Contributors <contact@kubuno.io>`, an address on
-  a domain the project does not use; it now reads
-  `Martinien OLINGA <kubuno@martinienolinga.com>`, matching the `.deb`. Nothing
-  about what the package installs changes.
-
-- **The manual page credits the current maintainer.** Its AUTHORS section
-  listed an address on a domain the project does not use.
-
-- **Security reports now go to `security@martinienolinga.com`.** The address
-  published in `SECURITY.md` moved to the project's own domain; the previous
-  one is retired. Reporting through GitHub Security Advisories is unaffected.
-
-- **The installation wizard names Martinien OLINGA.** The footer shown to
-  whoever is installing the platform credits Martinien OLINGA and links to
-  `martinienolinga.com`.
-
 - **The README now opens with the Kubuno logo.** The public README on
   GitHub now shows the Kubuno crest at the top of the page. The image ships
   in-repo, under `.github/logo.svg`, so it renders even when the repo is
   browsed offline.
+
+- **Dates and times are now formatted by the platform, not by a library.**
+  `date-fns` is gone from the server's interface, along with the file that
+  imported thirteen of its locale bundles so that month names came out in the
+  reader's language — the browser already knows all of that. `Intl` is used
+  instead, through a small in-house module exposed to every module by the SDK.
+  Callers now say what a date is FOR (`formatDate(d, 'date')`) rather than how to
+  write it (`format(d, 'dd/MM/yyyy')`), which is what a product shipped in
+  thirteen languages actually needs: a hard-coded pattern prints 03/09/2026 to a
+  reader who expects 2026年9月3日. Four call sites were forcing French regardless
+  of the chosen language; they are fixed by the move. Machine formats — keys,
+  sort values, `<input type="date">` — are kept separate and deliberately built
+  from local calendar fields, since `toISOString()` shifts the day near midnight.
+### Added
+
+- **Modules now receive the client's real IP address.** The proxy forwards the
+  hardened, trusted-proxy-resolved client IP to modules as an `X-Kubuno-Client-IP`
+  header (stripped from any incoming request first, so it can never be forged),
+  letting a module implement IP-based abuse control such as IP bans. A
+  module-to-module call keeps the address the calling module forwards.
+- **The header notification bell now shows real-time notifications from any
+  module.** Until now the shared bell only carried admin alerts; a module can
+  emit a standard `<module>.notification` real-time event and it appears in the
+  same bell for the addressed user — so every module shares one notification
+  centre instead of growing its own.
+
+### Changed
+
+- **Application icons are seven times lighter.** Every module tile was a
+  512×512 image for artwork never drawn larger than 52 pixels, so the app
+  launcher pulled about a megabyte of icons. They are now 192×192 — still
+  twice the size the largest screen needs — which takes the whole set from
+  1001 kB to 145 kB with no visible difference, even on high-density displays.
+  Opening the launcher for the first time costs 113 kB instead of 658 kB.
+
+- **Instance settings are fetched once per page instead of four times.** The
+  public settings endpoint is read by unrelated parts of the shell — the
+  startup language and theme, the idle-session timeout, the instance logo, the
+  sign-in page, home widgets, several admin panels — and each one issued its
+  own request. They now share a single one, and a settings change made from the
+  administration console still takes effect immediately: writing any setting
+  drops the shared copy, so the next read comes from the server.
+
+- **Logos, icons and fonts are no longer re-downloaded on every screen.**
+  These files have stable names and were served with `no-store`, which forbids
+  the browser from keeping them at all: every module switch fetched them again,
+  and opening the app launcher — one tile per installed module — cost roughly
+  650 kB each time. They are now served with `no-cache`, so the browser keeps a
+  copy and revalidates it, receiving an empty *304 Not Modified* while the file
+  is unchanged and the new file as soon as it changes. A module switch drops
+  from ~95 kB to ~10 kB of traffic, a page reload from ~69 kB to ~21 kB, and a
+  changed logo still reaches everyone immediately. Application data (`/api/*`,
+  `/internal/*`) and `index.html` keep `no-store` and are never cached.
+
+### Fixed
+
+- **The notification bell stays readable whatever the count.** The counter sat
+  on top of the bell and hid it as soon as it reached two characters; it now sits
+  just above the button's corner. It also shows the real number up to 999 (then
+  "999+") instead of collapsing to "9+" past nine.
+
+- **Restarting the server no longer makes every open tab reload the module list
+  a dozen times.** Installed modules all re-register within a few seconds of a
+  restart, and each announcement triggered its own request — about fifteen per
+  tab to learn one and the same thing. Those announcements are now grouped, so a
+  single request is made once the burst settles.
+
+- **The top bar can no longer be scrolled off-screen.** Whenever an element
+  extended past the bottom of the viewport (a menu opened near the edge, a
+  toast, any floating layer), the page itself became scrollable: a wheel
+  gesture reaching the end of a pane's content — or a keyboard focus /
+  find-in-page jump — then slid the whole application, top bar included, out
+  of view with no way to scroll back. The shell now pins the document while
+  the application is mounted, so the top bar stays visible on every screen;
+  public pages (shared forms, login) keep normal page scrolling, and printing
+  is unaffected.
+
+### Changed
+
+- **New Contacts logo** — a blue hexagon with a white person silhouette —
+  served as the browser-tab icon of `/contacts` (`contacts-logo.png`,
+  raster PNG replacing the former SVG).
+- **New Chat logo** — a sky-blue hexagon with a white speech bubble — served
+  as the browser-tab icon of `/chat` (`chat-logo.png`, raster PNG replacing
+  the former SVG).
+- **New Drive logo** — a blue isometric platter stack with gold tabs — served
+  as the browser-tab icon of `/drive` (`drive-logo.png`, raster PNG replacing
+  the former SVG).
+- **New Calendar logo** — a violet hexagon with a white calendar grid —
+  served as the browser-tab icon of `/calendar` (`calendar-logo.png`, raster
+  PNG replacing the former SVG).
+- **New Listen logo** (Media) — a green hexagon with a white loudspeaker —
+  served as the browser-tab icon of `/media/listen` (`media-listen-logo.png`),
+  which previously had no tab icon of its own.
+- **New App logo** — a blue hexagon with a stack of isometric cubes — served as
+  the browser-tab icon of `/app` (`app-logo.png`); the App favicon now
+  resolves, where the former `/app-logo.svg` path pointed at a missing file.
+- **New Assistant logo** — a purple hexagon with a smiling headset face —
+  served as the browser-tab icon of `/assistant` (`assistant-logo.png`), which
+  previously had no tab icon of its own.
+- **New Code logo** — a dark hexagon with a white ribbon mark — served as the
+  browser-tab icon of `/code` (`code-logo.png`, raster PNG replacing the SVG).
+- **New Books logo** — a brown hexagon with an open book — served as the
+  browser-tab icon of `/books` (`books-logo.png`); the Books favicon now
+  resolves, where the former `/books-logo.svg` path pointed at a missing file.
+- **New Flow logo** — a gold hexagon with an "F" and a small flowchart —
+  served as the browser-tab icon of `/flow` (`flow-logo.png`, raster PNG
+  replacing the SVG).
+- **New Maps logo** — a hexagon with a red pin over a green landscape —
+  served as the browser-tab icon of `/maps` (`maps-logo.png`, raster PNG
+  replacing the SVG).
+- **New Forms logo** — a green hexagon with a light form/checklist — served
+  as the browser-tab icon of `/forms` (`forms-logo.png`), which previously had
+  no tab icon of its own.
+- **New Notes logo** — an orange hexagon with a clipboard holding a note page —
+  served as the browser-tab icon of `/notes` (`notes-logo.png`, raster PNG
+  replacing the SVG).
+- **New logos for every PaintSharp sub-module** — Apex, Layer, Motion,
+  Vertex, Keyframe, PdfWriter and FontEditor — coloured hexagons carrying
+  their two-letter initials — served as the browser-tab icons of
+  `/paintsharp/<sub-module>`, which previously had no tab icon of their own.
+- **New Tasks logo** — a green hexagon with a white checkmark inside a
+  circle — served as the browser-tab icon of `/tasks` (`tasks-logo.png`),
+  which previously had no tab icon of its own.
+- **New Photos logo** — a hexagon with a rainbow aperture inside a blue ring
+  — served as the browser-tab icon of `/photos` (`photos-logo.png`), which
+  previously had no tab icon of its own.
+- **New Keestore logo** — a violet hexagon with a white key — served as the
+  browser-tab icon of `/keestore` (`keestore-logo.png`, raster PNG replacing
+  the SVG).
+- **New Wiki logo** — a violet hexagon with a white book and a "W" — served
+  as the browser-tab icon of `/wiki` (`wiki-logo.png`); the Wiki favicon now
+  resolves, where the former `/wiki-logo.svg` path pointed at a missing file.
+- **New Forum logo** — a blue hexagon with three people and speech bubbles
+  — served as the browser-tab icon of `/forum` (`forum-logo.png`), which
+  previously had no tab icon of its own.
 
 - **New Mail module logo** served at `/mail-logo.png` (replacing the old
   `mail-logo.svg`) — used as the Mail favicon and app icon.
@@ -55,6 +172,12 @@ number at release time, and CI publishes that section as the GitHub Release note
   refuse them.
 
 ### Fixed
+
+- **The README no longer links to a non-public file.** The Configuration line
+  previously pointed to `CLAUDE.md`, an internal file that is gitignored and
+  never shipped to GitHub, producing a dead link on the public repository page.
+  It now links to `config.toml.example`, whose inline comments already document
+  every option.
 
 - **Floating windows now have square corners.** Rounded corners left 1px light
   vertical seams along the title band on some GPUs (an antialiased clip/paint
