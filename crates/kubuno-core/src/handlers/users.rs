@@ -1098,6 +1098,57 @@ pub async fn internal_get_user(
     Ok(Json(directory_entry(row)))
 }
 
+/// The groups one account belongs to, in READ ONLY — for a module that gates
+/// access on group membership (e.g. the forum's per-group forum permissions).
+/// Same trust model as the rest of `/internal/directory/*`: the internal secret
+/// proves the caller is inside the instance; no module is named. Only the group
+/// id and name are disclosed, never the group's `permissions` policy.
+pub async fn internal_user_groups(
+    State(state): State<AppState>,
+    _internal: InternalRequest,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = sqlx::query_as::<_, (uuid::Uuid, String)>(
+        r#"SELECT g.id, g.name
+             FROM core.user_group_members m
+             JOIN core.user_groups g ON g.id = m.group_id
+            WHERE m.user_id = $1
+            ORDER BY g.name"#,
+    )
+    .bind(id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "annuaire interne : groupes d'un compte impossibles à lire");
+        AppError::Database(e)
+    })?;
+
+    Ok(Json(json!({
+        "groups": rows.into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>()
+    })))
+}
+
+/// Every group of the instance (id + name only), READ ONLY — so a module can
+/// let an administrator pick which groups a per-group rule applies to.
+pub async fn internal_list_groups(
+    State(state): State<AppState>,
+    _internal: InternalRequest,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = sqlx::query_as::<_, (uuid::Uuid, String)>(
+        "SELECT id, name FROM core.user_groups ORDER BY name",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "annuaire interne : liste des groupes impossible à lire");
+        AppError::Database(e)
+    })?;
+
+    Ok(Json(json!({
+        "groups": rows.into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>()
+    })))
+}
+
 /// Columns the mail provisioning reads. NOT `DIRECTORY_COLUMNS`: the directory
 /// and every people picker must keep answering `display_name`, username and
 /// photo, and adding the structured names there would disclose them everywhere.

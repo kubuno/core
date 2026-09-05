@@ -572,6 +572,10 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // définit les comptes, et lui seul.
         .route("/directory/users",           get(crate::handlers::users::internal_list_users))
         .route("/directory/users/:id",       get(crate::handlers::users::internal_get_user))
+        // Group membership, READ ONLY, for a module gating access on groups (e.g.
+        // the forum's per-group forum permissions). Only id + name are disclosed.
+        .route("/directory/users/:id/groups", get(crate::handlers::users::internal_user_groups))
+        .route("/directory/groups",          get(crate::handlers::users::internal_list_groups))
         .route("/mail/provisioning/users",     get(crate::handlers::users::internal_provisioning_users))
         .route("/mail/provisioning/users/:id", get(crate::handlers::users::internal_provisioning_user))
         // Les domaines déclarés par l'instance, en LECTURE seule, avec leur état

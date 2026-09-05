@@ -59,6 +59,16 @@ pub async fn proxy_to_module(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| state.settings.server.authenticate_internal(s));
 
+    // Resolve the real client IP for a direct (non-module) call, using the
+    // hardened trusted-proxy logic (honours X-Forwarded-For / X-Real-IP only from
+    // a trusted peer). Computed here, while `req` is still immutably borrowable,
+    // and injected below as `x-kubuno-client-ip` so a module can implement IP
+    // bans / abuse control without ever seeing a client-supplied, unvalidated
+    // header. For a module→module call we let the caller propagate whatever IP it
+    // already set (it forwards the original end-user address on the user's behalf).
+    let resolved_client_ip =
+        if caller.is_none() { crate::auth::client_ip::client_ip(&req) } else { None };
+
     // ── Strip client-supplied identity headers ───────────────────────────────
     // Only an authenticated internal caller (a module presenting a valid secret,
     // `caller` above) may carry a pre-set X-Kubuno-User-* — that is how one
@@ -72,6 +82,7 @@ pub async fn proxy_to_module(
         h.remove("x-kubuno-user-id");
         h.remove("x-kubuno-user-role");
         h.remove("x-kubuno-user-email");
+        h.remove("x-kubuno-client-ip");
         h.remove(kubuno_modauth::TOKEN_HEADER);
     }
 
@@ -217,6 +228,15 @@ pub async fn proxy_to_module(
     // possède : le module compare le header reçu à sa propre valeur).
     let headers = req.headers_mut();
     headers.remove("authorization");
+
+    // The real client IP, resolved above, for a module's abuse control (IP bans).
+    // Set only for direct client calls; a module→module hop keeps whatever the
+    // caller forwarded.
+    if let Some(ip) = resolved_client_ip {
+        if let Ok(v) = HeaderValue::from_str(&ip.to_string()) {
+            headers.insert(HeaderName::from_static("x-kubuno-client-ip"), v);
+        }
+    }
     // Re-mint from scratch: the client must never supply a token of its own.
     headers.remove(kubuno_modauth::TOKEN_HEADER);
     if let Some(token) = signed_identity {
