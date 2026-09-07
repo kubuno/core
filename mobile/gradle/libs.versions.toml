@@ -22,7 +22,7 @@ unifiedpush = "3.3.3"
 media3 = "1.4.1"
 maplibre = "11.8.0"
 maplibreAnnotation = "3.0.2"
-webrtc = "125.6422.07"
+webrtc = "150.7871.01"
 junit = "4.13.2"
 
 [libraries]
@@ -82,6 +82,11 @@ maplibre-annotation = { group = "org.maplibre.gl", name = "android-plugin-annota
 
 # WebRTC for audio and video calls. The community Maven Central build of the
 # upstream WebRTC stack (BSD-3), not a proprietary SDK.
+#
+# KEEP THIS CLOSE TO CURRENT. The peer on the other end of a call is a browser
+# that updates itself; a pinned old stack eventually cannot complete a DTLS
+# handshake with it. M125 failed against a modern Chrome with a fatal
+# "illegal parameter" alert on the ServerHello.
 webrtc = { group = "io.github.webrtc-sdk", name = "android", version.ref = "webrtc" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
