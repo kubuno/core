@@ -18,10 +18,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
-/** An authenticated HTTP client for an account owned by another Kubuno app. */
+/**
+ * An authenticated HTTP client for an account owned by another Kubuno app.
+ *
+ * [bearer] is exposed because some transports cannot carry an Authorization
+ * header: the chat module's WebSocket takes its access token as a query
+ * parameter, so its client needs a fresh one outside the interceptor chain.
+ */
 class BrokeredClient(
     val serverUrl: String,
     val okHttpClient: OkHttpClient,
+    val bearer: BearerSource,
 )
 
 /**
@@ -56,7 +63,7 @@ class BrokeredClients @Inject constructor(
             .addInterceptor(AuthHeaderInterceptor({ bearer }, { appPrefs.deviceKey }))
             .authenticator(TokenAuthenticator { bearer })
             .build()
-        return BrokeredClient(account.serverUrl.trimEnd('/'), http)
+        return BrokeredClient(account.serverUrl.trimEnd('/'), http, bearer)
     }
 }
 
