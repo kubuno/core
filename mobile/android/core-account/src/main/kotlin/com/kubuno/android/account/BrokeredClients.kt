@@ -1,8 +1,10 @@
 package com.kubuno.android.account
 
+import android.app.Activity
 import android.accounts.Account
 import android.accounts.AccountManager
 import android.content.Context
+import android.os.Bundle
 import com.kubuno.android.api.SharedHttp
 import com.kubuno.android.api.auth.BearerSource
 import com.kubuno.android.api.auth.Jwt
@@ -51,6 +53,43 @@ class BrokeredClients @Inject constructor(
     /** A client acting as [account], keyed by its system name. */
     fun of(account: SharedAccount): BrokeredClient =
         clients.computeIfAbsent(account.systemName) { build(account) }
+
+    /**
+     * Drops the borrowed client for [account] so the next [of] rebuilds one
+     * that re-fetches the access token. Call it after a re-authentication, when
+     * the cached bearer would otherwise keep serving the now-dead token.
+     */
+    fun reset(account: SharedAccount) {
+        clients.remove(account.systemName)
+    }
+
+    /**
+     * Recovers a shared account whose session has died server-side.
+     *
+     * A consumer app never holds the refresh token — the owning app does — so
+     * it cannot silently refresh a genuinely-dead session. Instead it asks the
+     * system to re-authenticate: `getAuthToken` with a live [activity] surfaces
+     * the account's sign-in (the authenticator returns it as an intent that the
+     * framework launches), and once the user signs back in the owner rotates a
+     * fresh session and hands back a new access token. This is the same
+     * mechanism in every Kubuno app, so re-login is handled the same way
+     * wherever the session expired, without sending anyone to another app by
+     * hand. The stale borrowed client is dropped either way. Returns true when
+     * a usable token came back.
+     */
+    suspend fun reauthenticate(activity: Activity, account: SharedAccount): Boolean =
+        withContext(Dispatchers.IO) {
+            val manager = AccountManager.get(context)
+            val system = Account(account.systemName, KubunoAccounts.TYPE)
+            val token = runCatching {
+                // Blocks until the user finishes the launched sign-in.
+                manager.getAuthToken(system, KubunoAccounts.AUTH_TOKEN_ACCESS, Bundle(), activity, null, null)
+                    .result
+                    .getString(AccountManager.KEY_AUTHTOKEN)
+            }.getOrNull()
+            reset(account)
+            !token.isNullOrEmpty()
+        }
 
     private fun build(account: SharedAccount): BrokeredClient {
         val bearer = BrokeredBearerSource(context, Account(account.systemName, KubunoAccounts.TYPE))
