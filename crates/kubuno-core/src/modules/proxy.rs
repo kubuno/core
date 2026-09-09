@@ -1,5 +1,6 @@
 use crate::{
     auth::jwt::JwtService,
+    auth::middleware::InternalRequest,
     auth::token_scope::{self, TokenGrant},
     errors::AppError,
     models::user::User,
@@ -8,7 +9,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use axum::{
     body::Body,
-    extract::{FromRequestParts, WebSocketUpgrade},
+    extract::{FromRequestParts, Path, State, WebSocketUpgrade},
     http::{HeaderName, HeaderValue, Request, Response, StatusCode},
     response::IntoResponse,
 };
@@ -294,6 +295,134 @@ pub async fn proxy_to_module(
     // files in memory. Hop-by-hop headers were already stripped above.
     let body = Body::from_stream(resp.bytes_stream());
 
+    Ok(builder.body(body).unwrap())
+}
+
+/// Module→module IPC relay: `ANY /internal/ipc/:target/*rest`.
+///
+/// A module cannot authenticate directly to another when secrets are derived
+/// (`server.derive_module_secrets`): each holds only its own and compares it by
+/// equality, and only the core knows the target's. So the call transits the
+/// core, which authenticates the CALLER (derived or master secret), re-injects
+/// the TARGET's secret, and relays to `{target}/ipc/<rest>`.
+///
+/// The relay is BOUNDED to the target's `/ipc/` surface — the core prepends
+/// `/ipc/` — so a module can reach neither the user routes nor `/internal/*` of
+/// another module through it. It works identically whether secrets are derived
+/// or shared: the core presents whatever value the target expects.
+///
+/// Errors: 401 when the caller is not a valid internal caller (handled by the
+/// `InternalRequest` extractor); 503 when the target has no active instance;
+/// otherwise the target's own `/ipc` response streams back verbatim.
+pub async fn ipc_relay(
+    State(state): State<AppState>,
+    caller: InternalRequest,
+    Path((target, rest)): Path<(String, String)>,
+    req: Request<Body>,
+) -> Result<Response<Body>, AppError> {
+    // The registry only tracks ACTIVE instances (not installed-but-stopped
+    // modules), so an absent target means "not currently available" → 503.
+    let base_url = {
+        let registry = state.modules.read().await;
+        match registry.get(&target) {
+            Some(inst) => inst.base_url.trim_end_matches('/').to_owned(),
+            None => {
+                tracing::warn!(caller = %caller.0.label(), target = %target,
+                    "IPC relay: cible sans instance active");
+                return Ok(Response::builder()
+                    .status(StatusCode::SERVICE_UNAVAILABLE)
+                    .body(Body::from(format!(
+                        "Module cible '{target}' sans instance active"
+                    )))
+                    .unwrap());
+            }
+        }
+    };
+
+    // `{base}/ipc/<rest>[?query]`. `rest` is the path AFTER the target id; the
+    // core imposes the `/ipc/` prefix, which is what bounds the reachable
+    // surface to the module's IPC routes.
+    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
+    let target_url = format!("{base_url}/ipc/{rest}{query}");
+
+    // Re-inject the TARGET's secret (the value it compares against its own), and
+    // re-sign the identity token for the target when the caller set an
+    // X-Kubuno-User-Id. The caller is authenticated (InternalRequest), so it is
+    // trusted for the identity it presents — the same trust the user→module
+    // proxy grants an authenticated internal caller. Drive's /ipc routes take the
+    // user id from the path/body, so they need none of this; it is here so a
+    // module that DOES verify X-Kubuno-Auth works through the relay too.
+    let module_secret = state.settings.server.module_secret(&target);
+    let signed_identity = {
+        let h = req.headers();
+        h.get("x-kubuno-user-id")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            .map(|id| {
+                let role = h
+                    .get("x-kubuno-user-role")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("user")
+                    .to_owned();
+                let email = h
+                    .get("x-kubuno-user-email")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_owned();
+                let user = kubuno_modauth::ModuleUser { id, role, email };
+                kubuno_modauth::sign(module_secret.as_bytes(), &user, &target)
+            })
+    };
+
+    tracing::debug!(caller = %caller.0.label(), target = %target, rest = %rest,
+        "IPC relay");
+
+    let method = reqwest::Method::from_bytes(req.method().as_str().as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Méthode HTTP invalide: {e}")))?;
+
+    let mut forwarded = req.headers().clone();
+    // Hop-by-hop headers, plus a user Authorization (the relay is internal), and
+    // any identity token the caller supplied — it must never present its own.
+    for h in &["host", "connection", "transfer-encoding", "te", "upgrade",
+               "keep-alive", "content-length", "authorization"] {
+        forwarded.remove(*h);
+    }
+    forwarded.remove(kubuno_modauth::TOKEN_HEADER);
+    if let Some(token) = signed_identity {
+        if let Ok(v) = HeaderValue::from_str(&token) {
+            forwarded.insert(HeaderName::from_static(kubuno_modauth::TOKEN_HEADER), v);
+        }
+    }
+    if let Ok(v) = HeaderValue::from_str(&module_secret) {
+        forwarded.insert(HeaderName::from_static("x-internal-secret"), v);
+    }
+
+    let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Lecture body: {e}")))?;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .request(method, &target_url)
+        .headers(forwarded)
+        .body(body_bytes)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, target = %target, "Relais IPC échoué");
+            AppError::Internal(anyhow::anyhow!("Module cible injoignable: {e}"))
+        })?;
+
+    let status = StatusCode::from_u16(resp.status().as_u16())
+        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut builder = Response::builder().status(status);
+    for (name, value) in resp.headers() {
+        let n = name.as_str();
+        if !matches!(n, "connection" | "transfer-encoding" | "keep-alive" | "te" | "upgrade") {
+            builder = builder.header(name, value);
+        }
+    }
+    let body = Body::from_stream(resp.bytes_stream());
     Ok(builder.body(body).unwrap())
 }
 

@@ -10,6 +10,41 @@ number at release time, and CI publishes that section as the GitHub Release note
 ## [Unreleased]
 
 
+### Added
+
+- **`/api/v1/modules` now gives each module's brand logo, and each sub-app's.**
+  Alongside the lucide `icon` name, every module in the listing carries a
+  `logo_url` pointing to its real brand image served by the host (e.g.
+  `/drive-logo.png`), and every launchable sidebar item carries its own
+  `logo_url` too (Documents, Spreadsheets, Vertex, Apex…), keyed by the item id.
+  Each is `null` when nothing ships for it. The desktop app gallery and the
+  launcher can now show a module's — and a sub-app's — actual logo instead of a
+  generic glyph, falling back to the icon when there is no logo.
+
+- **A module can call another module again when per-module secrets are
+  derived.** With `server.derive_module_secrets` on, each module holds only its
+  own secret and checks an incoming one by equality, so a direct call from one
+  module to another's `/ipc` route was rejected with 401 — only the core, which
+  holds the master secret, can verify or present a given module's secret. The
+  core now relays these calls: a new internal route `ANY /internal/ipc/<target>/…`
+  authenticates the calling module, re-injects the target's own secret, and
+  forwards to the target's `/ipc/<…>` surface, streaming the reply. The relay is
+  bounded to that `/ipc` surface, so it cannot reach a module's user routes or
+  its `/internal`; it returns 401 when the caller is not a valid internal caller
+  and 503 when the target has no running instance. This also stops a silent
+  data-integrity leak: a module deleting its Drive-backed file went through the
+  same broken path, so under derived secrets every deletion left an orphaned
+  Drive file behind.
+
+### Fixed
+
+- **Browser geolocation now works inside the apps.** The security headers sent
+  `geolocation=()`, which blocked the Geolocation API for the host and every
+  module; it is now `geolocation=(self)`, so features like "Your location" and
+  live navigation in Maps can prompt for and use the device position (same
+  origin only, so third-party frames stay blocked).
+
+
 ### Changed
 
 

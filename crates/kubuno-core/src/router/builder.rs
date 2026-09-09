@@ -600,7 +600,14 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/storage/mounts/:user_id/:id/entry/*path",  axum::routing::delete(crate::handlers::storage_mounts::delete_entry))
         .route("/storage/mounts/:user_id/:id/rename/*path", post(crate::handlers::storage_mounts::rename_entry))
         .route("/storage/mounts/:user_id/:id/mkdir/*path",  post(crate::handlers::storage_mounts::create_dir))
-        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30)));
+        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30)))
+        // Relais IPC module→module. Un module ne peut pas s'authentifier
+        // directement auprès d'un autre sous secrets dérivés (chacun ne détient
+        // que le sien, comparé à l'égalité) : l'appel transite par le core, qui
+        // authentifie l'appelant et ré-injecte le secret de la cible. Placé
+        // APRÈS le TimeoutLayer pour que les gros transferts /ipc (contenu de
+        // fichiers) ne soient pas coupés à 30 s, comme /ws et le proxy de modules.
+        .route("/ipc/:target/*rest", axum::routing::any(crate::modules::proxy::ipc_relay));
 
     let cors = {
         let origins = state.settings.server.cors_origins.clone();
@@ -723,8 +730,10 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("permissions-policy"),
             // Allow same-origin access to camera/mic/screen-capture so the chat
-            // module can run WebRTC audio/video calls. Third parties stay blocked.
-            HeaderValue::from_static("camera=(self), microphone=(self), display-capture=(self), geolocation=()"),
+            // module can run WebRTC audio/video calls, and to geolocation so
+            // Maps can offer "Your location", the locate button and live
+            // navigation. Third parties stay blocked.
+            HeaderValue::from_static("camera=(self), microphone=(self), display-capture=(self), geolocation=(self)"),
         ))
         // ── Protections anti-DDoS (les plus externes : filtrent avant tout
         //    travail coûteux). global_rate_limit amortit un flood par IP ;
@@ -775,6 +784,7 @@ async fn module_proxy_middleware(
 ///   - assets content-hashés (URL change à chaque changement de contenu) →
 ///     immutable 1 an : `/assets/*`, `/shared/*` (host), et côté modules
 ///     `/modules/<id>/entry-<hash>.{js,css}` + `/modules/<id>/chunks/*`
+///   - médias statiques à nom STABLE (logos, icônes, polices) → `no-cache`
 ///   - tout le reste (index.html, routes SPA, API, entry non hashé, assets
 ///     modules non hashés) → no-store
 ///
@@ -782,8 +792,27 @@ async fn module_proxy_middleware(
 /// dès que le contenu change. C'est aussi ce qui empêche iOS Safari de resservir
 /// un module ES périmé (son cache est indexé par URL et ignore `no-store` tant
 /// que l'URL reste stable).
+///
+/// `no-cache` ne veut PAS dire « ne pas mettre en cache » (c'est `no-store`) :
+/// le navigateur garde la copie et REVALIDE avant chaque réutilisation. Ces
+/// fichiers portent un nom stable, donc `no-store` les faisait re-télécharger
+/// intégralement à chaque montage — le lanceur d'applications, qui affiche une
+/// vignette par module, repayait ~650 ko à chaque ouverture. Avec `no-cache`,
+/// `ServeDir` répond 304 (corps vide) tant que le fichier n'a pas changé, et
+/// sert le nouveau contenu dès qu'il change : aucun risque de version périmée,
+/// contrairement à un `max-age` qui, lui, laisserait servir l'ancienne image
+/// sans rien demander au serveur.
 async fn cache_control_middleware(req: Request<Body>, next: Next) -> Response {
     let path = req.uri().path().to_owned();
+    // Kept for the content-ETag below, which must read them before `next` takes
+    // ownership of the request. HEAD is excluded on purpose: its body is empty,
+    // so hashing it would publish an ETag that does not describe the file.
+    let is_get = req.method() == Method::GET;
+    let if_none_match = req
+        .headers()
+        .get(axum::http::header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let mut response = next.run(req).await;
     // A handler (or proxied module) that set Cache-Control itself did so on
     // purpose — e.g. drive's font endpoints, which are content-addressed via
@@ -793,15 +822,87 @@ async fn cache_control_middleware(req: Request<Body>, next: Next) -> Response {
     if response.headers().contains_key(axum::http::header::CACHE_CONTROL) {
         return response;
     }
+    let revalidatable = is_revalidatable_static(&path);
     let value = if is_content_hashed_asset(&path) {
         "public, max-age=31536000, immutable"
+    } else if revalidatable {
+        "no-cache"
     } else {
         "no-store"
     };
     if let Ok(v) = HeaderValue::from_str(value) {
         response.headers_mut().insert(axum::http::header::CACHE_CONTROL, v);
     }
+    if revalidatable && is_get && response.status() == StatusCode::OK {
+        response = with_content_etag(response, if_none_match).await;
+    }
     response
+}
+
+/// Validation par CONTENU (ETag) des médias statiques, en plus de la validation
+/// par date que `ServeDir` fournit seul.
+///
+/// `Last-Modified` ne dit pas « le fichier a changé » mais « le fichier a été
+/// réécrit » : installer un `.deb` ou lancer `deploy_local.sh` recopie tout, si
+/// bien que chaque mise à jour renvoyait la totalité des logos (~1 Mo) même
+/// quand pas un pixel n'avait bougé. L'ETag est un condensé du contenu : tant
+/// que l'image est la même, le navigateur reçoit un 304 vide, quelle que soit
+/// la date du fichier sur le disque.
+///
+/// Le corps n'est mis en mémoire que si `Content-Length` l'annonce sous le
+/// plafond : sans cette borne, `to_bytes` consommerait un corps qu'on ne
+/// pourrait plus rejouer, et un gros média serait bufferisé pour rien.
+async fn with_content_etag(response: Response, if_none_match: Option<String>) -> Response {
+    /// Au-delà, on laisse `ServeDir` streamer le fichier avec sa date.
+    const MAX_HASHED_BYTES: usize = 2 * 1024 * 1024;
+
+    let (mut parts, body) = response.into_parts();
+    let len = parts
+        .headers
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<usize>().ok());
+    if len.is_none_or(|l| l > MAX_HASHED_BYTES) {
+        return Response::from_parts(parts, body);
+    }
+
+    let bytes = match axum::body::to_bytes(body, MAX_HASHED_BYTES).await {
+        Ok(b) => b,
+        // The body is gone at this point, so the only honest answer is an error
+        // rather than a truncated file.
+        Err(e) => {
+            tracing::error!("lecture du corps pour l'ETag: {e}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(&bytes);
+    let etag = format!("\"{:x}\"", digest);
+
+    // A cached copy that still matches: answer 304 and send no body at all.
+    // `If-None-Match` may carry a list, and a proxy may have weakened the tag
+    // with the `W/` prefix — both are matches for our purposes.
+    if let Some(candidates) = if_none_match.as_deref() {
+        let hit = candidates
+            .split(',')
+            .map(|c| c.trim().trim_start_matches("W/"))
+            .any(|c| c == etag || c == "*");
+        if hit {
+            parts.status = StatusCode::NOT_MODIFIED;
+            parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+            parts.headers.remove(axum::http::header::CONTENT_TYPE);
+            if let Ok(v) = HeaderValue::from_str(&etag) {
+                parts.headers.insert(axum::http::header::ETAG, v);
+            }
+            return Response::from_parts(parts, Body::empty());
+        }
+    }
+
+    if let Ok(v) = HeaderValue::from_str(&etag) {
+        parts.headers.insert(axum::http::header::ETAG, v);
+    }
+    Response::from_parts(parts, Body::from(bytes))
 }
 
 /// Vrai si le chemin désigne un asset dont le NOM contient un content-hash (donc
@@ -828,6 +929,27 @@ fn is_content_hashed_asset(path: &str) -> bool {
         }
     }
     false
+}
+
+/// Vrai si le chemin désigne un média statique à nom stable (image, icône,
+/// police) servi depuis le disque — donc revalidable par `Last-Modified`/ETag
+/// plutôt que re-téléchargé intégralement.
+///
+/// Les routes applicatives sont exclues : `/api/*` et `/internal/*` peuvent
+/// renvoyer des données privées sous une URL qui « ressemble » à un fichier, et
+/// celles qui servent réellement un média (avatars…) posent déjà leur propre
+/// Cache-Control, honoré plus haut.
+fn is_revalidatable_static(path: &str) -> bool {
+    if path.starts_with("/api/") || path.starts_with("/internal/") {
+        return false;
+    }
+    const EXTS: [&str; 11] = [
+        ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico", ".woff2", ".woff", ".ttf",
+        ".otf",
+    ];
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let lower = file.to_ascii_lowercase();
+    EXTS.iter().any(|ext| lower.ends_with(ext))
 }
 
 fn rewrite_uri_strip_prefix(uri: &Uri, prefix: &str) -> Uri {
