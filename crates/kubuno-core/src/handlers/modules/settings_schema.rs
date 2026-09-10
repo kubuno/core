@@ -224,7 +224,7 @@ pub fn validate_settings_schema(module_id: &str, defs: &[SettingDef]) -> Result<
 }
 
 /// Longest acceptable group slug — it is a path segment, not a sentence.
-const MAX_GROUP_ID_LEN: usize = 50;
+pub(super) const MAX_GROUP_ID_LEN: usize = 50;
 
 /// Validates the `[[setting_groups]]` of a manifest and every reference to them.
 ///
