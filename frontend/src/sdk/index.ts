@@ -82,7 +82,6 @@ export { default as DashboardWidget } from '../core/widgets/DashboardWidget'
 export { default as PdfViewerModal } from '../core/components/PdfViewerModal'
 export { useWidgetSize, WidgetSizeContext } from '../core/widgets/WidgetSizeContext'
 export { useWsStore } from '../core/store/wsStore'
-export { getDateLocale } from '../core/i18n/dateLocale'
 export { getIcon, ICON_MAP } from '../core/utils/iconMap'
 // Registre d'override de composants (thèmes "skins") — un module peut enregistrer
 // ses propres clés thématisables et/ou des overrides ; les scripts de thème
@@ -105,3 +104,11 @@ export type { VoiceSession, VoiceCallbacks, VoiceErrorCode } from '../core/shell
  * proprement un module dont la `sdk_version` déclarée diffère.
  */
 export const SDK_VERSION = 1 as const
+
+// Dates et heures, maison, sur l'Intl de la plateforme (remplace date-fns).
+export * from '../core/intl/datetime'
+// Bridge for modules still built on date-fns: a `Locale` object derived from
+// `Intl`. Removing this export without an SDK version bump broke installed
+// modules at import time; it stays until none of them needs it.
+export { getDateLocale } from '../core/intl/dateFnsLocaleShim'
+export type { DateFnsLocale } from '../core/intl/dateFnsLocaleShim'
