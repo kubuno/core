@@ -63,7 +63,8 @@ class AccountManagerBridge @Inject constructor(
      */
     suspend fun sync() = withContext(Dispatchers.IO) {
         val records = registry.accounts.value
-        val system = manager.getAccountsByType(KubunoAccounts.TYPE)
+        // Collapse any duplicates a previous build left behind before matching.
+        val system = dedupeByIdentity(manager.getAccountsByType(KubunoAccounts.TYPE))
 
         // Additive only. This runs in EVERY Kubuno app, but a system account may
         // belong to a sibling app whose registry this process cannot see —
@@ -75,13 +76,27 @@ class AccountManagerBridge @Inject constructor(
             manager.getUserData(account, KubunoAccounts.USER_DATA_ACCOUNT_ID)
                 ?.let { it to account }
         }.toMap()
+        // An account is ONE (instance, user) pair, whichever app signed it in.
+        // Every app mints its own AccountId for its private storage, so matching
+        // on that alone made the second app believe the account was missing and
+        // add a duplicate. Identity is the real key; the local id is not.
+        val byIdentity = system.mapNotNull { account -> identityOf(account)?.let { it to account } }.toMap()
+
         val takenNames = system.mapTo(mutableSetOf()) { it.name }
         val siblings = siblingPackages()
         for (account in system) grantVisibility(account, siblings)
         for (record in records) {
-            val existing = byId[record.id.value]
-            if (existing != null) {
-                writeUserData(existing, record)
+            val mine = byId[record.id.value]
+            if (mine != null) {
+                writeUserData(mine, record, claimId = true)
+                continue
+            }
+            // Same account, signed in from another app: adopt its entry. The
+            // account_id already on it belongs to the app that created it and is
+            // what the authenticator resolves, so it is left untouched.
+            val shared = byIdentity[identityKey(record.serverUrl, record.userId)]
+            if (shared != null) {
+                writeUserData(shared, record, claimId = false)
                 continue
             }
             val name = uniqueName(record, takenNames)
@@ -93,6 +108,10 @@ class AccountManagerBridge @Inject constructor(
             // and it must never leave this app — sharing it would let a second
             // process rotate concurrently and get the whole session family
             // revoked. Sibling apps get access tokens through getAuthToken().
+            //
+            // Any Kubuno app may do this: the platform allows it for callers
+            // signed with the authenticator's certificate, so whichever app the
+            // user signs in from is the one that publishes the account.
             val added = runCatching {
                 manager.addAccountExplicitly(account, null, userData(record))
             }.onFailure {
@@ -104,6 +123,42 @@ class AccountManagerBridge @Inject constructor(
             }
         }
     }
+
+    /**
+     * Removes the extra system entries left when two apps each published the
+     * same (instance, user). The survivor is the one with the plain name — the
+     * first ever created; the later ones carry a `#<id>` suffix from
+     * [uniqueName]. Only genuine duplicates are touched, so a real second
+     * account is never collapsed into the first.
+     */
+    private fun dedupeByIdentity(accounts: Array<Account>): List<Account> {
+        val groups = accounts.groupBy { identityOf(it) }
+        val kept = mutableListOf<Account>()
+        for ((identity, group) in groups) {
+            if (identity == null || group.size == 1) {
+                kept += group
+                continue
+            }
+            val survivor = group.minByOrNull { it.name.length } ?: group.first()
+            kept += survivor
+            group.filter { it != survivor }.forEach { extra ->
+                runCatching { manager.removeAccountExplicitly(extra) }
+                    .onSuccess { Log.i(TAG, "Removed duplicate system account ${extra.name}") }
+                    .onFailure { Log.w(TAG, "Could not remove duplicate account", it) }
+            }
+        }
+        return kept
+    }
+
+    /** The (instance, user) pair a system account stands for, or null if unusable. */
+    private fun identityOf(account: Account): String? {
+        val server = manager.getUserData(account, KubunoAccounts.USER_DATA_SERVER_URL)
+        val user = manager.getUserData(account, KubunoAccounts.USER_DATA_USER_ID)
+        return if (server.isNullOrEmpty() || user.isNullOrEmpty()) null else identityKey(server, user)
+    }
+
+    private fun identityKey(serverUrl: String, userId: String): String =
+        "${serverUrl.trimEnd('/')}|$userId"
 
     /**
      * Makes [account] readable by the other Kubuno apps.
@@ -156,9 +211,14 @@ class AccountManagerBridge @Inject constructor(
      * `AccountManagerFuture` with the account that was just added.
      */
     suspend fun systemName(id: AccountId): String? = withContext(Dispatchers.IO) {
-        manager.getAccountsByType(KubunoAccounts.TYPE)
-            .firstOrNull { manager.getUserData(it, KubunoAccounts.USER_DATA_ACCOUNT_ID) == id.value }
-            ?.name
+        val accounts = manager.getAccountsByType(KubunoAccounts.TYPE)
+        accounts.firstOrNull { manager.getUserData(it, KubunoAccounts.USER_DATA_ACCOUNT_ID) == id.value }?.name
+            // Adopted entry: it was published by a sibling app, so it carries
+            // that app's account_id — find it by identity instead.
+            ?: registry.get(id)?.let { record ->
+                val key = identityKey(record.serverUrl, record.userId)
+                accounts.firstOrNull { identityOf(it) == key }?.name
+            }
     }
 
     /** Drops the system account mirroring [record], if it is still there. */
@@ -179,9 +239,16 @@ class AccountManagerBridge @Inject constructor(
         putString(KubunoAccounts.USER_DATA_DISPLAY_NAME, record.displayName)
     }
 
-    private fun writeUserData(account: Account, record: AccountRecord) {
+    /**
+     * Refreshes the non-secret profile fields. [claimId] is false when adopting
+     * an entry another app published: its `account_id` points at that app's
+     * registry and token store, which is what the authenticator resolves, so
+     * overwriting it would cut the account off from the session serving it.
+     */
+    private fun writeUserData(account: Account, record: AccountRecord, claimId: Boolean) {
         val data = userData(record)
         for (key in data.keySet()) {
+            if (!claimId && key == KubunoAccounts.USER_DATA_ACCOUNT_ID) continue
             val value = data.getString(key)
             if (manager.getUserData(account, key) != value) {
                 runCatching { manager.setUserData(account, key, value) }
