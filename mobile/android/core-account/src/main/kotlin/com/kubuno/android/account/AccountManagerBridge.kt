@@ -3,11 +3,8 @@ package com.kubuno.android.account
 import android.accounts.Account
 import android.accounts.AccountManager
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import java.security.MessageDigest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -179,32 +176,7 @@ class AccountManagerBridge @Inject constructor(
     }
 
     /** Installed packages, other than us, signed with our certificate. */
-    private fun siblingPackages(): List<String> {
-        val pm = context.packageManager
-        val mine = signaturesOf(context.packageName) ?: return emptyList()
-        @Suppress("DEPRECATION", "QueryPermissionsNeeded")
-        return pm.getInstalledPackages(0)
-            .map { it.packageName }
-            .filter { it != context.packageName }
-            .filter { signaturesOf(it)?.let { sig -> sig.intersect(mine).isNotEmpty() } == true }
-    }
-
-    /** The app's signing certificates as SHA-256 hex, across API levels. */
-    private fun signaturesOf(pkg: String): Set<String>? = runCatching {
-        val pm = context.packageManager
-        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES)
-            val signing = info.signingInfo ?: return@runCatching null
-            if (signing.hasMultipleSigners()) signing.apkContentsSigners else signing.signingCertificateHistory
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES).signatures
-        }
-        signatures?.mapNotNull { sig ->
-            val digest = MessageDigest.getInstance("SHA-256").digest(sig.toByteArray())
-            digest.joinToString("") { "%02x".format(it) }
-        }?.toSet()
-    }.getOrNull()
+    private fun siblingPackages(): List<String> = KubunoSiblings.packages(context)
 
     /**
      * Name the system knows [id] by, once [sync] has run. Used to answer an

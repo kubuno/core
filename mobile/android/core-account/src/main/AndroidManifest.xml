@@ -10,18 +10,50 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Package visibility (Android 11+): to grant a shared account visibility
-         to the other Kubuno apps, the owner must first be able to see them.
-         Every Kubuno app declares an account authenticator (below), so querying
-         that intent surfaces exactly the app family; siblingPackages() then
-         gates them on a shared signing certificate. -->
+    <!-- Package visibility (Android 11+): to share an account with the other
+         Kubuno apps — and to borrow an access token from them — this app must
+         first be allowed to see them.
+
+         The authenticator intent below does NOT achieve that on its own: the
+         platform only resolves it through the account framework, so the
+         sibling packages stay filtered out of getInstalledPackages() and their
+         content providers are unreachable (verified on API 35: `dumpsys
+         package queries` listed no Kubuno package). The family is a closed,
+         known set, so name it explicitly. An entry for an app that is not
+         installed is simply ignored; KubunoSiblings then gates every visible
+         package on a shared signing certificate, which is what actually makes
+         lending a token safe. -->
     <queries>
+        <package android:name="com.kubuno.android" />
+        <package android:name="com.kubuno.chat.android" />
+        <package android:name="com.kubuno.mail.android" />
+        <package android:name="com.kubuno.maps.android" />
+        <package android:name="com.kubuno.photos.android" />
         <intent>
             <action android:name="android.accounts.AccountAuthenticator" />
         </intent>
     </queries>
 
+    <!-- Lending an access token between Kubuno apps is gated on the shared
+         signing certificate, so a foreign package cannot ask for one. Every app
+         both declares and uses it; identical name + signature level means the
+         declarations simply agree. -->
+    <permission
+        android:name="com.kubuno.android.permission.SHARE_TOKENS"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.kubuno.android.permission.SHARE_TOKENS" />
+
     <application>
+        <!-- Hands a 15-minute access token to a sibling app when the single
+             bound authenticator can no longer mint one itself. Never a refresh
+             token: two processes rotating the same session would have the whole
+             family revoked. -->
+        <provider
+            android:name="com.kubuno.android.account.KubunoTokenProvider"
+            android:authorities="${applicationId}.kubunotokens"
+            android:exported="true"
+            android:permission="com.kubuno.android.permission.SHARE_TOKENS" />
+
         <!-- exported="false": the framework binds it by intent filter, no app
              ever talks to it directly. -->
         <service

@@ -110,24 +110,22 @@ class KubunoAuthenticator(
         }
 
         val id = resolveAccountId(account)
-            ?: return reLoginBundle(response, null)
         // The system account outlived the Kubuno registration (app data
-        // cleared, account forgotten): sign in again rather than guess.
-        if (registry.get(id) == null) return reLoginBundle(response, id)
-        val client = clients.of(id) ?: return reLoginBundle(response, id)
+        // cleared, account forgotten), or it was published by another app whose
+        // id we do not know: a sibling may still be able to serve it.
+        val client = id?.takeIf { registry.get(it) != null }?.let { clients.of(it) }
+            ?: return borrowedOr(account, response, id)
 
         return try {
             val token = runBlocking { client.tokenManager.validAccessToken() }
-                ?: return reLoginBundle(response, id)
-            Bundle().apply {
-                putString(AccountManager.KEY_ACCOUNT_NAME, account.name)
-                putString(AccountManager.KEY_ACCOUNT_TYPE, KubunoAccounts.TYPE)
-                putString(AccountManager.KEY_AUTHTOKEN, token)
-            }
+                ?: return borrowedOr(account, response, id)
+            tokenBundle(account, token)
         } catch (e: AuthException) {
             when (e.kind) {
-                // The session is dead for good: only a human can fix it.
-                FailureKind.GENUINE -> reLoginBundle(response, id)
+                // Our own session is dead for good — but the account may still
+                // be alive in a sibling app, so ask before sending the user to
+                // a sign-in screen.
+                FailureKind.GENUINE -> borrowedOr(account, response, id)
                 // Offline, rate-limited or in refresh cooldown: the session is
                 // intact, the caller should simply retry later.
                 FailureKind.TRANSIENT -> errorBundle(
@@ -138,6 +136,34 @@ class KubunoAuthenticator(
         } catch (e: Exception) {
             errorBundle(AccountManager.ERROR_CODE_NETWORK_ERROR, e.message ?: "Refresh failed")
         }
+    }
+
+    /**
+     * Last resort before asking the user to sign in again: any sibling Kubuno
+     * app that still holds a live session for this account can lend a
+     * short-lived access token. Only when none can is the account really
+     * unusable.
+     */
+    private fun borrowedOr(
+        account: Account,
+        response: AccountAuthenticatorResponse?,
+        id: AccountId?,
+    ): Bundle {
+        val manager = AccountManager.get(context)
+        val serverUrl = manager.getUserData(account, KubunoAccounts.USER_DATA_SERVER_URL)
+        val userId = manager.getUserData(account, KubunoAccounts.USER_DATA_USER_ID)
+        if (!serverUrl.isNullOrEmpty() && !userId.isNullOrEmpty()) {
+            KubunoTokenProvider.borrowFromSiblings(context, serverUrl, userId)?.let {
+                return tokenBundle(account, it)
+            }
+        }
+        return reLoginBundle(response, id)
+    }
+
+    private fun tokenBundle(account: Account, token: String) = Bundle().apply {
+        putString(AccountManager.KEY_ACCOUNT_NAME, account.name)
+        putString(AccountManager.KEY_ACCOUNT_TYPE, KubunoAccounts.TYPE)
+        putString(AccountManager.KEY_AUTHTOKEN, token)
     }
 
     override fun getAuthTokenLabel(authTokenType: String?): String? =
