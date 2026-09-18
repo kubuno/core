@@ -270,6 +270,29 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
         }
     }
 
+    // A .kbpkg carries its example configuration at the module ROOT — there is no
+    // etc/ tree in it. Without this fallback no configuration was ever written for
+    // a module installed from a package, so the module resolved its paths relative
+    // to its working directory (which is its CONFIGURATION directory) and wrote
+    // user data under /etc. Seeded once only: an administrator's existing file is
+    // never overwritten.
+    if !config_written {
+        let example = dest_mod.join("config.toml.example");
+        let dest_cfg = Path::new(&settings.server.modules_config_dir).join(id);
+        let dest_file = dest_cfg.join("config.toml");
+        if example.is_file() && !dest_file.exists() {
+            match std::fs::create_dir_all(&dest_cfg).and_then(|()| std::fs::copy(&example, &dest_file)) {
+                Ok(_) => {
+                    config_written = true;
+                    tracing::info!(module_id = %id, file = %dest_file.display(),
+                        "Configuration du module initialisée depuis config.toml.example");
+                }
+                Err(e) => tracing::warn!(module_id = %id, file = %dest_file.display(), error = %e,
+                    "Configuration du module non initialisée (permissions ?) — le module écrira ses données en chemin relatif"),
+            }
+        }
+    }
+
     // 7) Nettoyage du staging.
     let _ = tokio::fs::remove_dir_all(install_dir.join(".staging")).await;
 

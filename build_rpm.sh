@@ -191,6 +191,14 @@ chmod 750 /var/lib/kubuno /var/lib/kubuno/themes
 mkdir -p /var/log/kubuno
 chown kubuno:kubuno /var/log/kubuno
 chmod 750 /var/log/kubuno
+# L'assistant d'installation écrit /etc/kubuno/config.toml par renommage
+# atomique (.config.toml.new puis rename), ce qui exige le droit d'écriture sur le
+# RÉPERTOIRE et pas seulement sur le fichier. Livré root:root, l'assistant échouait
+# à sa dernière étape, APRÈS avoir créé la base. Le bit setgid maintient le groupe
+# sur ce que le service y dépose ensuite.
+mkdir -p /etc/kubuno
+chown root:kubuno /etc/kubuno
+chmod 2775 /etc/kubuno
 if [ ! -f /etc/kubuno/config.toml ]; then
     cp /etc/kubuno/config.toml.example /etc/kubuno/config.toml
     echo "→ /etc/kubuno/config.toml créé. Renseignez database, auth.jwt_secret et server.internal_secret."

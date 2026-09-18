@@ -319,6 +319,14 @@ mkdir -p /usr/lib/kubuno/modules
 # configuration itself, so both directories must belong to it. Left to root they
 # made every hot install fail — the module landed in the writable store but its
 # configuration directory could not be created.
+# L'assistant d'installation écrit /etc/kubuno/config.toml par renommage
+# atomique (.config.toml.new puis rename), ce qui exige le droit d'écriture sur le
+# RÉPERTOIRE et pas seulement sur le fichier. Livré root:root, l'assistant échouait
+# à sa dernière étape, APRÈS avoir créé la base. Le bit setgid maintient le groupe
+# sur ce que le service y dépose ensuite.
+mkdir -p /etc/kubuno
+chown root:kubuno /etc/kubuno
+chmod 2775 /etc/kubuno
 mkdir -p /etc/kubuno/modules
 chown kubuno:kubuno /usr/lib/kubuno/modules /etc/kubuno/modules
 chmod 750 /usr/lib/kubuno/modules /etc/kubuno/modules

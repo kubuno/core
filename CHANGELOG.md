@@ -22,6 +22,18 @@ number at release time, and CI publishes that section as the GitHub Release note
   owns the data directory, repairing an installation already in that state.
   The server also creates the store at startup when it is missing, so the
   directory belongs to it whoever installs the first module.
+- **The setup assistant can write the configuration it produces.** The packages
+  shipped `/etc/kubuno` owned by `root` while the server runs under its own
+  account. Since the configuration file is written by atomic rename, which needs
+  write access to the *directory*, the assistant failed at its last step — after
+  it had already created the database. The directory now belongs to the service
+  group and carries the setgid bit.
+- **A module installed from a package gets its configuration.** Only the old
+  layout was recognised, so a module installed from a `.kbpkg` never received
+  one. It then resolved its paths relative to its working directory — which is
+  its configuration directory — and wrote user files under `/etc`. The packaged
+  example is now installed as the effective configuration on first install; an
+  existing file is never overwritten.
 
 ## [0.1.11] - 2026-09-18
 
