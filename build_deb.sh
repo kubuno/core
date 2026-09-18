@@ -289,7 +289,7 @@ SYSTEMD
 Package: ${PACKAGE}
 Version: ${FULL_VERSION}
 Architecture: ${ARCH}
-Maintainer: Martinien OLINGA <kubuno@martinienolinga.com>
+Maintainer: Martinien OLINGA <kubuno@toiledev.com>
 Depends: libssl3, ca-certificates, postgresql-common
 Recommends: postgresql-16
 Section: web
@@ -419,7 +419,7 @@ setup_module() {
 Package: ${PACKAGE}
 Version: ${FULL_VERSION}
 Architecture: ${ARCH}
-Maintainer: Martinien OLINGA <kubuno@martinienolinga.com>
+Maintainer: Martinien OLINGA <kubuno@toiledev.com>
 Depends: libssl3, ca-certificates, kubuno-core (>= ${VERSION})
 Section: web
 Priority: optional
