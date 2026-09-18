@@ -52,6 +52,13 @@ number at release time, and CI publishes that section as the GitHub Release note
   silently returned the whole journal, which reads exactly like a journal
   holding no failure. Unknown parameters are now rejected.
 
+### Security
+
+- **TLS library updated to a patched release.** The pinned `rustls` carried
+  RUSTSEC-2026-0285 (medium). Every outbound HTTPS connection the server makes —
+  the marketplace catalogue, certificate issuance, remote storage — goes through
+  it.
+
 ### Changed
 
 - **The quality gate runs the unit suites.** It only compiled them: an assertion
