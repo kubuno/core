@@ -134,6 +134,17 @@ pub async fn start_all(settings: Arc<Settings>, modules_dir: &Path, db: PgPool) 
     // par le core). En cas de doublon d'id, l'installation marketplace a la priorité
     // (mise à jour explicite par l'admin).
     let install_dir = PathBuf::from(&settings.server.modules_install_dir);
+    // Create the store here, while running as the service account, so that it
+    // belongs to the server whatever installed the first module. Left to the CLI
+    // under sudo it would be created as root, and the server could never write a
+    // marketplace install into it again.
+    if !install_dir.is_dir() {
+        match std::fs::create_dir_all(&install_dir) {
+            Ok(()) => tracing::info!(dir = %install_dir.display(), "Store des modules créé"),
+            Err(e) => tracing::error!(dir = %install_dir.display(), error = %e,
+                "Création du store des modules impossible — les installations depuis la marketplace échoueront"),
+        }
+    }
     let mut manifests = load_all(&install_dir);
     let mut seen: std::collections::HashSet<String> =
         manifests.iter().map(|(_, m)| m.module.id.clone()).collect();

@@ -20,6 +20,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   cause. The packages now create the store for the service account, and an
   install run with elevated rights hands what it created back to the account that
   owns the data directory, repairing an installation already in that state.
+  The server also creates the store at startup when it is missing, so the
+  directory belongs to it whoever installs the first module.
 
 ## [0.1.11] - 2026-09-18
 
