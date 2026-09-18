@@ -147,8 +147,20 @@ mod tests {
     use super::*;
     use crate::audit::ActorOrigin;
 
+    /// The cache is a process-wide static, so these tests cannot run in
+    /// parallel: one of them calls `invalidate_all()` and wipes what another
+    /// has just stored, between its own `put` and `get`. The race decides by
+    /// scheduling, which is why the suite passed on one machine and failed on
+    /// another the first time it was actually run.
+    fn exclusive() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        // A test that panicked while holding the lock must not poison the rest.
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn a_stored_context_is_returned_then_dropped_on_invalidation() {
+        let _serialised = exclusive();
         let id = Uuid::new_v4();
         let mut ctx = AdminContext::empty(id, ActorOrigin::Session, None);
         ctx.is_superuser = true;
@@ -163,12 +175,14 @@ mod tests {
 
     #[test]
     fn an_unknown_subject_is_a_miss() {
+        let _serialised = exclusive();
         invalidate_all();
         assert!(get(Uuid::new_v4()).is_none());
     }
 
     #[test]
     fn the_roster_is_dropped_by_the_same_invalidation_as_the_contexts() {
+        let _serialised = exclusive();
         let holder = Uuid::new_v4();
         put_roster(Roster::Holders(Arc::new(HashSet::from([holder]))));
         match get_roster() {

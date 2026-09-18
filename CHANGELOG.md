@@ -63,7 +63,9 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **The quality gate runs the unit suites.** It only compiled them: an assertion
   left behind by a change of bound stayed red from 0.1.6 to 0.1.11 because
-  nothing ever executed it.
+  nothing ever executed it. Running them also exposed three authorisation
+  cache tests racing each other over a process-wide static — they now take
+  turns, so a pass no longer depends on which machine runs them.
 
 ## [0.1.11] - 2026-09-18
 
