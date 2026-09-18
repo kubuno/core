@@ -273,6 +273,10 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
     // 7) Nettoyage du staging.
     let _ = tokio::fs::remove_dir_all(install_dir.join(".staging")).await;
 
+    // 7 bis) Le store doit rester écrivable par le service, même quand c'est la CLI
+    //        sous sudo qui vient d'y écrire (cf. align_store_ownership).
+    align_store_ownership(&install_dir, &dest_mod);
+
     // 8) Parse du manifeste relocalisé (les dépendances y figurent).
     let toml_str = tokio::fs::read_to_string(dest_mod.join("module.toml"))
         .await
@@ -288,6 +292,69 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
         config_written,
     })
 }
+
+/// Give the store back to the account that runs the server.
+///
+/// `kubuno modules:install` is documented as a `sudo` command, so everything it
+/// creates under the store belongs to root — including the store directory itself
+/// when the package never created it. The core runs as an unprivileged service
+/// account and can then no longer write there, which breaks every later install
+/// from the Marketplace with a permission error that points nowhere.
+///
+/// The target owner is DERIVED from the directory that contains the store (the
+/// data directory the packaging created for the service account) rather than
+/// hardcoded: a custom `modules_install_dir` and a custom service user work the
+/// same way. Best-effort — a failure is logged, never fatal, since an install run
+/// by the service itself already has the right owner and nothing to repair.
+#[cfg(unix)]
+fn align_store_ownership(install_dir: &Path, dest_mod: &Path) {
+    use std::os::unix::fs::MetadataExt;
+
+    let Some(parent) = install_dir.parent() else { return };
+    let Ok(reference) = std::fs::metadata(parent) else { return };
+    let (uid, gid) = (reference.uid(), reference.gid());
+
+    // The store itself is only a container: a single chown is enough.
+    if let Ok(meta) = std::fs::symlink_metadata(install_dir) {
+        if (meta.uid(), meta.gid()) != (uid, gid) {
+            match std::os::unix::fs::chown(install_dir, Some(uid), Some(gid)) {
+                Ok(()) => tracing::info!(dir = %install_dir.display(), uid, gid,
+                    "Store des modules : propriétaire réaligné sur celui du répertoire de données"),
+                Err(e) => tracing::warn!(dir = %install_dir.display(), error = %e,
+                    "Store des modules : propriétaire non réaligné — le service risque de ne plus pouvoir y écrire"),
+            }
+        }
+    }
+
+    // The module just unpacked: the whole tree must belong to the service.
+    if let Ok(meta) = std::fs::symlink_metadata(dest_mod) {
+        if (meta.uid(), meta.gid()) != (uid, gid) {
+            if let Err(e) = chown_tree(dest_mod, uid, gid) {
+                tracing::warn!(dir = %dest_mod.display(), error = %e,
+                    "Module installé : propriétaire non réaligné — le service risque de ne pas pouvoir le lire");
+            }
+        }
+    }
+}
+
+/// Recursive `chown` that never follows a symlink (a link inside an untrusted
+/// archive must not be able to redirect the change outside the store).
+#[cfg(unix)]
+fn chown_tree(path: &Path, uid: u32, gid: u32) -> std::io::Result<()> {
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.file_type().is_symlink() {
+        return std::os::unix::fs::lchown(path, Some(uid), Some(gid));
+    }
+    if meta.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            chown_tree(&entry?.path(), uid, gid)?;
+        }
+    }
+    std::os::unix::fs::chown(path, Some(uid), Some(gid))
+}
+
+#[cfg(not(unix))]
+fn align_store_ownership(_install_dir: &Path, _dest_mod: &Path) {}
 
 /// Installe un module et, RÉCURSIVEMENT, ses dépendances manquantes AVANT de le
 /// démarrer (dépendances d'abord). `visited` protège des cycles ; `depth` borne la
@@ -499,4 +566,61 @@ pub async fn install_local(settings: &Settings, file: &Path) -> Result<InstallRe
         config_written,
         dependencies: manifest.module.dependencies.clone(),
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+
+    /// Build `<root>/store/<id>` with a nested directory, a file and a symlink
+    /// that escapes the tree — the shape an untrusted `.kbpkg` can produce.
+    fn sample_store(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        let outside = root.join("outside.txt");
+        std::fs::write(&outside, b"untouched").unwrap();
+        let store = root.join("store");
+        let module = store.join("demo");
+        std::fs::create_dir_all(module.join("frontend")).unwrap();
+        std::fs::write(module.join("module.toml"), b"[module]").unwrap();
+        std::fs::write(module.join("frontend/entry.js"), b"//").unwrap();
+        std::os::unix::fs::symlink(&outside, module.join("escape")).unwrap();
+        (store, module, outside)
+    }
+
+    #[test]
+    fn chown_tree_walks_the_whole_module_without_following_symlinks() {
+        let tmp = std::env::temp_dir().join(format!("kbstore-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (_store, module, outside) = sample_store(&tmp);
+
+        // Re-applying our own uid/gid is permitted without privileges, so the
+        // traversal itself is what this exercises.
+        let me = std::fs::metadata(&module).unwrap();
+        chown_tree(&module, me.uid(), me.gid()).unwrap();
+
+        // The escaping symlink is still a symlink, and its target still exists:
+        // a recursive chown that followed it would have left the tree.
+        let link = std::fs::symlink_metadata(module.join("escape")).unwrap();
+        assert!(link.file_type().is_symlink());
+        assert_eq!(std::fs::read(&outside).unwrap(), b"untouched");
+        assert!(module.join("frontend/entry.js").is_file());
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn align_store_ownership_is_a_no_op_when_the_owner_already_matches() {
+        let tmp = std::env::temp_dir().join(format!("kbstore-noop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (store, module, _) = sample_store(&tmp);
+
+        // Everything here belongs to the current user, as it does when the
+        // service installs a module itself: nothing to repair, and no panic.
+        align_store_ownership(&store, &module);
+        assert!(module.join("module.toml").is_file());
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 }

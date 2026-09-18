@@ -306,7 +306,11 @@ set -e
 if ! id -u kubuno &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin kubuno
 fi
-mkdir -p /var/lib/kubuno/drive /var/lib/kubuno/themes
+# Store des modules : c'est là que le core et « kubuno modules:install »
+# déballent les .kbpkg. Absent, le premier qui écrit en devient propriétaire —
+# root quand l'installation passe par sudo — et le service ne peut plus rien y
+# installer ensuite. Le créer ici le donne au compte de service dès le départ.
+mkdir -p /var/lib/kubuno/drive /var/lib/kubuno/themes /var/lib/kubuno/modules-store
 # Répertoire des modules : l'unité le veut accessible en écriture, et une
 # installation du seul core n'en contient encore aucun. Absent, systemd refusait
 # de construire le namespace et le service ne démarrait pas (226/NAMESPACE).
@@ -330,7 +334,7 @@ if [ -d /usr/share/kubuno/themes ]; then
     cp -r /usr/share/kubuno/themes/. /var/lib/kubuno/themes/ 2>/dev/null || true
 fi
 chown -R kubuno:kubuno /var/lib/kubuno
-chmod 750 /var/lib/kubuno /var/lib/kubuno/themes
+chmod 750 /var/lib/kubuno /var/lib/kubuno/themes /var/lib/kubuno/modules-store
 mkdir -p /var/log/kubuno
 chown kubuno:adm /var/log/kubuno
 chmod 750 /var/log/kubuno

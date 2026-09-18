@@ -9,6 +9,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **Installing a module with `sudo` no longer locks the server out of its own
+  module store.** `kubuno modules:install` is documented as a `sudo` command, and
+  on a fresh installation it was the first thing to create
+  `/var/lib/kubuno/modules-store` — as `root`. The server, which runs under an
+  unprivileged account, could then no longer write there, and every later
+  installation from the Marketplace failed with a permission error that named no
+  cause. The packages now create the store for the service account, and an
+  install run with elevated rights hands what it created back to the account that
+  owns the data directory, repairing an installation already in that state.
+
 ## [0.1.11] - 2026-09-18
 
 ### Added

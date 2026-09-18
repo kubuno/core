@@ -171,7 +171,11 @@ getent passwd kubuno >/dev/null || \
 exit 0
 
 %post
-mkdir -p /var/lib/kubuno/files /var/lib/kubuno/themes
+# Store des modules : c'est là que le core et « kubuno modules:install »
+# déballent les .kbpkg. Absent, le premier qui écrit en devient propriétaire —
+# root quand l'installation passe par sudo — et le service ne peut plus rien y
+# installer ensuite. Le créer ici le donne au compte de service dès le départ.
+mkdir -p /var/lib/kubuno/files /var/lib/kubuno/themes /var/lib/kubuno/modules-store
 # Destination par défaut des sauvegardes. 0700 : le fichier contient les
 # empreintes de mots de passe de tous les comptes de l'instance.
 mkdir -p /var/backups/kubuno
