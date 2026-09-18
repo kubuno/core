@@ -52,7 +52,7 @@ pub fn finish_progress(id: &str, result: &Result<InstallReport, AppError>) {
             Ok(r)  => InstallProgress { phase: "done".into(),  message: "Installé".into(),
                                         report: Some(r.clone()), error: None },
             Err(e) => InstallProgress { phase: "error".into(), message: "Échec".into(),
-                                        report: None, error: Some(e.to_string()) },
+                                        report: None, error: Some(e.detail()) },
         };
         m.insert(id.to_string(), entry);
     }

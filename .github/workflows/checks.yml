@@ -1,8 +1,8 @@
 name: Checks
 
 # Security & quality gate (ISO/IEC 27001 A.8.29 secure testing, A.8.8 vuln mgmt).
-# Complements build.yml (which only compiles): runs clippy -D warnings, the test
-# suites, a dependency-vulnerability audit, and the frontend typecheck/tests.
+# Complements build.yml (which only compiles): runs clippy -D warnings, the unit
+# test suites, a dependency-vulnerability audit, and the frontend typecheck/tests.
 on:
   push:
     branches: [main]
@@ -21,10 +21,15 @@ jobs:
         with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
       # clippy --all-targets also compiles the test code (catching test
-      # build breakage). Running the backend suites needs a Postgres service
-      # per repo — wired as a follow-up.
+      # build breakage).
       - name: clippy (deny warnings)
         run: cargo clippy --all-targets -- -D warnings
+      # Compiling the tests is not running them: an assertion left behind by a
+      # change of bound stayed red from v0.1.6 to v0.1.11 because nothing ever
+      # executed it. The unit suites need no database; the integration suites
+      # that need a Postgres service are still to be wired.
+      - name: tests unitaires
+        run: cargo test --lib
 
   audit:
     runs-on: ubuntu-latest

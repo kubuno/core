@@ -52,7 +52,13 @@ impl Cursor {
 }
 
 /// Query string of `GET /admin/audit`.
+///
+/// Unknown parameters are REFUSED rather than ignored. Silently dropping a
+/// filter it does not know makes the endpoint answer with the whole journal, and
+/// an administrator reading `?result=error` has no way to tell an unfiltered
+/// answer from a journal that really holds no failure.
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditQuery {
     pub actor_id: Option<uuid::Uuid>,
     /// Exact action, or a prefix: `core.users` matches `core.users.*`.

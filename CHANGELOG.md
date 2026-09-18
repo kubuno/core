@@ -34,6 +34,29 @@ number at release time, and CI publishes that section as the GitHub Release note
   its configuration directory — and wrote user files under `/etc`. The packaged
   example is now installed as the effective configuration on first install; an
   existing file is never overwritten.
+- **A failed installation now says why.** "Erreur interne" was all an
+  administrator got, on the banner, in the API response, in the audit trail AND
+  in the server log — leaving no way to diagnose a failure even with shell access
+  to the machine. The cause chain now reaches the surfaces only an administrator
+  reads: the log, the audit entry and the installation status. Public responses
+  stay generic.
+- **The Marketplace no longer offers a downgrade.** Versions were compared as
+  plain text, so any difference lit up the "Update" button: an instance running
+  0.1.10 was invited to install 0.1.8. They are compared as version numbers now,
+  and the button appears only for a strictly newer release.
+- **A successful install reports the version it actually installed.** The banner
+  and the server log named the version the catalogue announced, while the
+  package downloaded was the latest release — so a catalogue lagging behind made
+  them name a version that was never installed.
+- **An unknown audit filter is refused instead of ignored.** `?result=error`
+  silently returned the whole journal, which reads exactly like a journal
+  holding no failure. Unknown parameters are now rejected.
+
+### Changed
+
+- **The quality gate runs the unit suites.** It only compiled them: an assertion
+  left behind by a change of bound stayed red from 0.1.6 to 0.1.11 because
+  nothing ever executed it.
 
 ## [0.1.11] - 2026-09-18
 

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { isNewerVersion } from '../utils/semver'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -174,8 +175,13 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
           <h4 className="text-sm font-bold text-text-secondary mb-2">{cat}</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visible.filter((m) => (m.category || 'Autres') === cat).map((mod) => {
-              const upToDate = mod.installed && mod.installed_version === mod.version
-              const canUpdate = mod.installed && mod.installed_version !== mod.version
+              // Strictly newer only: a catalogue lagging behind must never invite
+              // an administrator to downgrade (string comparison offered 0.1.8
+              // to an instance running 0.1.10).
+              const catalogueIsNewer =
+                !!mod.installed_version && isNewerVersion(mod.version, mod.installed_version)
+              const canUpdate = !!mod.installed && catalogueIsNewer
+              const upToDate = !!mod.installed && !catalogueIsNewer
               const isBusy = busy === mod.id
               return (
                 <div key={mod.id} className="bg-white rounded-xl border border-border p-4 flex flex-col gap-3">

@@ -113,10 +113,10 @@ pub async fn install_marketplace(
                     .after(json!({ "id": &mid, "version": &r.version }))
             }
             Err(e) => {
-                tracing::error!(module_id = %mid, error = %e, "Marketplace : installation échouée");
+                tracing::error!(module_id = %mid, error = %e.detail(), "Marketplace : installation échouée");
                 AuditEntry::new("core.marketplace.install")
                     .target(target::MARKETPLACE, &mid, mid.clone())
-                    .failed(e.to_string())
+                    .failed(e.detail())
             }
         };
         ctx.record(&db, entry).await;
@@ -160,7 +160,7 @@ pub async fn uninstall_marketplace(
                 &state.db,
                 AuditEntry::new("core.marketplace.uninstall")
                     .target(target::MARKETPLACE, &id, id.clone())
-                    .failed(e.to_string()),
+                    .failed(e.detail()),
             )
             .await;
         return Err(e);

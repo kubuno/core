@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn length_is_clamped_to_a_usable_range() {
         assert_eq!(generate_password(0).chars().count(), 12);
-        assert_eq!(generate_password(1_000).chars().count(), 64);
+        assert_eq!(generate_password(1_000).chars().count(), 128);
     }
 
     #[test]

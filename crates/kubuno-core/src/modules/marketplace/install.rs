@@ -153,7 +153,7 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
         }
         None => resolve_artifact(&http, &repo, &detail.version).await?,
     } };
-    tracing::info!(module_id = %id, version = %detail.version, os = std::env::consts::OS, arch = std::env::consts::ARCH, url = %asset.url, "Marketplace : téléchargement du paquet .kbpkg");
+    tracing::info!(module_id = %id, version_catalogue = %detail.version, os = std::env::consts::OS, arch = std::env::consts::ARCH, url = %asset.url, "Marketplace : téléchargement du paquet .kbpkg");
     set_phase(id, "downloading", "Téléchargement de l'artefact…");
     let bytes = http
         .get(&asset.url)
@@ -307,11 +307,17 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
     let manifest: crate::modules::manifest::ModuleManifest = toml::from_str(&toml_str)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("parse module.toml: {e}")))?;
 
+    // The version of the package actually installed, read from its own manifest —
+    // not the one the catalogue announced. The core downloads the latest release,
+    // so a catalogue lagging behind made every success message, and the server
+    // log, name a version that was never installed.
+    let installed_version = manifest.module.version.clone();
+
     Ok(Materialized {
         dest_mod,
         manifest,
         name: detail.name,
-        version: detail.version,
+        version: installed_version,
         config_written,
     })
 }

@@ -123,6 +123,25 @@ pub enum AppError {
     Internal(#[from] anyhow::Error),
 }
 
+impl AppError {
+    /// The full cause chain, for the surfaces only an administrator reads: the
+    /// server log, the audit trail and the install progress endpoint.
+    ///
+    /// `Display` stays deliberately generic on `Internal` and `Database` so that
+    /// a response body never leaks internals. That genericity used to reach the
+    /// logs and the audit trail too, which left an administrator facing
+    /// "Erreur interne" on four surfaces at once with no way to diagnose the
+    /// failure — even with full shell access to the server.
+    pub fn detail(&self) -> String {
+        match self {
+            // anyhow's alternate form prints the whole chain, "outer: inner: root".
+            AppError::Internal(e) => format!("{e:#}"),
+            AppError::Database(e) => format!("{self} : {e}"),
+            other => other.to_string(),
+        }
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
@@ -167,11 +186,42 @@ impl IntoResponse for AppError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE_ERROR", "Erreur base de données".to_string())
             }
             AppError::Internal(e) => {
-                tracing::error!(error = %e, "Internal error");
+                // The chain, not just the outermost message: the response body
+                // below stays generic, so this log is the only place the cause
+                // survives.
+                tracing::error!(error = %format!("{e:#}"), "Internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Erreur interne".to_string())
             }
         };
 
         (status, Json(json!({ "error": code, "message": message }))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detail_keeps_the_whole_cause_chain_that_display_hides() {
+        let root = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Permission denied (os error 13)");
+        let err: AppError = anyhow::Error::new(root)
+            .context("création staging /var/lib/kubuno/modules-store/.staging/mail")
+            .into();
+
+        // What the response body and the old logs showed: nothing usable.
+        assert_eq!(err.to_string(), "Erreur interne");
+
+        // What an administrator now gets on the log, the audit trail and the
+        // install status endpoint: the operation AND its root cause.
+        let detail = err.detail();
+        assert!(detail.contains("création staging"), "chaîne perdue : {detail}");
+        assert!(detail.contains("Permission denied"), "cause racine perdue : {detail}");
+    }
+
+    #[test]
+    fn detail_of_a_plain_variant_is_its_message() {
+        let err = AppError::NotFound("module « mail »".into());
+        assert_eq!(err.detail(), err.to_string());
     }
 }

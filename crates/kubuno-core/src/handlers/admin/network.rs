@@ -121,7 +121,7 @@ pub async fn request_acme(
             })),
         Err(e) => AuditEntry::new("core.network.acme.request")
             .target_kind("network.certificate", "certificat")
-            .failed(e.to_string()),
+            .failed(e.detail()),
     };
     let tx = audit.begin(&state.db).await?;
     tx.commit(entry).await?;
