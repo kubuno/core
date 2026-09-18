@@ -1,5 +1,5 @@
+import { cn } from '../../../ui/cn'
 import { useMemo } from 'react'
-import { clsx } from 'clsx'
 import { Input } from '@ui'
 
 /**
@@ -77,7 +77,7 @@ export function QuotaField({
               type="button"
               aria-pressed={unit === u.id}
               onClick={() => onUnit(u.id)}
-              className={clsx(
+              className={cn(
                 'px-3 py-2 transition-colors',
                 unit === u.id
                   ? 'bg-primary-light text-primary'

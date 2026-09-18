@@ -14,6 +14,7 @@ import es from './locales/es/core.json'
 import pt from './locales/pt/core.json'
 import el from './locales/el/core.json'
 import hi from './locales/hi/core.json'
+import { getPublicConfig } from '../api/publicConfig'
 
 export interface LanguageDef { code: string; label: string; flag: string }
 
@@ -215,10 +216,8 @@ export function applyUserLanguage(lng: unknown) {
 export async function syncInstanceLanguage(): Promise<void> {
   let lng: string | null = null
   try {
-    const res = await fetch('/api/v1/config', { credentials: 'same-origin' })
-    if (!res.ok) return
-    const body = (await res.json()) as { config?: Record<string, unknown> }
-    const raw = body.config?.['instance.locale']
+    const config = await getPublicConfig()
+    const raw = config['instance.locale']
     if (typeof raw !== 'string') return
     // Formes régionales acceptées (fr-CA → fr), comme côté serveur.
     const base = raw.split(/[-_]/)[0]?.toLowerCase() ?? ''

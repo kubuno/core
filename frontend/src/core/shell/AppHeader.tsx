@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsMobile } from '@ui'
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { Menu, Search, ArrowLeft } from 'lucide-react'
 import { useUiStore } from '../store/uiStore'
 import { useSearchStore, resolveSearchConfig } from '../store/searchStore'
@@ -9,7 +9,7 @@ import SearchBar from './SearchBar'
 import HeaderActions from './HeaderActions'
 import { Slot } from '../slots/SlotRegistry'
 import HealthTopbarChip from '../admin/health/HealthTopbarChip'
-import { InstanceLogo } from './InstanceLogo'
+import { BrandLink } from './BrandLink'
 
 export default function AppHeader() {
   const { t } = useTranslation()
@@ -91,19 +91,9 @@ export default function AppHeader() {
           </button>
         )}
 
-        {/* Logo — toujours pleine forme (marque + « Kubuno »), indépendant du repli. */}
-        <Link
-          to="/"
-          className="flex items-center gap-1.5 hover:opacity-90 transition-opacity pl-2 pr-3"
-        >
-          <InstanceLogo size={22} className="text-primary" />
-          <span
-            className="text-[22px] font-normal hidden sm:block"
-            style={{ color: '#5f6368', letterSpacing: '-0.01em' }}
-          >
-            Kubuno
-          </span>
-        </Link>
+        {/* Brand — the current app's logo and name (Kubuno outside modules),
+            always full form regardless of the sidebar collapse. */}
+        <BrandLink />
       </div>
 
       {/* Zone centrale, alignée à gauche après le logo.

@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import React, { useCallback, useEffect, useRef } from 'react'
-import { clsx } from 'clsx'
 import { easeStandard } from './easing'
 import { TOGGLE_GEOMETRY, paintToggle, readTogglePalette } from './toggleCanvas'
 
@@ -128,7 +128,7 @@ export function Toggle({ label, description, size = 'md', className, id, ...prop
   return (
     <label
       htmlFor={inputId}
-      className={clsx(
+      className={cn(
         'inline-flex items-start gap-2.5 cursor-pointer select-none',
         props.disabled && 'cursor-not-allowed opacity-50',
         className,
@@ -136,7 +136,7 @@ export function Toggle({ label, description, size = 'md', className, id, ...prop
     >
       {/* `mt-0.5` aligns the switch with the first line of the label — with no label
           there is nothing to align to, and it would just offset the switch by 2px. */}
-      <div className={clsx('relative flex-shrink-0', (label || description) && 'mt-0.5')}>
+      <div className={cn('relative flex-shrink-0', (label || description) && 'mt-0.5')}>
         <input ref={inputRef} type="checkbox" id={inputId} className="peer sr-only" {...props} />
         {/* The focus ring stays in CSS: `:focus-visible` belongs to the input, and a
             canvas cannot observe a sibling's state. Its radius follows the track so the

@@ -78,7 +78,7 @@ interface AuthState {
    */
   loadPrivileges: (force?: boolean) => Promise<void>
 
-  login: (email: string, password: string) => Promise<{ requiresTotp: boolean }>
+  login: (email: string, password: string, captcha?: { id: string; answer: string }) => Promise<{ requiresTotp: boolean }>
   /** `kind` says whether the submitted value is a time-based or a backup code. */
   verifyTotp: (code: string, kind?: 'totp' | 'backup') => Promise<void>
   logout: () => Promise<void>
@@ -158,13 +158,15 @@ export const useAuthStore = create<AuthState>((set, get) => {
       await privilegesInFlight
     },
 
-    login: async (login, password) => {
+    login: async (login, password, captcha) => {
       set({ isLoading: true })
       try {
         const { data } = await authApi.login({
           login,
           password,
           device_name: navigator.userAgent.slice(0, 255),
+          // Sent only once the sign-in gate has demanded a CAPTCHA.
+          ...(captcha ? { captcha_id: captcha.id, captcha_answer: captcha.answer } : {}),
         })
         if ('requires_totp' in data && data.requires_totp) {
           set({ totpSession: data.totp_session })

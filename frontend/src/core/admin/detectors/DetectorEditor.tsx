@@ -18,6 +18,7 @@ import {
 } from './api'
 import { asPercent } from './labels'
 import DetectorTrial from './DetectorTrial'
+import { useAdminCrumbs } from '../AdminBreadcrumb'
 
 const KINDS: DetectorKind[] = ['regex', 'wordlist', 'checksum']
 const CHECKSUMS: ChecksumAlgo[] = ['luhn', 'iban', 'nir', 'siret', 'rib_fr']
@@ -188,15 +189,26 @@ export default function DetectorEditor({ id, limits, onClose }: Props) {
     label: t(`admin.det_cat_${c}`),
   }))
 
+  useAdminCrumbs(useMemo(
+    () => (id ? [{ label: detector?.label ?? t('admin.det_edit') }] : []),
+    [id, detector?.label, t],
+  ))
+
   const busy = create.isPending || update.isPending
 
   return (
     <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" icon={<ArrowLeft size={14} />} onClick={onClose}>
-          {t('admin.det_back')}
-        </Button>
-      </div>
+      {/* Creation is NOT addressable: the parent swaps it in with local state, so
+          the trail cannot point anywhere and this button is the only way out.
+          Editing an existing detector IS addressable — there the trail carries
+          the name and « Détecteurs » is the way back. */}
+      {!id && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" icon={<ArrowLeft size={14} />} onClick={onClose}>
+            {t('admin.det_back')}
+          </Button>
+        </div>
+      )}
 
       <h1 className="mt-2 min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
         {id ? (detector?.label ?? t('admin.det_edit')) : t('admin.det_new')}

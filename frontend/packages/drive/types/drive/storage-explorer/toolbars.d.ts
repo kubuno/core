@@ -1,4 +1,3 @@
-import { type ViewMode } from '../fileView';
 import type { SortField, TFunc } from './types';
 export declare function MobileControlBar({ sortField, sortDir, onSortField, onSortDir, grid, onGrid, t }: {
     sortField: SortField;
@@ -9,7 +8,7 @@ export declare function MobileControlBar({ sortField, sortDir, onSortField, onSo
     onGrid: (v: boolean) => void;
     t: TFunc;
 }): import("react").JSX.Element;
-export declare function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField, onSortDir, onTypeFilter, hideType, viewMode, onViewMode, compact, onCompact, showHidden, onShowHidden }: {
+export declare function SortFilterBarBase({ sortField, sortDir, typeFilter, onSortField, onSortDir, onTypeFilter, hideType }: {
     sortField: SortField;
     sortDir: 'asc' | 'desc';
     typeFilter: string | null;
@@ -17,10 +16,4 @@ export declare function SortFilterBarBase({ sortField, sortDir, typeFilter, onSo
     onSortDir: (v: 'asc' | 'desc') => void;
     onTypeFilter: (v: string | null) => void;
     hideType?: boolean;
-    viewMode: ViewMode;
-    onViewMode: (v: ViewMode) => void;
-    compact: boolean;
-    onCompact: (v: boolean) => void;
-    showHidden: boolean;
-    onShowHidden: (v: boolean) => void;
 }): import("react").JSX.Element;

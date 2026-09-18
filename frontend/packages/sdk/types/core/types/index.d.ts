@@ -19,6 +19,16 @@ export interface User {
     /** The account still carries the password it was seeded with: a change is forced. */
     must_change_password?: boolean;
     /**
+     * When the current local password was chosen (migration `000115`). A date and
+     * nothing more — it says *when*, never anything about the password. `null` on
+     * an account that holds no local password at all.
+     *
+     * It is what makes the expiry policy legible on an account sheet: without it,
+     * "passwords expire after 90 days" is a rule nobody can check against a
+     * particular person.
+     */
+    password_changed_at?: string | null;
+    /**
      * Profile fields of migration `000114`. All six are real columns, all six are
      * nullable, and none is ever required of anybody.
      *
@@ -28,6 +38,8 @@ export interface User {
      * so a component must never expect to find them on a user object obtained
      * from `/users/search` or `/users/lookup`.
      */
+    first_name?: string | null;
+    last_name?: string | null;
     name_pronunciation?: string | null;
     pronouns?: string | null;
     work_location?: string | null;

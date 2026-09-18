@@ -34,6 +34,27 @@ export default function Shell() {
   // Déconnexion automatique après inactivité (réglage admin).
   useIdleLogout()
 
+  // The document must never scroll while the shell is mounted — the shell IS
+  // the viewport, and a scrolled document takes the top bar off-screen with no
+  // scrollbar to bring it back. index.css forbids USER scrolling of the page
+  // (html:has([data-app-shell])), but programmatic scrolls go through CSS
+  // regardless: scrollIntoView reaching a portal, focusing an element poking
+  // below the viewport, find-in-page. `scroll` on window only fires for
+  // DOCUMENT scrolling (inner panes don't bubble it), so this listener is
+  // inert in normal use and simply snaps the page back when displaced.
+  useEffect(() => {
+    const snapBack = () => {
+      const se = document.scrollingElement
+      if (se && (se.scrollTop !== 0 || se.scrollLeft !== 0)) {
+        se.scrollTop = 0
+        se.scrollLeft = 0
+      }
+    }
+    snapBack()
+    window.addEventListener('scroll', snapBack)
+    return () => window.removeEventListener('scroll', snapBack)
+  }, [])
+
   // Mémorise/restaure l'état (déplié/enroulé) des panneaux gauche et droit, par
   // application et par onglet (survit au F5 et au retour ultérieur). Couvre aussi
   // le repli par défaut des apps déclarées dans CollapseSidebarRegistry.

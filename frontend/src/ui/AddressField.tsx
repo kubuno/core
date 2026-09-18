@@ -50,8 +50,8 @@ function CountryNameSelect({ value, onChange, primaryColor, large }: {
     searchRef.current?.focus()
     const onDoc = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false) }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+    document.addEventListener('mousedown', onDoc, true); document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc, true); document.removeEventListener('keydown', onKey) }
   }, [open])
 
   const q = query.trim().toLowerCase()

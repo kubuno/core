@@ -4,10 +4,8 @@
  * (un)tick — the mobile-app flow).
  */
 import React from 'react';
-import { type MenuItem } from '@ui';
-import type { Folder } from '../api';
 import type { TFunc } from './types';
-export declare function ExplorerHeader({ mobileSelecting, selectedIds, itemTypeMap, allItemsSelected, toggleSelectAll, clearSelection, onDownloadSelection, onDeleteSelection, canDelete, hasPlayingInSelection, title, breadcrumbs, onNavigate, childFolders, onOpenChild, isMobile, canUpload, hideImport, importMenuItems, onImport, onImportMenu, canMkdir, onNewFolder, toolbarContent, t, }: {
+export declare function ExplorerHeader({ mobileSelecting, selectedIds, itemTypeMap, allItemsSelected, toggleSelectAll, clearSelection, onDownloadSelection, onDeleteSelection, canDelete, hasPlayingInSelection, title, breadcrumbs, onNavigate, onFolderMenu, viewControls, toolbarContent, t, }: {
     mobileSelecting: boolean;
     selectedIds: Set<string>;
     itemTypeMap: Map<string, 'file' | 'folder'>;
@@ -24,16 +22,9 @@ export declare function ExplorerHeader({ mobileSelecting, selectedIds, itemTypeM
         name: string;
     }>;
     onNavigate: (idx: number) => void;
-    childFolders: Folder[];
-    onOpenChild: (folder: Folder) => void;
-    isMobile: boolean;
-    canUpload: boolean;
-    hideImport?: boolean;
-    importMenuItems?: MenuItem[];
-    onImport: () => void;
-    onImportMenu: (e: React.MouseEvent) => void;
-    canMkdir: boolean;
-    onNewFolder: () => void;
+    onFolderMenu?: (e: React.MouseEvent) => void;
+    /** View switcher, shown on the trail's line. */
+    viewControls?: React.ReactNode;
     toolbarContent?: React.ReactNode;
     t: TFunc;
 }): React.JSX.Element;

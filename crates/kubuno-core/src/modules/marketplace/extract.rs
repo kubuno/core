@@ -5,51 +5,31 @@ use std::path::{Path, PathBuf};
 
 use crate::errors::AppError;
 
-use super::artifact::ArtifactKind;
-
-/// Extrait un artefact selon son format vers `dest`.
-pub(super) async fn extract_artifact(kind: ArtifactKind, file: &Path, dest: &Path) -> Result<(), AppError> {
-    match kind {
-        ArtifactKind::Deb => {
-            let out = tokio::process::Command::new("dpkg-deb")
-                .arg("-x").arg(file).arg(dest)
-                .output().await
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("lancement dpkg-deb: {e}")))?;
-            if !out.status.success() {
-                return Err(AppError::Internal(anyhow::anyhow!("dpkg-deb: {}", String::from_utf8_lossy(&out.stderr))));
-            }
-        }
-        ArtifactKind::TarGz => {
-            let out = tokio::process::Command::new("tar")
-                .arg("-xzf").arg(file).arg("-C").arg(dest)
-                .output().await
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("lancement tar: {e}")))?;
-            if !out.status.success() {
-                return Err(AppError::Internal(anyhow::anyhow!("tar: {}", String::from_utf8_lossy(&out.stderr))));
-            }
-        }
-        ArtifactKind::Zip => {
-            // Extraction Rust pure (crate `zip`) → pas d'outil externe (portable Windows).
-            let (file, dest) = (file.to_path_buf(), dest.to_path_buf());
-            tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-                let f = std::fs::File::open(&file)
-                    .map_err(|e| AppError::Internal(anyhow::anyhow!("ouverture zip: {e}")))?;
-                let mut ar = zip::ZipArchive::new(f)
-                    .map_err(|e| AppError::Internal(anyhow::anyhow!("lecture zip: {e}")))?;
-                ar.extract(&dest)
-                    .map_err(|e| AppError::Internal(anyhow::anyhow!("extraction zip: {e}")))?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("tâche extraction zip: {e}")))??;
-        }
-    }
+/// Déballe un `.kbpkg` (archive ZIP) vers `dest`.
+///
+/// Extraction en Rust pur (crate `zip`) : aucun outil externe (`dpkg-deb`, `tar`,
+/// `unzip`) n'est requis, ce qui la rend identique sur Linux, Windows et macOS.
+/// C'est le seul format qu'un module puisse prendre — cf. `artifact.rs`.
+pub(super) async fn extract_kbpkg(file: &Path, dest: &Path) -> Result<(), AppError> {
+    let (file, dest) = (file.to_path_buf(), dest.to_path_buf());
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let f = std::fs::File::open(&file)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("ouverture .kbpkg: {e}")))?;
+        let mut ar = zip::ZipArchive::new(f)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("lecture .kbpkg: {e}")))?;
+        ar.extract(&dest)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("extraction .kbpkg: {e}")))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("tâche extraction .kbpkg: {e}")))??;
     Ok(())
 }
 
-/// Localise le dossier du module `id` dans l'arbre extrait — gère le layout `.deb`
-/// (`usr/lib/kubuno/modules/<id>`) ET un layout plat (`<id>/` ou racine), en se
-/// repérant sur la présence de `module.toml`.
+/// Localise le dossier du module `id` dans l'arbre extrait. Le `.kbpkg` a pour
+/// racine le dossier du module (`<id>/` ou la racine de l'archive) ; les chemins
+/// hérités (`usr/lib/kubuno/modules/<id>`) restent tolérés par sécurité. On se
+/// repère sur la présence de `module.toml`.
 pub(super) fn find_module_root(extract: &Path, id: &str) -> Option<PathBuf> {
     for cand in [
         extract.join("usr/lib/kubuno/modules").join(id),

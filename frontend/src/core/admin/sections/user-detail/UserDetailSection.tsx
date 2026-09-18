@@ -1,18 +1,18 @@
-import { useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { NavigateFunction } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, MoreVertical, Power, UserX } from 'lucide-react'
+import { UserX } from 'lucide-react'
 import {
-  Button, ConfirmDialog, DataTableSkeleton, EmptyState, MobileSheet, MobileSheetItem,
-  Tabs, useIsMobile, useToast, type TabDef,
+  ConfirmDialog, DataTableSkeleton, EmptyState, Tabs, useIsMobile, useToast, type TabDef,
 } from '@ui'
 import { api } from '../../../api/client'
 import { useConfirm } from '../../../hooks/useConfirm'
 import type { User } from '../../../types'
 import { confirmLeave } from '../../inline-edit/unsaved'
 import { adminUrl, adminUrlWith } from '../../adminAction'
-import { RoleBadge, StatusBadge, UserAvatar } from './atoms'
+import { useAdminCrumbs } from '../../AdminBreadcrumb'
+import { IdentityCard } from './IdentityCard'
 import ProfileTab from './ProfileTab'
 import SecurityTab from './SecurityTab'
 import ActivityTab from './ActivityTab'
@@ -28,16 +28,16 @@ const PANES: Pane[] = ['profile', 'security', 'activity']
  * consumer. The pane lives in the URL so a sheet can be linked to, and so the
  * browser's Back button walks the tabs the way the user expects.
  *
- * Mobile is not the desktop layout narrowed: the header keeps the back arrow,
- * the identity and ONE action; everything else moves into a bottom sheet, and
- * the tables inside the tabs switch to cards on their own (DataTable follows
- * its container's width).
+ * Mobile is not the desktop layout narrowed: the identity card stops being a
+ * sticky column and simply stacks above the tabs, carrying the same actions, and
+ * the tables inside the tabs switch to cards on their own (DataTable follows its
+ * container's width).
  *
  * There is no "Modifier" button here any more, and that is the design: the sheet
  * IS the editor. Each card of the profile tab turns into its own form (see
  * `cards/`), so every value the server accepts is changed where it is read
- * rather than in a window that offered a quarter of them. What remains in this
- * header is the one thing that is a verb and not a field — activation — kept
+ * rather than in a window that offered a quarter of them. What lives on the
+ * identity card instead are the VERBS that act on the account itself, each kept
  * behind a confirmation.
  */
 export default function UserDetailSection({
@@ -52,8 +52,6 @@ export default function UserDetailSection({
   const toast = useToast()
   const mobile = useIsMobile()
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
-
-  const [sheet, setSheet] = useState(false)
 
   const paneParam = params.get('pane') as Pane | null
   const pane: Pane = paneParam && PANES.includes(paneParam) ? paneParam : 'profile'
@@ -102,23 +100,18 @@ export default function UserDetailSection({
   }
 
   // ── Chrome ────────────────────────────────────────────────────────────────
-  const backLink = (
-    <button
-      type="button"
-      onClick={() => void back()}
-      className="-ml-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-text-secondary transition-colors
-                 hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      style={{ fontSize: 'var(--kb-text-body)' }}
-    >
-      <ArrowLeft size={16} />
-      {t('admin.ud_back')}
-    </button>
-  )
+  // No hand-made "back" button: the console's own breadcrumb is the way up, and
+  // this sheet simply appends itself to it — "Annuaire › Utilisateurs › <nom>".
+  // Two stacked navigations saying the same thing is one too many, and the
+  // second was the one nobody else's detail page had.
+  useAdminCrumbs(useMemo(
+    () => (data ? [{ label: data.display_name || data.username, title: data.display_name || data.username }] : []),
+    [data],
+  ))
 
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4">
-        {backLink}
         <DataTableSkeleton t={t} columns={3} rows={6} />
       </div>
     )
@@ -127,7 +120,6 @@ export default function UserDetailSection({
   if (isError || !data) {
     return (
       <div className="flex flex-col gap-4">
-        {backLink}
         <EmptyState
           t={t}
           variant="error"
@@ -150,69 +142,27 @@ export default function UserDetailSection({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-3">
-        {backLink}
+      {/* Identity on the left, properties on the right. The card carries the
+          verbs that act on the ACCOUNT; the tabs show and edit its fields. It
+          stays put while they scroll, so the name of who is being changed is
+          never off screen. */}
+      <div className={mobile ? 'flex flex-col gap-4' : 'flex items-start gap-4'}>
+        <IdentityCard
+          user={user}
+          mobile={mobile}
+          busy={toggleActive.isPending}
+          onToggleActive={() => void askToggleActive(user)}
+          goPane={setPane}
+        />
 
-        <div className="flex items-start gap-3">
-          <UserAvatar user={user} size={mobile ? 36 : 44} />
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <Tabs<Pane> t={t} tabs={tabs} value={pane} onChange={setPane} />
 
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate font-medium text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-              {user.display_name || user.username}
-            </h1>
-            <p className="truncate text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {user.email}
-            </p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <RoleBadge role={user.role} label={t(`admin.role_${user.role}`, { defaultValue: user.role })} />
-              <StatusBadge active={user.is_active} label={user.is_active ? t('admin.active') : t('admin.inactive')} />
-            </div>
-          </div>
-
-          {/* Activation is the only header verb left — every field is edited in
-              its own card below. Mobile folds it into the overflow sheet. */}
-          <div className="flex shrink-0 items-center gap-2">
-            {mobile ? (
-              <button
-                type="button"
-                aria-haspopup="menu"
-                aria-label={t('admin.ud_actions')}
-                onClick={() => setSheet(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-md text-text-secondary
-                           transition-colors hover:bg-surface-2 hover:text-text-primary
-                           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <MoreVertical size={16} />
-              </button>
-            ) : (
-              <Button
-                size="sm"
-                variant={user.is_active ? 'danger' : 'secondary'}
-                icon={<Power size={14} />}
-                loading={toggleActive.isPending}
-                onClick={() => void askToggleActive(user)}
-              >
-                {user.is_active ? t('admin.disable') : t('admin.enable')}
-              </Button>
-            )}
-          </div>
+          {pane === 'profile'  && <ProfileTab  user={user} />}
+          {pane === 'security' && <SecurityTab user={user} />}
+          {pane === 'activity' && <ActivityTab user={user} />}
         </div>
       </div>
-
-      <Tabs<Pane> t={t} tabs={tabs} value={pane} onChange={setPane} />
-
-      {pane === 'profile'  && <ProfileTab  user={user} />}
-      {pane === 'security' && <SecurityTab user={user} />}
-      {pane === 'activity' && <ActivityTab user={user} />}
-
-      <MobileSheet open={sheet} onClose={() => setSheet(false)} title={t('admin.ud_actions')}>
-        <MobileSheetItem
-          icon={<Power size={16} />}
-          label={user.is_active ? t('admin.disable') : t('admin.enable')}
-          danger={user.is_active}
-          onClick={() => { setSheet(false); void askToggleActive(user) }}
-        />
-      </MobileSheet>
 
       {confirmState && (
         <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />

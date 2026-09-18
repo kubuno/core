@@ -1,5 +1,6 @@
 import type { ModuleSettingGroup } from './adminModules';
 import type { ModuleAdminSection } from '../slots/SlotRegistry';
+import { type ActiveScope, type ResolvedSetting } from './settings/scopeTypes';
 import { type SettingItem } from './settings/moduleSettingSchema';
 export type { SettingItem } from './settings/moduleSettingSchema';
 /**
@@ -18,11 +19,15 @@ export declare function useModuleInstanceSettings(moduleId: string, enabled?: bo
 };
 export interface ModuleAdminSettingsProps {
     moduleId: string;
-    /** The page being shown. `null` = the module declares none (single card). */
+    /** The page being shown. `null` = the module declares none (single stack). */
     group?: string | null;
     /** Every page the module declares — what the filter names its hits by. */
     groups?: ModuleSettingGroup[];
     /** The module's own views that asked for a tab on THIS page. */
     extraTabs?: ModuleAdminSection[];
+    /** WHO the values on screen belong to — chosen in the page's side card. */
+    scope?: ActiveScope;
 }
-export default function ModuleAdminSettings({ moduleId, group, groups, extraTabs, }: ModuleAdminSettingsProps): import("react").JSX.Element;
+export default function ModuleAdminSettings({ moduleId, group, groups, extraTabs, scope, }: ModuleAdminSettingsProps): import("react").JSX.Element;
+/** Re-exported so the panel's helpers stay reachable from one import. */
+export type { ResolvedSetting };

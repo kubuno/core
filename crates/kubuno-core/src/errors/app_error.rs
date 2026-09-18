@@ -87,6 +87,14 @@ pub enum AppError {
     #[error("Conflit: {0}")]
     Conflict(String),
 
+    /// Sign-in is refused because the account has failed enough times that a
+    /// CAPTCHA is now required and none (or a wrong one) was provided. The
+    /// user-facing message is the SAME generic "invalid credentials" as every
+    /// other sign-in failure — only the machine `code` differs, so the login
+    /// form knows to show the CAPTCHA. See `handlers::auth::login`.
+    #[error("Identifiants invalides")]
+    CaptchaRequired,
+
     #[error("Quota dépassé")]
     QuotaExceeded,
 
@@ -144,6 +152,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(_)     => (StatusCode::NOT_FOUND,               "NOT_FOUND",        self.to_string()),
             AppError::Validation(_)   => (StatusCode::UNPROCESSABLE_ENTITY,    "VALIDATION_ERROR", self.to_string()),
             AppError::Conflict(_)     => (StatusCode::CONFLICT,                "CONFLICT",         self.to_string()),
+            AppError::CaptchaRequired => (StatusCode::UNPROCESSABLE_ENTITY,    "CAPTCHA_REQUIRED", self.to_string()),
             AppError::QuotaExceeded   => (StatusCode::INSUFFICIENT_STORAGE,    "QUOTA_EXCEEDED",   self.to_string()),
             // 409 rather than 500: the stored state conflicts with the current
             // secret, and the client can offer a way out of it.

@@ -1,4 +1,4 @@
-import { clsx } from 'clsx'
+import { cn } from './cn'
 
 interface SeparatorProps {
   orientation?: 'horizontal' | 'vertical'
@@ -10,7 +10,7 @@ export function Separator({ orientation = 'horizontal', className }: SeparatorPr
     <div
       role="separator"
       aria-orientation={orientation}
-      className={clsx(
+      className={cn(
         'bg-border flex-shrink-0',
         orientation === 'horizontal' ? 'h-px w-full' : 'w-px self-stretch',
         className,

@@ -5,7 +5,7 @@
 
 <div align="center">
 
-<img src=".github/logo.svg" alt="Kubuno logo" width="128" height="128">
+<img src=".github/logo.png" alt="Kubuno logo" width="120">
 
 # Kubuno — Core
 

@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import type { ReactNode } from 'react'
-import { clsx } from 'clsx'
 import type { TFunction } from 'i18next'
 import { Button } from './Button'
 import { uiT } from './uiText'
@@ -99,7 +99,7 @@ export function EmptyState({
       // `status` (polite) rather than `alert`: the region appears as the result
       // of the user's own action, and must not interrupt them mid-sentence.
       role="status"
-      className={clsx(
+      className={cn(
         'flex flex-col items-center justify-center text-center',
         compact ? 'gap-2 px-4 py-6' : 'gap-3 px-6 py-12',
         className,
@@ -107,7 +107,7 @@ export function EmptyState({
     >
       <span
         aria-hidden
-        className={clsx(
+        className={cn(
           'flex items-center justify-center rounded-full',
           compact ? 'h-11 w-11' : 'h-14 w-14',
           MEDALLION[variant],

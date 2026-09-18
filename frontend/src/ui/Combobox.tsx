@@ -238,9 +238,9 @@ export function Combobox({
       className={[
         'flex h-9 w-full items-center gap-2 rounded-md border px-3 text-left transition-colors',
         'bg-white text-text-primary',
-        'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary',
+        'kb-field-focus',
         'disabled:cursor-not-allowed disabled:bg-surface-2 disabled:opacity-60',
-        open ? 'border-primary ring-2 ring-primary' : 'border-border hover:bg-surface-1',
+        open ? 'kb-field-focus--on' : 'border-border hover:bg-surface-1',
       ].join(' ')}
       style={{ fontSize: 'var(--kb-text-body)' }}
     >
@@ -283,7 +283,7 @@ export function Combobox({
           aria-label={searchPlaceholder ?? tr('ui.cb_search')}
           placeholder={searchPlaceholder ?? tr('ui.cb_search')}
           className="h-8 w-full rounded-md border border-border bg-white pl-8 pr-2 text-text-primary
-                     placeholder:text-text-tertiary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                     placeholder:text-text-tertiary kb-field-focus"
           style={{ fontSize: 'var(--kb-text-body)' }}
         />
       </div>

@@ -18,8 +18,26 @@ export interface AppNotification {
     key?: string;
 }
 interface NotificationState {
+    /**
+     * Bucket key of the ACTIVE account (its user id), announced by the auth
+     * store once the session's identity is known. Until then every mutator is a
+     * no-op: nothing may be filed under the wrong account.
+     */
+    activeUserId: string | null;
+    /**
+     * One notification list PER ACCOUNT of this browser (Google-style
+     * multi-account). The compartments are both the isolation — a switched-in
+     * account only ever sees its own bucket — and the per-row badges of the
+     * account panel, which read the OTHER buckets' unread counts.
+     */
+    byUser: Record<string, AppNotification[]>;
+    /** Mirror of `byUser[activeUserId]` so existing consumers keep their selectors. */
     notifications: AppNotification[];
     unreadCount: number;
+    /** Called by the auth store when the session's identity is (re)established. */
+    setActiveUser: (userId: string | null) => void;
+    /** Forgets an account's bucket (its row was removed from the browser). */
+    dropUser: (userId: string) => void;
     push: (n: Omit<AppNotification, 'id' | 'read' | 'createdAt'>) => void;
     /**
      * Announces something at most once. Returns silently when a notification
@@ -31,6 +49,8 @@ interface NotificationState {
     markAllRead: () => void;
     clear: () => void;
 }
+/** Unread count of ONE account's bucket — the panel's per-row badge. */
+export declare function unreadCountOf(byUser: Record<string, AppNotification[]>, userId: string): number;
 export declare const useNotificationStore: import("zustand").UseBoundStore<Omit<import("zustand").StoreApi<NotificationState>, "setState" | "persist"> & {
     setState(partial: NotificationState | Partial<NotificationState> | ((state: NotificationState) => NotificationState | Partial<NotificationState>), replace?: false | undefined): unknown;
     setState(state: NotificationState | ((state: NotificationState) => NotificationState), replace: true): unknown;

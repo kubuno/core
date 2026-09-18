@@ -1,6 +1,5 @@
+import { cn } from './cn'
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import { clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
 
 export interface EditableProps {
   /** Initial text, seeded once so the caret never jumps (the box is uncontrolled). */
@@ -55,10 +54,10 @@ export const Editable = forwardRef<HTMLDivElement, EditableProps>(function Edita
       data-placeholder={placeholder}
       onInput={() => onTextChange?.(innerRef.current?.textContent ?? '')}
       style={style}
-      className={twMerge(clsx(
+      className={cn(cn(
         // Same surface + border + focus ring as <Input>.
         'w-full rounded-md border border-border bg-white text-sm text-text-primary px-3 py-2',
-        'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary',
+        'kb-field-focus',
         'empty:before:content-[attr(data-placeholder)] empty:before:text-text-tertiary empty:before:pointer-events-none',
         disabled && 'bg-surface-2 cursor-not-allowed opacity-60',
         className,

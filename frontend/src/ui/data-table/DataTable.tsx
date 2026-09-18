@@ -1,5 +1,5 @@
+import { cn } from '../cn'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { clsx } from 'clsx'
 import {
   AlertCircle, ArrowDown, ArrowUp, ChevronsUpDown, Columns3, Copy, Inbox,
   MoreVertical, Rows3, SearchX, TextCursorInput,
@@ -287,7 +287,7 @@ export function DataTable<T>({
         // inside this button — see [`HEADER_ALIGN`]. Without it every sortable
         // right-aligned column shows its values right and its label left, which
         // was the case across the storage, roles, backup and rules tables.
-        className={clsx(
+        className={cn(
           'group flex items-center gap-1 rounded-sm px-1 py-0.5 transition-colors',
           'hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
           HEADER_ALIGN[col.align ?? 'left'],
@@ -303,7 +303,7 @@ export function DataTable<T>({
 
   return (
     // `min-w-0` + `w-full`: the table may never widen its parent.
-    <div ref={rootRef} className={clsx('flex w-full min-w-0 flex-col gap-2', className)}>
+    <div ref={rootRef} className={cn('flex w-full min-w-0 flex-col gap-2', className)}>
       <DataTableToolbar
         title={title}
         toolbar={toolbar}
@@ -370,7 +370,7 @@ export function DataTable<T>({
                         // `aria-sort` on the header cell is what tells assistive
                         // tech the table is ordered, and by which column.
                         aria-sort={isActive ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-                        className={clsx(
+                        className={cn(
                           'relative px-4 py-2.5 font-medium text-text-secondary',
                           ALIGN[col.align ?? 'left'],
                         )}
@@ -431,11 +431,11 @@ export function DataTable<T>({
                        * The two must not share a tone: hovering an odd row would then
                        * produce no change at all. Selection outranks both — it is a
                        * state, not a reading aid. Tint only, never a left accent bar. */
-                      className={clsx(
+                      className={cn(
                         'border-b border-border transition-colors last:border-0',
                         isSel
                           ? 'bg-primary-light'
-                          : clsx(i % 2 === 1 && 'bg-surface-1', 'hover:bg-surface-2'),
+                          : cn(i % 2 === 1 && 'bg-surface-1', 'hover:bg-surface-2'),
                         onRowClick && 'cursor-pointer',
                       )}
                     >
@@ -456,7 +456,7 @@ export function DataTable<T>({
                           // would drift by one as soon as a checkbox or an actions
                           // cell is present.
                           data-col={col.id}
-                          className={clsx('px-4 py-2.5 text-text-primary', ALIGN[col.align ?? 'left'])}
+                          className={cn('px-4 py-2.5 text-text-primary', ALIGN[col.align ?? 'left'])}
                           style={{ fontSize: 'var(--kb-text-body)' }}
                         >
                           {col.cell(row)}

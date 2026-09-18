@@ -1,10 +1,9 @@
+import { formatDate } from '../../../core/intl/datetime'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Building2, Clock, Globe2, Trash2, UserPlus, Users } from 'lucide-react'
 import { Button, Card, DataTable, EmptyState, useToast } from '@ui'
 import ConfirmDialog from '@ui/ConfirmDialog'
-import { format } from 'date-fns'
-import { getDateLocale } from '../../i18n/dateLocale'
 import { useConfirm } from '../../hooks/useConfirm'
 import { PRIV, type Privilege, type Role, type RoleAssignment } from '../../authz/types'
 import { useAuthzLabels } from '../../authz/labels'
@@ -31,7 +30,7 @@ export default function RoleDetail({
   role:      Role
   catalogue: Privilege[]
 }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const toast = useToast()
   const { can, isSuperuser } = usePrivileges()
   const { roleName } = useAuthzLabels()
@@ -42,7 +41,7 @@ export default function RoleDetail({
   const { data: assignments, isLoading } = useAssignments({ role_id: role.id })
   const revoke = useDeleteAssignment(() => toast.success(t('admin.assign_revoked')))
 
-  const when = (iso: string) => format(new Date(iso), 'PP', { locale: getDateLocale(i18n.language) })
+  const when = (iso: string) => formatDate(iso, 'date')
 
   const askRevoke = async (row: RoleAssignment) => {
     const ok = await confirm({

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { KubunoLogo } from '@ui'
-import { api } from '../api/client'
+import { getPublicConfig } from '../api/publicConfig'
 
 /**
  * The mark of THIS instance — its own when an administrator set one, the
@@ -24,7 +24,7 @@ import { api } from '../api/client'
 export function InstanceLogo({ size = 24, className }: { size?: number; className?: string }) {
   const { data } = useQuery({
     queryKey:  ['public-config'],
-    queryFn:   () => api.get<{ config: Record<string, unknown> }>('/config').then(r => r.data.config),
+    queryFn:   getPublicConfig,
     staleTime: 60_000,
   })
   const raw = data?.['instance.logo_url']

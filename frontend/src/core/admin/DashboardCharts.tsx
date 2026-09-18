@@ -126,8 +126,20 @@ const PAD = { l: 38, r: 8, t: 10, b: 20 }
 
 // ── Histogramme en barres (canvas, animé + interactif) ────────────────────────
 export function BarChart({
-  data, color = '#1a73e8', height = 160, unit,
-}: { data: { label: string; value: number }[]; color?: string; height?: number; unit?: string }) {
+  data, color = '#1a73e8', height = 160, unit, xLabels = false,
+}: {
+  data: { label: string; value: number }[]
+  color?: string
+  height?: number
+  unit?: string
+  /** Writes the category under each bar, thinning them out as far as it must to
+   *  keep them from touching. Off by default: where the categories are a series
+   *  of days whose exact date adds nothing, the hover tooltip already names the
+   *  bar and a row of dates is noise. Turn it on when the reader has to be able
+   *  to point at a bar and say *which* one it is — an hour of the day, above
+   *  all, is unreadable without it. */
+  xLabels?: boolean
+}) {
   const wrap = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const W = useWidth(wrap)
@@ -190,7 +202,19 @@ export function BarChart({
       ctx.fill()
       ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
     })
-  }, [W, height, data, ticks, top, color, geom])
+    // Axe X. Le pas est mesuré, pas deviné : on n'écrit qu'une étiquette sur
+    // `step` pour qu'aucune n'en touche une autre, quelle que soit la largeur.
+    if (xLabels && data.length) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+      ctx.fillStyle = ink.label
+      const widest = Math.max(...data.map((d) => ctx.measureText(d.label).width))
+      const step = Math.max(1, Math.ceil((widest + 8) / slot))
+      data.forEach((d, i) => {
+        if (i % step) return
+        ctx.fillText(d.label, x0 + (i + 0.5) * slot, y1 + 5)
+      })
+    }
+  }, [W, height, data, ticks, top, color, geom, xLabels])
 
   // Animation d'apparition (une seule fois), sinon dessin direct.
   useEffect(() => {
@@ -452,18 +476,23 @@ export function DonutChart({
 
 // ── Liste de barres horizontales (top stockage), avec survol ──────────────────
 export function HBarList({
-  items, color = '#1a73e8',
+  items, color = '#1a73e8', warnFull = true,
 }: {
   /** `color` per item overrides the list's own — a printed report ties each bar
       to the slice and to the table row that carry the same entry. */
   items: { label: string; value: number; max: number; sub?: string; color?: string }[]
   color?: string
+  /** Paints a nearly-full bar in the danger colour. Right when `max` is a LIMIT
+      (a quota being consumed), wrong when it is merely the largest value in the
+      list: the leader of a ranking would then always be red, and red would be
+      saying "problem" about the most-used room, which is good news. */
+  warnFull?: boolean
 }) {
   return (
     <ul className="space-y-3">
       {items.map((it, i) => {
         const pct = it.max > 0 ? Math.min(100, (it.value / it.max) * 100) : 0
-        const over = pct >= 90
+        const over = warnFull && pct >= 90
         return (
           <li key={i} className="group">
             <div className="flex items-center justify-between text-sm mb-1">

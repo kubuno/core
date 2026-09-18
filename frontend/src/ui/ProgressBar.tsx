@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import type { ReactNode } from 'react'
-import { clsx } from 'clsx'
 import type { TFunction } from 'i18next'
 import { uiT } from './uiText'
 
@@ -92,7 +92,7 @@ export function ProgressBar({
   const hasHeader = label != null || showValue
 
   return (
-    <div className={clsx('min-w-0', className)}>
+    <div className={cn('min-w-0', className)}>
       {hasHeader && (
         <div
           className="mb-1 flex items-baseline justify-between gap-2"
@@ -114,19 +114,19 @@ export function ProgressBar({
         aria-valuemax={indeterminate ? undefined : safeMax}
         aria-valuenow={indeterminate ? undefined : clamped}
         aria-valuetext={indeterminate ? undefined : text}
-        className={clsx('w-full overflow-hidden rounded-full bg-surface-2', TRACK[size])}
+        className={cn('w-full overflow-hidden rounded-full bg-surface-2', TRACK[size])}
       >
         {indeterminate ? (
           <>
             <style>{SLIDE_KEYFRAMES}</style>
             <div
-              className={clsx('h-full w-1/3 rounded-full', FILL[resolved])}
+              className={cn('h-full w-1/3 rounded-full', FILL[resolved])}
               style={{ animation: 'kb-progress-slide 1.3s ease-in-out infinite' }}
             />
           </>
         ) : (
           <div
-            className={clsx('h-full rounded-full transition-[width,background-color] duration-300', FILL[resolved])}
+            className={cn('h-full rounded-full transition-[width,background-color] duration-300', FILL[resolved])}
             style={{ width: `${pct}%` }}
           />
         )}

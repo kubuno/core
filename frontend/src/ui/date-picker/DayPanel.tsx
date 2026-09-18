@@ -1,6 +1,5 @@
+import { endOfMonth, formatDate, isValidDate, startOfMonth, toISODate, toISOMonth } from '../../core/intl/datetime'
 import { useEffect, useState } from 'react'
-import { format, startOfMonth, endOfMonth, isValid } from 'date-fns'
-import { fr } from 'date-fns/locale'
 import { ExtensionRegistry } from '../../core/registry/ExtensionRegistry'
 import { CALENDAR_OVERLAY, type CalendarOverlayItem, type CalendarOverlayProvider } from '../../core/registry/calendarOverlay'
 import { DATEPICKER_DAY_PANEL } from '../../core/registry/datepickerDayPanel'
@@ -26,9 +25,9 @@ function dayProviders(): CalendarOverlayProvider[] {
  * client, so hovering across days never re-hits the network.
  */
 export function DayPanel({ date }: { date: Date }) {
-  const valid    = isValid(date)
-  const monthKey = valid ? format(date, 'yyyy-MM') : ''
-  const ymd      = valid ? format(date, 'yyyy-MM-dd') : ''
+  const valid    = isValidDate(date)
+  const monthKey = valid ? toISOMonth(date) : ''
+  const ymd      = valid ? toISODate(date) : ''
 
   const [cache, setCache] = useState<{ key: string; items: CalendarOverlayItem[] } | null>(null)
 
@@ -48,9 +47,9 @@ export function DayPanel({ date }: { date: Date }) {
   const loaded   = cache?.key === monthKey
   const dayItems = loaded ? cache!.items.filter(it => it.date === ymd) : []
 
-  const dayNum   = valid ? format(date, 'd') : ''
-  const weekday  = valid ? format(date, 'EEEE', { locale: fr }) : ''
-  const monthLbl = valid ? format(date, 'MMMM yyyy', { locale: fr }) : ''
+  const dayNum   = valid ? String(date.getDate()) : ''
+  const weekday  = valid ? formatDate(date, 'weekday') : ''
+  const monthLbl = valid ? formatDate(date, 'monthYear') : ''
 
   return (
     <div className="flex flex-col" style={{ width: 240 }}>

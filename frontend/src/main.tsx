@@ -46,7 +46,7 @@ import { useThemeStore } from './core/store/themeStore'
 import './core/i18n'
 import './core/i18n/nav'
 import './core/widgets/coreWidgets'
-import { installDefaultMentionSource } from './core/registry/MentionRegistry'
+import { installDefaultMentionSource, installDirectoryMentions } from './core/registry/MentionRegistry'
 import { applyUserLanguage, syncInstanceLanguage } from './core/i18n'
 import App from './App'
 import './index.css'
@@ -84,6 +84,9 @@ void syncInstanceLanguage()
 // Modules (contacts, mail…) register their provider; fields with no explicit
 // `providers` discover them through this source. Idempotent, side-effect free.
 installDefaultMentionSource()
+// And the core's own people, so `@` always has something to offer: an instance
+// without a contacts module still has colleagues.
+installDirectoryMentions()
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -122,6 +125,26 @@ useAuthStore.subscribe((state, prev) => {
   }
 })
 
+/**
+ * Recharge la liste des modules, en REGROUPANT les rafales.
+ *
+ * Ces événements n'arrivent presque jamais seuls : quand le serveur redémarre,
+ * les modules installés se réenregistrent tous en quelques secondes, et chaque
+ * onglet ouvert lançait alors une requête par module — une quinzaine pour
+ * apprendre une seule et même chose. Une courte fenêtre d'attente n'en laisse
+ * partir qu'une, et retarde d'autant la prise en compte d'un module isolé qui
+ * apparaît ou disparaît : imperceptible pour ce que ça change à l'écran.
+ */
+const MODULES_RELOAD_DEBOUNCE_MS = 1500
+let modulesReloadTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleModulesReload() {
+  if (modulesReloadTimer) clearTimeout(modulesReloadTimer)
+  modulesReloadTimer = setTimeout(() => {
+    modulesReloadTimer = undefined
+    void useModulesStore.getState().fetchModules()
+  }, MODULES_RELOAD_DEBOUNCE_MS)
+}
+
 // Réagir aux events WebSocket : recharger les modules et invalider les stats admin
 useWsStore.subscribe((state, prev) => {
   if (state.messages.length !== prev.messages.length) {
@@ -133,7 +156,7 @@ useWsStore.subscribe((state, prev) => {
         evtType === 'ModuleUnregistered' ||
         evtType === 'ModuleHealthChanged'
       ) {
-        useModulesStore.getState().fetchModules()
+        scheduleModulesReload()
         queryClient.invalidateQueries({ queryKey: ['admin-stats'] })
       }
       if (

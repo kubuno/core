@@ -1,14 +1,13 @@
+import { formatDate } from '../core/intl/datetime'
 import { useMemo, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { format } from 'date-fns'
 import { FileText, ExternalLink, Trash2 } from 'lucide-react'
 import { StartPage } from '@ui'
 import type { StartPageRecentItem, StartPageTab, MenuItem } from '@ui'
 import ModuleFileBrowser, { type FileContextAction } from './ModuleFileBrowser'
 import { recentApi, type FileItem } from './api'
 import { usePendingDeletionStore } from '@kubuno/sdk'
-import { getDateLocale } from '@kubuno/sdk'
 // StartPage « complète » : lanceur (récents) + onglet « Parcourir » alimenté PAR
 // DÉFAUT par le ModuleFileBrowser (navigation des répertoires du module dans
 // `files`).
@@ -68,7 +67,7 @@ export default function ModuleStartPage({
     return (recentData ?? []).map(f => ({
       id:          f.id,
       name:        f.name.replace(/\.[^.]+$/, ''),
-      subtitle:    format(new Date(f.opened_at), 'd MMM', { locale: getDateLocale(i18n.language) }),
+      subtitle:    formatDate(f.opened_at, 'date'),
       icon:        <FileText size={18} className="text-text-tertiary" strokeWidth={1.5} />,
       pendingTone: pendingDel[f.id],
       onClick:  () => { openAndRecord(f) },

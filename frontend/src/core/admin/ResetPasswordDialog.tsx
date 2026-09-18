@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import { Check, Copy, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { Button, Callout, Checkbox, FloatingWindow, Input, Radio } from '@ui'
 import { api } from '../api/client'
+import { apiErrorDetail } from '../api/errorMessage'
 
 /**
  * "Reset the password" — the administrator's way back in for a locked-out user.
@@ -97,7 +98,7 @@ export default function ResetPasswordDialog({
       onDone?.()
     },
     onError: (e: unknown) => {
-      const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const detail = apiErrorDetail(e)
       setError(detail || t('pwreset.err_generic'))
     },
   })

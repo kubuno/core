@@ -11,15 +11,57 @@ export function ensureMentionStyles(): void {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return
   const style = document.createElement('style')
   style.id = STYLE_ID
+  // A SOLID chip, like the label chips elsewhere in the instance: filled with
+  // the accent, white text, a small radius rather than a pill. A mention is a
+  // single object dropped into a sentence — the solid block reads as one thing
+  // at a glance, where the earlier pale pill read as merely coloured words.
+  // The × is white and sits slightly apart, so it is a button and not the last
+  // letter of the name.
   style.textContent = `
-.kb-mention{display:inline-flex;align-items:center;gap:.125em;padding:0 .15em 0 .5em;border-radius:9999px;
-  background:var(--color-primary-light,#d3e3fd);color:var(--color-primary,#1a73e8);font-weight:600;
-  line-height:1.4;white-space:nowrap;vertical-align:baseline;text-decoration:none;}
-.kb-mention__label{padding:.05em 0;}
-.kb-mention__remove{display:inline-flex;align-items:center;justify-content:center;width:1.15em;height:1.15em;
-  border:0;padding:0;margin:0;background:transparent;border-radius:9999px;font:inherit;font-size:1em;line-height:1;
-  color:inherit;opacity:.55;cursor:pointer;user-select:none;}
-.kb-mention__remove:hover{opacity:1;background:rgba(0,0,0,.10);}
+/* The × fills its side of the chip: a square as tall as the line, flush against
+   the name and against the chip's inner edge. Sized smaller it left air on
+   three sides that no amount of margin-balancing made read as centred — the
+   square is measured against the chip but seen against the name, whose letters
+   stop well short of their own line box.
+
+   What keeps the square off the outer edge is a 2px BORDER rather than padding:
+   padding would push the square inwards and it would no longer be full-bleed.
+   The frame is drawn in the accent too, so it reads as the chip's own rim; a
+   single colour here is the only thing to change to make it a visible outline.
+   A whole number of pixels, deliberately: a fractional rim put the chip's edge
+   and the square's edge on different phases of the device pixel grid, so the
+   two rasterised differently and the gap READ as bigger below than above even
+   though the layout had them equal to a hundredth of a pixel. */
+.kb-mention{--kb-mention-line:1.45em;
+  display:inline-flex;align-items:center;gap:0;padding:0 0 0 .45em;
+  border:2px solid var(--color-primary,#1a73e8);border-radius:4px;
+  background:var(--color-primary,#1a73e8);color:#fff;font-weight:600;font-size:.94em;
+  line-height:var(--kb-mention-line);white-space:nowrap;vertical-align:baseline;text-decoration:none;}
+/* No vertical padding on the label: the line height already gives the text its
+   room, and padding here made the chip's content taller than the × beside it —
+   which put the leftover above and below that button and broke the equality of
+   its three margins. */
+.kb-mention__label{padding:0;}
+/* The × is DRAWN, not typed. The button box centres exactly, but a glyph's ink
+   sits wherever its typeface puts it inside the em box — here, noticeably low —
+   so a typed × looked off no matter how the box was aligned, and the offset
+   would change with the instance's font. Two bars placed at 50%/50% are centred
+   by construction, at any size and in any typeface. The character itself stays
+   in the markup (existing saved chips carry it, and it is what a reader without
+   CSS sees); a transparent text colour is what hides it here. */
+/* A SQUARE exactly as tall as the chip's line, so it fills the rim's inner edge
+   on three sides with nothing left over. Both its sides come from the one
+   declared line height above, so they cannot drift apart, and it stays square
+   at any text size. */
+.kb-mention__remove{display:inline-flex;align-items:center;justify-content:center;position:relative;
+  flex:none;width:var(--kb-mention-line);height:var(--kb-mention-line);
+  border:0;padding:0;margin:0;background:transparent;border-radius:2px;
+  font:inherit;font-size:1em;line-height:1;color:transparent;opacity:.9;cursor:pointer;user-select:none;}
+.kb-mention__remove::before,.kb-mention__remove::after{content:"";position:absolute;left:50%;top:50%;
+  width:.72em;height:.11em;border-radius:.06em;background:#fff;}
+.kb-mention__remove::before{transform:translate(-50%,-50%) rotate(45deg);}
+.kb-mention__remove::after{transform:translate(-50%,-50%) rotate(-45deg);}
+.kb-mention__remove:hover{opacity:1;background:rgba(255,255,255,.28);}
 `
   document.head.appendChild(style)
 }

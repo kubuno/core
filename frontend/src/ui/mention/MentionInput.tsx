@@ -1,6 +1,5 @@
+import { cn } from '../cn'
 import React, { useRef, useState } from 'react'
-import { clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
 import { X } from 'lucide-react'
 import type { MentionItem, MentionsConfig } from './types'
 import { useMentionAutocomplete } from './useMentionAutocomplete'
@@ -85,10 +84,10 @@ export function MentionInput({
 
   return (
     <div
-      className={twMerge(clsx(
+      className={cn(cn(
         'relative w-full flex flex-wrap items-center gap-1 rounded-md border bg-white',
         'px-2 py-1 min-h-9 text-sm text-text-primary border-border',
-        'focus-within:ring-2 focus-within:ring-primary focus-within:border-primary',
+        'kb-field-focus',
         disabled && 'bg-surface-2 cursor-not-allowed opacity-60',
         className,
       ))}

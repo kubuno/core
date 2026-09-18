@@ -21,10 +21,10 @@ export default function WidgetSettingsPopover({ fields, value, onChange, onClose
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('mousedown', onDown, true)
     document.addEventListener('keydown', onKey)
     return () => {
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('mousedown', onDown, true)
       document.removeEventListener('keydown', onKey)
     }
   }, [onClose])

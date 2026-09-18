@@ -1,5 +1,6 @@
 import axios, { type AxiosError } from 'axios'
 import { requestReauth } from '../store/reauthStore'
+import { invalidatePublicConfig } from './publicConfig'
 
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -26,6 +27,16 @@ api.interceptors.response.use(
     const ct = String(response.headers['content-type'] ?? '')
     if (ct.includes('text/html') && response.config.url && !response.config.url.includes('/auth/')) {
       return Promise.reject({ message: 'Module non disponible (service inactif)', code: 'MODULE_UNAVAILABLE' })
+    }
+    // A settings write may have changed a PUBLIC setting (instance name, logo,
+    // theme, idle timeout…), which `getPublicConfig` holds a short-lived copy
+    // of. Dropping that copy here rather than in each panel is what keeps the
+    // console truthful: a panel added later cannot forget to do it, and the
+    // next read goes back to the server instead of repainting a stale value.
+    const method = String(response.config.method ?? '').toLowerCase()
+    const url    = String(response.config.url ?? '')
+    if (method !== 'get' && /(^|\/)(admin\/)?settings/.test(url)) {
+      invalidatePublicConfig()
     }
     return response
   },

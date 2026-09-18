@@ -85,8 +85,8 @@ export default function ShareDialog() {
   useEffect(() => {
     if (!open) return
     const h = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
+    document.addEventListener('mousedown', h, true)
+    return () => document.removeEventListener('mousedown', h, true)
   }, [open])
 
   const { data, isLoading } = useQuery({

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import {
@@ -20,6 +20,7 @@ import {
 } from './labels'
 import { actionHref, isOpen, type Alert, type AlertAction, type AlertEvent, type AlertStatus } from './types'
 import { adminUrl } from '../adminAction'
+import { useAdminCrumbs } from '../AdminBreadcrumb'
 
 /**
  * One alert: the context, what to do about it, and everything that has already
@@ -159,6 +160,13 @@ export default function AlertDetail({ id, onBack }: { id: string; onBack: () => 
 
   const canManage = can(PRIV.ALERTS_MANAGE)
 
+  // The sheet appends itself to the console's trail, which is what turns the
+  // « Alertes » segment into the way back — no second navigation of our own.
+  useAdminCrumbs(useMemo(
+    () => (data ? [{ label: data.alert.title, title: data.alert.title }] : []),
+    [data],
+  ))
+
   if (isLoading) return <div className="flex justify-center py-16"><Spinner /></div>
 
   if (isError || !data) {
@@ -204,10 +212,6 @@ export default function AlertDetail({ id, onBack }: { id: string; onBack: () => 
 
   return (
     <div className="min-w-0">
-      <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={onBack}>
-        {t('admin.al_back')}
-      </Button>
-
       {/* Header: what it is, how bad, and since when. */}
       <div className="mb-4 mt-2 min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

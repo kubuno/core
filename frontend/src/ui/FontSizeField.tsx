@@ -82,8 +82,8 @@ function SizeCombo({
     const onDown = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node) && !popRef.current?.contains(e.target as Node)) setOpen(false)
     }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('mousedown', onDown, true)
+    return () => document.removeEventListener('mousedown', onDown, true)
   }, [open])
 
   useLayoutEffect(() => {

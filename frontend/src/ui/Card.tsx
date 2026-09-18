@@ -1,7 +1,6 @@
+import { cn } from './cn'
 import type { ReactNode } from 'react'
 import { useId } from 'react'
-import { clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
 
 export interface CardProps {
   /** Section heading. Omit for a bare surface with no header band. */
@@ -51,13 +50,13 @@ export function Card({
   return (
     <section
       aria-labelledby={title != null ? headingId : undefined}
-      className={twMerge(clsx(
+      className={cn(cn(
         'min-w-0 rounded-xl border border-border bg-surface-0',
         className,
       ))}
     >
       {hasHeader && (
-        <div className={clsx('flex items-start gap-3 border-b border-border', pad)}>
+        <div className={cn('flex items-start gap-3 border-b border-border', pad)}>
           {icon && (
             <span className="mt-0.5 flex shrink-0 items-center text-text-secondary" aria-hidden>
               {icon}
@@ -84,11 +83,11 @@ export function Card({
       )}
 
       {children != null && (
-        <div className={twMerge(clsx('min-w-0', bodyPad), bodyClassName)}>{children}</div>
+        <div className={cn(cn('min-w-0', bodyPad), bodyClassName)}>{children}</div>
       )}
 
       {footer != null && (
-        <div className={clsx('border-t border-border bg-surface-1 rounded-b-xl', pad)}>{footer}</div>
+        <div className={cn('border-t border-border bg-surface-1 rounded-b-xl', pad)}>{footer}</div>
       )}
     </section>
   )

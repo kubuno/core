@@ -7,11 +7,15 @@
  */
 import type { Folder, FileItem } from '../api';
 /** Target of the item context menu (anchored at the pointer position). */
-export type MenuTarget = {
+export type MenuTarget = 
+/** `fromCrumb` marks the trail's own caret: same folder actions, plus the
+ *  "new folder" entry that only makes sense for the folder you are inside. */
+{
     type: 'folder';
     item: Folder;
     x: number;
     y: number;
+    fromCrumb?: boolean;
 } | {
     type: 'file';
     item: FileItem;

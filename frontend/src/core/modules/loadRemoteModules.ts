@@ -1,6 +1,7 @@
 import { SDK_VERSION } from '@kubuno/sdk'
 import type { ActiveModule } from '../types'
 import { useThemeStore } from '../store/themeStore'
+import { useModuleLoadStore } from './moduleLoadStore'
 
 /**
  * Chargement À L'EXÉCUTION des bundles UI des modules.
@@ -61,14 +62,26 @@ async function loadOne(m: ActiveModule): Promise<boolean> {
     const v = typeof mod.sdkVersion === 'number' ? mod.sdkVersion : undefined
     if (v !== undefined && v !== SDK_VERSION) {
       console.warn(`[modules] ${m.module_id} : SDK v${v} ≠ host v${SDK_VERSION} — ignoré`)
+      useModuleLoadStore.getState().recordFailure({
+        moduleId: m.module_id,
+        reason: 'sdk-mismatch',
+        detail: `SDK v${v} ≠ host v${SDK_VERSION}`,
+      })
       return false
     }
     if (typeof mod.register !== 'function') {
       console.warn(`[modules] ${m.module_id} : pas d'export register() — ignoré`)
+      useModuleLoadStore.getState().recordFailure({
+        moduleId: m.module_id,
+        reason: 'no-register',
+        detail: "pas d'export register()",
+      })
       return false
     }
 
     mod.register()
+    // Un chargement réussi efface un échec précédent (une tentative a récupéré).
+    useModuleLoadStore.getState().clearFailure(m.module_id)
     // Marqué chargé SEULEMENT après un register() réussi : tant que ce n'est pas
     // fait, un appel concurrent attend `inflight` plutôt que de l'ignorer.
     loaded.add(m.module_id)
@@ -81,8 +94,17 @@ async function loadOne(m: ActiveModule): Promise<boolean> {
     }
     return true
   } catch (err) {
-    // Isolation : l'échec d'un module ne casse jamais le shell ni les autres.
+    // Isolation : l'échec d'un module ne casse jamais le shell ni les autres —
+    // mais il ne doit plus disparaître en silence : on le recense pour la cloche
+    // (cf. useModuleLoadAlerts). Le cas le plus courant est une erreur de liaison
+    // ES (« does not provide an export named 'X' ») d'un module bâti contre une
+    // surface SDK plus récente que celle servie par le host.
     console.error(`[modules] ${m.module_id} : échec de chargement du bundle UI`, err)
+    useModuleLoadStore.getState().recordFailure({
+      moduleId: m.module_id,
+      reason: 'import-error',
+      detail: err instanceof Error ? err.message : String(err),
+    })
     return false
   }
 }

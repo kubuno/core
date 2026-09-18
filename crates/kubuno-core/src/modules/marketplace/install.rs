@@ -9,9 +9,9 @@ use sqlx::PgPool;
 
 use crate::{config::Settings, errors::AppError};
 
-use super::artifact::{kind_from_name, resolve_artifact, Artifact};
+use super::artifact::{is_kbpkg, resolve_artifact, Artifact};
 use super::catalog::{client, fetch_detail, validate_id};
-use super::extract::{copy_dir_all, extract_artifact, find_module_root, sha256_hex};
+use super::extract::{copy_dir_all, extract_kbpkg, find_module_root, sha256_hex};
 use super::progress::set_phase;
 
 const TRUSTED_REPO_PREFIX: &str = "https://github.com/kubuno/";
@@ -129,15 +129,14 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
         // Catalogue plus ancien, qui liste sans recommander : on trie ici.
         a
     } else if !detail.artifacts.is_empty() {
-        // Le catalogue décrit bien ce module, mais rien d'installable ici : le
-        // dire franchement vaut mieux que retomber sur une devinette qui, au
-        // mieux, téléchargerait un installateur système que le core ne sait pas
-        // piloter.
+        // Le catalogue décrit bien ce module, mais aucun .kbpkg installable ici :
+        // le dire franchement. Un module s'installe uniquement par son paquet
+        // Kubuno — les paquets système ne sont ni produits ni acceptés.
         let dispo: Vec<String> = detail.artifacts.iter()
             .map(|a| format!("{} {}/{}", a.kind, a.os, a.arch)).collect();
         return Err(AppError::Validation(format!(
-            "« {id} » ne publie rien d'installable depuis la console pour {}/{} (disponible : {}). \
-             Installez-le par son paquet système.",
+            "« {id} » ne publie pas de paquet Kubuno (.kbpkg) pour {}/{} (disponible : {}). \
+             Reconstruisez-le au format .kbpkg puis republiez.",
             std::env::consts::OS, std::env::consts::ARCH, dispo.join(", ")
         )));
     } else { match detail.download_url.clone() {
@@ -145,23 +144,26 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
             if !url.starts_with("https://") {
                 return Err(AppError::Validation("URL d'artefact non sécurisée (HTTPS requis)".into()));
             }
-            let kind = kind_from_name(&url)
-                .ok_or_else(|| AppError::Validation(format!("format d'artefact inconnu : {url}")))?;
-            Artifact { url, kind, sha256: detail.sha256.as_deref().map(|s| s.trim_start_matches("sha256:").to_ascii_lowercase()) }
+            if !is_kbpkg(&url) {
+                return Err(AppError::Validation(format!(
+                    "format d'artefact refusé : {url} — un module s'installe uniquement au format .kbpkg"
+                )));
+            }
+            Artifact { url, sha256: detail.sha256.as_deref().map(|s| s.trim_start_matches("sha256:").to_ascii_lowercase()) }
         }
         None => resolve_artifact(&http, &repo, &detail.version).await?,
     } };
-    tracing::info!(module_id = %id, version = %detail.version, os = std::env::consts::OS, arch = std::env::consts::ARCH, kind = ?asset.kind, url = %asset.url, "Marketplace : téléchargement de l'artefact");
+    tracing::info!(module_id = %id, version = %detail.version, os = std::env::consts::OS, arch = std::env::consts::ARCH, url = %asset.url, "Marketplace : téléchargement du paquet .kbpkg");
     set_phase(id, "downloading", "Téléchargement de l'artefact…");
     let bytes = http
         .get(&asset.url)
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("téléchargement .deb: {e}")))?
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("téléchargement .kbpkg: {e}")))?
         .bytes()
         .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("lecture .deb: {e}")))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("lecture .kbpkg: {e}")))?;
 
     // 2b) Vérification d'intégrité SHA-256 (empreinte publiée par GitHub). Échec DUR
     //     en cas de divergence ; simple avertissement si aucune empreinte n'est fournie.
@@ -190,7 +192,7 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
             if actual != expected {
                 tracing::error!(module_id = %id, expected, actual, "Marketplace : SHA-256 non conforme — installation refusée");
                 return Err(AppError::Internal(anyhow::anyhow!(
-                    "intégrité du .deb non vérifiée (SHA-256 attendu {expected}, obtenu {actual})"
+                    "intégrité du .kbpkg non vérifiée (SHA-256 attendu {expected}, obtenu {actual})"
                 )));
             }
             tracing::info!(module_id = %id, sha256 = %actual, "Marketplace : intégrité SHA-256 vérifiée");
@@ -236,13 +238,13 @@ async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Mater
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("écriture artefact: {e}")))?;
 
-    // 4) Extraction selon le format (.deb → dpkg-deb, .tar.gz → tar, .zip → crate zip).
+    // 4) Extraction du .kbpkg (archive ZIP, en Rust pur).
     set_phase(id, "extracting", "Extraction du paquet…");
     let extract = staging.join("extract");
     tokio::fs::create_dir_all(&extract)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("création extract: {e}")))?;
-    extract_artifact(asset.kind, &pkg_path, &extract).await?;
+    extract_kbpkg(&pkg_path, &extract).await?;
 
     // 5) Relocalisation du dossier module → store/<id> (self-contained). On localise le
     //    dossier du module quel que soit le layout de l'archive (deb imbriqué ou plat).
@@ -385,4 +387,116 @@ pub async fn uninstall(settings: Arc<Settings>, db: PgPool, id: &str) -> Result<
 
     tracing::info!(module_id = %id, "Marketplace : module désinstallé");
     Ok(())
+}
+
+/// Verify the embedded `SHA256SUMS` file (coreutils `sha256sum` format:
+/// `<hex>␠␠<relative path>`). A missing file means "not verified" and is tolerated
+/// (best-effort, offline copies may lack it). A listed file that is missing or whose
+/// digest does not match is an error: the archive has been tampered with.
+async fn verify_sha256sums(mod_dir: &Path) -> Result<(), AppError> {
+    let content = match tokio::fs::read_to_string(mod_dir.join("SHA256SUMS")).await {
+        Ok(c) => c,
+        Err(_) => return Ok(()), // no SHA256SUMS: nothing to check
+    };
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.is_empty() { continue; }
+        // Standard separator is two spaces; also accept a single space and a leading
+        // `*` (binary-mode marker).
+        let (expected, rel) = match line.split_once("  ").or_else(|| line.split_once(' ')) {
+            Some((h, r)) => (h.trim(), r.trim().trim_start_matches('*')),
+            None => continue,
+        };
+        // Never check ourselves, never escape the module directory.
+        if rel.is_empty() || rel == "SHA256SUMS" || rel.contains("..") { continue; }
+        let bytes = tokio::fs::read(mod_dir.join(rel)).await.map_err(|e| {
+            AppError::Validation(format!("SHA256SUMS lists « {rel} », which is missing: {e}"))
+        })?;
+        if !sha256_hex(&bytes).eq_ignore_ascii_case(expected) {
+            return Err(AppError::Validation(format!(
+                "SHA-256 mismatch for « {rel} » — the package has been altered"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Install a module from a LOCAL `.kbpkg` file without network or catalogue:
+/// extract → verify embedded digests → relocate into the core-writable store.
+/// Does NOT start the module — the core loads it on its next start (store rescan).
+/// Returns the module id, version and install path. Backs the
+/// `kubuno modules:install <file>` CLI command.
+///
+/// The Kubuno package is the ONLY format a module installs from: `.deb`, `.rpm`,
+/// `.tar.gz` and system installers are refused here, so a module reaches the store
+/// through exactly one path.
+pub async fn install_local(settings: &Settings, file: &Path) -> Result<InstallReport, AppError> {
+    // 1) A module installs from its Kubuno package only (a ZIP, unpacked in pure Rust).
+    let fname = file.file_name().and_then(|s| s.to_str()).unwrap_or_default().to_ascii_lowercase();
+    if !is_kbpkg(&fname) {
+        return Err(AppError::Validation(format!(
+            "« {fname} » n'est pas un paquet Kubuno — un module s'installe uniquement au format .kbpkg"
+        )));
+    }
+    if !file.is_file() {
+        return Err(AppError::Validation(format!("file not found: {}", file.display())));
+    }
+
+    // 2) Stage under the store (same filesystem as the destination → atomic rename).
+    let install_dir = PathBuf::from(&settings.server.modules_install_dir);
+    let staging = install_dir.join(".staging").join("_local");
+    let _ = tokio::fs::remove_dir_all(&staging).await;
+    let extract = staging.join("extract");
+    tokio::fs::create_dir_all(&extract).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("creating staging {}: {e}", extract.display())))?;
+
+    // 3) Extract.
+    extract_kbpkg(file, &extract).await?;
+
+    // 4) Locate the module directory and read the id from the manifest (never the filename).
+    let src_mod = find_module_root(&extract, "").ok_or_else(|| {
+        AppError::Validation("invalid archive: no module.toml found".into())
+    })?;
+    let toml_str = tokio::fs::read_to_string(src_mod.join("module.toml")).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("reading module.toml: {e}")))?;
+    let manifest: crate::modules::manifest::ModuleManifest = toml::from_str(&toml_str)
+        .map_err(|e| AppError::Validation(format!("invalid module.toml: {e}")))?;
+    let id = manifest.module.id.clone();
+    validate_id(&id)?;
+
+    // 5) Verify embedded digests (offline) if present.
+    verify_sha256sums(&src_mod).await?;
+
+    // 6) Relocate → store/<id> (replacing any existing copy).
+    let dest_mod = install_dir.join(&id);
+    let _ = tokio::fs::remove_dir_all(&dest_mod).await;
+    if tokio::fs::rename(&src_mod, &dest_mod).await.is_err() {
+        // Fallback to a recursive copy when rename is not possible (different fs).
+        let (s, d) = (src_mod.clone(), dest_mod.clone());
+        tokio::task::spawn_blocking(move || copy_dir_all(&s, &d))
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("copying module: {e}")))?
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("copying module: {e}")))?;
+    }
+
+    // 7) Config → modules_config_dir/<id> (best-effort; /etc may be read-only).
+    let mut config_written = false;
+    let src_cfg = extract.join("etc/kubuno/modules").join(&id);
+    if src_cfg.is_dir() {
+        let dest_cfg = Path::new(&settings.server.modules_config_dir).join(&id);
+        if copy_dir_all(&src_cfg, &dest_cfg).is_ok() { config_written = true; }
+    }
+
+    // 8) Clean up staging.
+    let _ = tokio::fs::remove_dir_all(install_dir.join(".staging")).await;
+
+    Ok(InstallReport {
+        id,
+        name:    manifest.module.display_name.clone(),
+        version: manifest.module.version.clone(),
+        path:    dest_mod.display().to_string(),
+        started: false,
+        config_written,
+        dependencies: manifest.module.dependencies.clone(),
+    })
 }

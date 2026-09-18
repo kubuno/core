@@ -1,9 +1,9 @@
+import { cn } from './cn'
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { clsx } from 'clsx'
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import { usePortalHost } from './portalHost'
@@ -159,7 +159,7 @@ export function ToastProvider({ children, max = 4, placement = 'bottom-right', t
 
   const stack = (
     <div
-      className={clsx(
+      className={cn(
         // Position comes from the inline style below (fixed at <body>, absolute
         // inside a bounded portal host); the classes only place the anchor.
         'pointer-events-none z-[9998] flex flex-col gap-2',
@@ -207,10 +207,10 @@ function ToastCard({ item, onClose, closeLabel }: {
       style={{ boxShadow: 'var(--kb-shadow-float)', animation: 'kb-toast-in .18s ease-out' }}
     >
       <style>{`@keyframes kb-toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
-      <span className={clsx('mt-px shrink-0', icon)} aria-hidden><Glyph size={16} /></span>
+      <span className={cn('mt-px shrink-0', icon)} aria-hidden><Glyph size={16} /></span>
       <div className="min-w-0 flex-1" style={{ fontSize: 'var(--kb-text-body)' }}>
         {item.title != null && <p className="font-medium text-text-primary">{item.title}</p>}
-        <div className={clsx('text-text-secondary', item.title != null && 'mt-0.5')}>{item.message}</div>
+        <div className={cn('text-text-secondary', item.title != null && 'mt-0.5')}>{item.message}</div>
         {item.action && (
           <button
             type="button"

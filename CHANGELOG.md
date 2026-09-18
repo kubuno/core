@@ -9,6 +9,464 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Added
+
+- **A label field, `LabelField`.** Chips for the labels an element carries and a
+  list to add or drop one, for putting the instance's labels on something from
+  inside its own form rather than from a context menu. Presentational: it is
+  handed the labels that exist and the ones chosen, and reports back — which is
+  what lets it work on something that does not exist yet.
+
+- **A help bubble, `HelpBubble`.** The filled answer behind a "?": the
+  instance's accent, white text, and an arrow pointing at the control that
+  raised the question — which a floating white card never does, and which
+  matters most where several little "?" sit near each other. It goes on
+  whichever side of that control has room (below, above, right, left) and the
+  arrow follows, always on the edge facing it. Near a screen edge the bubble
+  slides back into view rather than the arrow giving up and parking in a corner,
+  where it would name whatever happened to be beside it. Only the tip of the
+  arrow shows, and its point is square.
+
+
+### Changed
+
+- **The × on a mention chip fills its side of the chip.** Its box was narrower
+  than it was tall and the leftover interline piled up above and below it, so
+  its hover square sat inset at the top and bottom while sitting flush on the
+  right — three different margins, visible the moment you pointed at it. It is
+  now a square as tall as the chip's line, flush against the name and against
+  the chip's inner edge; what keeps it off the outer edge is a two-pixel rim
+  around the chip, drawn in the accent. Whole pixels, deliberately: at a
+  fraction of the text size, the chip's edge and the square's edge fell on
+  different phases of the screen's pixel grid, so they were drawn differently
+  and the gap below LOOKED larger than the one above even though the layout had
+  them equal to a hundredth of a pixel.
+
+- **The × on a mention chip is centred.** It was a typed character, and a
+  glyph sits wherever its typeface puts it inside the em box — low, here — so it
+  read a touch below the middle however the button was aligned, and the offset
+  would have moved again with a different font. It is now drawn rather than
+  typed, which centres it by construction at any size.
+
+- **A mention reads as one object, not as coloured words.** The chip a `@`
+  mention leaves behind was a pale tint with the accent as its ink, which at a
+  glance was hard to tell from emphasised text. It is now a solid block in the
+  accent with white text, the square-ish corners the instance uses for its other
+  chips, and a white × set slightly apart so it reads as a button rather than
+  the last letter of the name.
+
+### Added
+
+- **Typing `@` always has someone to suggest: the instance's own people.** The
+  mention fields asked the modules and nobody else, so on an instance without a
+  contacts module — or simply one holding nobody by that name — `@` did nothing
+  at all, which reads as broken rather than empty. The core now offers its own
+  directory under the same extension point and the same rules as any module, so
+  the administrator's sharing policy applies untouched: a closed directory
+  suggests nobody, a narrowed one suggests the caller's own unit, and an address
+  travels only when the policy shares it.
+
+- **A person's directory card, for whoever shows a name.** One endpoint answers
+  what the directory publishes about one account — the display name and photo it
+  always gave, plus how the name is pronounced, the pronouns asked for, the work
+  location, the introduction and the organisational unit. It obeys the same three
+  sharing keys as the people search: a closed directory answers "not found", a
+  narrowed one answers only within the caller's own unit, and the address is
+  omitted unless the policy shares it. Gender and date of birth are absent by
+  construction and must stay so.
+
+### Changed
+
+- **New Kubuno logo.** The platform's mark — shown in the top bar, the loading
+  screen, the sidebar, the browser tab (favicon) and as the default instance
+  logo — has been replaced with the new brand logo.
+
+### Fixed
+
+- **A field stops looking focused once you have moved on.** The focus stroke was
+  painted on `:focus`, and a field whose trigger is a button — a date or time
+  picker, a dropdown — keeps that focus after a mouse click. It therefore stayed
+  lit until something else was clicked, and in browsers that do not hand focus
+  back to the page when you click a blank area, it never went out at all. The
+  stroke now follows `:focus-visible`: it shows for keyboard focus and for text
+  entry, and an open list or panel lights its own field while it is open.
+
+- **A picker or a dropdown inside a window closes when you click outside it.**
+  Several of them listened for the click on the document while it was bubbling,
+  so an ancestor that stops the event — a floating window does, to decide which
+  window a press brings forward — left them open for ever: the panel stayed on
+  screen and its field stayed lit. They listen during capture now, where nothing
+  below them can take the event away. Affects the date and time pickers, the
+  font and size pickers, the address, phone and label fields, and two popovers.
+
+### Changed
+
+- **Hovering a tab tints it — which it never actually did.** The active tab now
+  answers in its own blue (#eaeffa) and the others in grey. The grey was meant
+  to be there already, but it was written as a utility class, and a utility ends
+  up in a cascade layer whose order is settled by whichever stylesheet names it
+  first; with a dozen module stylesheets loading after the host's, the browsers'
+  own transparent button background won. The rule was generated, the class was
+  on the tab, the pointer was over it, and nothing painted. It is plain
+  unlayered CSS now, which cannot lose that argument.
+
+- **A tab strip is 48 px tall, and says so.** Its height came out of the
+  label's line box plus two paddings — 38.28 px, a number nobody chose and that
+  a different font or a taller alphabet would have changed again. The height is
+  stated once now, so it holds whatever the label turns out to be. (The small
+  size and the pill variant are unchanged: a pill is a chip around a label, not
+  a strip.)
+
+- **The tab indicator slides to the tab you picked.** It was a mark drawn under
+  each tab, so changing tab put one out and another in — two events the eye has
+  to join up by itself. It is one mark for the whole strip now, and it travels:
+  it says which tab, and where it came from. It takes the width of its tab as it
+  goes, is placed without animation the first time the strip appears, and holds
+  still for a reader who has asked for less movement.
+
+- **A form looks like a form whether or not it lives in a window.** The tinted
+  canvas and the filled fields were tied to windows; a quick-create card or a
+  side panel showing the same form fell back to white boxes with drawn borders,
+  so the same form read as two different kinds of thing. The surface and the
+  fields now have one definition, which a window takes through its content area
+  and any other panel takes by wearing `kb-form-surface`. The two colours live
+  in one place instead of being written out per rule.
+
+### Added
+
+- **A window whose content is a form can sit it on a tint rather than on
+  white.** A form is mostly white fields, and on a white canvas they have
+  nothing to stand on — the eye reads one sheet with lines drawn on it instead
+  of a set of fields. The fields themselves take a fill one tone above the
+  canvas and drop their resting outline, so a field is a filled box rather than
+  a drawn rectangle and the focus stroke is the only line it ever grows. Opt-in,
+  so a window showing a document, an image or a canvas keeps its white. Text
+  fields, multiline fields, rich text, combo boxes, date fields and dropdowns
+  all follow, and a window's title field is deliberately untouched: it belongs
+  to the band, not to the form.
+
+- **A form region can be raised onto a card** (`kb-form-card`). A tab strip and
+  the content it governs are one object; putting them on their own white surface
+  says so, and gives filled fields a plain background to be read against.
+
+- **A form can name its subject at the top of itself** (`kb-form-title-field`):
+  a heading line rather than a boxed field — one stroke under the text, three
+  pixels when it has focus, and nothing else, so the heading of a form never
+  reads as one more thing to fill in.
+
+- **A building's position can be picked on a map, when a module provides one.**
+  The console still ships two coordinate fields, because they work on an
+  instance with nothing else installed; it now also declares the place where a
+  module that renders maps can replace them with something better. The console
+  names no module: it asks whether anyone active has claimed the job, and falls
+  back to its own fields when nobody has.
+- **A room statistics dashboard, in Directory → Buildings and resources.** A new
+  tab reports, over the last 7, 30 or 90 days: bookings and hours booked, the
+  share of the working day the rooms were used for, the share of requests the
+  rooms accepted, the hours booked per day and per hour of the day, a ranking of
+  the most-booked rooms, and the hours handed back automatically. The day and
+  hour columns are cut on your own clock, not on UTC. When the module holding
+  the bookings is not installed, the tab says so instead of showing zeros — a
+  zero there would read as "no room was booked".
+
+### Changed
+
+- **A dropdown can be dressed by the container it sits in.** Its trigger painted
+  its border and its fill inline, which no stylesheet could reach — it was the
+  one control in a form that could not follow the others. It now reads the
+  shared field tokens, with its previous look as the fallback, so nothing
+  changes anywhere that does not ask for it.
+
+- **The focus stroke under a heading field is three pixels, like every other
+  field's.** The stripped-down text field — one stroke under the text and no box
+  — drew a one-pixel line when it took focus, thin enough to miss on a
+  high-density screen. It now carries the thickness the focus mark has
+  everywhere else, and the stroke is reserved at rest as well, so nothing moves
+  when the field is clicked.
+
+- **A text field can now be asked to drop its frame** (`bare`), for a title line
+  — of a document, of an event — which is not a form field and must not look
+  like one. Written as a variant of the shared field rather than as bare markup
+  copied into each screen, which is the only way it stays the same everywhere.
+
+- **A required field is marked with an asterisk.** The mark lives in the field
+  components themselves, so it is the same glyph, colour and spacing everywhere,
+  and it is announced to screen readers — without summoning the browser's own
+  validation bubble, which this product replaces with its own messages. In place
+  on the building, resource and equipment sheets; the rest of the console
+  follows as each form is touched.
+- **The building sheet is laid out in two columns.** It was a single tall ribbon
+  of half-empty rows; the short fields now pair off, and what needs the width —
+  the address, the position, the note — keeps it. It folds back to one column on
+  a narrow screen.
+
+### Fixed
+
+- **Clicking outside a window with a backdrop closes it again, instead of
+  burying it.** The press on the veil travelled up the React tree and raised
+  the window that had opened this one; that window's own veil then slid over
+  the pointer between the press and the release, so no click was ever formed
+  and nothing closed. The inner window was left underneath, unreachable. A
+  press on a veil now belongs to the window it veils — one cause, both
+  symptoms.
+
+- **Escape closes the top window, not every open one.** Each window listened
+  for itself, so one press closed a settings window and the window that opened
+  it together. And an open dropdown list keeps Escape for itself: it closes the
+  list, never the window around it — asked of the page rather than left to the
+  order the listeners happened to be registered in.
+
+- **A window opened by another window no longer sinks behind it when clicked.**
+  A window rendered by another one is its child in React, and a portal carries
+  events up the React tree rather than the DOM one — so a press inside the
+  inner window reached the outer window's own handler a moment later and
+  raised the outer one on top of what had just been clicked. A press now stays
+  in the window it landed in. Clicking the window underneath still raises it,
+  as it should.
+
+- **Dropdown lists work from the keyboard like a native select.** They did not
+  answer the keyboard at all: no arrow, no Enter, no Escape, no typing. With the
+  list focused, ↓ ↑ Enter or Space open it on the current value, Home and End
+  open it on the first or last row, and typing a letter opens it on the first
+  row that starts with it. Open, ↓ ↑ walk the rows without wrapping, Home End
+  Page↑ Page↓ jump, typing walks the matches ("b", "b", "b"…), Enter or Space
+  chooses, Tab chooses and moves on, and Escape closes the list — only the
+  list: it used to close the whole window under it. The row the keyboard is on
+  is the row the mouse would highlight, and a screen reader is told which one
+  it is. The list never takes the focus itself, so Tab still leaves from where
+  the reader expects.
+
+- **Clicking a dropdown list in a form now moves the focus to it, like a
+  native select.** It used to refuse the focus — the right thing for a toolbar
+  list over a document, whose selection must survive, but wrong everywhere
+  else: the field the reader had just left stayed lit beside the open list,
+  and any sequence of controls could bring its stroke flashing back. The list
+  now decides at the click: it leaves the focus alone only when a document
+  editor holds it; on a form it takes it, keeps it after closing, and the
+  keyboard follows the pointer. A rich text field counts as a field, not as a
+  document. Verified frame by frame across mixed sequences of fields, lists,
+  buttons, the date picker and the rich text box: never two controls lit at
+  once, never a stroke returning to a field the reader has left.
+
+- **A rich text box now shows that it has the focus.** It drew a frame and
+  nothing else, and the editable area inside it suppressed the browser's own
+  mark — so clicking into a description left no sign of where the keyboard was
+  pointing. It now carries the same single stroke as every other field.
+
+- **A refused save now says what the server refused.** Every screen printed its
+  own generic sentence — "Enregistrement impossible." — while the server had
+  answered, for instance, "Un bâtiment doit avoir au moins un étage : c'est ce
+  qui permet de dire où se trouve une ressource." The console was reading the
+  answer in the wrong place and silently finding nothing there. Twenty-five
+  screens were affected, from the building sheet to the marketplace, the theme
+  import, the LDAP directories and the mail settings.
+- **A form's alert stays under the title, in sight.** It used to sit at the end
+  of the form, so on a sheet taller than its window you had to scroll to the
+  bottom to learn why nothing had been saved — after pressing Save. It is now
+  pinned between the title bar and the scrolling content, for every window.
+- **A focused field no longer shows a double border.** The focus stroke used to
+  be two paintings side by side — a one-pixel border and a two-pixel ring that
+  began exactly where the border ended. On a screen with fractional scaling
+  (Windows at 175 %, say) the two do not round to the same physical pixels, and
+  a sliver of the background shows through between them: what you read is two
+  borders with a white gap. Fields now draw that stroke as a **single** painting
+  of the same thickness, overlapping the border instead of abutting it, so
+  nothing can slip in between. Applies to every control that draws that kind of
+  frame: text fields, text areas, number fields, drop-down lists (closed, focused
+  or open), searchable lists, date fields, editable text and mention fields. Two lesser causes were removed along the way: the
+  browser's own focus ring, which some engines painted on top of ours, and an
+  inherited ring offset that could insert a white band of its own.
+- **A popover opened from inside a window is no longer painted behind it.** The
+  anchored popover primitive sat below the window layer, so the address results
+  of a location field, for instance, were positioned correctly and invisible.
+- **A selected tab that sits off-screen now scrolls itself into view.** On a
+  section with more tabs than fit, arriving from a link or the back button left
+  the strip showing the first tabs while the panel below showed the last one,
+  with nothing to say where you were.
+- **A bar chart can now label its horizontal axis**, thinning the labels out as
+  far as it must so none touches another. Without it, "booked hours by hour of
+  the day" was a row of bars nobody could put an hour to.
+- **The leader of a ranking is no longer painted red.** The bar list turns a
+  nearly-full bar into a warning, which is right when the bar measures a quota
+  being used up and wrong when it measures the largest value in a list: the
+  most-booked room is good news, not an alert.
+
+
+
+- **Room usage figures, asked of the module that holds the bookings.** The
+  console can now report how the rooms were used over a period. The bookings
+  belong to the calendar, not to the directory, so the console asks it rather
+  than reading its data — and says plainly that the figures need the calendar
+  when that module is not installed, instead of failing the page over it.
+- **Two ways to keep a room from being handed back.** A meeting whose guests have
+  all declined gives its room back to the pool. That is right for an ordinary
+  booking and wrong for a few, so the exception can now be declared where it
+  belongs: on the room, for a place whose availability must not depend on who
+  answered; and on a group, for a population whose meetings keep their room
+  wherever they are held. Both are off by default — the rule applies unless
+  somebody says otherwise.
+- **Install and list modules from the command line.**
+  `kubuno modules:install <file.kbpkg>` installs a module from a local package
+  — Kubuno's cross-platform `.kbpkg` (a ZIP holding the module directory at its
+  root), or a `.zip`/`.deb`/`.tar.gz` — with no network and no catalogue: the
+  archive is extracted, its embedded `SHA256SUMS` are verified (a tampered
+  package is refused), the module id is read from `module.toml`, and the module
+  is placed in the core's writable store. It starts on the core's next launch
+  (`systemctl restart kubuno` to activate it at once). `kubuno modules:list`
+  shows the modules currently in the store with their version. Offline and
+  scripted module installation now works the same way on every platform,
+  alongside the one-click marketplace.
+
+- **The CAPTCHA type selector shows a live example.** Under "Type de test
+  humain" in the security settings, a preview draws the actual challenge the
+  chosen type produces — the distorted image, the sliding puzzle, or the sum —
+  from the same server that the sign-in form uses, with a button to draw another.
+  An administrator can finally see whether their tuning (distortion, length,
+  noise, tolerance, range) still leaves a test a person can pass, instead of
+  guessing from the numbers or failing a real sign-in five times to reach it.
+  The preview refreshes when the type is switched and after the tuning is saved.
+
+- **A sign-in CAPTCHA after repeated failures, self-hosted.** Once an account
+  has failed to sign in a configurable number of times
+  (`security.login_captcha_after_failures`, 0 disables it), the form must carry
+  a solved human test before the password is checked again, until the next
+  success. An administrator chooses which test from the security settings
+  (`security.captcha_type`): distorted characters to retype, a jigsaw piece to
+  slide into place, or a small sum to solve. Each challenge is drawn and
+  verified by the server itself — the CAPTCHA is entirely self-hosted, with no
+  third-party verification service and no outbound request — and its complexity
+  is tunable (code length, distortion, noise, slider tolerance, arithmetic
+  range). The distorted-text image is rasterised so the answer is never present
+  as text or vector geometry in what the browser receives. The gate counts
+  failures per submitted identifier, not per account, so a form that keeps
+  failing is asked for a CAPTCHA whether or not the identifier names a real
+  account — telling the two apart is exactly what the rest of sign-in avoids,
+  and the gate does not reintroduce it. A successful sign-in clears the count.
+  The security settings show only the tuning
+  knobs that apply to the chosen test — the distorted-text options for text, the
+  tolerance for the slider, the range for the sum — so an operator setting up one
+  never reads three fields that belong to another.
+
+### Changed
+
+- **An account's storage card now says where the space went.** It spans the
+  sheet and opens with the total the quota actually counts, followed by what
+  each module charges to that account — the question anyone asks the moment the
+  total surprises them — with the ceiling and its bar underneath, still editable
+  in place. The figures come from the same endpoint the storage page reads, so
+  the two screens cannot disagree.
+
+- **Every detail screen in the console now leaves through the same trail.** Six
+  more sheets — an alert, a device, a detector, a rule, a target audience, a
+  holiday calendar — used to stack a back button of their own directly under a
+  breadcrumb that already said where you were. They now add themselves to that
+  trail instead ("Sécurité › Centre d'alertes › <alert>"), which is what turns
+  the section above them into the way back. Two exceptions stay on purpose: a
+  screen that failed to load still offers a way out of its own, and creating a
+  detector — which has no address of its own to return from — keeps its button.
+
+- **Leaving through the breadcrumb now asks about unsaved edits.** A sheet that
+  edits in place has no dialog to close, and the trail was the one way out that
+  never asked: a half-typed field vanished without a word. It now puts the same
+  question the sheets' own controls did, for every detail screen at once.
+
+- **An account's sheet joins the console's breadcrumb instead of carrying its own
+  back button.** The trail now reads "Annuaire › Utilisateurs › <name>", and the
+  Utilisateurs segment is the way back to the list. The sheet used to stack a
+  hand-made "Retour aux utilisateurs" link directly under a breadcrumb that
+  already said the same thing — two navigations, one of which no other detail
+  page had.
+
+- **An account's sheet now keeps its identity in view.** Opening someone's
+  account puts a card down the left — their photo, name, address, whether the
+  account is active, when they last signed in, when it was created and which
+  organisational unit governs it — and that card stays put while the tabs
+  beside it scroll. The actions that act on the account itself (reset the
+  password, change its unit, enable or disable it) live on that card, so the
+  name of who is being changed is never off screen while you change them. An
+  action you are not allowed to take now says why when you hover it, instead of
+  being greyed out with no explanation: you cannot disable your own account, and
+  the card tells you so.
+
+- **The accounts page is now framed by the organisational units.** A panel down
+  the left of Directory → Users holds the unit tree permanently: you choose
+  whether the list covers every unit or only the ones you pick, search the tree
+  by name, take one unit or several at once, and say explicitly whether
+  sub-units are included. The panel does not navigate away — it *frames* the
+  list, so the count, the selection bar and anything you do next all describe
+  the same set of accounts. It folds away when the table needs the width, and a
+  link at the bottom leads to the page where units are actually created, renamed
+  and moved.
+
+- **The app menu's favourites card breathes.** The white card that holds your
+  favourites now keeps a margin of its own — 10px each side instead of sitting
+  almost flush against the panel, and more room below it before the rest of the
+  apps begin. The apps listed underneath were re-inset to match, so their tiles
+  keep exactly the width and the columns of the ones on the card — the two grids
+  read as one.
+
+- **The sign-in fields now carry their own label.** On the sign-in page the
+  identifier and password boxes — and the e-mail box on the "forgot password"
+  step — are the platform's standard outlined field instead of bare inputs: the
+  label sits inside the box at rest and rises onto the border, into a notch cut
+  out of the line, as soon as you start typing or the browser fills the field in
+  for you. The label therefore stays readable while you type, which a
+  placeholder never was. The eye that reveals the password is unchanged, and the
+  sign-in button now stays greyed out until both boxes hold something, rather
+  than letting an empty form reach the server.
+
+- **A module installs from its Kubuno package (`.kbpkg`) only.** The server no
+  longer opens a `.deb`, `.rpm`, `.tar.gz` or any system installer for a module:
+  the marketplace, and `kubuno modules:install <file>`, accept the `.kbpkg`
+  format alone (a ZIP the server unpacks itself, with no external tool, the same
+  way on Linux, Windows and macOS) and refuse anything else with a clear message.
+  A module that publishes only a system package for the running platform is
+  declined by name instead of being downloaded and half-installed. This drops the
+  server's reliance on `dpkg-deb` and `tar` for module installation. (The core
+  itself still ships as a native system package — it is a real system service.)
+
+- **The top-left brand now names the app you are in.** Inside Mail the corner
+  shows the Mail logo and "Mail", inside Drive the Drive logo and "Drive",
+  inside Office's Documents the Documents logo and "Documents", and clicking it
+  opens that app's entry point instead of the platform home page. Outside every
+  module (home) it stays the instance logo and "Kubuno". Same behaviour in the
+  sidebar corner used when a module hides the top bar.
+
+- **The administration console behaves like a module.** It has its own brand
+  in the top-left corner (its logo and "Administration", linking to the
+  console's landing), its own favicon and its own tab title, exactly as a
+  module does. The duplicate logo and name that headed the console's sidebar
+  are gone.
+
+### Fixed
+
+- **Field labels no longer have their descenders sliced off.** In every box that
+  carries its label inside — the sign-in fields, and the same field wherever the
+  platform uses it — the tails of `p`, `g`, `q`, `j` and `y` were cut flat along
+  the bottom, so "Mot de passe" read as if it had been trimmed with a ruler. The
+  label is now given room for the full height of the type, and it sits exactly on
+  the text it stands in for.
+
+- **Modules built before the date-formatting change load again.** Removing
+  `getDateLocale()` from the SDK broke every installed module that still
+  imported it: Drive, Office, Calendar and Notes failed at import time with
+  "does not provide an export named 'getDateLocale'" and were silently dropped
+  from the shell. The SDK exports it again, as a deprecated bridge that builds a
+  date-fns compatible locale from the browser's `Intl` data (no date-fns in the
+  host), so older module bundles load and keep printing dates in the reader's
+  language.
+
+- **A module that fails to load no longer vanishes without a trace.** When a
+  module's interface bundle cannot be loaded — most often because it was built
+  against a newer SDK surface than the server serves, so an ES import fails with
+  "does not provide an export named 'X'" — the shell still isolates it so the
+  rest of the workspace stays up, but it now announces the failure in the
+  notification bell for anyone who may read modules, with the module name and the
+  reason (SDK mismatch, load error, or missing entry point) and a link to the
+  Modules admin page. Previously such a module simply disappeared from the
+  sidebar and the app grid with no visible cause, leaving the only trace in the
+  browser console. A later successful load clears the alert.
+
 ## [0.1.10] - 2026-09-10
 
 

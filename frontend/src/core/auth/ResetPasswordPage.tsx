@@ -6,6 +6,7 @@ import { Button, Callout, Input } from '@ui'
 import { api } from '../api/client'
 import { passwordStrength } from './passwordStrength'
 import { InstanceLogo } from '../shell/InstanceLogo'
+import { apiErrorDetail } from '../api/errorMessage'
 
 /**
  * Landing page of the link sent by "forgot my password".
@@ -52,7 +53,7 @@ export default function ResetPasswordPage() {
     } catch (err: unknown) {
       // The server answers the same way for an unknown, used and expired token
       // — deliberately, so this page says the same thing for all three.
-      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const message = apiErrorDetail(err)
       setError(message || t('resetpw.err_invalid'))
     } finally {
       setIsLoading(false)

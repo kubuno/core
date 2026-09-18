@@ -1,3 +1,4 @@
+import { formatDate } from '../../core/intl/datetime'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
@@ -8,8 +9,6 @@ import { useAdminAction } from './adminAction'
 import type { UserGroup } from '../types'
 import { Users, Plus, Trash2, Edit2, X, Check, Shield, ChevronDown, ChevronRight } from 'lucide-react'
 import { Checkbox, Button, Input } from '@ui'
-import { format } from 'date-fns'
-import { getDateLocale } from '../i18n/dateLocale'
 import { useConfirm } from '../hooks/useConfirm'
 import ConfirmDialog from '@ui/ConfirmDialog'
 
@@ -46,7 +45,7 @@ function GroupForm({
   onCancel,
 }: {
   initial?: Partial<UserGroup>
-  onSave: (data: { name: string; description: string; permissions: string[]; is_default: boolean }) => void
+  onSave: (data: { name: string; description: string; permissions: string[]; is_default: boolean; release_exempt: boolean }) => void
   onCancel: () => void
 }) {
   const { t } = useTranslation()
@@ -54,6 +53,7 @@ function GroupForm({
   const [description, setDesc]      = useState(initial?.description ?? '')
   const [permissions, setPerms]     = useState<string[]>(initial?.permissions ?? [])
   const [isDefault, setIsDefault]   = useState(initial?.is_default ?? false)
+  const [relExempt, setRelExempt]   = useState(initial?.release_exempt ?? false)
   const [customPerm, setCustomPerm] = useState('')
 
   const togglePerm = (key: string) => {
@@ -140,10 +140,18 @@ function GroupForm({
         onChange={v => setIsDefault(v)}
       />
 
+      {/* Protects a POPULATION, where the room's own flag protects a PLACE. */}
+      <Checkbox
+        label={t('admin.g_release_exempt')}
+        description={t('admin.g_release_exempt_desc')}
+        checked={relExempt}
+        onChange={v => setRelExempt(v)}
+      />
+
       <div className="flex gap-2 pt-1">
         <Button
           icon={<Check size={14} />}
-          onClick={() => onSave({ name, description, permissions, is_default: isDefault })}
+          onClick={() => onSave({ name, description, permissions, is_default: isDefault, release_exempt: relExempt })}
           disabled={!name.trim()}
         >
           {t('settings.save')}
@@ -301,7 +309,7 @@ function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: num
               </div>
 
               <p className="text-sm text-text-tertiary">
-                {t('admin.g_created')} {format(new Date(group.created_at), 'd MMM yyyy', { locale: getDateLocale() })}
+                {t('admin.g_created')} {formatDate(new Date(group.created_at), 'date')}
               </p>
             </>
           )}

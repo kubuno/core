@@ -55,7 +55,7 @@ export default function AudiencesSection({ params, navigate }: AdminSectionProps
     return all.filter(a => foldIncludes(a.name, q) || (a.description ? foldIncludes(a.description, q) : false))
   }, [data, q])
 
-  if (open) return <AudienceSheet id={open} canManage={canManage} onBack={() => go(null)} />
+  if (open) return <AudienceSheet id={open} canManage={canManage} />
 
   const askRemove = async (a: Audience) => {
     const ok = await confirm({

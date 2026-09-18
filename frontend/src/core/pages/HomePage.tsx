@@ -1,9 +1,8 @@
+import { formatDate } from '../../core/intl/datetime'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { LayoutDashboard, Pencil, Check } from 'lucide-react'
-import { format } from 'date-fns'
-import { enUS, fr, es, pt, it, de, el, ru, ar, he, hi, zhCN, ja, type Locale } from 'date-fns/locale'
 import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { useToolbarStore } from '../store/toolbarStore'
@@ -13,12 +12,8 @@ import { useFavoriteApps } from '../hooks/useFavoriteApps'
 import { appNavMemory } from '../store/appNavMemory'
 import { Button, useIsMobile } from '@ui'
 
-const DATE_LOCALES: Record<string, Locale> = {
-  en: enUS, fr, es, pt, it, de, el, ru, ar, he, hi, zh: zhCN, ja,
-}
-
 export default function HomePage() {
-  const { t, i18n }       = useTranslation()
+  const { t }       = useTranslation()
   const { user }          = useAuthStore()
   const { activeModules } = useModulesStore()
   const activeIds         = new Set(activeModules.map(m => m.module_id))
@@ -40,7 +35,6 @@ export default function HomePage() {
 
   const h = new Date().getHours()
   const greetingKey = h < 6 ? 'home.g_night' : h < 12 ? 'home.g_morning' : h < 18 ? 'home.g_afternoon' : 'home.g_evening'
-  const dateLocale = DATE_LOCALES[i18n.language] ?? enUS
 
   if (allWidgets.length === 0) {
     return (
@@ -66,7 +60,7 @@ export default function HomePage() {
         <div className="shrink-0">
           <h1 className="text-xl font-medium text-text-primary">{t(greetingKey, { name })}</h1>
           <p className="text-sm text-text-tertiary mt-0.5 capitalize">
-            {format(new Date(), "EEEE d MMMM yyyy", { locale: dateLocale })}
+            {formatDate(new Date(), 'weekdayDate')}
           </p>
         </div>
 

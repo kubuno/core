@@ -38,6 +38,24 @@ pub struct ListUsersQuery {
     pub role:   Option<String>,
     /// Confine the listing to one organisational unit.
     pub org_unit_id: Option<Uuid>,
+    /// Confine the listing to SEVERAL units at once, comma-separated.
+    ///
+    /// The console lets an operator hold two branches at the same time — looking
+    /// at "Sales" and "Marketing" together — and every downstream operation (the
+    /// count, the bulk bar, the export) must describe that same union, not one
+    /// unit of it. Merged with `org_unit_id`, which stays for the single-unit
+    /// callers that predate this.
+    ///
+    /// A comma-separated string rather than a repeated parameter: `Query` maps a
+    /// flat pair list, so `?u=a&u=b` would silently keep only the last one.
+    pub org_unit_ids: Option<String>,
+    /// Column to order by, from a fixed list (`sort_clause`); anything else falls
+    /// back to the default. `dir` is `asc` or `desc`.
+    pub sort: Option<String>,
+    pub dir:  Option<String>,
+    /// Export only: the columns to write, comma-separated, from `EXPORT_COLUMNS`.
+    /// Empty or absent writes them all. Ignored by the listing.
+    pub columns: Option<String>,
     /// With `org_unit_id`: include the accounts of the whole subtree, not just
     /// the ones sitting directly in that unit. Looking at "Support" and being
     /// told it holds nobody, while its three sub-units hold everyone, is the
@@ -58,16 +76,63 @@ pub struct ListUsersQuery {
 /// the operator reads it as accounts being hidden from them.
 ///
 /// Parameters, in order: `$1` search, `$2` role, `$3` scope units,
-/// `$4` unit filter, `$5` include descendants.
+/// `$4` unit filter (one OR several), `$5` include descendants.
+///
+/// `$4` is an ARRAY, so one selected unit and five go down the same path: the
+/// console can hold a union of branches without the count, the export and the
+/// listing each needing their own predicate.
 const USER_FILTER: &str = r#"
         ($1::text IS NULL OR email ILIKE '%' || $1 || '%'
                OR username ILIKE '%' || $1 || '%'
                OR display_name ILIKE '%' || $1 || '%')
     AND ($2::text IS NULL OR role = $2)
     AND ($3::uuid[] IS NULL OR (org_unit_id IS NOT NULL AND org_unit_id = ANY($3)))
-    AND ($4::uuid IS NULL OR org_unit_id = $4
-               OR ($5::bool AND org_unit_id IN (SELECT d.id FROM core.org_unit_descendants($4) d)))
+    AND ($4::uuid[] IS NULL OR org_unit_id = ANY($4)
+               OR ($5::bool AND org_unit_id IN (
+                     SELECT d.id FROM unnest($4::uuid[]) AS sel(id),
+                                      core.org_unit_descendants(sel.id) AS d)))
 "#;
+
+/// Ordering, chosen from a CLOSED list.
+///
+/// The fragment is interpolated into the statement, so it must never carry
+/// caller text: an unknown name falls back to the default instead of being
+/// passed through. `id` breaks ties — without it two rows that compare equal can
+/// swap between pages and an account is seen twice, or not at all.
+/// `NULLS LAST` in both directions: "never signed in" is an absence, and it
+/// belongs at the end whichever way the column is read.
+fn sort_clause(sort: Option<&str>, dir: Option<&str>) -> String {
+    let Some(sort) = sort else {
+        return "ORDER BY created_at DESC, id ASC".into();
+    };
+    let column = match sort {
+        "name"       => "lower(coalesce(nullif(display_name, ''), username))",
+        "email"      => "lower(email)",
+        "role"       => "role",
+        "status"     => "is_active",
+        "quota"      => "used_bytes",
+        "last_login" => "last_login_at",
+        "created"    => "created_at",
+        "unit"       => "(SELECT lower(o.name) FROM core.org_units o WHERE o.id = org_unit_id)",
+        _            => return "ORDER BY created_at DESC, id ASC".into(),
+    };
+    let direction = if dir == Some("desc") { "DESC" } else { "ASC" };
+    format!("ORDER BY {column} {direction} NULLS LAST, id ASC")
+}
+
+/// The units the caller asked to look at, single and multi-select merged.
+fn requested_units(q: &ListUsersQuery) -> Option<Vec<Uuid>> {
+    let mut units: Vec<Uuid> = q.org_unit_id.into_iter().collect();
+    if let Some(raw) = q.org_unit_ids.as_deref() {
+        // A malformed id is dropped rather than failing the listing: it can only
+        // widen the perimeter, never leak past `scope_units` ($3), which is the
+        // predicate that actually confines a delegated administrator.
+        units.extend(raw.split(',').filter_map(|s| Uuid::parse_str(s.trim()).ok()));
+    }
+    units.sort_unstable();
+    units.dedup();
+    (!units.is_empty()).then_some(units)
+}
 
 /// `GET /admin/users` — **confined to the caller's organisational subtree**.
 ///
@@ -91,18 +156,19 @@ pub async fn list_users(
     let limit  = q.limit.unwrap_or(50).clamp(0, 200);
     let offset = q.offset.unwrap_or(0).max(0);
     let scope_units = ctx.subtree_filter(keys::USERS_READ);
-    let unit = q.org_unit_id;
+    let units = requested_units(&q);
     let descendants = q.include_descendants.unwrap_or(false);
+    let order = sort_clause(q.sort.as_deref(), q.dir.as_deref());
 
     let users = sqlx::query_as::<_, User>(&format!(
         "SELECT * FROM core.users WHERE {USER_FILTER}
-         ORDER BY created_at DESC
+         {order}
          LIMIT $6 OFFSET $7"
     ))
     .bind(q.search.as_deref())
     .bind(q.role.as_deref())
     .bind(scope_units.as_deref())
-    .bind(unit)
+    .bind(units.as_deref())
     .bind(descendants)
     .bind(limit)
     .bind(offset)
@@ -119,7 +185,7 @@ pub async fn list_users(
     .bind(q.search.as_deref())
     .bind(q.role.as_deref())
     .bind(scope_units.as_deref())
-    .bind(unit)
+    .bind(units.as_deref())
     .bind(descendants)
     .fetch_one(&state.db)
     .await
@@ -151,6 +217,179 @@ pub async fn list_users(
     }
 
     Ok(Json(body))
+}
+
+/// Ceiling on one export. Past this the answer is a refusal, not a truncated
+/// file: a spreadsheet that silently stops at row N is read as the whole
+/// directory, and acted on as if it were.
+const EXPORT_MAX: i64 = 50_000;
+
+/// The columns an export may carry: `(id, header)`.
+///
+/// A CLOSED list, and deliberately NARROWER than the administration sheet.
+/// `gender` and `birthday` are personal data that the directory never
+/// discloses and that the audit trail deliberately does not carry (see
+/// `models::user::User`); a sheet shows them to one administrator who opened one
+/// account, whereas a spreadsheet copies them onto every machine the file is
+/// forwarded to. They are not exportable, and adding them here would quietly
+/// undo that decision. Password material is absent for the same reason, one
+/// degree stronger.
+const EXPORT_COLUMNS: &[(&str, &str)] = &[
+    ("email",          "email"),
+    ("username",       "nom_utilisateur"),
+    ("display_name",   "nom_affiche"),
+    ("first_name",     "prenom"),
+    ("last_name",      "nom"),
+    ("role",           "role"),
+    ("status",         "statut"),
+    ("email_verified", "email_verifie"),
+    ("org_unit",       "unite_organisationnelle"),
+    ("quota_bytes",    "quota_octets"),
+    ("used_bytes",     "utilise_octets"),
+    ("totp_enabled",   "double_authentification"),
+    ("created_at",     "date_creation"),
+    ("last_login_at",  "derniere_connexion"),
+    ("id",             "identifiant"),
+];
+
+/// `GET /admin/users/export` — the listing, exactly as filtered, as a CSV file.
+///
+/// It takes the SAME parameters as `list_users` — search, role, units, subtree,
+/// ordering — because the file has to be the list the operator is looking at. An
+/// export computed on a different perimeter is the one mistake this endpoint can
+/// make that nobody notices until the file has been sent on.
+///
+/// The export is itself audited: reading out the whole directory is an act worth
+/// recording, the same way the audit trail records its own export.
+pub async fn export_users(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+    audit: AdminAudit,
+    Query(q): Query<ListUsersQuery>,
+) -> Result<axum::response::Response, AppError> {
+    use axum::response::IntoResponse;
+
+    ctx.require(keys::USERS_READ)?;
+
+    let scope_units = ctx.subtree_filter(keys::USERS_READ);
+    let units = requested_units(&q);
+    let descendants = q.include_descendants.unwrap_or(false);
+    let order = sort_clause(q.sort.as_deref(), q.dir.as_deref());
+
+    // One more than the ceiling, so "too many" is distinguishable from "exactly
+    // the ceiling" without a second COUNT.
+    let users = sqlx::query_as::<_, User>(&format!(
+        "SELECT * FROM core.users WHERE {USER_FILTER} {order} LIMIT $6"
+    ))
+    .bind(q.search.as_deref())
+    .bind(q.role.as_deref())
+    .bind(scope_units.as_deref())
+    .bind(units.as_deref())
+    .bind(descendants)
+    .bind(EXPORT_MAX + 1)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "export_users"); AppError::Database(e) })?;
+
+    if users.len() as i64 > EXPORT_MAX {
+        return Err(AppError::Validation(format!(
+            "Trop de comptes pour un seul export (maximum {EXPORT_MAX}) — restreignez la recherche ou l'unité"
+        )));
+    }
+
+    // Unit names in one query: the alternative is a join on a listing that
+    // already carries its own perimeter, or one lookup per row.
+    let unit_names: std::collections::HashMap<Uuid, String> =
+        sqlx::query_as::<_, (Uuid, String)>("SELECT id, name FROM core.org_units")
+            .fetch_all(&state.db)
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "export_users: unités"); AppError::Database(e) })?
+            .into_iter()
+            .collect();
+
+    // Requested columns, in the CLOSED list's own order so the file's shape does
+    // not depend on the order the console happened to send them in.
+    let asked: Option<Vec<&str>> = q.columns.as_deref().map(|c| c.split(',').map(str::trim).collect());
+    let chosen: Vec<&(&str, &str)> = EXPORT_COLUMNS
+        .iter()
+        .filter(|(id, _)| asked.as_ref().is_none_or(|a| a.contains(id)))
+        .collect();
+    let chosen = if chosen.is_empty() { EXPORT_COLUMNS.iter().collect() } else { chosen };
+
+    let cell = |user: &User, id: &str| -> String {
+        match id {
+            "email"          => user.email.clone(),
+            "username"       => user.username.clone(),
+            "display_name"   => user.display_name.clone().unwrap_or_default(),
+            "first_name"     => user.first_name.clone().unwrap_or_default(),
+            "last_name"      => user.last_name.clone().unwrap_or_default(),
+            "role"           => user.role.clone(),
+            "status"         => if user.is_active { "actif" } else { "inactif" }.into(),
+            "email_verified" => if user.email_verified { "oui" } else { "non" }.into(),
+            "org_unit"       => user.org_unit_id.and_then(|u| unit_names.get(&u).cloned()).unwrap_or_default(),
+            "quota_bytes"    => user.quota_bytes.to_string(),
+            "used_bytes"     => user.used_bytes.to_string(),
+            "totp_enabled"   => if user.totp_enabled { "oui" } else { "non" }.into(),
+            "created_at"     => user.created_at.to_rfc3339(),
+            "last_login_at"  => user.last_login_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+            "id"             => user.id.to_string(),
+            _                => String::new(),
+        }
+    };
+
+    // A UTF-8 BOM: without it a spreadsheet opened on Windows reads the accents
+    // of a French directory as mojibake, and the operator blames the export.
+    let mut csv = String::from("\u{feff}");
+    csv.push_str(
+        &chosen.iter().map(|(_, h)| (*h).to_string()).collect::<Vec<_>>().join(","),
+    );
+    csv.push('\n');
+    for user in &users {
+        let line = chosen
+            .iter()
+            .map(|(id, _)| crate::audit::query::csv_field(&cell(user, id)))
+            .collect::<Vec<_>>()
+            .join(",");
+        csv.push_str(&line);
+        csv.push('\n');
+    }
+
+    audit
+        .record(
+            &state.db,
+            AuditEntry::new("core.users.export")
+                .module("core")
+                .target_kind("users", "Annuaire des comptes")
+                .after(json!({
+                    "count":        users.len(),
+                    "search":       q.search,
+                    "role":         q.role,
+                    "org_units":    units,
+                    "descendants":  descendants,
+                    "columns":      chosen.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+                }))
+                .detail(format!("{} compte(s) exporté(s) en CSV", users.len())),
+        )
+        .await;
+
+    let filename = format!(
+        "kubuno-utilisateurs-{}.csv",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    );
+
+    Ok((
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
+        ],
+        csv,
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]
@@ -660,6 +899,300 @@ pub async fn bulk_set_org_unit(
     crate::authz::cache::invalidate_all();
 
     Ok(Json(json!({ "moved": moved, "org_unit_id": dto.org_unit_id })))
+}
+
+/// The selection, cleaned up: deduplicated, non-empty, under the ceiling.
+///
+/// Deduplication comes first because the callers below check that every id was
+/// found; the same id twice would fail a request that is merely redundant.
+fn bulk_ids(raw: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
+    let mut ids = raw.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.is_empty() {
+        return Err(AppError::Validation("Aucun compte sélectionné".into()));
+    }
+    if ids.len() > BULK_MAX {
+        return Err(AppError::Validation(format!(
+            "Trop de comptes en une fois (maximum {BULK_MAX})"
+        )));
+    }
+    Ok(ids)
+}
+
+/// The selected accounts, locked in id order so two concurrent bulk operations
+/// queue instead of deadlocking, with every guard applied BEFORE a single row is
+/// written — a partial run is exactly what the transaction is here to prevent.
+async fn bulk_load_and_authorise(
+    tx: &mut crate::audit::AuditTx<'_>,
+    ctx: &AdminCtx,
+    ids: &[Uuid],
+    privilege: &str,
+) -> Result<Vec<User>, AppError> {
+    let users = sqlx::query_as::<_, User>(
+        "SELECT * FROM core.users WHERE id = ANY($1) ORDER BY id FOR UPDATE",
+    )
+    .bind(ids)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "bulk: lecture"); AppError::Database(e) })?;
+
+    if users.len() != ids.len() {
+        return Err(AppError::NotFound(format!(
+            "{} compte(s) introuvable(s)",
+            ids.len() - users.len()
+        )));
+    }
+    for user in &users {
+        ctx.require_for_unit(privilege, user.org_unit_id)?;
+        ensure_can_act_on_user(tx, ctx, user.id).await?;
+    }
+    Ok(users)
+}
+
+#[derive(Deserialize)]
+pub struct BulkActiveDto {
+    pub user_ids:  Vec<Uuid>,
+    pub is_active: bool,
+}
+
+/// `POST /admin/users/bulk/active` — suspend or restore several accounts.
+///
+/// One transaction and one recapitulative entry rather than N calls to
+/// `PATCH /users/:id`, for the same reason as the bulk unit move: N calls half
+/// succeed, and the trail then holds N entries that nobody reads as one act.
+pub async fn bulk_set_active(
+    State(state): State<AppState>,
+    ctx: AdminCtx,
+    audit: AdminAudit,
+    Json(dto): Json<BulkActiveDto>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let ids = bulk_ids(&dto.user_ids)?;
+    let mut tx = audit.begin(&state.db).await?;
+    let previous = bulk_load_and_authorise(&mut tx, &ctx, &ids, keys::USERS_UPDATE).await?;
+
+    let changing: Vec<Uuid> = previous
+        .iter()
+        .filter(|u| u.is_active != dto.is_active)
+        .map(|u| u.id)
+        .collect();
+
+    // Nothing to do — say so rather than writing an entry claiming a change.
+    if changing.is_empty() {
+        return Ok(Json(json!({ "changed": 0, "is_active": dto.is_active })));
+    }
+
+    // Reactivating cancels a pending destruction, exactly as the single-account
+    // update does: leaving the stamp would let the purge job delete a live
+    // account weeks later because somebody had once deleted it and changed
+    // their mind.
+    let changed = sqlx::query(
+        "UPDATE core.users
+            SET is_active  = $1,
+                deleted_at = CASE WHEN $1 IS TRUE THEN NULL ELSE deleted_at END
+          WHERE id = ANY($2)",
+    )
+    .bind(dto.is_active)
+    .bind(&changing)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "bulk_set_active: écriture"); AppError::Database(e) })?
+    .rows_affected();
+
+    // `core.superadmin_ids()` counts ACTIVE accounts only: suspending the last
+    // super-administrator is caught here like any other removal.
+    ensure_superadmin_remains(&mut tx).await?;
+
+    let before = previous
+        .iter()
+        .filter(|u| changing.contains(&u.id))
+        .map(|u| json!({ "id": u.id, "label": user_label(u), "is_active": u.is_active }))
+        .collect::<Vec<_>>();
+
+    let verb = if dto.is_active { "réactivé(s)" } else { "suspendu(s)" };
+    tx.commit(
+        AuditEntry::new("core.users.active")
+            .target_kind("users", "Comptes sélectionnés")
+            .before(json!({ "users": before }))
+            .after(json!({ "is_active": dto.is_active, "changed": changed }))
+            .detail(format!("{changed} compte(s) {verb}"))
+            .reversible(),
+    )
+    .await?;
+
+    // Whether an account is active decides what its sessions may still do, and
+    // the resolved context is cached per subject for a few seconds.
+    crate::authz::cache::invalidate_all();
+
+    Ok(Json(json!({ "changed": changed, "is_active": dto.is_active })))
+}
+
+#[derive(Deserialize)]
+pub struct BulkDeleteDto {
+    pub user_ids: Vec<Uuid>,
+}
+
+/// `POST /admin/users/bulk/delete` — deactivate several accounts and arm their
+/// purge, the bulk form of `DELETE /admin/users/:id`.
+///
+/// Deliberately the SOFT delete, never the purge: erasing is a second, separate
+/// decision that requires the account's own address to be typed back, and there
+/// is no honest way to ask for that confirmation about fifty accounts at once.
+pub async fn bulk_delete_users(
+    State(state): State<AppState>,
+    ctx: AdminCtx,
+    audit: AdminAudit,
+    Json(dto): Json<BulkDeleteDto>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let ids = bulk_ids(&dto.user_ids)?;
+    let mut tx = audit.begin(&state.db).await?;
+    let previous = bulk_load_and_authorise(&mut tx, &ctx, &ids, keys::USERS_DELETE).await?;
+
+    // Accounts already carrying the stamp are left alone: re-stamping `deleted_at`
+    // would push their purge date back, quietly keeping data that was due to go.
+    // Asked of the database rather than of `User`, which does not map the column.
+    let deleting: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM core.users WHERE id = ANY($1) AND deleted_at IS NULL ORDER BY id",
+    )
+    .bind(&ids)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "bulk_delete_users: tri"); AppError::Database(e) })?;
+
+    if deleting.is_empty() {
+        return Ok(Json(json!({ "deleted": 0 })));
+    }
+
+    let deleted = sqlx::query(
+        "UPDATE core.users SET is_active = FALSE, deleted_at = NOW() WHERE id = ANY($1)",
+    )
+    .bind(&deleting)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "bulk_delete_users: écriture"); AppError::Database(e) })?
+    .rows_affected();
+
+    ensure_superadmin_remains(&mut tx).await?;
+
+    // The diff names every account: the entry has to be enough on its own to put
+    // the directory back the way it was.
+    let before = previous
+        .iter()
+        .filter(|u| deleting.contains(&u.id))
+        .map(|u| json!({
+            "id":          u.id,
+            "label":       user_label(u),
+            "is_active":   u.is_active,
+            "org_unit_id": u.org_unit_id,
+        }))
+        .collect::<Vec<_>>();
+
+    tx.commit(
+        AuditEntry::new("core.users.delete")
+            .target_kind("users", "Comptes sélectionnés")
+            .before(json!({ "users": before }))
+            .after(json!({ "deleted": deleted }))
+            .detail(format!("{deleted} compte(s) supprimé(s)"))
+            .reversible(),
+    )
+    .await?;
+
+    for id in &deleting {
+        state.events.publish(crate::events::AppEvent::UserDeleted { user_id: *id });
+    }
+    crate::authz::cache::invalidate_all();
+
+    Ok(Json(json!({ "deleted": deleted })))
+}
+
+#[derive(Deserialize)]
+pub struct BulkRequirePasswordChangeDto {
+    pub user_ids: Vec<Uuid>,
+}
+
+/// `POST /admin/users/bulk/require-password-change` — arm the forced password
+/// change on the selected accounts.
+///
+/// ## Why this IS the bulk "reset"
+///
+/// A password cannot be reset for many accounts the way it is for one. Setting
+/// the same password on N accounts creates one shared secret, which is worse
+/// than the situation it answers; generating N different ones puts N plaintext
+/// passwords into a page, a scrollback and whatever screenshot follows, and
+/// leaves the operator to distribute them by hand. Arming the change costs
+/// nobody a secret, is reversible, and is the honest answer to "these accounts
+/// may be compromised". Choosing a password, sending it, and revoking sessions
+/// stay where they belong: on one account, from its own sheet.
+///
+/// Accounts with no local password are SKIPPED, not refused: their
+/// authentication is governed by a directory or an identity provider, the change
+/// screen would ask them for a current password they do not have, and failing
+/// the whole batch over one such account would be useless to the operator. The
+/// answer says how many were left out.
+pub async fn bulk_require_password_change(
+    State(state): State<AppState>,
+    ctx: AdminCtx,
+    audit: AdminAudit,
+    Json(dto): Json<BulkRequirePasswordChangeDto>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let ids = bulk_ids(&dto.user_ids)?;
+    let mut tx = audit.begin(&state.db).await?;
+    let previous = bulk_load_and_authorise(&mut tx, &ctx, &ids, keys::USER_PASSWORD).await?;
+
+    // `password_hash` is not mapped onto `User`, so its presence is asked of the
+    // database — as is the flag, to avoid re-arming what is already armed.
+    let rows: Vec<(Uuid, bool, bool)> = sqlx::query_as(
+        "SELECT id, password_hash IS NOT NULL, must_change_password
+           FROM core.users WHERE id = ANY($1) ORDER BY id",
+    )
+    .bind(&ids)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "bulk_require_password_change: lecture"); AppError::Database(e) })?;
+
+    let skipped = rows.iter().filter(|(_, has_password, _)| !has_password).count();
+    let arming: Vec<Uuid> = rows
+        .iter()
+        .filter(|(_, has_password, already)| *has_password && !already)
+        .map(|(id, _, _)| *id)
+        .collect();
+
+    if arming.is_empty() {
+        return Ok(Json(json!({ "armed": 0, "skipped_no_password": skipped })));
+    }
+
+    let armed = sqlx::query("UPDATE core.users SET must_change_password = TRUE WHERE id = ANY($1)")
+        .bind(&arming)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "bulk_require_password_change: écriture"); AppError::Database(e) })?
+        .rows_affected();
+
+    let before = previous
+        .iter()
+        .filter(|u| arming.contains(&u.id))
+        .map(|u| json!({ "id": u.id, "label": user_label(u) }))
+        .collect::<Vec<_>>();
+
+    tx.commit(
+        AuditEntry::new("core.users.require_password_change")
+            .target_kind("users", "Comptes sélectionnés")
+            .before(json!({ "users": before, "must_change_password": false }))
+            .after(json!({ "must_change_password": true, "armed": armed }))
+            .detail(format!(
+                "{armed} compte(s) devront changer de mot de passe\
+                 {}",
+                if skipped > 0 {
+                    format!(" ({skipped} ignoré(s) : pas de mot de passe local)")
+                } else {
+                    String::new()
+                }
+            ))
+            .reversible(),
+    )
+    .await?;
+
+    Ok(Json(json!({ "armed": armed, "skipped_no_password": skipped })))
 }
 
 pub async fn delete_user(

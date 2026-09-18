@@ -6,6 +6,7 @@ import { api } from '../api/client'
 import { Check, Upload, Trash2, Lock, FileArchive, Code2, AlertTriangle } from 'lucide-react'
 import { Button, Toggle } from '@ui'
 import ThemeDevicePreview from './ThemeDevicePreview'
+import { apiErrorDetail } from '../api/errorMessage'
 
 /** Compact swatch preview shown in the left-hand theme list. */
 function ThemeChip({ theme }: { theme: ThemeDef }) {
@@ -61,7 +62,7 @@ export default function ThemesPanel() {
     mutationFn: (theme: ThemeDef) => api.post('/admin/themes', theme),
     onSuccess: () => { setImportError(null); fetchThemes() },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const msg = apiErrorDetail(err)
       setImportError(msg ?? t('admin.t_import_error'))
     },
   })
@@ -80,7 +81,7 @@ export default function ThemesPanel() {
       fetchThemes()
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const msg = apiErrorDetail(err)
       setImportError(msg ?? t('admin.t_import_error'))
     },
   })

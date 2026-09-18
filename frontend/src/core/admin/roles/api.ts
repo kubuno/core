@@ -11,11 +11,10 @@ export const ROLES_KEY       = ['admin-roles']
 export const PRIVILEGES_KEY  = ['admin-privileges']
 export const ASSIGNMENTS_KEY = ['admin-role-assignments']
 
-/** Message the server actually sent, or a caller-supplied fallback. */
-export function errorMessage(err: unknown, fallback: string): string {
-  const e = err as { response?: { data?: { message?: string } }; message?: string }
-  return e?.response?.data?.message ?? e?.message ?? fallback
-}
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage'
 
 export function usePrivilegeCatalogue(enabled = true) {
   return useQuery({

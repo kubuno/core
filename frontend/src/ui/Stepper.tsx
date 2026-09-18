@@ -1,8 +1,8 @@
+import { cn } from './cn'
 import {
   useCallback, useEffect, useMemo, useRef, useState,
   type ReactNode, type RefObject,
 } from 'react'
-import { clsx } from 'clsx'
 import { AlertTriangle, Check } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import { uiT } from './uiText'
@@ -152,7 +152,7 @@ export function Stepper({
           return (
             <span
               key={s.id}
-              className={clsx(
+              className={cn(
                 'h-1 flex-1 rounded-full transition-colors',
                 st === 'error' ? 'bg-danger' : i <= currentIndex ? 'bg-primary' : 'bg-surface-3',
               )}
@@ -165,7 +165,7 @@ export function Stepper({
 
   // ── Full trail ─────────────────────────────────────────────────────────────
   const trail = (
-    <ol className={clsx('flex min-w-0', vertical ? 'flex-col gap-3' : 'items-start gap-1')}>
+    <ol className={cn('flex min-w-0', vertical ? 'flex-col gap-3' : 'items-start gap-1')}>
       {steps.map((step, i) => {
         const status = resolveStatus(step, i, currentIndex)
         const clickable = reachable(i, status)
@@ -173,7 +173,7 @@ export function Stepper({
 
         const bullet = (
           <span
-            className={clsx(
+            className={cn(
               'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors',
               BULLET[status],
             )}
@@ -186,8 +186,8 @@ export function Stepper({
         )
 
         const body = (
-          <span className={clsx('min-w-0', vertical ? 'text-left' : 'text-left')}>
-            <span className={clsx('block truncate', LABEL[status])} style={{ fontSize: 'var(--kb-text-body)' }}>
+          <span className={cn('min-w-0', vertical ? 'text-left' : 'text-left')}>
+            <span className={cn('block truncate', LABEL[status])} style={{ fontSize: 'var(--kb-text-body)' }}>
               {step.label}
               {step.optional && (
                 <span className="ml-1 font-normal text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
@@ -204,7 +204,7 @@ export function Stepper({
         )
 
         const inner = (
-          <span className={clsx('flex min-w-0 items-center gap-2.5', vertical ? '' : 'flex-1')}>
+          <span className={cn('flex min-w-0 items-center gap-2.5', vertical ? '' : 'flex-1')}>
             {bullet}
             {body}
           </span>
@@ -214,7 +214,7 @@ export function Stepper({
           <li
             key={step.id}
             aria-current={status === 'current' ? 'step' : undefined}
-            className={clsx('flex min-w-0', vertical ? 'flex-col' : 'flex-1 items-center gap-1')}
+            className={cn('flex min-w-0', vertical ? 'flex-col' : 'flex-1 items-center gap-1')}
           >
             {clickable ? (
               <button
@@ -237,8 +237,8 @@ export function Stepper({
             {/* Connector: decorative, and never the last one. */}
             {i < steps.length - 1 && (
               vertical
-                ? <span aria-hidden className={clsx('ml-4 h-4 w-px', i < currentIndex ? 'bg-primary' : 'bg-border')} />
-                : <span aria-hidden className={clsx('h-px min-w-4 flex-1', i < currentIndex ? 'bg-primary' : 'bg-border')} />
+                ? <span aria-hidden className={cn('ml-4 h-4 w-px', i < currentIndex ? 'bg-primary' : 'bg-border')} />
+                : <span aria-hidden className={cn('h-px min-w-4 flex-1', i < currentIndex ? 'bg-primary' : 'bg-border')} />
             )}
           </li>
         )
@@ -247,7 +247,7 @@ export function Stepper({
   )
 
   return (
-    <div ref={rootRef} className={clsx('min-w-0', className)}>
+    <div ref={rootRef} className={cn('min-w-0', className)}>
       {compact ? compactView : trail}
       {children != null && <div className="mt-4 min-w-0">{children}</div>}
     </div>

@@ -52,6 +52,8 @@ async fn main() -> Result<()> {
         }
         Some(("status",           _))   => modules::cmd_status().await,
         Some(("modules:commands", _))   => modules::cmd_modules_commands().await,
+        Some(("modules:install",  sub)) => modules::cmd_modules_install(sub).await,
+        Some(("modules:list",     _))   => modules::cmd_modules_list().await,
         // Réinitialisation d'un module : kubuno <module>:reset [--force] [--keep-files]
         // Intercepté avant le dispatch externe pour être géré par le core.
         Some((ext_cmd, sub)) if ext_cmd.ends_with(":reset") => {

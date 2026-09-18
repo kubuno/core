@@ -23,7 +23,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  ArrowLeft, Check, FlaskConical, Save, Sparkles,
+  Check, FlaskConical, Save, Sparkles,
 } from 'lucide-react'
 import {
   Badge, Button, Callout, Card, Combobox, Input, Stepper, Tabs, Textarea, useIsMobile, useToast,
@@ -48,6 +48,8 @@ import { SEVERITIES, severityLabel } from './labels'
 import { formatWhen } from '../sections/format'
 import type { SummaryContext } from './summary'
 import { emptyRuleInput, ruleToInput, type RuleInput, type RuleLimits } from './types'
+import { useAdminCrumbs } from '../AdminBreadcrumb'
+import { apiErrorDetail } from '../../api/errorMessage'
 
 export type Pane = 'basics' | 'conditions' | 'actions' | 'scope' | 'mode' | 'impact' | 'history'
 
@@ -151,7 +153,7 @@ export default function RuleEditor({ ruleId, onClose, canWrite, initialPane }: P
     const onError = (e: unknown) => {
       const message = (e as { response?: { data?: { error?: string; message?: string } } })
         ?.response?.data?.error
-        ?? (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+        ?? apiErrorDetail(e)
         ?? t('admin.rl_save_failed')
       setError(message)
       toast.error(t('admin.rl_save_failed'))
@@ -343,14 +345,18 @@ export default function RuleEditor({ ruleId, onClose, canWrite, initialPane }: P
   const tabs = (['basics', 'conditions', 'actions', 'scope', 'mode', 'impact', 'history'] as Pane[])
     .map(id => ({ id, label: t(`admin.rl_pane_${id}`) }))
 
+  // The trail carries the rule, so « Règles » is the way back. The wizard's own
+  // « Précédent » walks the steps and is a different affordance — it stays.
+  useAdminCrumbs(useMemo(
+    () => [{ label: isNew ? t('admin.rl_new_title') : (input.name || t('admin.rl_edit_title')) }],
+    [isNew, input.name, t],
+  ))
+
   const stepIndex = Math.max(0, wizardSteps.indexOf(pane))
   const busy = create.isPending || update.isPending
 
   const header = (
     <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-      <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={onClose}>
-        {t('admin.rl_back_to_list')}
-      </Button>
       <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
         {isNew ? t('admin.rl_new_title') : (input.name || t('admin.rl_edit_title'))}
       </h1>

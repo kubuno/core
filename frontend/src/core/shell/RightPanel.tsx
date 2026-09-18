@@ -1,6 +1,6 @@
+import { cn } from '../../ui/cn'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ExternalLink, GripVertical, X } from 'lucide-react'
-import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useRightPanelStore } from '../store/rightPanelStore'
@@ -105,7 +105,7 @@ export default function RightPanel() {
         /* No `overflow-hidden` here: the resize handle lives OUTSIDE this box
            (`right-full`, in the gutter) and would be clipped away by it. This element
            only sizes and positions; the visible card below does the clipping. */
-        className={clsx(
+        className={cn(
           'flex flex-shrink-0 flex-col',
           overlay
             ? 'fixed bottom-1 right-16 top-16 z-50 shadow-[0_6px_18px_rgb(0_0_0/25%)]'

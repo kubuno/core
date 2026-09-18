@@ -18,6 +18,7 @@ import { Button, Callout, ProgressBar, Spinner } from '@ui'
 import { useBacktest, useStartBacktest } from './api'
 import { formatWhen } from '../sections/format'
 import { BACKTEST_MAX_WINDOW_DAYS, type BacktestRow } from './types'
+import { apiErrorDetail } from '../../api/errorMessage'
 
 interface Props {
   ruleId:   string | null
@@ -98,7 +99,7 @@ export default function ImpactPanel({ ruleId, previous, hint }: Props) {
 
       {start.isError && (
         <Callout variant="danger" title={t('admin.rl_impact_failed')}>
-          {(start.error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? ''}
+          {apiErrorDetail(start.error) ?? ''}
         </Callout>
       )}
 

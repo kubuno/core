@@ -129,6 +129,8 @@ export interface UserGroup {
   description: string | null
   permissions: string[]
   is_default: boolean
+  /** Les réunions des membres ne rendent jamais leur salle automatiquement. */
+  release_exempt: boolean
   is_system?: boolean
   member_count?: number
   created_at: string

@@ -65,7 +65,6 @@ export default function HolidaysSection({ params, navigate }: AdminSectionProps)
         <CalendarDetail
           calendarId={calendarId}
           canManage={canManage}
-          onBack={() => go('calendars', null)}
           onOpenCalendar={id => go('calendars', id)}
         />
       ) : pane === 'units' ? (

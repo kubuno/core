@@ -1,8 +1,8 @@
+import { cn } from './cn'
 import React from 'react'
-import { clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
 import type { MentionsConfig } from './mention/types'
 import { MentionEditable } from './mention/MentionEditable'
+import { labelWithMark } from './RequiredMark'
 
 interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string
@@ -28,14 +28,14 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 const FIELD_CLASS =
   'w-full rounded-md border bg-white text-sm text-text-primary placeholder:text-text-tertiary ' +
   'px-3 py-2 h-36 min-h-16 ' +
-  'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary ' +
+  'kb-field-focus ' +
   'disabled:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60'
 
 export function Textarea({
-  label, error, hint, className, id, mentions, onMentionsChange, ...props
+  label, error, hint, className, id, required, mentions, onMentionsChange, ...props
 }: TextareaProps) {
   const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
-  const borderClass = error ? 'border-danger focus:ring-danger' : 'border-border'
+  const borderClass = error ? 'border-danger kb-field-focus-danger' : 'border-border'
 
   const field = mentions?.enabled ? (
     <MentionEditable
@@ -46,12 +46,13 @@ export function Textarea({
       placeholder={typeof props.placeholder === 'string' ? props.placeholder : undefined}
       disabled={props.disabled}
       // Contenteditable twin: same skin, made scrollable + focusable within the box.
-      className={twMerge(clsx(FIELD_CLASS, 'overflow-auto', 'focus:ring-2', borderClass, className))}
+      className={cn(cn(FIELD_CLASS, 'overflow-auto', borderClass, className))}
     />
   ) : (
     <textarea
       id={textareaId}
-      className={twMerge(clsx(
+      aria-required={required || undefined}
+      className={cn(cn(
         // `h-36` is the default height and `twMerge` lets a caller override it
         // with its own `h-*`. The floor must therefore NOT be the same value:
         // `min-h-36` made the default unoverridable — a field asking for
@@ -68,7 +69,7 @@ export function Textarea({
     <div className="flex flex-col gap-1">
       {label && (
         <label htmlFor={textareaId} className="text-sm font-medium text-text-primary">
-          {label}
+          {labelWithMark(label, required)}
         </label>
       )}
       {field}

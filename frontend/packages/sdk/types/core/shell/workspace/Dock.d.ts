@@ -53,6 +53,10 @@ export type DockTheme = {
     text: string;
     textDim: string;
     accent?: string;
+    ground?: string;
+    radius?: number;
+    gap?: number;
+    tabActiveBg?: string;
 };
 export declare function DockArea({ panels, storageKey, defaultArrangement, viewportBg, hidden, theme, moveTitle, children, className, style, viewportRef, controllerRef, }: {
     panels: Record<string, DockPanel>;

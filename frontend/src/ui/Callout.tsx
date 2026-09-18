@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import { useState, type ReactNode } from 'react'
-import { clsx } from 'clsx'
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import { uiT } from './uiText'
@@ -64,9 +64,9 @@ export function Callout({
       // region updates, without stealing the reader's place.
       role={variant === 'danger' ? 'alert' : 'status'}
       aria-live={skin.live}
-      className={clsx('flex items-start gap-2.5 rounded-lg border border-border px-3 py-2.5', skin.box, className)}
+      className={cn('flex items-start gap-2.5 rounded-lg border border-border px-3 py-2.5', skin.box, className)}
     >
-      {glyph && <span className={clsx('mt-px shrink-0', skin.icon)} aria-hidden>{glyph}</span>}
+      {glyph && <span className={cn('mt-px shrink-0', skin.icon)} aria-hidden>{glyph}</span>}
 
       <div className="min-w-0 flex-1" style={{ fontSize: 'var(--kb-text-body)' }}>
         {title != null && <p className="font-medium text-text-primary">{title}</p>}
@@ -75,13 +75,13 @@ export function Callout({
             that frozen light-theme value is exactly the kind of hard-coded
             colour a dark theme cannot remap. */}
         {children != null && (
-          <div className={clsx('text-text-primary leading-relaxed', title != null && 'mt-0.5')}>{children}</div>
+          <div className={cn('text-text-primary leading-relaxed', title != null && 'mt-0.5')}>{children}</div>
         )}
         {action && (
           <button
             type="button"
             onClick={action.onClick}
-            className={clsx(
+            className={cn(
               'mt-1.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 -ml-2 transition-colors',
               'hover:bg-[var(--kb-black-08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
               skin.icon,

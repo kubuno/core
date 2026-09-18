@@ -61,6 +61,7 @@ export default function FeatureDialog({
         <div className="flex flex-col gap-4 p-4">
           <Input
             label={t('admin.res_feature_name')}
+            required
             value={name}
             maxLength={60}
             autoFocus

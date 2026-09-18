@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import React, { useId, useRef, useState, useEffect } from 'react'
-import { twMerge } from 'tailwind-merge'
 
 // ── Rolling (odometer) number ─────────────────────────────────────────────────
 // Each digit lives on a vertical reel (0-9 stacked); when the value changes the
@@ -137,7 +137,7 @@ export function RangeSlider({
   // ── Boxed variant (editable number inside a bordered box) ───────────────────
   if (variant === 'boxed') {
     return (
-      <div className={twMerge('select-none', disabled && 'opacity-60', className)} style={style}>
+      <div className={cn('select-none', disabled && 'opacity-60', className)} style={style}>
         <div
           className="relative rounded-xl border-2 bg-surface-0 px-4 pt-3 pb-5 transition-colors focus-within:border-primary"
           style={{ borderColor: 'var(--color-border, #dadce0)' }}
@@ -195,7 +195,7 @@ export function RangeSlider({
       />
     )
     return (
-      <div className={twMerge('relative h-full select-none', disabled && 'opacity-60', className)} style={style}>
+      <div className={cn('relative h-full select-none', disabled && 'opacity-60', className)} style={style}>
         <div className="relative mx-auto h-full w-1.5 rounded-full" style={{ background: track }}>
           <div className="absolute inset-x-0 bottom-0 rounded-full" style={{ height: `${pct}%`, background: fill }} />
           <span
@@ -213,7 +213,7 @@ export function RangeSlider({
   const showBubble = showValue || dragging
   return (
     <div
-      className={twMerge('relative w-full select-none', disabled && 'opacity-60', className)}
+      className={cn('relative w-full select-none', disabled && 'opacity-60', className)}
       style={style}
       onPointerDown={() => !disabled && setDragging(true)}
       onPointerUp={() => setDragging(false)}

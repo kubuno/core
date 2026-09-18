@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,9 +10,11 @@ import SettingScopeBar from './SettingScopeBar'
 import ProvenanceLine from './ProvenanceLine'
 import InheritanceChainWindow from './InheritanceChainWindow'
 import SettingControl, { settingLabel } from './SettingControl'
+import CaptchaPreview from './CaptchaPreview'
 import {
-  DEDICATED_EDITOR, ENUM_OPTIONS, FALLBACK_TAB, TIMEZONE_KEYS, isClaimed, specForTab,
+  DEDICATED_EDITOR, ENUM_OPTIONS, FALLBACK_TAB, TIMEZONE_KEYS, VISIBLE_WHEN, isClaimed, specForTab,
 } from './settingsMap'
+import { apiErrorDetail } from '../../api/errorMessage'
 import {
   INSTANCE_SCOPE,
   type ActiveScope,
@@ -100,11 +102,14 @@ export default function SettingsGroupPanel({ tab, layout = 'standalone' }: Props
     setTimeout(() => setSaved(false), 2000)
     await queryClient.invalidateQueries({ queryKey: ['admin-settings-resolved'] })
     await queryClient.invalidateQueries({ queryKey: ['setting-chain'] })
+    // The CAPTCHA preview reads the SAVED configuration; refresh it once a write
+    // has landed, so switching the type — or tuning it — updates the example.
+    await queryClient.invalidateQueries({ queryKey: ['captcha-preview'] })
     setEdits({})
   }
 
   const reportError = (e: unknown) => {
-    const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+    const detail = apiErrorDetail(e)
     setError(detail ?? t('admin.setting_write_failed'))
   }
 
@@ -208,6 +213,19 @@ export default function SettingsGroupPanel({ tab, layout = 'standalone' }: Props
   const currentValue = (s: ResolvedSetting) => (s.key in edits ? edits[s.key] : s.value)
   const chainSetting = chainKey ? settings.find(s => s.key === chainKey) : undefined
 
+  // A branch-specific field (see VISIBLE_WHEN) is shown only while its
+  // controlling enum holds one of the values that reveal it — the enum
+  // equivalent of `depends_on`, which the generic engine expresses for booleans
+  // only. Read from the LIVE value (edits over saved) so picking a type in the
+  // dropdown reveals or hides its branch at once, before the refetch lands.
+  const visibleForBranch = (s: ResolvedSetting): boolean => {
+    const rule = VISIBLE_WHEN[s.key]
+    if (!rule) return true
+    const controller = settings.find(x => x.key === rule.key)
+    if (!controller) return true
+    return rule.in.includes(String(currentValue(controller)))
+  }
+
   // Two columns only pay off past a couple of categories; a single one in a
   // two-column flow just leaves the right half empty. So a lone-category tab
   // stays a readable single column, exactly like a standalone page.
@@ -247,27 +265,30 @@ export default function SettingsGroupPanel({ tab, layout = 'standalone' }: Props
           )}
 
           <div className="mt-3 space-y-3">
-            {section.items.map(s => (
-              <SettingControl
-                key={s.key}
-                setting={s}
-                value={currentValue(s)}
-                readOnly={s.locked_above || !canManage}
-                onCommit={v => {
-                  setEdits(prev => ({ ...prev, [s.key]: v }))
-                  update.mutate({ [s.key]: v })
-                }}
-                onDraft={v => setEdits(prev => ({ ...prev, [s.key]: v }))}
-                highlighted={highlight === s.key}
-                innerRef={highlight === s.key ? highlightRef : undefined}
-              >
-                <ProvenanceLine
+            {section.items.filter(visibleForBranch).map(s => (
+              <Fragment key={s.key}>
+                <SettingControl
                   setting={s}
-                  onRevert={() => revert.mutate(s.key)}
-                  onLock={locked => lock.mutate({ key: s.key, locked })}
-                  onShowChain={() => setChainKey(s.key)}
-                />
-              </SettingControl>
+                  value={currentValue(s)}
+                  readOnly={s.locked_above || !canManage}
+                  onCommit={v => {
+                    setEdits(prev => ({ ...prev, [s.key]: v }))
+                    update.mutate({ [s.key]: v })
+                  }}
+                  onDraft={v => setEdits(prev => ({ ...prev, [s.key]: v }))}
+                  highlighted={highlight === s.key}
+                  innerRef={highlight === s.key ? highlightRef : undefined}
+                >
+                  <ProvenanceLine
+                    setting={s}
+                    onRevert={() => revert.mutate(s.key)}
+                    onLock={locked => lock.mutate({ key: s.key, locked })}
+                    onShowChain={() => setChainKey(s.key)}
+                  />
+                </SettingControl>
+                {/* A live example of the chosen sign-in test, under its selector. */}
+                {s.key === 'security.captcha_type' && <CaptchaPreview />}
+              </Fragment>
             ))}
           </div>
         </section>

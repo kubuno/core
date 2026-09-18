@@ -6,7 +6,7 @@
 import React from 'react';
 import type { Folder, FileItem } from '../api';
 import type { ThumbSpec } from '../storageSource';
-export declare function FolderCardBase({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop }: {
+export declare function FolderCardBase({ folder, isDragTarget, selected, preSelected, focused, canMove, onSelect, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop }: {
     folder: Folder;
     isDragTarget: boolean;
     selected: boolean;
@@ -14,7 +14,6 @@ export declare function FolderCardBase({ folder, isDragTarget, selected, preSele
     focused?: boolean;
     canMove: boolean;
     onSelect: (id: string, e: React.MouseEvent) => void;
-    onToggle: (id: string) => void;
     onOpen: () => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onLongPress?: (e: React.MouseEvent) => void;
@@ -23,7 +22,7 @@ export declare function FolderCardBase({ folder, isDragTarget, selected, preSele
     onDragLeave: () => void;
     onDrop: (e: React.DragEvent) => void;
 }): React.JSX.Element;
-export declare function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, allowVideoPreview, onSelect, onToggle, onContextMenu, onLongPress, onDragStart, onOpen, thumbH, iconScale, dense }: {
+export declare function FileCardBase({ file, thumb, selected, preSelected, focused, canMove, allowVideoPreview, onSelect, onContextMenu, onLongPress, onDragStart, onOpen, thumbH, iconScale, dense }: {
     file: FileItem;
     thumb: ThumbSpec;
     selected: boolean;
@@ -32,7 +31,6 @@ export declare function FileCardBase({ file, thumb, selected, preSelected, focus
     canMove: boolean;
     allowVideoPreview: boolean;
     onSelect: (id: string, e: React.MouseEvent) => void;
-    onToggle: (id: string) => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onLongPress?: (e: React.MouseEvent) => void;
     onDragStart: (e: React.DragEvent) => void;

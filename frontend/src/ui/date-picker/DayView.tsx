@@ -1,10 +1,7 @@
+import { cn } from '../cn'
+import { addMonths, formatDate, isSameDay, isSameMonth, isToday, subMonths } from '../../core/intl/datetime'
 import type { Dispatch, SetStateAction } from 'react'
-import { clsx } from 'clsx'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import {
-  format, isToday, isSameDay, isSameMonth, addMonths, subMonths, getYear,
-} from 'date-fns'
-import { fr } from 'date-fns/locale'
 import { WEEKDAYS, calendarGrid } from './helpers'
 import type { PickerView } from './types'
 
@@ -26,7 +23,7 @@ export function DayView({
   isEdge:       (d: Date) => boolean | null
 }) {
   const days = calendarGrid(viewDate)
-  const mName = format(viewDate, 'MMMM', { locale: fr })
+  const mName = formatDate(viewDate, 'month')
   const mNameCap = mName.charAt(0).toUpperCase() + mName.slice(1)
 
   return (
@@ -53,7 +50,7 @@ export function DayView({
             onClick={() => setView('year')}
             className="text-sm font-semibold text-text-primary hover:text-primary transition-colors px-1 rounded hover:bg-surface-1"
           >
-            {getYear(viewDate)}
+            {viewDate.getFullYear()}
           </button>
         </div>
         <button
@@ -91,7 +88,7 @@ export function DayView({
               disabled={dis}
               onClick={() => !dis && onSelect(d)}
               onMouseEnter={() => setHoverDate?.(d)}
-              className={clsx(
+              className={cn(
                 'h-8 w-8 mx-auto flex items-center justify-center text-xs font-medium transition-colors',
                 // Edges and selected: full circle
                 (sel || edge) ? 'rounded-full bg-primary text-white' : '',
@@ -104,7 +101,7 @@ export function DayView({
                 dis ? 'opacity-30 cursor-not-allowed rounded-full' : '',
               )}
             >
-              {format(d, 'd')}
+              {String(d.getDate())}
             </button>
           )
         })}

@@ -6,6 +6,7 @@ import { Button, Callout, Card, Dropdown, Input, Toggle, useToast } from '@ui'
 import type { DropdownOption } from '@ui'
 import { api } from '../api/client'
 import { useAdminAction } from './adminAction'
+import { apiErrorDetail } from '../api/errorMessage'
 
 /**
  * Administration → Email: the outgoing SMTP relay.
@@ -134,7 +135,7 @@ export default function MailSettingsPanel() {
       await qc.invalidateQueries({ queryKey: ['admin', 'mail-settings'] })
     },
     onError: (e: unknown) => {
-      const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const detail = apiErrorDetail(e)
       toast.error(detail || t('mailsetup.test_failed'))
     },
   })
@@ -144,7 +145,7 @@ export default function MailSettingsPanel() {
       api.post<TestResult>('/admin/mail/test', { to: testTo.trim() || undefined }).then(r => r.data),
     onSuccess: setResult,
     onError: (e: unknown) => {
-      const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const detail = apiErrorDetail(e)
       toast.error(detail || t('mailsetup.test_failed'))
     },
   })

@@ -513,6 +513,23 @@ pub struct SearchUsersQuery {
 /// `email` is selected but only *emitted* when `directory.share_email` says so.
 const DIRECTORY_COLUMNS: &str = "id, username, display_name, avatar_url, email";
 
+/// The fuller projection, for ONE person whose card is being opened.
+///
+/// A people picker answers a name and a face. A card answers "who is this
+/// person here" — how their name is said, the pronouns they asked for, where
+/// they work from, the line they wrote about themselves — because that is what
+/// the profile page exists to publish and what makes a directory worth having.
+///
+/// ⚠️ `gender` and `birthday` are ABSENT and must stay absent. Migration
+/// `000114` states it in its own header: they are read by the account itself and
+/// by the administration sheet, and by nothing else. A card is not an
+/// exemption — it is exactly the sort of "just this once" that would put a date
+/// of birth on a meeting invitation. Anything appended to this list is
+/// published to every colleague who clicks a name.
+const DIRECTORY_CARD_COLUMNS: &str =
+    "id, username, display_name, first_name, last_name, avatar_url, email, \
+     name_pronunciation, pronouns, work_location, introduction, org_unit_id";
+
 /// Search active accounts — the staff directory, as the caller is entitled to
 /// see it.
 ///
@@ -611,6 +628,101 @@ pub async fn search_users(
 pub struct LookupUsersQuery {
     /// Liste d'UUID séparés par des virgules.
     pub ids: Option<String>,
+}
+
+/// `GET /api/v1/users/:id/card` — one person, as the directory publishes them.
+///
+/// The same three keys of migration `000110` as the search, and for the same
+/// reasons: a closed directory answers "not found" rather than an error, a
+/// narrowed one answers only within the caller's own unit, and the address is
+/// omitted — never blanked — unless the policy shares it.
+///
+/// Every field is optional in the answer: a profile nobody filled in returns a
+/// name and a face, which is exactly what it did before this route existed.
+pub async fn user_card(
+    State(state): State<AppState>,
+    AuthUser(caller): AuthUser,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let policy = settings::directory::SharingPolicy::resolve(
+        &state.db,
+        caller.id,
+        caller.role == "admin",
+    )
+    .await?;
+    // A closed directory has nobody to show. Not a 403: a card that cannot be
+    // opened is not an error the reader can act on, and every module would have
+    // to render a failure where there is simply nothing to publish.
+    if !policy.enabled && caller.id != id {
+        return Err(AppError::NotFound("Compte introuvable".into()));
+    }
+
+    #[allow(clippy::type_complexity)]
+    let row: Option<(uuid::Uuid, String, Option<String>, Option<String>, Option<String>,
+                     Option<String>, String, Option<String>, Option<String>, Option<String>,
+                     Option<String>, Option<uuid::Uuid>)> = sqlx::query_as(&format!(
+        "SELECT {DIRECTORY_CARD_COLUMNS} FROM core.users WHERE id = $1 AND is_active = TRUE"
+    ))
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "user_card: lecture du profil impossible");
+        AppError::Database(e)
+    })?;
+
+    let (uid, username, display_name, first_name, last_name, avatar_url, email,
+         name_pronunciation, pronouns, work_location, introduction, org_unit_id) =
+        row.ok_or_else(|| AppError::NotFound("Compte introuvable".into()))?;
+
+    // Narrowed directories answer only inside the caller's own unit and its
+    // sub-units — the same anchor the search uses, so one policy, one meaning.
+    if policy.audience == settings::directory::Audience::SameUnit && caller.id != id {
+        let same: Option<bool> = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1) d WHERE d.id = $2)",
+        )
+        .bind(caller.org_unit_id)
+        .bind(org_unit_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "user_card: portée d'unité illisible");
+            AppError::Database(e)
+        })?;
+        if same != Some(true) {
+            return Err(AppError::NotFound("Compte introuvable".into()));
+        }
+    }
+
+    // The unit's NAME, not its id: a card is read by a person.
+    let org_unit: Option<String> = match org_unit_id {
+        Some(ou) => sqlx::query_scalar("SELECT name FROM core.org_units WHERE id = $1")
+            .bind(ou)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten(),
+        None => None,
+    };
+
+    let mut card = json!({
+        "id":                 uid,
+        "username":           username,
+        "display_name":       display_name.unwrap_or_else(|| username.clone()),
+        "first_name":         first_name,
+        "last_name":          last_name,
+        "avatar_url":         avatar_url,
+        "name_pronunciation": name_pronunciation,
+        "pronouns":           pronouns,
+        "work_location":      work_location,
+        "introduction":       introduction,
+        "org_unit":           org_unit,
+    });
+    // Omitted, not blanked: no client can mistake `""` for an address.
+    if policy.share_email || caller.id == id {
+        card["email"] = json!(email);
+    }
+    Ok(Json(card))
 }
 
 /// Resolves accounts by id — public profile fields, plus the address when the
@@ -1108,8 +1220,8 @@ pub async fn internal_user_groups(
     _internal: InternalRequest,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = sqlx::query_as::<_, (uuid::Uuid, String)>(
-        r#"SELECT g.id, g.name
+    let rows = sqlx::query_as::<_, (uuid::Uuid, String, bool)>(
+        r#"SELECT g.id, g.name, g.release_exempt
              FROM core.user_group_members m
              JOIN core.user_groups g ON g.id = m.group_id
             WHERE m.user_id = $1
@@ -1124,7 +1236,15 @@ pub async fn internal_user_groups(
     })?;
 
     Ok(Json(json!({
-        "groups": rows.into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>()
+        // `release_exempt` travels with the membership because the rule is applied
+        // by the module that books rooms, and a module cannot honour a rule it
+        // cannot see.
+        "groups": rows
+            .into_iter()
+            .map(|(id, name, release_exempt)| json!({
+                "id": id, "name": name, "release_exempt": release_exempt,
+            }))
+            .collect::<Vec<_>>()
     })))
 }
 

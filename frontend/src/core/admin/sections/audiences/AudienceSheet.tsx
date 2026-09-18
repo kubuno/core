@@ -10,16 +10,16 @@
 // disagreeing. `AudienceDialog` is now what its name says — the way an audience
 // is *created* — and nothing else.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Globe, MapPin, Plus, Trash2, Users, User as UserIcon } from 'lucide-react'
+import { Globe, MapPin, Plus, Trash2, Users, User as UserIcon } from 'lucide-react'
 import { Button, Callout, Card, EmptyState } from '@ui'
 import { useConfirm } from '../../../hooks/useConfirm'
 import ConfirmDialog from '@ui/ConfirmDialog'
-import { confirmLeave } from '../../inline-edit/unsaved'
 import { useAudience, useAudienceMutations, type AudienceMember } from './api'
 import IdentityCard from './IdentityCard'
 import MemberPicker from './MemberPicker'
+import { useAdminCrumbs } from '../../AdminBreadcrumb'
 
 function errMessage(err: unknown): string | undefined {
   const e = err as { message?: string; response?: { data?: { message?: string } } }
@@ -64,9 +64,9 @@ function MemberRow({
 }
 
 export default function AudienceSheet({
-  id, canManage, onBack,
+  id, canManage,
 }: {
-  id: string; canManage: boolean; onBack: () => void
+  id: string; canManage: boolean
 }) {
   const { t } = useTranslation()
   const { data, isLoading } = useAudience(id)
@@ -74,8 +74,14 @@ export default function AudienceSheet({
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const [adding, setAdding] = useState(false)
 
-  // Leaving with the identity card half-edited must not drop the field.
-  const leave = async () => { if (await confirmLeave(confirm, t)) onBack() }
+  // The trail carries the audience, so « Audiences cibles » is the way back.
+  // Its link asks before discarding a half-edited card too — the guard now
+  // lives in `AdminBreadcrumb`, which is why this sheet no longer needs a
+  // back button of its own.
+  useAdminCrumbs(useMemo(
+    () => (data ? [{ label: data.audience.name, title: data.audience.name }] : []),
+    [data],
+  ))
 
   if (isLoading || !data) {
     return <p className="p-6 text-sm text-text-tertiary">{t('common.loading', { defaultValue: 'Chargement…' })}</p>
@@ -96,12 +102,6 @@ export default function AudienceSheet({
 
   return (
     <div className="min-w-0">
-      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={() => void leave()}>
-          {t('admin.aud_back', { defaultValue: 'Toutes les audiences' })}
-        </Button>
-      </div>
-
       <div className="mb-4 flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
         {a.is_everyone
           ? <Globe size={18} className="mt-1 shrink-0 text-text-tertiary" />

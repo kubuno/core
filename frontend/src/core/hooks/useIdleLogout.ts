@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import axios from 'axios'
+import { getPublicConfig } from '../api/publicConfig'
 import { useAuthStore } from '../store/authStore'
 
 // Gestion de session liée à l'ACTIVITÉ réelle de l'utilisateur.
@@ -119,10 +119,10 @@ export function useIdleLogout() {
     }, 30_000)
 
     // Charger la durée configurée par l'admin (réglage public, clé `config`).
-    axios.get<{ config: Record<string, unknown> }>('/api/v1/config')
-      .then(r => {
+    getPublicConfig()
+      .then(config => {
         if (cancelled) return
-        const raw = r.data.config?.['security.session_idle_timeout_min']
+        const raw = config['security.session_idle_timeout_min']
         const min = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : 30
         idleMs = Number.isFinite(min) && min > 0 ? min * 60_000 : 0
         armLogout()

@@ -11,6 +11,10 @@ pub struct UserGroup {
     pub description: Option<String>,
     pub permissions: serde_json::Value,  // Vec<String> sérialisé
     pub is_default:  bool,
+    /// Les réunions des membres de ce groupe ne rendent jamais leur salle
+    /// automatiquement. Protège une POPULATION, là où le drapeau de la salle
+    /// protège un LIEU.
+    pub release_exempt: bool,
     pub is_system:   bool,               // groupe protégé, non supprimable
     pub created_at:  DateTime<Utc>,
     pub updated_at:  DateTime<Utc>,
@@ -33,6 +37,8 @@ pub struct CreateGroupDto {
     pub permissions: Vec<String>,
     #[serde(default)]
     pub is_default:  bool,
+    #[serde(default)]
+    pub release_exempt: bool,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -42,4 +48,5 @@ pub struct UpdateGroupDto {
     pub description: Option<String>,
     pub permissions: Option<Vec<String>>,
     pub is_default:  Option<bool>,
+    pub release_exempt: Option<bool>,
 }

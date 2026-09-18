@@ -53,6 +53,14 @@ pub struct LoginDto {
     /// slot already holding this user, else the first free one.
     #[serde(default)]
     pub slot: Option<u8>,
+    /// Identifier of a CAPTCHA challenge (from `GET /auth/captcha`), sent only
+    /// once the sign-in gate demands it (repeated failures). Ignored otherwise.
+    #[serde(default)]
+    pub captcha_id: Option<uuid::Uuid>,
+    /// The answer the person typed for `captcha_id`. Verified once, then the
+    /// challenge is spent.
+    #[serde(default)]
+    pub captcha_answer: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

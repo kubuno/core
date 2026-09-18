@@ -243,6 +243,38 @@ pub fn cli() -> Command {
             Command::new("modules:commands")
                 .about("Liste les commandes CLI offertes par les modules installés"),
         )
+        // ── modules:install ──
+        .subcommand(
+            Command::new("modules:install")
+                .about("Installe un module depuis un paquet .kbpkg local")
+                .long_about(
+                    "Installe un module depuis un fichier .kbpkg LOCAL — le SEUL format\n\
+                     d'empaquetage d'un module (le format multiplateforme de Kubuno : une\n\
+                     archive ZIP portant le répertoire du module à sa racine). Les paquets\n\
+                     système (.deb, .rpm, .tar.gz) sont refusés.\n\
+                     \n\
+                     L'archive est extraite, ses empreintes SHA256SUMS vérifiées si présentes,\n\
+                     puis le module est déposé dans le store inscriptible du core\n\
+                     (/var/lib/kubuno/modules-store/<id>). L'id est lu dans module.toml, jamais\n\
+                     dans le nom de fichier. Le core démarre le module au prochain lancement :\n\
+                     redémarrez le service (systemctl restart kubuno) pour l'activer à chaud.\n\
+                     \n\
+                     Aucune connexion réseau ni catalogue n'est requis — c'est l'installation\n\
+                     hors-ligne, à partir d'un fichier déjà téléchargé ou construit localement\n\
+                     par build_kbpkg.sh.",
+                )
+                .arg(
+                    Arg::new("file")
+                        .required(true)
+                        .value_name("FICHIER.kbpkg")
+                        .help("Chemin du paquet .kbpkg à installer"),
+                ),
+        )
+        // ── modules:list ──
+        .subcommand(
+            Command::new("modules:list")
+                .about("Liste les modules installés dans le store (installables/désinstallables)"),
+        )
         // Les commandes des modules (ex: files:upload, photos:sync…) sont routées
         // dynamiquement vers le binaire kubuno-<module>. Voir allow_external_subcommands.
         .allow_external_subcommands(true)

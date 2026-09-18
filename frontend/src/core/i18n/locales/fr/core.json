@@ -34,6 +34,12 @@
     "no_notifications": "Aucune notification"
   },
   "login": {
+    "captcha_slider_label": "Faites glisser la pièce à sa place",
+    "captcha_math_label": "Résolvez l’opération",
+    "captcha_slider_hint": "Utilisez le curseur pour aligner la pièce sur l’emplacement vide.",
+    "captcha_label": "Recopiez les caractères ci-dessous",
+    "captcha_ph": "Caractères affichés",
+    "captcha_refresh": "Nouvelle image",
     "welcome": "Connexion",
     "email": "Email ou nom d'utilisateur",
     "password": "Mot de passe",
@@ -146,7 +152,8 @@
     "intro": "Saisissez votre adresse email et nous vous enverrons un lien pour réinitialiser votre mot de passe.",
     "sent": "Si cet email est associé à un compte, un lien de réinitialisation a été envoyé.",
     "submit": "Envoyer le lien",
-    "back": "Retour à la connexion"
+    "back": "Retour à la connexion",
+    "email_label": "Email"
   },
   "oauth": {
     "connecting": "Connexion en cours…"
@@ -2330,6 +2337,22 @@
     "sgrp_signup_desc": "Comment un compte arrive dans l’annuaire, et ce qu’il doit prouver avant de servir.",
     "sgrp_builtin_oauth": "Fournisseurs intégrés",
     "sgrp_builtin_oauth_desc": "Les deux boutons de connexion livrés avec le produit. Tout autre fournisseur se déclare dans la liste ci-dessus.",
+    "opt_captcha_text": "Texte déformé",
+    "opt_captcha_slider": "Puzzle coulissant",
+    "opt_captcha_math": "Calcul",
+    "captcha_preview_title": "Aperçu — exemple généré par le serveur",
+    "captcha_preview_regen": "Régénérer un exemple",
+    "captcha_preview_slider_hint": "À la connexion, la pièce se glisse dans l’encoche.",
+    "setlabel_security_captcha_type": "Type de test humain",
+    "setlabel_security_captcha_length": "Longueur du code (texte)",
+    "setlabel_security_captcha_distortion": "Force de déformation (texte)",
+    "setlabel_security_captcha_noise": "Bruit visuel (texte)",
+    "setlabel_security_captcha_slider_tolerance": "Tolérance du puzzle (pixels)",
+    "setlabel_security_captcha_math_max": "Valeur maximale (calcul)",
+    "sgrp_login_captcha": "CAPTCHA de connexion",
+    "sgrp_login_captcha_desc": "Impose un test « je ne suis pas un robot » après plusieurs échecs sur un même compte.",
+    "setlabel_security_login_captcha_after_failures": "CAPTCHA après échecs de connexion",
+    "setdesc_security_login_captcha_after_failures": "Au-delà de ce nombre d'échecs consécutifs sur un même compte, la connexion exige la résolution d'un CAPTCHA — généré et vérifié par le serveur, sans service tiers — jusqu'à la première réussite. 0 désactive le CAPTCHA.",
     "sgrp_two_factor": "Double authentification",
     "sgrp_two_factor_desc": "Ce que les administrateurs doivent présenter en plus de leur mot de passe.",
     "sgrp_password_policy": "Gestion des mots de passe",
@@ -2748,6 +2771,32 @@
     "res_tab_buildings": "Bâtiments",
     "res_tab_resources": "Ressources",
     "res_tab_features": "Fonctionnalités",
+    "res_tab_room_stats": "Tableau de bord des statistiques sur les salles",
+    "rs_h": "{{value}} h",
+    "rs_hour_tick": "{{hour}} h",
+    "rs_scope": "{{count}} salles · jour ouvré de {{hours}} h",
+    "rs_load_failed": "Impossible de charger les statistiques des salles.",
+    "rs_no_module": "Calendar n’est pas installé",
+    "rs_no_module_desc": "Ces chiffres viennent des réservations de salle, qui vivent dans Calendar. Installez ce module pour les voir.",
+    "rs_unreachable": "Statistiques indisponibles",
+    "rs_unreachable_desc": "Le module qui détient les réservations n’a pas répondu. Réessayez dans un instant.",
+    "rs_bookings": "Réservations",
+    "rs_bookings_sub": "{{count}} refus",
+    "rs_booked_hours": "Heures réservées",
+    "rs_rate": "Taux de réservation",
+    "rs_rate_sub": "sur {{hours}} h disponibles",
+    "rs_acceptance": "Taux d’acceptation",
+    "rs_acceptance_sub": "demandes acceptées par les salles",
+    "rs_empty": "Aucune réservation sur cette période",
+    "rs_empty_desc": "Réservez une salle depuis un événement d’agenda : les chiffres apparaîtront ici.",
+    "rs_per_day": "Heures réservées par jour",
+    "rs_per_hour": "Heures réservées par heure de la journée",
+    "rs_per_room": "Salles les plus réservées",
+    "rs_per_room_empty": "Aucune salle réservée sur cette période.",
+    "rs_room_sub": "{{hours}} h · {{count}} réservations",
+    "rs_release": "Libération des salles",
+    "rs_release_desc": "Une salle est rendue automatiquement quand la réunion se vide de ses invités.",
+    "rs_released": "heures libérées",
     "res_load_failed": "Chargement impossible.",
     "res_retry": "Réessayer",
     "res_save": "Enregistrer",
@@ -3704,7 +3753,16 @@
     "rep_col_gate": "Référence de blocage",
     "rep_col_username": "Identifiant",
     "rep_col_name": "Nom affiché",
-    "rep_col_role": "Rôle"
+    "rep_col_role": "Rôle",
+    "ou_scope_selected": "Unités sélectionnées",
+    "ou_pick_single": "Sélection simple",
+    "ou_pick_multi": "Sélection multiple",
+    "ou_panel_collapse": "Replier le panneau",
+    "ud_self_action_blocked": "Vous ne pouvez pas effectuer cette action sur votre propre compte.",
+    "res_release_exempt": "Jamais libérée automatiquement",
+    "res_release_exempt_desc": "Cette salle reste réservée même si la réunion qui la retient se vide. À réserver aux salles dont la disponibilité ne doit pas dépendre des réponses des invités.",
+    "g_release_exempt": "Réunions à salle garantie",
+    "g_release_exempt_desc": "Les réunions dont un membre de ce groupe est invité ne rendent jamais leur salle automatiquement, même si tout le monde décline."
   },
   "account": {
     "add_title": "Ajouter un compte Kubuno",
@@ -4259,7 +4317,15 @@
   },
   "modules": {
     "empty": "Aucun module installé pour le moment.",
-    "title": "Modules"
+    "title": "Modules",
+    "load_failed": {
+      "title": "Module « {{module}} » indisponible",
+      "reason": {
+        "sdk-mismatch": "Bâti pour une autre version du SDK ({{detail}}). Il n'apparaîtra pas tant qu'il n'est pas reconstruit puis redéployé.",
+        "import-error": "Son interface n'a pas pu se charger : {{detail}}. Le plus souvent, le module a été bâti contre une version du SDK plus récente que celle servie par le serveur — reconstruire et redéployer le serveur, ou le module.",
+        "no-register": "Son interface ne fournit pas de point d'entrée valide ({{detail}})."
+      }
+    }
   },
   "ws_about": "À propos",
   "ws_copy": "Copier",

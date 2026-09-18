@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Bold, Italic, Underline, List, ListOrdered, Link2, Eraser } from 'lucide-react'
 import type { MentionsConfig } from './mention/types'
 import { useContentEditableMention } from './mention/useContentEditableMention'
+import { Input } from './Input'
 
 interface RichTextProps {
   /** HTML controlled value */
@@ -65,8 +66,11 @@ export function RichText({ value, onChange, placeholder, className, minHeight = 
     </button>
   )
 
+  // `kb-field-focus` reacts on `:focus-within`: the editable area is a
+  // contenteditable INSIDE this box, and its own `outline-none` removed the only
+  // mark left — a rich field that took focus and showed nothing for it.
   return (
-    <div className={`rounded-md border border-border bg-white overflow-hidden ${className ?? ''}`}>
+    <div className={`kb-field-focus rounded-md border border-border bg-white overflow-hidden ${className ?? ''}`}>
       <div className="flex items-center gap-0.5 px-1.5 py-1 border-b border-border">
         <Btn title="Gras" on={() => exec('bold')}><Bold size={15} /></Btn>
         <Btn title="Italique" on={() => exec('italic')}><Italic size={15} /></Btn>
@@ -79,10 +83,10 @@ export function RichText({ value, onChange, placeholder, className, minHeight = 
         <Btn title="Effacer la mise en forme" on={() => exec('removeFormat')}><Eraser size={15} /></Btn>
       </div>
       {linkOpen && (
-        <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border bg-surface-1">
-          <input autoFocus value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://…"
+        <div className="kb-richtext-linkbar flex items-center gap-1.5 px-2 py-1.5 border-b border-border bg-surface-1">
+          <Input autoFocus value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://…"
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyLink() } if (e.key === 'Escape') setLinkOpen(false) }}
-            className="flex-1 text-sm px-2 py-1 rounded border border-border outline-none focus:border-primary" />
+            className="flex-1" />
           <button type="button" onClick={applyLink} className="text-sm font-medium text-primary px-2">OK</button>
         </div>
       )}

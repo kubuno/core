@@ -1,8 +1,4 @@
-import {
-  format, isValid,
-  startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
-  parseISO,
-} from 'date-fns'
+import { eachDayOfInterval, endOfMonth, endOfWeek, formatDate, isValidDate, startOfMonth, startOfWeek, toDate, toISODate, toISODateTimeLocal } from '../../core/intl/datetime'
 import type { DatePickerMode } from './types'
 
 export const WEEKDAYS  = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
@@ -19,8 +15,8 @@ export function parseDateValue(v: string | null | undefined, mode: DatePickerMod
       d.setHours(h, m, 0, 0)
       return d
     }
-    const d = parseISO(v)
-    return isValid(d) ? d : null
+    const d = toDate(v)
+    return isValidDate(d) ? d : null
   } catch {
     return null
   }
@@ -29,26 +25,26 @@ export function parseDateValue(v: string | null | undefined, mode: DatePickerMod
 /** Human-readable text shown in the trigger button. */
 export function formatDisplay(d: Date | null, mode: DatePickerMode): string {
   if (!d) return ''
-  if (mode === 'date')     return format(d, 'dd/MM/yyyy')
-  if (mode === 'time')     return format(d, 'HH:mm')
-  if (mode === 'datetime') return format(d, 'dd/MM/yyyy HH:mm')
+  if (mode === 'date')     return formatDate(d, 'dateShort')
+  if (mode === 'time')     return formatDate(d, 'time')
+  if (mode === 'datetime') return `${formatDate(d, 'dateShort')} ${formatDate(d, 'time')}`
   return ''
 }
 
 /** Serialize a Date back to the ISO shape expected by the caller. */
 export function toISOValue(d: Date | null, mode: DatePickerMode): string | null {
   if (!d) return null
-  if (mode === 'date')     return format(d, 'yyyy-MM-dd')
-  if (mode === 'time')     return format(d, 'HH:mm')
-  if (mode === 'datetime') return format(d, "yyyy-MM-dd'T'HH:mm")
+  if (mode === 'date')     return toISODate(d)
+  if (mode === 'time')     return formatDate(d, 'time')
+  if (mode === 'datetime') return toISODateTimeLocal(d)
   return null
 }
 
 /** Full 6-week grid (monday-first) covering the given month. */
 export function calendarGrid(month: Date): Date[] {
-  const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 })
-  const end   = endOfWeek(endOfMonth(month),     { weekStartsOn: 1 })
-  return eachDayOfInterval({ start, end })
+  const start = startOfWeek(startOfMonth(month), 1 )
+  const end   = endOfWeek(endOfMonth(month), 1 )
+  return eachDayOfInterval(start, end)
 }
 
 /** 12-year page containing `anchor`. */

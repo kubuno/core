@@ -7,9 +7,9 @@
 // on purpose: editing it would silently rewrite the country for everybody, and
 // the region's real verb is "ne l'observe pas", which is the exclusion switch.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, CalendarDays, Plus, RotateCcw } from 'lucide-react'
+import { CalendarDays, Plus, RotateCcw } from 'lucide-react'
 import {
   Badge, Button, Callout, DataTable, EmptyState, NumberInput, Toggle,
   type DataTableColumn, type DataTableRowAction,
@@ -22,13 +22,13 @@ import {
   errorMessage, useCalendarDetail, useDeleteHoliday, useResetHoliday,
   useSetExclusions, useSetHolidayEnabled, type Holiday,
 } from './api'
+import { useAdminCrumbs } from '../../AdminBreadcrumb'
 
 export default function CalendarDetail({
-  calendarId, canManage, onBack, onOpenCalendar,
+  calendarId, canManage, onOpenCalendar,
 }: {
   calendarId: string
   canManage: boolean
-  onBack: () => void
   onOpenCalendar: (id: string) => void
 }) {
   const { t, i18n } = useTranslation()
@@ -197,6 +197,13 @@ export default function CalendarDetail({
     : []
 
   const calendar = data?.calendar
+  // The trail carries the calendar; « Jours fériés » is then the link back.
+  // The neighbouring « open the parent calendar » button is NOT a back link
+  // and stays.
+  useAdminCrumbs(useMemo(
+    () => (calendar ? [{ label: calendar.name, title: calendar.name }] : []),
+    [calendar],
+  ))
   const coverage = calendar?.coverage_from && calendar?.coverage_to
     ? t('admin.hol_coverage', { from: calendar.coverage_from, to: calendar.coverage_to })
     : null
@@ -204,9 +211,6 @@ export default function CalendarDetail({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft size={16} /> {t('admin.hol_back_to_list')}
-        </Button>
         {data?.parent && (
           <Button variant="ghost" onClick={() => onOpenCalendar(data.parent!.id)}>
             {t('admin.hol_open_parent', { name: data.parent.name })}

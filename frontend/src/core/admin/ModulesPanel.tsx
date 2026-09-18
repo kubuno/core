@@ -14,6 +14,7 @@ import {
   useAdminModules, useModuleLiveState, useToggleModule,
   type AdminModule, type ModuleLiveState,
 } from './adminModules'
+import { getPublicConfig } from '../api/publicConfig'
 
 // Applications ▸ Modules installés — the inventory, at `/admin/modules`.
 //
@@ -40,8 +41,7 @@ import {
 function useDefaultModule() {
   return useQuery({
     queryKey: ['public-config'],
-    queryFn: () =>
-      api.get<{ config: Record<string, unknown> }>('/config').then((r) => r.data.config),
+    queryFn: getPublicConfig,
     staleTime: 60_000,
     select: (config) => {
       const v = config['navigation.default_module']

@@ -27,5 +27,5 @@ mod manifest;
 mod progress;
 
 pub use catalog::{fetch_catalog, fetch_detail, validate_id, MarketLinks, MarketModule};
-pub use install::{install, is_store_installed, uninstall, InstallReport};
+pub use install::{install, install_local, is_store_installed, uninstall, InstallReport};
 pub use progress::{begin, finish_progress, get_progress, InstallProgress};

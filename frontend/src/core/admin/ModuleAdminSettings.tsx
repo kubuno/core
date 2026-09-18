@@ -96,6 +96,7 @@ import { INSTANCE_SCOPE, type ActiveScope, type ResolvedSetting } from './settin
 import {
   isVisible, outOfRange, sameValue, type SettingItem,
 } from './settings/moduleSettingSchema'
+import { apiErrorDetail } from '../api/errorMessage'
 
 export type { SettingItem } from './settings/moduleSettingSchema'
 
@@ -231,7 +232,7 @@ export default function ModuleAdminSettings({
 
   // ── Writing ────────────────────────────────────────────────────────────────
   const reportError = (e: unknown) => {
-    const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+    const detail = apiErrorDetail(e)
     setError(detail ?? t('admin.setting_write_failed', {
       defaultValue: "L'enregistrement a échoué.",
     }))

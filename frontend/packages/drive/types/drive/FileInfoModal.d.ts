@@ -21,5 +21,10 @@ interface Props {
     target: InfoTarget | null;
     onClose: () => void;
 }
+export declare function FileInfoContent({ target }: {
+    target: NonNullable<Props['target']>;
+}): import("react").JSX.Element | null;
+/** The details window. Kept for the search view until `@kubuno/drive` is
+ *  republished with `FileInfoContent`; the explorer uses the side panel. */
 export default function FileInfoModal({ target, onClose }: Props): import("react").JSX.Element | null;
 export {};

@@ -161,12 +161,12 @@ export function FontPicker({
     const onDown = (e: MouseEvent) => {
       if (!triggerRef.current?.contains(e.target as Node) && !popupRef.current?.contains(e.target as Node)) setOpen(false)
     }
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('mousedown', onDown, true)
     const id = setTimeout(() => {
       searchRef.current?.focus()
       listRef.current?.querySelector<HTMLElement>(`[data-idx="${idx}"]`)?.scrollIntoView({ block: 'center' })
     }, 0)
-    return () => { document.removeEventListener('mousedown', onDown); clearTimeout(id) }
+    return () => { document.removeEventListener('mousedown', onDown, true); clearTimeout(id) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 

@@ -20,15 +20,39 @@ export interface BrowserAccount {
   }
 }
 
+/** A sign-in CAPTCHA challenge, shaped by its `type`. */
+export interface CaptchaChallenge {
+  challenge_id: string
+  type: 'text' | 'slider' | 'math'
+  /** text */
+  image?: string
+  /** math */
+  prompt?: string
+  /** slider */
+  background?: string
+  piece?: string
+  piece_y?: number
+  max_x?: number
+  width?: number
+  height?: number
+  piece_width?: number
+}
+
 export const authApi = {
   register: (data: { email: string; username: string; password: string; display_name?: string }) =>
     api.post<{ user: User }>('/auth/register', data),
 
-  login: (data: { login: string; password: string; device_name?: string; slot?: number }) =>
+  login: (data: { login: string; password: string; device_name?: string; slot?: number; captcha_id?: string; captcha_answer?: string }) =>
     api.post<
       | { access_token: string; user: User; slot?: number }
       | { requires_totp: true; totp_session: string }
     >('/auth/login', data),
+
+  // A fresh sign-in CAPTCHA, fetched by the login form once the server has
+  // answered a sign-in with code CAPTCHA_REQUIRED. Its shape depends on the
+  // configured `type` (text image, slider images, or a math prompt).
+  getCaptcha: () =>
+    api.get<CaptchaChallenge>('/auth/captcha'),
 
   // `code` carries the time-based code, `backup_code` a single-use one. The
   // server accepts either; sending them in distinct fields keeps the intent

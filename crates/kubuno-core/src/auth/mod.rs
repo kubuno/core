@@ -1,5 +1,7 @@
 pub mod admin_2fa;
 pub mod backup_codes;
+pub mod captcha;
+pub mod captcha_gate;
 pub mod client_ip;
 pub mod ddos;
 pub mod internal_secret;

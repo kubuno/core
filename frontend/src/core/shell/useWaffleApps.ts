@@ -1,8 +1,7 @@
-import { useTranslation } from 'react-i18next'
 import { useModulesStore } from '../store/modulesStore'
 import { usePrivileges } from '../authz/usePrivileges'
 import { WaffleAppRegistry, type WaffleApp } from '../registry/WaffleAppRegistry'
-import { AdminLogo } from '../admin/AdminLogo'
+import { ADMIN_APP_ID } from '../admin/useAdminConsoleApp'
 
 /**
  * The full set of tiles the app launcher shows, shared by the desktop header
@@ -16,7 +15,6 @@ import { AdminLogo } from '../admin/AdminLogo'
  * never sees a door that would only refuse them.
  */
 export function useWaffleApps(): WaffleApp[] {
-  const { t }             = useTranslation()
   const { activeModules } = useModulesStore()
   const { isAdmin }       = usePrivileges()
 
@@ -27,15 +25,11 @@ export function useWaffleApps(): WaffleApp[] {
     return entry ? entry.apps.map(a => ({ ...a, moduleId: entry.moduleId, moduleLabel: entry.label })) : []
   })
 
-  if (isAdmin) {
-    apps.push({
-      id:          'core-admin',
-      label:       t('user.admin'),
-      Icon:        AdminLogo,
-      path:        '/admin',
-      moduleId:    'core-admin',
-      moduleLabel: t('user.admin'),
-    })
+  // The console's entry is registered by `useAdminConsoleApp` like a module's;
+  // it is grafted here by hand because the console is not an active module.
+  const admin = WaffleAppRegistry.get(ADMIN_APP_ID)
+  if (isAdmin && admin) {
+    apps.push(...admin.apps.map(a => ({ ...a, moduleId: admin.moduleId, moduleLabel: admin.label })))
   }
 
   return apps

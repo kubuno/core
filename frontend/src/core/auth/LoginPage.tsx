@@ -1,23 +1,26 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Eye, EyeOff, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
-import { authApi } from '../api/auth'
-import { Button } from '@ui'
+import { authApi, type CaptchaChallenge } from '../api/auth'
+import { Button, OutlinedField } from '@ui'
 // Membranes WebGL (dégradés par pixel, fallback canvas 2D intégré).
 // Rollback : ré-importer './LoginAnimation' (style fils d'origine).
 import LoginAnimation from './LoginAnimationGL'
 import { animTuning, parseAnimParams } from './animTuning'
 import { InstanceLogo } from '../shell/InstanceLogo'
+import { getPublicConfig } from '../api/publicConfig'
+
+/** The sign-in page paints itself in this blue whatever the instance theme is. */
+const PRIMARY = '#1a73e8'
 
 function usePublicConfig() {
   return useQuery({
     queryKey: ['public-config'],
-    queryFn: () =>
-      axios.get<{ config: Record<string, unknown> }>('/api/v1/config').then((r) => r.data.config),
+    queryFn: getPublicConfig,
     staleTime: 60_000,
   })
 }
@@ -82,6 +85,13 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  // Sign-in CAPTCHA: shown only after the server answers a sign-in with the
+  // code CAPTCHA_REQUIRED (too many failures). Cleared on a successful sign-in.
+  const [captchaRequired, setCaptchaRequired] = useState(false)
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null)
+  const [captchaAnswer, setCaptchaAnswer] = useState('')
+  const [sliderX, setSliderX] = useState(0)
+  const [captchaLoading, setCaptchaLoading] = useState(false)
   const [step, setStep] = useState<'credentials' | 'totp' | 'forgot'>(initialStep)
   const [totpCode, setTotpCode] = useState('')
   // A lost phone is exactly when the second-factor screen matters, so this screen
@@ -131,18 +141,45 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
     }
   }, [initialStep])
 
+  // Fetch a fresh challenge of whatever kind the instance is configured for.
+  const loadCaptcha = async () => {
+    setCaptchaLoading(true)
+    setCaptchaAnswer('')
+    setSliderX(0)
+    try {
+      const { data } = await authApi.getCaptcha()
+      setCaptcha(data)
+    } catch {
+      // Best-effort: the widget stays and the person can retry with the button.
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     try {
-      const { requiresTotp } = await doLogin(login, password)
+      // The answer is the typed text/number, or — for the slider — the pixel
+      // position the piece was dropped at.
+      const answer = captcha?.type === 'slider' ? String(sliderX) : captchaAnswer
+      const cap = captchaRequired && captcha ? { id: captcha.challenge_id, answer } : undefined
+      const { requiresTotp } = await doLogin(login, password, cap)
       if (requiresTotp) {
         setStep('totp')
       } else {
         navigate(postLoginPath())
       }
     } catch (err: unknown) {
+      const code = (err as { code?: string })?.code
       const msg = (err as { message?: string })?.message
+      // The server demands a CAPTCHA from now on: reveal the field and load a
+      // fresh challenge. A spent or wrong challenge comes back here too, so we
+      // always refresh — a challenge is single-use.
+      if (code === 'CAPTCHA_REQUIRED') {
+        setCaptchaRequired(true)
+        await loadCaptcha()
+      }
       setError(msg ?? 'Identifiants invalides')
     }
   }
@@ -316,25 +353,23 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                     {t('forgot.intro')}
                   </p>
                   <form onSubmit={handleForgotSubmit} className="space-y-5">
-                    <div
-                      className="relative flex items-center rounded-md overflow-hidden transition-all"
-                      style={{ border: '1px solid #dadce0' }}
-                      onFocusCapture={(e) => e.currentTarget.style.borderColor = '#1a73e8'}
-                      onBlurCapture={(e) => e.currentTarget.style.borderColor = '#dadce0'}
+                    <OutlinedField
+                      label={t('forgot.email_label')}
+                      value={forgotEmail}
+                      onChange={setForgotEmail}
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      autoFocus
+                      primaryColor={PRIMARY}
+                    />
+                    <Button
+                      type="submit"
+                      size="lg"
+                      loading={forgotLoading}
+                      disabled={!forgotEmail.trim()}
+                      className="w-full"
                     >
-                      <input
-                        type="email"
-                        value={forgotEmail}
-                        onChange={(e) => setForgotEmail(e.target.value)}
-                        required
-                        autoFocus
-                        autoComplete="email"
-                        placeholder="vous@exemple.com"
-                        className="w-full px-4 py-3.5 text-sm bg-white outline-none text-text-primary
-                                   placeholder:text-text-tertiary"
-                      />
-                    </div>
-                    <Button type="submit" size="lg" loading={forgotLoading} className="w-full">
                       {t('forgot.submit')}
                     </Button>
                   </form>
@@ -405,50 +440,36 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
 
           {showPasswordForm && (
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <div
-                className="relative flex items-center rounded-md overflow-hidden transition-all"
-                style={{ border: '1px solid #dadce0' }}
-                onFocusCapture={(e) => e.currentTarget.style.borderColor = '#1a73e8'}
-                onBlurCapture={(e) => e.currentTarget.style.borderColor = '#dadce0'}
-              >
-                <input
-                  type="text"
-                  value={login}
-                  onChange={(e) => setLogin(e.target.value)}
-                  required
-                  autoComplete="username"
-                  placeholder={t('login.email')}
-                  className="w-full px-4 py-3.5 text-sm bg-white outline-none text-text-primary
-                             placeholder:text-text-tertiary"
-                />
-              </div>
-            </div>
+            <OutlinedField
+              label={t('login.email')}
+              value={login}
+              onChange={setLogin}
+              autoComplete="username"
+              primaryColor={PRIMARY}
+            />
 
             <div>
-              <div
-                className="relative flex items-center rounded-md overflow-hidden transition-all"
-                style={{ border: '1px solid #dadce0' }}
-                onFocusCapture={(e) => e.currentTarget.style.borderColor = '#1a73e8'}
-                onBlurCapture={(e) => e.currentTarget.style.borderColor = '#dadce0'}
-              >
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  placeholder={t('login.password')}
-                  className="flex-1 px-4 py-3.5 pr-2 text-sm bg-white outline-none text-text-primary"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="px-3 text-text-tertiary hover:text-text-secondary transition-colors"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
+              <OutlinedField
+                label={t('login.password')}
+                value={password}
+                onChange={setPassword}
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                primaryColor={PRIMARY}
+                trailing={
+                  // The trailing slot disables pointer events (it exists for a
+                  // decorative chevron); a descendant may re-enable them, which
+                  // is what keeps this eye clickable without touching the primitive.
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="text-text-tertiary hover:text-text-secondary transition-colors"
+                    style={{ pointerEvents: 'auto', display: 'flex' }}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                }
+              />
               <div className="flex justify-end mt-2">
                 <Link
                   to="/forgot-password"
@@ -459,6 +480,124 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                 </Link>
               </div>
             </div>
+
+            {captchaRequired && captcha && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-text-secondary">
+                    {captcha.type === 'slider'
+                      ? t('login.captcha_slider_label')
+                      : captcha.type === 'math'
+                      ? t('login.captcha_math_label')
+                      : t('login.captcha_label')}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={loadCaptcha}
+                    disabled={captchaLoading}
+                    aria-label={t('login.captcha_refresh')}
+                    title={t('login.captcha_refresh')}
+                    className="w-8 h-8 flex items-center justify-center text-text-tertiary
+                               hover:text-text-secondary hover:bg-surface-2 rounded-full transition-colors"
+                  >
+                    <RefreshCw size={16} className={captchaLoading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
+
+                {/* ── Distorted text ── */}
+                {captcha.type === 'text' && (
+                  <>
+                    <img
+                      src={captcha.image}
+                      alt={t('login.captcha_label')}
+                      width={180}
+                      height={60}
+                      className="rounded-md mb-2 block"
+                      style={{ border: '1px solid #dadce0', background: '#f1f3f4' }}
+                    />
+                    <div
+                      className="relative flex items-center rounded-md overflow-hidden transition-all"
+                      style={{ border: '1px solid #dadce0' }}
+                      onFocusCapture={(e) => (e.currentTarget.style.borderColor = '#1a73e8')}
+                      onBlurCapture={(e) => (e.currentTarget.style.borderColor = '#dadce0')}
+                    >
+                      <input
+                        type="text"
+                        value={captchaAnswer}
+                        onChange={(e) => setCaptchaAnswer(e.target.value)}
+                        required
+                        autoComplete="off"
+                        autoCapitalize="characters"
+                        spellCheck={false}
+                        placeholder={t('login.captcha_ph')}
+                        className="w-full px-4 py-3.5 text-sm bg-white outline-none text-text-primary
+                                   tracking-[0.3em] uppercase placeholder:text-text-tertiary
+                                   placeholder:tracking-normal placeholder:normal-case"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* ── Arithmetic ── */}
+                {captcha.type === 'math' && (
+                  <div
+                    className="flex items-center gap-3 rounded-md px-4 py-2"
+                    style={{ border: '1px solid #dadce0' }}
+                    onFocusCapture={(e) => (e.currentTarget.style.borderColor = '#1a73e8')}
+                    onBlurCapture={(e) => (e.currentTarget.style.borderColor = '#dadce0')}
+                  >
+                    <span className="text-lg font-medium text-text-primary select-none whitespace-nowrap">
+                      {captcha.prompt} =
+                    </span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={captchaAnswer}
+                      onChange={(e) => setCaptchaAnswer(e.target.value)}
+                      required
+                      autoComplete="off"
+                      placeholder="?"
+                      className="w-24 py-1.5 text-sm bg-white outline-none text-text-primary
+                                 placeholder:text-text-tertiary"
+                    />
+                  </div>
+                )}
+
+                {/* ── Sliding jigsaw ── */}
+                {captcha.type === 'slider' && (
+                  <div>
+                    <div
+                      className="relative rounded-md overflow-hidden select-none"
+                      style={{ width: captcha.width, height: captcha.height, border: '1px solid #dadce0' }}
+                    >
+                      <img src={captcha.background} alt="" width={captcha.width} height={captcha.height} draggable={false} />
+                      <img
+                        src={captcha.piece}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          position: 'absolute',
+                          top: captcha.piece_y,
+                          left: sliderX,
+                          width: captcha.piece_width,
+                          filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))',
+                        }}
+                      />
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={captcha.max_x ?? 200}
+                      value={sliderX}
+                      onChange={(e) => setSliderX(Number(e.target.value))}
+                      aria-label={t('login.captcha_slider_label')}
+                      className="w-full mt-3 accent-[#1a73e8]"
+                    />
+                    <p className="text-xs text-text-tertiary mt-1">{t('login.captcha_slider_hint')}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {error && (
               <div
@@ -483,6 +622,10 @@ export default function LoginPage({ initialStep = 'credentials' }: { initialStep
                 type="submit"
                 size="lg"
                 loading={isLoading}
+                // The fields no longer carry the native `required` attribute, so
+                // the button itself guards the empty submit — the same way the
+                // two-factor step gates on a complete code.
+                disabled={!login.trim() || !password}
                 className="ml-auto"
               >
                 {isLoading ? t('common.loading') : t('login.submit')}

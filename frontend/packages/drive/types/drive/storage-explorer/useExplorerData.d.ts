@@ -11,6 +11,10 @@ export declare function useExplorerData({ src, caps, currentFolderId, acceptedMi
     effectiveFolderId: string | null;
     dirKey: string;
     isLoading: boolean;
+    error: {
+        code: string;
+        message: string;
+    } | null;
     folders: import("..").Folder[];
     files: import("..").FileItem[];
     itemTypeMap: Map<string, "file" | "folder">;

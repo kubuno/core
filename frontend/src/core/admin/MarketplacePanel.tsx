@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useModulesStore } from '../store/modulesStore'
 import { Package, ArrowLeft, Check, Download, RefreshCw, AlertCircle, X, Star, ExternalLink, Trash2 } from 'lucide-react'
+import { apiErrorDetail } from '../api/errorMessage'
 
 interface MarketModule {
   id:                string
@@ -81,8 +82,7 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
       useModulesStore.getState().fetchModules()
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
-        || (e as { message?: string })?.message
+      const msg = apiErrorDetail(e)
       setErrMsg(msg || t('admin.mk_install_failed', { defaultValue: "L'installation a échoué." }))
     },
     onSettled: (_d, _e, id) => { setBusy(null); setPhase((p) => { const n = { ...p }; delete n[id]; return n }) },
@@ -98,7 +98,7 @@ export default function MarketplacePanel({ onBack, related }: { onBack: () => vo
       useModulesStore.getState().fetchModules()
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const msg = apiErrorDetail(e)
       setErrMsg(msg || t('admin.mk_uninstall_failed', { defaultValue: 'La désinstallation a échoué.' }))
     },
     onSettled: () => setBusy(null),

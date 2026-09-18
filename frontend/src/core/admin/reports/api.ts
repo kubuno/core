@@ -4,6 +4,7 @@ import { PRIV } from '../../authz/types'
 import { usePrivileges } from '../../authz/usePrivileges'
 import type { PanelSource } from '../panels/report'
 import type { DashboardPanel, PanelPeriod } from '../panels/types'
+import { getPublicConfig } from '../../api/publicConfig'
 
 /**
  * What a report reads — the SAME endpoints the dashboards read, narrowed.
@@ -185,14 +186,14 @@ export function usePanelReport(source: PanelSource, panelId: string, period: str
 export function useInstanceName(): string | null {
   const { data } = useQuery({
     queryKey:  ['public-config'],
-    queryFn:   () => api.get<{ config: Record<string, unknown> }>('/config').then(r => r.data.config),
+    queryFn:   getPublicConfig,
     staleTime: 60_000,
   })
   const name = data?.['instance.name']
   return typeof name === 'string' && name.trim() !== '' ? name : null
 }
 
-export function errorMessage(err: unknown, fallback: string): string {
-  const detail = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
-  return detail?.message ?? detail?.error ?? fallback
-}
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage'

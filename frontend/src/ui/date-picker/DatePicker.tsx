@@ -1,8 +1,8 @@
+import { cn } from '../cn'
+import { isBefore } from '../../core/intl/datetime'
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { clsx } from 'clsx'
 import { Calendar, Clock, X } from 'lucide-react'
-import { isBefore } from 'date-fns'
 import { PickerPopover } from './PickerPopover'
 import { DayPanel, hasDayPanel } from './DayPanel'
 import { computePos, formatDisplay, parseDateValue, popoverSize, toISOValue } from './helpers'
@@ -115,6 +115,14 @@ export function DatePicker({
   }, [disabled, readOnly, mode, selectedDate, rangeStart, panelActive])
 
   // ── Close on outside click / Escape ───────────────────────────────────────
+  //
+  // ⚠️ In the CAPTURE phase, and that is not a detail. React attaches its
+  // listeners at the root container, so a `stopPropagation()` in any ancestor's
+  // `onMouseDown` — a floating window stops one, to decide which window a press
+  // raises — kills the native event before `document` ever sees it. Listening in
+  // the bubble phase meant the panel simply never closed inside a window: it
+  // stayed open, and the field stayed lit, which reads as a field that will not
+  // let go. Capture runs from the document down, so nothing below can silence it.
   useEffect(() => {
     if (!open) return
     const onMouse = (e: MouseEvent) => {
@@ -124,10 +132,10 @@ export function DatePicker({
       ) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onMouse)
+    document.addEventListener('mousedown', onMouse, true)
     document.addEventListener('keydown',   onKey)
     return () => {
-      document.removeEventListener('mousedown', onMouse)
+      document.removeEventListener('mousedown', onMouse, true)
       document.removeEventListener('keydown',   onKey)
     }
   }, [open])
@@ -225,7 +233,7 @@ export function DatePicker({
   const effectiveRangeEnd   = localRangeS ? null : rangeEnd
 
   return (
-    <div className={clsx('flex flex-col gap-1', className)}>
+    <div className={cn('flex flex-col gap-1', className)}>
       {label && (
         <label htmlFor={inputId} className="text-sm font-medium text-text-primary">
           {label}{required && <span className="text-danger ml-0.5">*</span>}
@@ -243,17 +251,21 @@ export function DatePicker({
           disabled={disabled}
           aria-haspopup="dialog"
           aria-expanded={open}
-          className={clsx(
+          className={cn(
             'w-full flex items-center gap-2 px-3 rounded border bg-white text-left',
-            'transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary',
-            error ? 'border-danger focus:ring-danger' : 'border-border',
+            'transition-colors kb-field-focus',
+            /* Open by mouse: the trigger has the focus but not `:focus-visible`,
+               so the stroke has to be asked for explicitly — the panel below is
+               this field's, and the field must say so. */
+            open && 'kb-field-focus--on',
+            error ? 'border-danger kb-field-focus-danger' : 'border-border',
             disabled && 'bg-surface-2 cursor-not-allowed opacity-60',
             readOnly && 'cursor-default',
             triggerH,
           )}
         >
           <span className="text-text-tertiary shrink-0">{triggerIcon}</span>
-          <span className={clsx('flex-1 truncate', displayText ? 'text-text-primary' : 'text-text-tertiary')}>
+          <span className={cn('flex-1 truncate', displayText ? 'text-text-primary' : 'text-text-tertiary')}>
             {displayText || (placeholder ?? defaultPH)}
           </span>
           {showClear ? (

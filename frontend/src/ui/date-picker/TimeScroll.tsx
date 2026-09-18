@@ -1,5 +1,5 @@
+import { cn } from '../cn'
 import { useRef, useEffect } from 'react'
-import { clsx } from 'clsx'
 
 /** Vertical scroller used for hours and minutes; auto-centers the selection. */
 export function TimeScroll({
@@ -36,7 +36,7 @@ export function TimeScroll({
             ref={v === selected ? selRef : undefined}
             type="button"
             onClick={() => onSelect(v)}
-            className={clsx(
+            className={cn(
               'w-14 h-8 flex items-center justify-center text-sm rounded transition-colors',
               v === selected
                 ? 'bg-primary/10 text-primary font-semibold'

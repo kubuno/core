@@ -3,7 +3,7 @@ import React from 'react'
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'text' | 'textDanger'
 type ButtonSize    = 'sm' | 'md' | 'lg'
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?:  ButtonVariant
   size?:     ButtonSize
   /** Leading icon — rendered before children */

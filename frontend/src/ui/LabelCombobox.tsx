@@ -22,8 +22,8 @@ export function LabelCombobox({ value, onChange, primaryColor, presets, label = 
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('mousedown', onDoc, true)
+    return () => document.removeEventListener('mousedown', onDoc, true)
   }, [open])
 
   const q = value.trim().toLowerCase()

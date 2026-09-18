@@ -21,8 +21,11 @@ use crate::{
                 toggle_module, update_settings,
             },
             users::{
-                admin_stats, bulk_set_org_unit, create_user, delete_user, get_user, list_users,
-                update_user, list_user_sessions, revoke_user_session, revoke_all_user_sessions,
+                admin_stats, bulk_delete_users, bulk_require_password_change, bulk_set_active,
+                bulk_set_org_unit, create_user,
+                delete_user, export_users, get_user,
+                list_users, update_user, list_user_sessions, revoke_user_session,
+                revoke_all_user_sessions,
             },
         },
         auth::{
@@ -101,6 +104,10 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // CONFIGURATION seule : ne prend aucun identifiant, ne lit aucun compte,
         // donc ne peut pas servir à sonder l'existence d'un compte.
         .route("/methods",                  get(crate::handlers::auth::public_auth_methods))
+        // A fresh CAPTCHA challenge for the sign-in form, once repeated failures
+        // have armed the gate. Takes no login and reads no account — like
+        // /methods, it cannot be used to probe whether an account exists.
+        .route("/captcha",                  get(crate::handlers::auth::captcha_challenge))
         .route("/totp",                     post(totp_verify))
         // Multi-compte façon Google : énumération des comptes de CE navigateur
         // (lit uniquement les cookies de l'appelant) et bascule du compte actif.
@@ -136,6 +143,17 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // d'audit récapitulative — pas N appels PATCH (cf. handlers::admin::users).
         // Segment statique déclaré avant `/users/:id/…` par convention de lecture.
         .route("/users/bulk/org-unit", post(bulk_set_org_unit))
+        // Même forme que le déplacement groupé : une transaction, une entrée
+        // d'audit récapitulative. `bulk/delete` est la suppression DOUCE ;
+        // la purge reste unitaire et exige que l'adresse soit retapée.
+        .route("/users/bulk/active", post(bulk_set_active))
+        .route("/users/bulk/delete", post(bulk_delete_users))
+        // La forme groupée de la « réinitialisation » : on arme le changement
+        // imposé, on ne fabrique pas N mots de passe (cf. le handler).
+        .route("/users/bulk/require-password-change", post(bulk_require_password_change))
+        // L'export prend les MÊMES paramètres que le listing : le fichier doit
+        // être la liste que l'opérateur regarde. Statique avant `/users/:id`.
+        .route("/users/export",  get(export_users))
         .route("/users/:id",     get(get_user).patch(update_user).delete(delete_user))
         // Permanent erasure. A separate route from the DELETE above, which only
         // deactivates: the two are different acts, and a flag on one endpoint
@@ -399,6 +417,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // précède `/resources/:id`, sinon « overview » serait lu comme un
         // identifiant et renverrait un 400 sur une page qui existe.
         .route("/resources/overview",           get(crate::handlers::admin::resources::overview))
+        // Les réservations vivent dans le schéma du module : le core relaie la
+        // question plutôt que de lire un schéma qui ne lui appartient pas.
+        .route("/resources/room-stats",         get(crate::handlers::admin::resources::room_stats))
         .route("/resources",                    get(crate::handlers::admin::resources::list_resources)
                                                 .post(crate::handlers::admin::resources::create_resource))
         .route("/resources/:id",              patch(crate::handlers::admin::resources::update_resource)
@@ -462,6 +483,8 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/me/password",          patch(change_password))
         .route("/users/search",         get(search_users))
         .route("/users/lookup",         get(lookup_users))
+        // One person, as the directory publishes them — for a contact card.
+        .route("/users/:id/card",       get(crate::handlers::users::user_card))
         .route("/me/sessions",          get(list_sessions).delete(revoke_all_sessions))
         .route("/me/sessions/:id",     delete(revoke_session))
         // Mes appareils : exactement ce qu'un administrateur voit des miens.

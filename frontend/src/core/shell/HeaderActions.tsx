@@ -2,7 +2,7 @@ import { formatRelative } from '../../core/intl/datetime'
 import { useRef, useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
-  Bell, HelpCircle, Info, BookOpen, Calendar, PhoneMissed, type LucideIcon,
+  Bell, HelpCircle, Info, BookOpen, Calendar, PhoneMissed, PlugZap, type LucideIcon,
 } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Avatar from '@radix-ui/react-avatar'
@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { useNotificationStore } from '../store/notificationStore'
 import { useAlertFeed } from './useAlertFeed'
+import { useModuleLoadAlerts } from './useModuleLoadAlerts'
 import { useModuleNotifications } from './useModuleNotifications'
 import { Slot, SlotRegistry } from '../slots/SlotRegistry'
 import { useWaffleApps } from './useWaffleApps'
@@ -20,7 +21,7 @@ import WaffleMenu from './WaffleMenu'
 import SettingsMenu from './SettingsMenu'
 
 // Glyph a producer may ask for by name. `Bell` is the alert centre's.
-const NOTIF_ICONS: Record<string, LucideIcon> = { Bell, Calendar, PhoneMissed }
+const NOTIF_ICONS: Record<string, LucideIcon> = { Bell, Calendar, PhoneMissed, PlugZap }
 
 // Cluster d'actions de l'en-tête (langue, notifications, réglages, aide, waffle,
 // avatar). Extrait de l'AppHeader pour être réutilisable : l'AppHeader global le
@@ -37,6 +38,9 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
   // called, so the panel was empty on every instance. The hook only queries
   // for callers holding `core.alerts.read` and announces each alert once.
   useAlertFeed()
+  // Producer for modules whose UI bundle failed to load: instead of vanishing in
+  // silence, a broken module reaches the bell for anyone who may read modules.
+  useModuleLoadAlerts()
   // Second producer: real-time notifications from every module (forum replies,
   // mentions, moderation…) land in the same shared bell instead of each module
   // growing its own.

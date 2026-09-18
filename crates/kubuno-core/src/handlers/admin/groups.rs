@@ -23,8 +23,8 @@ pub async fn list_groups(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::GROUPS_READ)?;
     let groups = sqlx::query_as::<_, UserGroup>(
-        r#"SELECT g.id, g.name, g.description, g.permissions, g.is_default, g.is_system,
-                  g.created_at, g.updated_at
+        r#"SELECT g.id, g.name, g.description, g.permissions, g.is_default, g.release_exempt,
+                  g.is_system, g.created_at, g.updated_at
            FROM core.user_groups g
            ORDER BY g.is_system DESC, g.name"#,
     )
@@ -110,14 +110,15 @@ pub async fn create_group(
     let mut tx = audit.begin(&state.db).await?;
 
     let group = sqlx::query_as::<_, UserGroup>(
-        r#"INSERT INTO core.user_groups (name, description, permissions, is_default)
-           VALUES ($1, $2, $3, $4)
+        r#"INSERT INTO core.user_groups (name, description, permissions, is_default, release_exempt)
+           VALUES ($1, $2, $3, $4, $5)
            RETURNING *"#,
     )
     .bind(&dto.name)
     .bind(dto.description.as_deref())
     .bind(&permissions)
     .bind(dto.is_default)
+    .bind(dto.release_exempt)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -169,7 +170,8 @@ pub async fn update_group(
            SET name        = COALESCE($1, name),
                description = CASE WHEN $2::text IS NOT NULL THEN $2 ELSE description END,
                permissions = COALESCE($3, permissions),
-               is_default  = COALESCE($4, is_default)
+               is_default  = COALESCE($4, is_default),
+               release_exempt = COALESCE($6, release_exempt)
            WHERE id = $5
            RETURNING *"#,
     )
@@ -178,6 +180,7 @@ pub async fn update_group(
     .bind(permissions.as_ref())
     .bind(dto.is_default)
     .bind(group_id)
+    .bind(dto.release_exempt)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| { tracing::error!(error = %e, "update_group: écriture"); AppError::Database(e) })?

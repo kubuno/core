@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { twMerge } from 'tailwind-merge'
 import { easeStandard } from './easing'
 import { paintRadio, RADIO_GEOMETRY, readRadioPalette, type RadioVariant } from './radioCanvas'
 
@@ -178,8 +178,8 @@ export function Radio({
       </span>
       {(label || description) && (
         <div className="flex flex-col mt-px min-w-0">
-          {label && <span className={twMerge('leading-snug', LBL[variant].label, labelClassName)}>{label}</span>}
-          {description && <span className={twMerge('leading-snug mt-0.5', LBL[variant].desc)}>{description}</span>}
+          {label && <span className={cn('leading-snug', LBL[variant].label, labelClassName)}>{label}</span>}
+          {description && <span className={cn('leading-snug mt-0.5', LBL[variant].desc)}>{description}</span>}
         </div>
       )}
     </label>

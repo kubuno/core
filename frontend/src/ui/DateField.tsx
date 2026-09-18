@@ -76,8 +76,8 @@ function MonthSelect({ value, onChange, primaryColor, large }: {
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('mousedown', onDoc, true)
+    return () => document.removeEventListener('mousedown', onDoc, true)
   }, [open])
 
   const idx = value ? Number(value) - 1 : -1

@@ -267,6 +267,104 @@ button {
   opacity: 1;
   background-color: rgb(255 255 255 / .2);
 }
+/* A window that is a FORM sits its content on a tint rather than on white.
+ *
+ * A form is mostly white fields. On a white canvas the fields have nothing to
+ * stand on and the eye reads one continuous sheet with lines drawn on it; on a
+ * faint tint each field is an object again. Worn on the window ROOT, so the
+ * variable reaches the content area and the footer together — one surface, one
+ * colour, no rule repeating the value.
+ *
+ * Opt-in: a window that shows a document, an image or a canvas keeps white. */
+/* The two colours of a form, in one place. A form is not always a window — it
+ * is also a panel, a popover, a card hanging off a click — and all of them have
+ * to be the same surface, or "the same form" stops meaning anything. Read at
+ * the point of use with a fallback, never resolved on `:root` into another
+ * token. */
+:root {
+  --kb-form-canvas: #f8fafd;
+  /* The fields' own surface, one tone above the canvas. It is also their
+     resting border: a field whose border is its own fill has no outline at
+     rest and reads as a filled box rather than as a drawn rectangle. The focus
+     stroke is then the only line the field ever grows, which is what makes it
+     worth reading. */
+  --kb-form-field:  #eaedf7;
+}
+.kb-window-form-canvas {
+  --kb-window-content: var(--kb-form-canvas, #f8fafd);
+  /* Two tokens rather than one so a theme can part fill from border; here they
+     carry the same value on purpose (see above). */
+  --kb-field-bg:     var(--kb-form-field, #eaedf7);
+  --kb-field-border: var(--kb-form-field, #eaedf7);
+}
+/* The same form OUTSIDE a window — a quick-create card, a side panel, anything
+ * that is a form without a title band. There is no window content area to carry
+ * the tint, so this element paints it and scopes the field rules itself. */
+.kb-form-surface {
+  background: var(--kb-form-canvas, #f8fafd);
+  --kb-field-bg:     var(--kb-form-field, #eaedf7);
+  --kb-field-border: var(--kb-form-field, #eaedf7);
+}
+/* A card ON that canvas. A tab strip and the content it governs are ONE object;
+ * raising them onto their own surface says so, and gives the tinted fields a
+ * plain background to be read against. Kept out of the `.kb-window-form-canvas`
+ * scope so any form can use it. */
+.kb-form-card {
+  background: var(--kb-form-card, #ffffff);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 1px 6px rgb(0 0 0 / 5%);
+}
+
+/* The form's FIELDS only. A title line is not a field — it wears
+   `.kb-form-title-field` above and deliberately keeps no fill and no frame, so
+   the heading of a form never reads as one more thing to fill in.
+   `.kb-field-focus` is the marker every field-shaped control already wears
+   (text field, multiline field, rich text, combo, date), so the set is not a
+   list of component names that would go stale. `Dropdown` paints itself inline
+   and reads the two tokens directly instead. */
+.kb-window-form-canvas .kb-window-content .kb-field-focus,
+.kb-form-surface .kb-field-focus {
+  background-color: var(--kb-field-bg);
+}
+/* Resting only — the focus rules above own the focused border, and a plain
+   descendant selector here would outrank them and swallow the focus stroke. */
+.kb-window-form-canvas .kb-window-content
+  .kb-field-focus:not(:focus-visible):not(:has(:focus-visible)):not(.kb-field-focus--on),
+.kb-form-surface
+  .kb-field-focus:not(:focus-visible):not(:has(:focus-visible)):not(.kb-field-focus--on) {
+  border-color: var(--kb-field-border);
+}
+/* The rich text box is ONE field. Its formatting row carries no fill of its own
+   and follows the box; its link row does, and would show as a pale patch inside
+   a tinted field, so it gives the fill up here. */
+.kb-window-form-canvas .kb-window-content .kb-richtext-linkbar,
+.kb-form-surface .kb-richtext-linkbar {
+  background-color: transparent;
+}
+
+/* The subject of a form, named at the TOP of the form rather than in the window
+ * band. A heading line, not a boxed field: one stroke under the text, three
+ * pixels — the thickness the focus mark has on every other field — and the
+ * stroke reserved transparent at rest so taking focus never nudges the text.
+ *
+ * Written in plain CSS rather than utilities on purpose. A module's utilities
+ * live in the `kubuno-module` layer, which the host's `utilities` layer beats,
+ * so a `focus:border-primary` written in a module loses to the host's own
+ * `border-transparent` and the stroke never paints (lived through). These rules
+ * are unlayered, so they win wherever the field is used. */
+.kb-form-title-field {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--kb-text-title);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  outline: none;
+}
+.kb-form-title-field::placeholder { color: var(--color-text-tertiary); }
+.kb-form-title-field:focus { border-bottom-color: var(--color-primary); }
 
 .kb-window-content {
   background: var(--kb-window-content);
@@ -317,6 +415,102 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * UN SEUL anneau de focus : le nôtre.
+ *
+ * Les primitives dessinent leur propre indication de focus (`focus:ring-*` &
+ * co : bordure `--color-primary` + anneau plein de 2 px). Certains navigateurs
+ * ajoutent la leur PAR-DESSUS, décalée de quelques pixels — Firefox notamment,
+ * dont l'anneau est séparé de l'élément par un `outline-offset`. Le résultat
+ * lu à l'écran est une DOUBLE bordure : bleu, blanc, bleu. Signalé sur la
+ * console d'administration, Firefox 14x.
+ *
+ * La règle ne vise que les éléments qui portent déjà un anneau à eux — le
+ * sélecteur teste littéralement la présence de la classe. Un élément sans
+ * anneau propre garde donc celui du navigateur : supprimer `outline` partout
+ * priverait le clavier de tout repère, ce qui serait un défaut d'accessibilité
+ * bien pire que le trait en trop.
+ *
+ * `!important` parce que l'anneau des navigateurs est posé sur `:focus-visible`
+ * et que la déclaration `outline-style: none` des utilitaires, elle, l'est sur
+ * `:focus` : à égalité de spécificité, l'ordre de cascade ne garantit rien.
+ * ───────────────────────────────────────────────────────────────────────────── */
+[class*="focus:ring-"]:focus,
+[class*="focus-visible:ring-"]:focus-visible,
+[class*="focus-within:ring-"]:focus-within {
+  outline: none !important;
+}
+
+/* Et pas d'ÉCART blanc au milieu de notre propre anneau.
+ *
+ * L'anneau Tailwind se compose de deux ombres : la nôtre, et un « ring-offset »
+ * de la couleur du fond (#fff) intercalé entre la bordure et elle. Sa largeur
+ * vaut 0 par défaut — mais ce défaut tient à `@property { inherits: false }`,
+ * que seuls les moteurs récents connaissent (Firefox 128+). Ailleurs, les
+ * variables s'HÉRITENT : il suffit qu'un ancêtre porte `ring-offset-1|2` (nos
+ * boutons, cases à cocher et rails en ont) pour que tout champ situé dessous
+ * peigne bordure bleue / bande blanche / anneau bleu — la « double bordure ».
+ *
+ * On remet donc l'écart à zéro sur tout ce qui porte un anneau, SAUF là où il
+ * est réclamé explicitement : `:not([class*="ring-offset-"])` laisse intacts
+ * les composants qui veulent réellement ce liseré. */
+[class*="ring-"]:not([class*="ring-offset-"]) {
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-shadow: 0 0 #0000;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Le focus d'un CHAMP : un trait, peint UNE SEULE FOIS.
+ *
+ * L'anneau Tailwind superpose deux peintures qui se touchent : la bordure de
+ * 1 px, et une ombre de 2 px dont le bord intérieur est exactement l'arête
+ * extérieure de cette bordure. Sur un écran à densité fractionnaire (Windows à
+ * 175 %, par exemple) les deux ne sont pas arrondies aux mêmes pixels
+ * physiques, et il suffit d'un quart de pixel d'écart pour qu'une ligne du fond
+ * apparaisse entre elles : on lit alors une DOUBLE bordure.
+ *
+ * `outline` n'a pas ce défaut : une seule déclaration, une seule peinture, et
+ * un décalage NÉGATIF qui la fait chevaucher la bordure au lieu de s'y coller.
+ * L'empreinte visuelle est celle d'avant — 1 px par-dessus la bordure, 2 px au
+ * dehors — mais rien ne peut plus s'intercaler. C'est aussi ce que fait la
+ * référence du domaine : son champ ne porte AUCUN chrome, tout le cadre est
+ * peint d'un bloc par un élément dédié.
+ *
+ * Bonus : un outline à décalage négatif déborde moins qu'un anneau de 2 px, donc
+ * il se fait moins rogner par un conteneur qui défile.
+ * ───────────────────────────────────────────────────────────────────────────── */
+/* ⚠️ `:focus-visible`, jamais `:focus`.
+ *
+ * Un déclencheur de champ est un `<button>` : cliqué à la souris il GARDE le
+ * focus du DOM, et avec `:focus` il gardait donc le trait — un sélecteur
+ * d'heure qu'on a refermé restait allumé jusqu'à ce qu'on clique un autre
+ * élément focusable. Pire sous Firefox, qui ne rend pas le focus au document
+ * quand on clique sur une zone non focusable : le trait ne partait jamais.
+ *
+ * `:focus-visible` est exactement la question qu'on veut poser : « ce focus
+ * mérite-t-il d'être montré ? » Le navigateur répond oui au clavier et pour
+ * toute saisie de texte (un champ texte cliqué le porte donc encore), et non
+ * pour un bouton cliqué à la souris — où le panneau ouvert dit déjà ce qu'il
+ * faut savoir. */
+.kb-field-focus:focus-visible,
+/* Un champ composite (texte enrichi, mention) : c'est un descendant qui prend
+   le focus, et le cadre appartient au bloc. */
+.kb-field-focus:has(:focus-visible),
+/* Une liste déroulante OUVERTE porte le même trait sans avoir le focus (le focus
+   est parti dans le panneau porté). D'où cet état explicite, plutôt qu'une
+   deuxième règle qui divergerait. */
+.kb-field-focus--on {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -1px;
+  border-color: var(--color-primary);
+}
+
+.kb-field-focus-danger:focus-visible,
+.kb-field-focus-danger:has(:focus-visible) {
+  outline-color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
 /* Page-level overscroll lock. The shell chrome is full-viewport and scrolling
  * only happens inside inner panes. Without this, mobile browsers (iOS Safari)
  * let the user drag the WHOLE page around — the rubber-band effect that reveals
@@ -337,6 +531,21 @@ html {
  * wheel instead of chaining to the document — public form pages, which rely on
  * document scroll, would not scroll at all. `html` alone blocks the rubber-band
  * and the horizontal drag just as well. */
+
+/* The app shell is a fixed-viewport UI: the top bar must NEVER leave the
+ * screen. Yet any element poking below the viewport — a positioned portal, a
+ * toast, a dropdown opened near the bottom edge — makes the DOCUMENT
+ * scrollable, and a wheel gesture that exhausts an inner pane's scroll then
+ * chains to it: the whole shell, header included, slides off with no scrollbar
+ * to bring it back. Forbid user scrolling of the page while the shell is
+ * mounted. Scoped with `:has` so public pages (forms, share links), which DO
+ * rely on document scroll, keep it; @media print above restores `visible`.
+ * CSS cannot stop PROGRAMMATIC scrolls of the root (scrollIntoView, keyboard
+ * focus, find-in-page still displace it) — Shell.tsx carries the second half
+ * of the guard and snaps the document back to 0. */
+html:has([data-app-shell]) {
+  overflow: hidden;
+}
 
 :root {
   color-scheme: light;
@@ -803,3 +1012,22 @@ body[data-kb-dictating] [data-doc-scroll] > * { will-change: auto !important; }
   /* No visible focus ring on this button — explicit user choice. */
   outline: none;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * The hover tint of a tab.
+ *
+ * Written here, unlayered, rather than as `hover:bg-*` on the component. A
+ * utility written anywhere ends up in a cascade layer, and the layer order is
+ * settled by whichever stylesheet first names each layer — with a dozen module
+ * stylesheets loading after the host's, `base` can end up outranking
+ * `utilities`, and the browsers' own `button { background-color: transparent }`
+ * then wins. Measured on a live page: the rule was generated, the class was on
+ * the element, `:hover` matched, and nothing painted. The same rule outside any
+ * layer paints immediately.
+ *
+ * Two colours because a tab has two states to answer in: the one you are on
+ * replies in its own blue, the others in grey. A grey wash under blue text
+ * reads as the tab going quiet, which is the opposite of what a hover means.
+ * ───────────────────────────────────────────────────────────────────────────── */
+.kb-tab:hover        { background-color: var(--color-surface-2); }
+.kb-tab--on:hover    { background-color: #eaeffa; }

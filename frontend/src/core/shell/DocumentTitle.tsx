@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
 import { FaviconRegistry, KUBUNO_FAVICON } from '../registry/FaviconRegistry'
 import { useDocumentTitleStore } from '../store/documentTitleStore'
@@ -19,6 +20,8 @@ export function DocumentTitle() {
   // Les modules chargés à l'exécution enregistrent leur favicon/WaffleApp APRÈS le
   // premier rendu : on se ré-exécute quand un bundle de module est chargé.
   const loadedVersion = useModulesStore((s) => s.loadedVersion)
+  // Translated app names (the administration console's) follow the language.
+  const { i18n } = useTranslation()
 
   useEffect(() => {
     const resolved = WaffleAppRegistry.resolveByPath(location.pathname)
@@ -53,7 +56,7 @@ export function DocumentTitle() {
       link.setAttribute('href', href)
       link.setAttribute('type', href.endsWith('.png') ? 'image/png' : 'image/svg+xml')
     }
-  }, [location.pathname, fileName, loadedVersion])
+  }, [location.pathname, fileName, loadedVersion, i18n.language])
 
   return null
 }

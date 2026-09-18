@@ -19,7 +19,6 @@ export type FolderCommonProps = {
     focused?: boolean;
     canMove: boolean;
     onSelect: (id: string, e: React.MouseEvent) => void;
-    onToggle: (id: string) => void;
     onOpen: () => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onLongPress?: (e: React.MouseEvent) => void;
@@ -37,28 +36,25 @@ export type FileCommonProps = {
     focused?: boolean;
     canMove: boolean;
     onSelect: (id: string, e: React.MouseEvent) => void;
-    onToggle: (id: string) => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onLongPress?: (e: React.MouseEvent) => void;
     onDragStart: (e: React.DragEvent) => void;
     onOpen: () => void;
 };
-export declare function FoldersSection({ visibleFolders, view, compact, isMobile, selectedIds, folderRowProps, t }: {
+export declare function FoldersSection({ visibleFolders, view, isMobile, selectedIds, folderRowProps, t }: {
     visibleFolders: Folder[];
     view: ViewMode;
-    compact: boolean;
     isMobile: boolean;
     selectedIds: Set<string>;
     folderRowProps: (f: Folder) => FolderCommonProps;
     t: TFunc;
 }): React.JSX.Element;
-export declare function FilesSection({ visibleFiles, filteredFiles, files, typeFilter, view, compact, isMobile, selectedIds, fileRowProps, renderFileCard, allowVideoPreview, t }: {
+export declare function FilesSection({ visibleFiles, filteredFiles, files, typeFilter, view, isMobile, selectedIds, fileRowProps, renderFileCard, allowVideoPreview, t }: {
     visibleFiles: FileItem[];
     filteredFiles: FileItem[];
     files: FileItem[];
     typeFilter: string | null;
     view: ViewMode;
-    compact: boolean;
     isMobile: boolean;
     selectedIds: Set<string>;
     fileRowProps: (f: FileItem) => FileCommonProps;

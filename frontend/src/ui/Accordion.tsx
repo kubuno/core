@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import React from 'react'
-import { clsx } from 'clsx'
 import { ChevronDown } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ export function Accordion({
   const headerPad = size === 'sm' ? 'px-3 py-2' : 'px-4 py-3'
 
   return (
-    <div className={clsx('flex flex-col gap-2', className)}>
+    <div className={cn('flex flex-col gap-2', className)}>
       {items.map((item) => {
         const isOpen = openIds.includes(item.id)
         const Icon = item.icon
@@ -86,7 +86,7 @@ export function Accordion({
               disabled={item.disabled}
               aria-expanded={isOpen}
               onClick={() => !item.disabled && toggle(item.id)}
-              className={clsx(
+              className={cn(
                 'flex w-full items-center gap-3 text-left transition-colors',
                 headerPad,
                 item.disabled
@@ -105,7 +105,7 @@ export function Accordion({
               )}
               <ChevronDown
                 size={16}
-                className={clsx(
+                className={cn(
                   'shrink-0 text-text-tertiary transition-transform duration-200',
                   isOpen && 'rotate-180',
                 )}
@@ -118,7 +118,7 @@ export function Accordion({
               style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
             >
               <div className="overflow-hidden">
-                <div className={clsx(size === 'sm' ? 'px-3 pb-3' : 'px-4 pb-4', 'pt-1 border-t border-border')}>
+                <div className={cn(size === 'sm' ? 'px-3 pb-3' : 'px-4 pb-4', 'pt-1 border-t border-border')}>
                   {item.content}
                 </div>
               </div>

@@ -84,6 +84,27 @@ export declare const I18N_DESCRIPTIONS: Set<string>;
  */
 export declare const ENUM_OPTIONS: Record<string, ComboboxOption[]>;
 /**
+ * A key shown only while another ENUM setting in the same block holds one of the
+ * listed values.
+ *
+ * The generic `depends_on` gates a field on a BOOLEAN of the same module, which
+ * cannot express "show this only for one branch of a type selector". The CAPTCHA
+ * group is exactly that shape: `security.captcha_type` picks distorted text, a
+ * slider puzzle or a small sum, and each branch has its own tuning knobs that
+ * mean nothing under the other two. Without this the six branch-specific fields
+ * all showed at once, so an operator setting up the slider was reading three
+ * fields about character distortion that would never apply.
+ *
+ * Keyed by the controlled setting; the value names the controller and the set of
+ * its values that reveal the field. A controller absent from this instance
+ * hides nothing (fail open — better a field too many than a field the operator
+ * can never reach).
+ */
+export declare const VISIBLE_WHEN: Record<string, {
+    key: string;
+    in: string[];
+}>;
+/**
  * Keys rendered as a filtered list of IANA zones rather than a free-text field.
  *
  * `instance.timezone` and `calendar.default_timezone` are two different

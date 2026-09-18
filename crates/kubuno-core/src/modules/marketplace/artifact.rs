@@ -1,5 +1,14 @@
 //! Résolution de l'artefact installable dans les **Releases GitHub** du dépôt du
 //! module, pour l'OS/arch sur lequel tourne le core.
+//!
+//! **Un seul format : `.kbpkg`.** Un module n'est pas un logiciel système ; il
+//! n'enregistre aucun service et la marketplace n'a jamais appelé `dpkg`. Le
+//! `.kbpkg` (archive ZIP dont la racine est le dossier du module) est le seul
+//! format que le core installe — le seul aussi qu'il déballe sans outil externe,
+//! donc le seul qui marche à l'identique sur Linux, Windows et macOS. Les paquets
+//! système (`.deb`, `.rpm`, `.exe`, `.pkg`) ne sont plus ni produits ni acceptés
+//! pour un module ; un module qui n'aurait publié que ceux-là pour la plateforme
+//! du core est refusé franchement plutôt que téléchargé pour rien.
 
 use serde::Deserialize;
 
@@ -33,23 +42,16 @@ fn parse_owner_repo(repo_url: &str) -> Option<(String, String)> {
     Some((owner, name))
 }
 
-/// Format d'un artefact de module, déduit de l'extension du fichier.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum ArtifactKind { Deb, TarGz, Zip }
-
-pub(super) fn kind_from_name(name: &str) -> Option<ArtifactKind> {
-    let n = name.to_ascii_lowercase();
-    if n.ends_with(".deb") { Some(ArtifactKind::Deb) }
-    else if n.ends_with(".tar.gz") || n.ends_with(".tgz") { Some(ArtifactKind::TarGz) }
-    else if n.ends_with(".zip") { Some(ArtifactKind::Zip) }
-    else { None }
+/// `true` si `name` désigne un paquet Kubuno — le seul format d'un module.
+pub(super) fn is_kbpkg(name: &str) -> bool {
+    name.to_ascii_lowercase().ends_with(".kbpkg")
 }
 
-/// Artefact résolu : URL + empreinte SHA-256 (si publiée) + format.
+/// Artefact résolu : URL + empreinte SHA-256 (si publiée). Le format est
+/// implicite — c'est toujours un `.kbpkg` (archive ZIP).
 pub(super) struct Artifact {
     pub url:    String,
     pub sha256: Option<String>,
-    pub kind:   ArtifactKind,
 }
 
 /// Une URL d'artefact est-elle acceptable ?
@@ -71,8 +73,8 @@ fn acceptable_url(url: &str) -> bool {
 /// Traduit la recommandation du catalogue en artefact téléchargeable.
 ///
 /// Le catalogue a déjà fait le tri pour la plateforme annoncée ; il reste à
-/// vérifier que le core sait ouvrir ce format — refuser franchement vaut mieux
-/// que télécharger cinquante mégaoctets pour buter dessus.
+/// vérifier que c'est bien un `.kbpkg` — refuser franchement vaut mieux que
+/// télécharger cinquante mégaoctets pour buter dessus.
 pub(super) fn from_recommendation(a: &crate::modules::marketplace::catalog::CatalogArtifact)
     -> Option<Artifact>
 {
@@ -80,101 +82,53 @@ pub(super) fn from_recommendation(a: &crate::modules::marketplace::catalog::Cata
         tracing::error!(url = %a.url, "Marketplace : artefact proposé hors HTTPS — ignoré");
         return None;
     }
-    let kind = match a.kind.to_ascii_lowercase().as_str() {
-        "kbpkg" | "zip" => ArtifactKind::Zip,
-        "deb"           => ArtifactKind::Deb,
-        "tar.gz" | "tgz" => ArtifactKind::TarGz,
-        other => {
-            tracing::warn!(kind = %other, asset = %a.filename,
-                "Marketplace : format recommandé par le catalogue que le core ne sait pas ouvrir");
-            return None;
-        }
-    };
-    tracing::info!(asset = %a.filename, kind = %a.kind, "Marketplace : artefact recommandé par le catalogue");
-    Some(Artifact { url: a.url.clone(), sha256: a.sha256.as_ref().map(|h| h.to_ascii_lowercase()), kind })
+    if !a.kind.eq_ignore_ascii_case("kbpkg") && !is_kbpkg(&a.filename) {
+        tracing::warn!(kind = %a.kind, asset = %a.filename,
+            "Marketplace : le catalogue recommande un format qui n'est pas .kbpkg — ignoré");
+        return None;
+    }
+    tracing::info!(asset = %a.filename, "Marketplace : artefact .kbpkg recommandé par le catalogue");
+    Some(Artifact { url: a.url.clone(), sha256: a.sha256.as_ref().map(|h| h.to_ascii_lowercase()) })
 }
 
-/// Choisit, parmi ce que le catalogue annonce, l'artefact installable ici.
+/// Choisit, parmi ce que le catalogue annonce, le `.kbpkg` installable ici.
 ///
-/// Le catalogue dit ce que chaque module publie réellement ; il n'y a donc plus
-/// à deviner d'après un nom de fichier. Deux refus explicites valent mieux qu'un
+/// Le catalogue dit ce que chaque module publie réellement ; il n'y a donc plus à
+/// deviner d'après un nom de fichier. Deux refus explicites valent mieux qu'un
 /// choix approximatif :
 ///   - un artefact d'une autre plateforme n'est jamais retenu ;
-///   - un installateur système (`.exe`, `.rpm`, `.pkg`) n'est pas retenu non
-///     plus : le core sait déballer une archive, pas piloter l'installateur d'un
-///     système. Tant qu'un module ne publie que cela pour une plateforme,
-///     l'installation depuis la console y est impossible — c'est précisément ce
-///     que le format `.kbpkg` doit résoudre.
+///   - tout format qui n'est pas `.kbpkg` (`.deb`, `.rpm`, `.exe`, `.pkg`, `.tar.gz`)
+///     est ignoré : un module s'installe uniquement par son paquet Kubuno.
 pub(super) fn from_catalogue(arts: &[crate::modules::marketplace::catalog::CatalogArtifact])
     -> Option<Artifact>
 {
     let os   = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
 
-    // Par ordre de préférence : le format unique d'abord, puis les archives que
-    // le core sait ouvrir.
-    for wanted in ["kbpkg", "deb", "tar.gz", "zip"] {
-        let Some(hit) = arts.iter().find(|a| {
-            acceptable_url(&a.url)
-                && a.kind.eq_ignore_ascii_case(wanted)
-                && a.os.eq_ignore_ascii_case(os)
-                && (a.arch.eq_ignore_ascii_case(arch) || a.arch.eq_ignore_ascii_case("universal"))
-        }) else {
-            continue; // ce format n'est pas publié ici : on essaie le suivant
-        };
-        // `kbpkg` est une archive ZIP ; les autres portent déjà leur format.
-        let kind = match wanted {
-            "kbpkg" | "zip" => ArtifactKind::Zip,
-            "deb"           => ArtifactKind::Deb,
-            _               => ArtifactKind::TarGz,
-        };
-        tracing::info!(
-            asset = %hit.filename, kind = %hit.kind,
-            "Marketplace : artefact désigné par le catalogue pour {os}/{arch}"
-        );
-        return Some(Artifact {
-            url: hit.url.clone(),
-            sha256: hit.sha256.as_ref().map(|h| h.to_ascii_lowercase()),
-            kind,
-        });
-    }
-    None
+    let hit = arts.iter().find(|a| {
+        acceptable_url(&a.url)
+            && (a.kind.eq_ignore_ascii_case("kbpkg") || is_kbpkg(&a.filename))
+            && a.os.eq_ignore_ascii_case(os)
+            && (a.arch.eq_ignore_ascii_case(arch) || a.arch.eq_ignore_ascii_case("universal"))
+    })?;
+    tracing::info!(
+        asset = %hit.filename,
+        "Marketplace : paquet .kbpkg désigné par le catalogue pour {os}/{arch}"
+    );
+    Some(Artifact {
+        url: hit.url.clone(),
+        sha256: hit.sha256.as_ref().map(|h| h.to_ascii_lowercase()),
+    })
 }
 
-/// Suffixes de nom d'asset acceptés pour l'OS/arch **du core**, par ordre de
-/// préférence. Le téléchargement dépend donc de la plateforme d'exécution du core
-/// (Windows → binaires Windows, macOS → macOS, Linux → .deb/tar.gz).
-fn os_artifact_suffixes() -> Vec<String> {
-    let arch = std::env::consts::ARCH; // "x86_64" | "aarch64" | …
-    match std::env::consts::OS {
-        "linux" => {
-            let deb = match arch { "x86_64" => "amd64", "aarch64" => "arm64", a => a };
-            vec![
-                format!("_{deb}.deb"),
-                format!("-linux-{arch}.tar.gz"), format!("-linux-{arch}.tgz"),
-                format!("-linux-{deb}.tar.gz"),
-            ]
-        }
-        "windows" => {
-            let w = match arch { "x86_64" => "x64", "aarch64" => "arm64", a => a };
-            vec![
-                format!("-windows-{w}.zip"), format!("-windows-{arch}.zip"),
-                format!("-win-{w}.zip"),
-                format!("-windows-{w}.tar.gz"), format!("-windows-{arch}.tar.gz"),
-            ]
-        }
-        "macos" => {
-            let m = match arch { "x86_64" => "x86_64", "aarch64" => "arm64", a => a };
-            vec![
-                format!("-macos-{m}.tar.gz"), format!("-darwin-{m}.tar.gz"),
-                format!("-macos-{m}.zip"),    format!("-darwin-{m}.zip"),
-            ]
-        }
-        _ => vec![],
-    }
+/// Suffixe de nom d'asset du `.kbpkg` pour l'OS/arch **du core**. Le nom porte la
+/// cible — `<id>-<version>-<os>-<arch>.kbpkg` — avec les noms de Rust
+/// (`std::env::consts`), identiques à ceux que `build_kbpkg.sh` grave.
+fn kbpkg_suffix() -> String {
+    format!("-{}-{}.kbpkg", std::env::consts::OS, std::env::consts::ARCH)
 }
 
-/// Résout l'artefact adapté à l'OS/arch du core pour `repo` à la `version` donnée.
+/// Résout le `.kbpkg` adapté à l'OS/arch du core pour `repo` à la `version` donnée.
 /// Tente d'abord la release taguée `v<version>`, puis se rabat sur la dernière release.
 pub(super) async fn resolve_artifact(
     http: &reqwest::Client,
@@ -183,12 +137,7 @@ pub(super) async fn resolve_artifact(
 ) -> Result<Artifact, AppError> {
     let (owner, name) = parse_owner_repo(repo_url)
         .ok_or_else(|| AppError::Validation(format!("dépôt invalide : {repo_url}")))?;
-    let suffixes = os_artifact_suffixes();
-    if suffixes.is_empty() {
-        return Err(AppError::Validation(format!(
-            "OS non supporté par la marketplace : {}", std::env::consts::OS
-        )));
-    }
+    let suffix = kbpkg_suffix();
 
     let candidates = [
         format!("https://api.github.com/repos/{owner}/{name}/releases/tags/v{version}"),
@@ -204,22 +153,17 @@ pub(super) async fn resolve_artifact(
             Ok(r) => r,
             Err(_) => continue,
         };
-        // Cherche, dans l'ordre de préférence, un asset dont le nom finit par un
-        // suffixe attendu pour cet OS/arch.
-        for suf in &suffixes {
-            if let Some(a) = rel.assets.iter().find(|a| a.name.to_ascii_lowercase().ends_with(suf.as_str())) {
-                let kind = kind_from_name(&a.name)
-                    .ok_or_else(|| AppError::Internal(anyhow::anyhow!("format d'asset inconnu : {}", a.name)))?;
-                let sha256 = a.digest.as_deref()
-                    .and_then(|d| d.strip_prefix("sha256:"))
-                    .map(|h| h.to_ascii_lowercase());
-                tracing::info!(module = %name, asset = %a.name, "Marketplace : artefact choisi pour {}/{}", std::env::consts::OS, std::env::consts::ARCH);
-                return Ok(Artifact { url: a.browser_download_url.clone(), sha256, kind });
-            }
+        // Cherche le .kbpkg de cet OS/arch.
+        if let Some(a) = rel.assets.iter().find(|a| a.name.to_ascii_lowercase().ends_with(suffix.as_str())) {
+            let sha256 = a.digest.as_deref()
+                .and_then(|d| d.strip_prefix("sha256:"))
+                .map(|h| h.to_ascii_lowercase());
+            tracing::info!(module = %name, asset = %a.name, "Marketplace : paquet .kbpkg choisi pour {}/{}", std::env::consts::OS, std::env::consts::ARCH);
+            return Ok(Artifact { url: a.browser_download_url.clone(), sha256 });
         }
     }
     Err(AppError::NotFound(format!(
-        "aucun artefact {}/{} dans les releases de {owner}/{name}",
+        "aucun paquet .kbpkg {}/{} dans les releases de {owner}/{name}",
         std::env::consts::OS, std::env::consts::ARCH
     )))
 }
@@ -246,37 +190,37 @@ mod tests {
         let m: MarketModule = serde_json::from_str(json).expect("payload du catalogue");
         assert_eq!(m.id, "drive");
         assert!(!m.artifacts.is_empty(), "les artefacts doivent être lus");
-        assert!(m.artifacts.iter().any(|a| a.kind == "deb" && a.os == "linux"));
     }
 
     #[test]
     fn ignores_other_platforms() {
         let other = if std::env::consts::OS == "linux" { "windows" } else { "linux" };
-        assert!(from_catalogue(&[art(other, std::env::consts::ARCH, "deb")]).is_none());
+        assert!(from_catalogue(&[art(other, std::env::consts::ARCH, "kbpkg")]).is_none());
     }
 
-    /// A module that only ships a system installer for this platform cannot be
-    /// installed from the console: the server unpacks archives, it does not drive
-    /// an operating system's installer.
+    /// A module that ships anything but a `.kbpkg` cannot be installed: the server
+    /// installs modules from their Kubuno package only.
     #[test]
-    fn refuses_system_installers() {
+    fn refuses_every_non_kbpkg_format() {
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
-        assert!(from_catalogue(&[art(os, arch, "exe"), art(os, arch, "pkg"), art(os, arch, "rpm")]).is_none());
+        assert!(from_catalogue(&[
+            art(os, arch, "deb"), art(os, arch, "rpm"),
+            art(os, arch, "exe"), art(os, arch, "pkg"), art(os, arch, "tar.gz"),
+        ]).is_none());
     }
 
     #[test]
-    fn prefers_the_single_format_then_falls_back() {
+    fn picks_the_kbpkg_for_this_platform() {
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
-        let chosen = from_catalogue(&[art(os, arch, "deb"), art(os, arch, "kbpkg")]).expect("un artefact");
-        assert!(chosen.url.ends_with(".kbpkg"), "le format unique passe avant le reste");
-        assert_eq!(chosen.kind, ArtifactKind::Zip);
-        // Sans kbpkg, une archive que le core sait ouvrir fait l'affaire.
-        let fallback = from_catalogue(&[art(os, arch, "deb")]).expect("repli");
-        assert_eq!(fallback.kind, ArtifactKind::Deb);
+        // Le .kbpkg est retenu même quand un .deb l'accompagne encore.
+        let chosen = from_catalogue(&[art(os, arch, "deb"), art(os, arch, "kbpkg")]).expect("un .kbpkg");
+        assert!(chosen.url.ends_with(".kbpkg"));
         // L'empreinte est normalisée en minuscules pour la comparaison.
-        assert_eq!(fallback.sha256.as_deref(), Some("abcdef"));
+        assert_eq!(chosen.sha256.as_deref(), Some("abcdef"));
+        // Sans .kbpkg, rien n'est installable — même si un .deb existe.
+        assert!(from_catalogue(&[art(os, arch, "deb")]).is_none());
     }
 
     #[test]
@@ -289,32 +233,31 @@ mod tests {
 #[cfg(test)]
 mod recommendation_tests {
     use super::*;
-    use crate::modules::marketplace::catalog::MarketModule;
+    use crate::modules::marketplace::catalog::CatalogArtifact;
 
-    /// The catalogue, asked from a given platform, answers about that platform:
-    /// it narrows the list and names the artefact to install. The server must
-    /// read that answer — otherwise it goes back to sorting things out itself.
+    fn rec(kind: &str) -> CatalogArtifact {
+        CatalogArtifact {
+            os: std::env::consts::OS.into(), arch: std::env::consts::ARCH.into(),
+            kind: kind.into(), filename: format!("kubuno-drive.{kind}"),
+            url: format!("https://example.test/kubuno-drive.{kind}"),
+            size: 1, sha256: Some("ABCDEF".into()),
+        }
+    }
+
+    /// A `.kbpkg` recommendation is followed, with its digest.
     #[test]
-    fn follows_the_catalogue_recommendation() {
-        let json = include_str!("testdata/catalogue_drive_linux.json");
-        let m: MarketModule = serde_json::from_str(json).expect("charge utile par plateforme");
-        let rec = m.artifact.as_ref().expect("le catalogue recommande un artefact");
-        assert_eq!(rec.os, "linux");
-        let chosen = from_recommendation(rec).expect("format connu du core");
-        assert_eq!(chosen.kind, ArtifactKind::Deb);
-        assert!(chosen.url.ends_with(".deb"));
+    fn follows_a_kbpkg_recommendation() {
+        let chosen = from_recommendation(&rec("kbpkg")).expect("format connu du core");
+        assert!(chosen.url.ends_with(".kbpkg"));
         assert!(chosen.sha256.is_some(), "l'empreinte accompagne la recommandation");
     }
 
-    /// A system installer is never followed, even when recommended: the server
-    /// unpacks archives, it does not drive an operating system's installer.
+    /// Any non-`.kbpkg` recommendation is declined: a module installs from its
+    /// Kubuno package only.
     #[test]
-    fn declines_a_format_it_cannot_open() {
-        let a = crate::modules::marketplace::catalog::CatalogArtifact {
-            os: std::env::consts::OS.into(), arch: std::env::consts::ARCH.into(),
-            kind: "pkg".into(), filename: "x.pkg".into(),
-            url: "https://example.test/x.pkg".into(), size: 1, sha256: None,
-        };
-        assert!(from_recommendation(&a).is_none());
+    fn declines_a_non_kbpkg_recommendation() {
+        for kind in ["deb", "rpm", "exe", "pkg", "tar.gz"] {
+            assert!(from_recommendation(&rec(kind)).is_none(), "{kind} doit être refusé");
+        }
     }
 }

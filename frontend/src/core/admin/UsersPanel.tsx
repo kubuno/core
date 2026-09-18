@@ -13,26 +13,9 @@ import { PRIV } from '../authz/types'
 import { usePrivileges } from '../authz/usePrivileges'
 import { useConfirm } from '../hooks/useConfirm'
 import OrgUnitPicker from './OrgUnitPicker'
+import { OrgUnitScopePanel, ALL_UNITS, type OrgUnitScope } from './OrgUnitScopePanel'
 import { adminUrl, useAdminAction } from './adminAction'
 import { formatBytes, formatAgo } from './sections/format'
-
-/** Depth-first order with indentation, so the unit filter reads like the tree.
- *  Bounded like every other walk over this tree: a cycle in the data must not
- *  hang the console (see `orgUnitPath` in settings/scopeTypes.ts). */
-function orgUnitOptions(
-  units: OrgUnit[], parentId: string | null, depth: number,
-): { value: string; label: string }[] {
-  if (depth > 32) return []
-  return units
-    .filter(u => u.parent_id === parentId)
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .flatMap(u => [
-      // Non-breaking spaces: HTML collapses ordinary ones, and the indentation
-      // is the only thing that says which unit sits under which.
-      { value: u.id, label: `${'  '.repeat(depth)}${depth > 0 ? '└ ' : ''}${u.name}` },
-      ...orgUnitOptions(units, u.id, depth + 1),
-    ])
-}
 
 /** Message carried by a rejected admin call — the server explains *why* a move
  *  is refused (out of scope, unit gone), and swallowing it leaves the operator
@@ -242,8 +225,12 @@ export default function UsersPanel() {
   // "Who is in this unit?" had no answer at all: the listing took no unit
   // parameter. `descendants` matters as much as the filter itself — a unit whose
   // accounts all sit in its sub-units otherwise reports zero, which reads as a bug.
-  const [unitFilter, setUnitFilter]   = useState<string>('')
-  const [descendants, setDescendants] = useState(true)
+  // The scope now lives in the panel on the left, which can hold SEVERAL units
+  // at once; the listing, the count, the bulk bar and the export all read this
+  // one value, so what an operator acts on is always what they are looking at.
+  const [scope, setScope] = useState<OrgUnitScope>(ALL_UNITS)
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const scopedUnits = scope.mode === 'selected' ? scope.unitIds : []
 
   // ── Bulk selection ─────────────────────────────────────────────────────────
   // Keyed by id and NOT reset on paging: an operator who selects five accounts
@@ -282,13 +269,13 @@ export default function UsersPanel() {
   }
 
   const { data } = useQuery({
-    queryKey: ['admin-users', search, page, unitFilter, descendants],
+    queryKey: ['admin-users', search, page, scopedUnits.join(','), scope.descendants],
     queryFn: () =>
       api.get<{ users: User[]; total: number }>('/admin/users', {
         params: {
           search: search || undefined,
-          org_unit_id: unitFilter || undefined,
-          include_descendants: unitFilter ? descendants : undefined,
+          org_unit_ids: scopedUnits.length ? scopedUnits.join(',') : undefined,
+          include_descendants: scopedUnits.length ? scope.descendants : undefined,
           limit, offset: page * limit,
         },
       }).then((r) => r.data),
@@ -355,8 +342,6 @@ export default function UsersPanel() {
     <div>
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} />}
 
-      {can(PRIV.SETTINGS_MANAGE) && <RegistrationToggle />}
-
       {pendingReset && (
         <Callout
           variant="info"
@@ -368,200 +353,200 @@ export default function UsersPanel() {
         </Callout>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex-1 min-w-[180px] max-w-sm">
-          <Input
-            type="search"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0) }}
-            placeholder={t('admin.search_user')}
+      <div className="flex gap-4 items-start">
+        {/* The units panel FRAMES the list — it does not navigate. Everything on
+            the right (count, bulk bar, export) reads the same scope, so what an
+            operator acts on is always what they are looking at. */}
+        {can(PRIV.ORG_UNITS_READ) && (
+          <OrgUnitScopePanel
+            units={units ?? []}
+            value={scope}
+            onChange={next => { setScope(next); setPage(0) }}
+            collapsed={panelCollapsed}
+            onCollapsedChange={setPanelCollapsed}
           />
+        )}
+
+        {/* `min-w-0` so the table scrolls inside its own box instead of pushing
+            the panel off screen — a flex child defaults to its content width. */}
+        <div className="flex-1 min-w-0">
+          {/* Belongs with the list, not above the two columns: it is a setting
+              ABOUT the accounts, and anything stacked over the units panel is
+              distance the panel has to travel before it can pin itself. */}
+          {can(PRIV.SETTINGS_MANAGE) && <RegistrationToggle />}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="flex-1 min-w-[180px] max-w-sm">
+            <Input
+              type="search"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(0) }}
+              placeholder={t('admin.search_user')}
+            />
+          </div>
+
+          <span className="text-sm text-text-secondary mr-auto">{data?.total ?? 0} {t('admin.users_count')}</span>
+          {can(PRIV.USERS_CREATE) && (
+            <Button icon={<UserPlus size={16} />} onClick={() => setShowCreate(true)}>
+              {t('admin.new_user')}
+            </Button>
+          )}
         </div>
 
-        {can(PRIV.ORG_UNITS_READ) && (
-          <div className="flex items-center gap-3">
-            <Dropdown
-              className="min-w-[200px]"
-              value={unitFilter}
-              onChange={v => { setUnitFilter(v); setPage(0) }}
-              options={[
-                { value: '', label: t('admin.filter_ou_all') },
-                ...orgUnitOptions(units ?? [], null, 0),
-              ]}
-            />
-            {/* Only meaningful once a unit is picked — an "include sub-units"
-                switch with no unit selected has nothing to include into. */}
-            {unitFilter && (
-              <Checkbox
-                checked={descendants}
-                onChange={v => { setDescendants(v); setPage(0) }}
-                label={t('admin.filter_ou_descendants')}
-                labelClassName="text-sm text-text-secondary whitespace-nowrap"
-              />
+        {/* Selection bar — replaces nothing, sits above the table, and disappears
+            with the selection. */}
+        {selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 mb-3 px-4 py-2.5 rounded-xl border border-border bg-primary-light">
+            <span className="text-sm text-text-primary">
+              {t('admin.bulk_selected', { count: selected.size })}
+            </span>
+            {canBulk && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<Building2 size={15} />}
+                onClick={() => setBulkPicker(true)}
+                loading={bulkMove.isPending}
+              >
+                {t('admin.bulk_ou_action')}
+              </Button>
             )}
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="ml-auto flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
+            >
+              <X size={14} /> {t('admin.bulk_clear')}
+            </button>
           </div>
         )}
 
-        <span className="text-sm text-text-secondary mr-auto">{data?.total ?? 0} {t('admin.users_count')}</span>
-        {can(PRIV.USERS_CREATE) && (
-          <Button icon={<UserPlus size={16} />} onClick={() => setShowCreate(true)}>
-            {t('admin.new_user')}
-          </Button>
-        )}
-      </div>
-
-      {/* Selection bar — replaces nothing, sits above the table, and disappears
-          with the selection. */}
-      {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 mb-3 px-4 py-2.5 rounded-xl border border-border bg-primary-light">
-          <span className="text-sm text-text-primary">
-            {t('admin.bulk_selected', { count: selected.size })}
-          </span>
-          {canBulk && (
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={<Building2 size={15} />}
-              onClick={() => setBulkPicker(true)}
-              loading={bulkMove.isPending}
-            >
-              {t('admin.bulk_ou_action')}
-            </Button>
-          )}
-          <button
-            type="button"
-            onClick={() => setSelected(new Set())}
-            className="ml-auto flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
-          >
-            <X size={14} /> {t('admin.bulk_clear')}
-          </button>
-        </div>
-      )}
-
-      {/* overflow-x-auto: the table scrolls sideways on mobile instead of being
-          truncated. min-w keeps the columns readable. */}
-      <div className="bg-white rounded-xl border border-border overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead>
-            <tr className="border-b border-border bg-surface-1">
-              {canBulk && (
-                <th className="pl-4 pr-1 py-3 w-9">
-                  <Checkbox
-                    checked={allOnPage}
-                    onChange={togglePage}
-                    className="align-middle"
-                  />
-                </th>
-              )}
-              {[
-                t('admin.th_user'),
-                ...(can(PRIV.ORG_UNITS_READ) ? [t('admin.ou_col')] : []),
-                t('admin.th_role'), t('admin.th_quota'), t('admin.th_last_login'), t('admin.th_status'), '',
-              ].map((h, hi) => (
-                <th key={hi} className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wide">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {data?.users.map((u) => (
-              // The whole row opens the account sheet — the list is an index,
-              // the sheet is where an account is actually looked at.
-              <tr
-                key={u.id}
-                onClick={() => openUser(u)}
-                className="hover:bg-surface-1 transition-colors cursor-pointer"
-              >
+        {/* overflow-x-auto: the table scrolls sideways on mobile instead of being
+            truncated. min-w keeps the columns readable. */}
+        <div className="bg-white rounded-xl border border-border overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-1">
                 {canBulk && (
-                  // Ticking a row must not also open its sheet.
-                  <td className="pl-4 pr-1 py-3 w-9" onClick={e => e.stopPropagation()}>
+                  <th className="pl-4 pr-1 py-3 w-9">
                     <Checkbox
-                      checked={selected.has(u.id)}
-                      onChange={() => toggleOne(u.id)}
+                      checked={allOnPage}
+                      onChange={togglePage}
                       className="align-middle"
                     />
-                  </td>
+                  </th>
                 )}
-                <td className="px-4 py-3">
-                  <div>
-                    <p className="font-medium text-text-primary">{u.display_name ?? u.username}</p>
-                    <p className="text-sm text-text-tertiary">{u.email}</p>
-                  </div>
-                </td>
-                {can(PRIV.ORG_UNITS_READ) && (
-                  <td className="px-4 py-3 text-text-secondary text-sm whitespace-nowrap">
-                    {unitName(u.org_unit_id) ?? (
-                      // Not "—": an account outside the tree is a problem, and
-                      // reads as one only if the list says so.
-                      <span className="text-warning">{t('admin.ou_none')}</span>
-                    )}
-                  </td>
-                )}
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role] ?? ''}`}>
-                    {u.role}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-text-secondary text-sm">
-                  {formatBytes(u.used_bytes)} / {formatBytes(u.quota_bytes)}
-                </td>
-                <td className="px-4 py-3 text-text-secondary text-sm">
-                  {u.last_login_at
-                    ? formatAgo(u.last_login_at)
-                    : t('admin.never')
-                  }
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${u.is_active ? 'bg-success-light text-success' : 'bg-surface-2 text-text-tertiary'}`}>
-                    {u.is_active ? t('admin.active') : t('admin.inactive')}
-                  </span>
-                </td>
-                {/* Row actions must not also trigger the row's own navigation. */}
-                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center gap-2">
-                    {/* Opens the sheet, which is where an account is edited —
-                        the pencil no longer has a form of its own. */}
-                    <button
-                      onClick={() => openUser(u)}
-                      className="p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-primary"
-                      title={t('admin.edit')}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      onClick={() => openUser(u, 'security')}
-                      className="p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-primary"
-                      title={t('admin.sessions_title')}
-                    >
-                      <MonitorSmartphone size={14} />
-                    </button>
-                    <button
-                      onClick={() => toggleActive.mutate({ id: u.id, is_active: !u.is_active })}
-                      className="text-sm text-text-secondary hover:text-text-primary whitespace-nowrap"
-                    >
-                      {u.is_active ? t('admin.disable') : t('admin.enable')}
-                    </button>
-                  </div>
-                </td>
+                {[
+                  t('admin.th_user'),
+                  ...(can(PRIV.ORG_UNITS_READ) ? [t('admin.ou_col')] : []),
+                  t('admin.th_role'), t('admin.th_quota'), t('admin.th_last_login'), t('admin.th_status'), '',
+                ].map((h, hi) => (
+                  <th key={hi} className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wide">
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {data && data.total > limit && (
-        <div className="flex items-center justify-between mt-4 text-sm text-text-secondary">
-          <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
-            {t('admin.prev')}
-          </Button>
-          <span>{t('admin.page')} {page + 1} / {Math.ceil(data.total / limit)}</span>
-          <Button variant="secondary" size="sm" onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * limit >= data.total}>
-            {t('admin.next')}
-          </Button>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {data?.users.map((u) => (
+                // The whole row opens the account sheet — the list is an index,
+                // the sheet is where an account is actually looked at.
+                <tr
+                  key={u.id}
+                  onClick={() => openUser(u)}
+                  className="hover:bg-surface-1 transition-colors cursor-pointer"
+                >
+                  {canBulk && (
+                    // Ticking a row must not also open its sheet.
+                    <td className="pl-4 pr-1 py-3 w-9" onClick={e => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(u.id)}
+                        onChange={() => toggleOne(u.id)}
+                        className="align-middle"
+                      />
+                    </td>
+                  )}
+                  <td className="px-4 py-3">
+                    <div>
+                      <p className="font-medium text-text-primary">{u.display_name ?? u.username}</p>
+                      <p className="text-sm text-text-tertiary">{u.email}</p>
+                    </div>
+                  </td>
+                  {can(PRIV.ORG_UNITS_READ) && (
+                    <td className="px-4 py-3 text-text-secondary text-sm whitespace-nowrap">
+                      {unitName(u.org_unit_id) ?? (
+                        // Not "—": an account outside the tree is a problem, and
+                        // reads as one only if the list says so.
+                        <span className="text-warning">{t('admin.ou_none')}</span>
+                      )}
+                    </td>
+                  )}
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role] ?? ''}`}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-text-secondary text-sm">
+                    {formatBytes(u.used_bytes)} / {formatBytes(u.quota_bytes)}
+                  </td>
+                  <td className="px-4 py-3 text-text-secondary text-sm">
+                    {u.last_login_at
+                      ? formatAgo(u.last_login_at)
+                      : t('admin.never')
+                    }
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${u.is_active ? 'bg-success-light text-success' : 'bg-surface-2 text-text-tertiary'}`}>
+                      {u.is_active ? t('admin.active') : t('admin.inactive')}
+                    </span>
+                  </td>
+                  {/* Row actions must not also trigger the row's own navigation. */}
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2">
+                      {/* Opens the sheet, which is where an account is edited —
+                          the pencil no longer has a form of its own. */}
+                      <button
+                        onClick={() => openUser(u)}
+                        className="p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-primary"
+                        title={t('admin.edit')}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => openUser(u, 'security')}
+                        className="p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-primary"
+                        title={t('admin.sessions_title')}
+                      >
+                        <MonitorSmartphone size={14} />
+                      </button>
+                      <button
+                        onClick={() => toggleActive.mutate({ id: u.id, is_active: !u.is_active })}
+                        className="text-sm text-text-secondary hover:text-text-primary whitespace-nowrap"
+                      >
+                        {u.is_active ? t('admin.disable') : t('admin.enable')}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+
+        {/* Pagination */}
+        {data && data.total > limit && (
+          <div className="flex items-center justify-between mt-4 text-sm text-text-secondary">
+            <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
+              {t('admin.prev')}
+            </Button>
+            <span>{t('admin.page')} {page + 1} / {Math.ceil(data.total / limit)}</span>
+            <Button variant="secondary" size="sm" onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * limit >= data.total}>
+              {t('admin.next')}
+            </Button>
+          </div>
+        )}
+
+        </div>
+      </div>
 
       {bulkPicker && (
         <OrgUnitPicker

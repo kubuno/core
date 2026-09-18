@@ -10,6 +10,7 @@ import { useConfirm } from '../../hooks/useConfirm'
 import ConfirmDialog from '@ui/ConfirmDialog'
 import { useAdminAction } from '../adminAction'
 import LdapDirectoryForm from './LdapDirectoryForm'
+import { apiErrorDetail } from '../../api/errorMessage'
 import {
   emptyForm, toForm,
   type AuthProbe, type ConnectionProbe, type DirectoryForm,
@@ -109,7 +110,7 @@ export default function LdapSection() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin', 'ldap-directories'] })
 
   const errorOf = (e: unknown) =>
-    (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+    apiErrorDetail(e)
 
   const createM = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/admin/ldap/directories', payload),

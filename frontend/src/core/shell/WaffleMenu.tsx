@@ -416,9 +416,12 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
             {/* ── Favorites card (white) ───────────────────────────────────────
                 The header lives INSIDE this card — the white surface covers the
                 « Favoris » title and its edit button, the tinted panel background
-                only showing as a margin around the card and below it. */}
+                only showing as a margin around the card and below it.
+                Side margins in explicit pixels, like the radii above: the global
+                scale shrinks Tailwind's spacing steps, so `mx-2.5` would not land
+                on the 10px the card keeps on each side. */}
             <div
-              className="mx-1 mt-3 mb-2 bg-white rounded-[20px] overflow-hidden"
+              className="mx-[10px] mt-3 mb-[15px] bg-white rounded-[20px] overflow-hidden"
               onDragOver={editing ? onFavContainerDragOver : undefined}
               onDragLeave={editing ? onFavContainerDragLeave : undefined}
               onDrop={editing ? onFavContainerDrop : undefined}
@@ -511,7 +514,14 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
               )}
             </div>
 
-            {/* ── All apps (gray) — only non-favorites shown ────────────── */}
+            {/* ── All apps (gray) — only non-favorites shown ──────────────
+                Everything in this zone is inset by 26px, which is not a free
+                choice: it is the favourites card's own side margin (10px) plus
+                the padding of the grid inside it (16px). That is what puts these
+                tiles on the SAME columns, and at the same width, as the ones on
+                the white card — change one of the three and the two grids drift
+                apart. Explicit pixels because the global scale shrinks Tailwind's
+                spacing steps. */}
             <div
               className={`pb-4 rounded-b-[28px] transition-colors
                 ${editing && allZoneOver && dragSrc === 'fav'
@@ -529,7 +539,7 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
                 <>
                   {/* Apps autonomes — triées alphabétiquement */}
                   {standaloneApps.length > 0 && (
-                    <div className="grid grid-cols-3 px-5 gap-1">
+                    <div className="grid grid-cols-3 px-[26px] gap-1">
                       {standaloneApps.map(renderAllAppCell)}
                     </div>
                   )}
@@ -537,10 +547,10 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
                   {/* Sous-modules — regroupés par module (en-tête), triés alpha */}
                   {moduleGroups.map(group => (
                     <div key={group.moduleId} className="mt-1">
-                      <div className="px-5 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
+                      <div className="px-[26px] pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
                         {group.label}
                       </div>
-                      <div className="grid grid-cols-3 px-5 gap-1">
+                      <div className="grid grid-cols-3 px-[26px] gap-1">
                         {group.apps.map(renderAllAppCell)}
                       </div>
                     </div>
@@ -559,7 +569,7 @@ export default function WaffleMenu({ allApps, dark = false, fab = false, onOpenC
               <DropdownMenu.Item asChild>
                 <Link
                   to={adminUrl({ tab: 'marketplace' })}
-                  className="mx-5 mt-3 mb-4 flex items-center justify-center rounded-md
+                  className="mx-[26px] mt-3 mb-4 flex items-center justify-center rounded-md
                              border border-border px-4 py-2.5 text-center text-xs text-primary
                              hover:bg-black/[0.04] transition-colors outline-none"
                 >

@@ -1,5 +1,4 @@
-import { formatDistanceToNow } from 'date-fns'
-import { getDateLocale } from '../../i18n/dateLocale'
+import { formatRelative } from '../../../core/intl/datetime'
 
 /**
  * Formatting helpers shared by the admin sections.
@@ -64,5 +63,5 @@ export function formatDuration(ms: number): string {
 export function formatAgo(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return formatDistanceToNow(d, { addSuffix: true, locale: getDateLocale() })
+  return formatRelative(d)
 }

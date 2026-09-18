@@ -1,7 +1,7 @@
 import React from 'react';
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'text' | 'textDanger';
 type ButtonSize = 'sm' | 'md' | 'lg';
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: ButtonVariant;
     size?: ButtonSize;
     /** Leading icon — rendered before children */
@@ -9,5 +9,5 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     loading?: boolean;
     children?: React.ReactNode;
 }
-export declare function Button({ variant, size, icon, loading, className, disabled, children, type, ...props }: ButtonProps): React.JSX.Element;
+export declare const Button: React.ForwardRefExoticComponent<ButtonProps & React.RefAttributes<HTMLButtonElement>>;
 export {};

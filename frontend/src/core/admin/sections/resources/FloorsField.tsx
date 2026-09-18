@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react'
 import { Button, Input } from '@ui'
 import FieldLabel from './FieldLabel'
+import { RequiredMark } from '@ui/RequiredMark'
 
 export default function FloorsField({
   floors, onChange, maxLength, maxFloors, disabled,
@@ -44,7 +45,7 @@ export default function FloorsField({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <FieldLabel>{t('admin.res_floors')}</FieldLabel>
+        <FieldLabel>{t('admin.res_floors')}<RequiredMark /></FieldLabel>
         <span className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
           {t('admin.res_floors_hint')}
         </span>

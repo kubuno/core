@@ -7,6 +7,19 @@ under the published version number.
 ## [Unreleased]
 
 
+
+### Changed
+
+- **The published surface catches up with the source.** The explorer types —
+  header, breadcrumb trail, file and folder cards and rows, sections, toolbars,
+  `useExplorerData`, `storageSource` — were regenerated. `MenuTarget` now carries
+  `fromCrumb` (the trail's own caret offers the folder actions plus "new folder",
+  which only makes sense for the folder you are inside) and an optional
+  `statFolder`, since a listing returns a folder's children but not its own
+  record, and a source that cannot fetch one falls back to id and name.
+  No behaviour changes here: the code shipped earlier, only its declarations
+  were stale, and a module compiling against 0.1.6 was typing against a surface
+  the host no longer had.
 ### Added
 
 - `FileItem.is_protected` — the flag the platform's own files carry. Drive's

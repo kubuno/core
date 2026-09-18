@@ -28,8 +28,10 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { create } from 'zustand'
-import { Breadcrumb, type Crumb } from '@ui'
+import { Breadcrumb, ConfirmDialog, type Crumb } from '@ui'
 import { usePrivileges } from '../authz/usePrivileges'
+import { useConfirm } from '../hooks/useConfirm'
+import { confirmLeave } from './inline-edit/unsaved'
 import { NAV_INDEX, canSeeTab, firstLeafId } from './adminNav'
 import { adminUrl } from './adminAction'
 
@@ -70,15 +72,24 @@ export default function AdminBreadcrumb({ tab }: { tab: string }) {
   const navigate = useNavigate()
   const { can } = usePrivileges()
   const extra = useCrumbStore(s => s.extra)
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
 
   const meta = NAV_INDEX.get(tab)
   // The landing page is not somewhere you navigated *into*; the reference
   // console shows no trail there either.
   if (!meta || tab === 'home') return null
 
+  // Leaving through the trail asks the same question as leaving through a
+  // sheet's own control. A detail sheet that edits in place has no dialog to
+  // close, so the trail is one of the ways a half-typed field can vanish — and
+  // it was the unguarded one. `onClick` is called INSTEAD of following `href`
+  // (the component prevents it), so the departure is entirely ours to hold back.
   const go = (id: string) => {
     const to = adminUrl({ tab: firstLeafId(id) })
-    return { href: to, onClick: () => navigate(to) }
+    return {
+      href: to,
+      onClick: async () => { if (await confirmLeave(confirm, t)) navigate(to) },
+    }
   }
 
   const ancestors: Crumb[] = meta.ancestors.map(id => {
@@ -97,6 +108,7 @@ export default function AdminBreadcrumb({ tab }: { tab: string }) {
   ]
 
   return (
+    <>
     <Breadcrumb
       items={items}
       ariaLabel={t('admin.breadcrumb')}
@@ -119,5 +131,9 @@ export default function AdminBreadcrumb({ tab }: { tab: string }) {
                  [&_li>span]:text-[length:var(--kb-text-body)] [&_li>span]:font-normal
                  [&_li>span]:text-text-secondary"
     />
+    {confirmState && (
+      <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
+    )}
+    </>
   )
 }

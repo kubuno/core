@@ -8,6 +8,7 @@ import { ThemeScopeContext } from './themeRegistry'
 import { useWindowZStore } from './windowZStore'
 import { useIsMobile } from './interaction'
 import { usePortalHost } from './portalHost'
+import { MENU_ATTR } from './useMenuDismiss'
 
 // Injected by the desktop client: opens (or refocuses) a real OS window on a SPA
 // route, served by the local proxy. Absent on the plain web.
@@ -63,6 +64,20 @@ interface FloatingWindowProps {
   children:      React.ReactNode
   titleActions?: React.ReactNode   // boutons à droite du titre (avant le ×)
 
+  /**
+   * What the window has to say about ITSELF — a refused save, a caveat that
+   * applies to the whole form.
+   *
+   * Rendered BETWEEN the title bar and the content, therefore **outside the
+   * scrolling area**. An alert placed in the flow of a form sinks below the fold
+   * as soon as the form is taller than the window, and the operator presses
+   * "Save" again without ever seeing why it will not save. Lived through on the
+   * building sheet: the refusal was there, at the bottom, out of sight.
+   *
+   * `null`/`undefined` reserves no space at all.
+   */
+  banner?:       React.ReactNode
+
   // Pop-out desktop : quand le client desktop est présent (window.kubunoDesktop),
   // affiche un bouton ↗ « Détacher » qui ouvre `route` dans une vraie fenêtre OS
   // puis ferme ce panneau. Sur le web classique, rien ne change.
@@ -96,6 +111,13 @@ interface FloatingWindowProps {
   t?:            TFunction
 }
 
+/**
+ * The open windows, oldest first. Only the last one answers Escape — see the
+ * effect that uses it. An opaque token per window is enough; nothing reads
+ * anything off it.
+ */
+const escapeStack: object[] = []
+
 /** Ancienne marge intérieure par défaut, gardée pour les fenêtres qui la veulent. */
 export const WINDOW_PADDING = 20
 
@@ -104,6 +126,7 @@ export function FloatingWindow({
   icon,
   children,
   titleActions,
+  banner,
   popout,
   onClose,
   defaultWidth  = 560,
@@ -178,6 +201,26 @@ export function FloatingWindow({
   const bringToFront = useCallback(() => {
     setZIndex(useWindowZStore.getState().next())
   }, [])
+
+  /**
+   * Raise this window, and let no one else read the same press.
+   *
+   * A window opened BY another window is a React child of it, and a portal
+   * carries events up the REACT tree, not the DOM one — so a press inside the
+   * inner window reached the outer window's own handler a moment later, which
+   * raised the outer one on top of the window the reader had just clicked.
+   * (Lived through: the meeting options disappeared behind the event editor
+   * that opened them.)
+   *
+   * Stopping here is right in itself: a window is a surface of its own, and a
+   * press inside it is addressed to it, never to whichever component happened
+   * to render it. Dismissal handlers that must still see the press listen
+   * natively in the capture phase, which this does not touch.
+   */
+  const onWindowMouseDown = useCallback((e: React.MouseEvent) => {
+    bringToFront()
+    e.stopPropagation()
+  }, [bringToFront])
 
   // Passe en mode pixel (left/top px ENTIERS, transform: none).
   // Le centrage CSS `translate(-50%, -33%)` pose la fenêtre sur des DEMI-pixels
@@ -294,17 +337,40 @@ export function FloatingWindow({
 
   // ── Echap ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Escape closes the TOP window, and only it.
+   *
+   * Every open window used to listen for itself, so one press closed the lot —
+   * a settings window and the window that opened it went together, and the
+   * reader lost work they never meant to leave. The windows keep a stack: the
+   * last one opened is the one that answers, and it consumes the key so the
+   * page underneath does not act on it as well.
+   */
   useEffect(() => {
+    const me = {}
+    escapeStack.push(me)
     const h = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      if (escapeStack[escapeStack.length - 1] !== me) return
+      // An open menu or list owns Escape: it closes itself, not the window
+      // around it. Asked of the page rather than left to listener order —
+      // both listen in the capture phase, and whichever registered first would
+      // otherwise win, which is whichever mounted first. (Lived through: a
+      // dropdown's Escape closed the whole editor behind it.)
+      if (document.querySelector(`[${MENU_ATTR}]`)) return
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation()
       // In the detached OS window, Escape closes the window, not just the component.
       const standalone = popout && !scoped
         && window.location.pathname + window.location.search === popout.route
       if (standalone) { try { window.close() } catch { /* best-effort */ } }
       onClose()
     }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
+    window.addEventListener('keydown', h, true)
+    return () => {
+      const i = escapeStack.indexOf(me)
+      if (i >= 0) escapeStack.splice(i, 1)
+      window.removeEventListener('keydown', h, true)
+    }
   }, [onClose, popout, scoped])
 
   // ── Hauteur stable des fenêtres à onglets ──────────────────────────────────
@@ -460,6 +526,19 @@ export function FloatingWindow({
         <div
           className={`${posCls} inset-0 ${scoped ? 'bg-black/15' : 'bg-black/30'} backdrop-blur-[1px] no-print`}
           style={{ zIndex: zIndex - 1 }}
+          // The veil belongs to THIS window, and a press on it is addressed to
+          // this window — not to whichever component rendered it.
+          //
+          // Without this, a press on the veil of a window opened by another one
+          // travelled up the React tree (a portal carries events there, not
+          // along the DOM) and raised the OUTER window instead. Two things then
+          // went wrong at once: the inner window sank out of reach, and the
+          // click never closed it — the outer window's own veil had slid on top
+          // between the press and the release, so the press and the release
+          // landed on different elements and no click was ever formed. Both
+          // symptoms, one cause. (Reported: "it goes behind and I cannot bring
+          // it back".)
+          onMouseDown={e => { bringToFront(); e.stopPropagation() }}
           onClick={onClose}
         />
       )}
@@ -503,7 +582,7 @@ export function FloatingWindow({
           top:       '33%',
           transform: 'translate(-50%, -33%)',
         }}
-        onMouseDown={fullBleed ? undefined : bringToFront}
+        onMouseDown={fullBleed ? undefined : onWindowMouseDown}
       >
         {!fullBleed && resizeHandles}
 
@@ -562,6 +641,10 @@ export function FloatingWindow({
             <X size={15} strokeWidth={2.2} />
           </button>
         </div>
+
+        {/* The window's alert: under the title, ABOVE the scrolling area, so it
+            stays in sight. `shrink-0` keeps a long form from squeezing it. */}
+        {banner && <div className="flex-shrink-0 px-4 pt-3">{banner}</div>}
 
         {/* Contenu — aucune marge par défaut : le contenu affleure la zone opaque.
             Une fenêtre qui veut de la respiration passe `padding`. */}

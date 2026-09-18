@@ -31,6 +31,9 @@ export interface OutlinedFieldProps {
   readOnly?: boolean
   /** Trailing affordance inside the box, right-aligned (e.g. a chevron). */
   trailing?: ReactNode
+  /** HTML autocomplete hint, so password managers and the browser's own
+   *  autofill recognise the field (`username`, `current-password`, `email`…). */
+  autoComplete?: string
 }
 
 /* ── Browser autofill detection ──────────────────────────────────────────────
@@ -74,6 +77,7 @@ function useIsRtl(): boolean {
 export function OutlinedField({
   label, value, onChange, icon, type = 'text', placeholder,
   primaryColor, required, autoFocus, multiline, large, inputMode, readOnly, trailing,
+  autoComplete,
 }: OutlinedFieldProps) {
   const [focused, setFocused] = useState(false)
   const [autofilled, setAutofilled] = useState(false)
@@ -99,6 +103,19 @@ export function OutlinedField({
   // it) is the SAME height — no 6px notch overflow that made a plain box look
   // shorter. Single-line only; the textarea keeps its intrinsic height.
   const FIELD_H = large ? 56 : 48
+  // Single-line: SYMMETRIC vertical padding around a known line box so the text
+  // is truly centred (a fixed height + padding:0 let the browser sit the text
+  // low). height = linePx + 2*padV = FIELD_H.
+  // The LABEL reuses the very same line box: at 1.35em it is tall enough to hold
+  // the descenders (p, g, q), which a lineHeight of 1 cropped against the
+  // `overflow: hidden` that the ellipsis needs.
+  const linePx = Math.round(fontSize * 1.35)
+  const padV = (FIELD_H - linePx) / 2
+  // Optical correction, measured on the platform font (Outfit): with
+  // the line box mathematically centred, the DIGIT glyphs sit 1px high (large
+  // font ascent, no descender on digits: glyph gaps measured 17px above vs
+  // 19px below). Tilting the padding by 1px centres the visible glyph band.
+  const OPTICAL = 1
 
   // Colours per state, read off the captures: primary on focus, dark grey once
   // filled, medium grey at rest.
@@ -144,6 +161,10 @@ export function OutlinedField({
     overflow: 'hidden',
     visibility: 'hidden', // reserves width only; the visible label floats above
   }
+  // Growing the line box adds half-leading above and below, which would push the
+  // glyphs down. Every offset below is lifted by that amount so the label lands
+  // exactly where it used to — only the crop is gone.
+  const HALF_LEAD = (linePx - fontSize) / 2
   const labelStyle: React.CSSProperties = {
     position: 'absolute',
     // Logical, not physical: under `dir="rtl"` the notch (a real <legend>)
@@ -153,12 +174,14 @@ export function OutlinedField({
     top: 0,
     color: labelColor,
     fontSize,
-    lineHeight: 1,
+    lineHeight: `${linePx}px`,
     pointerEvents: 'none',
     transformOrigin: rtl ? 'top right' : 'top left',
+    // At rest a single-line label takes the input's OWN text offset, so it sits
+    // on the very text it stands in for (it used to ride 1px above it).
     transform: floated
-      ? `translateY(${multiline ? -(large ? 8 : 7) : -6}px) scale(${FLOAT_SCALE})`
-      : `translateY(${multiline ? padY + (large ? 8 : 6) : (FIELD_H - fontSize) / 2}px)`,
+      ? `translateY(${(multiline ? -(large ? 8 : 7) : -6) - HALF_LEAD * FLOAT_SCALE}px) scale(${FLOAT_SCALE})`
+      : `translateY(${multiline ? padY + (large ? 8 : 6) - HALF_LEAD : padV + OPTICAL}px)`,
     transition: 'transform 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms',
     whiteSpace: 'nowrap',
     maxWidth: `calc(100% - ${padX * 2}px)`,
@@ -175,16 +198,6 @@ export function OutlinedField({
     fontFamily: 'inherit',
     cursor: readOnly ? 'pointer' : 'text',
   }
-  // Single-line: SYMMETRIC vertical padding around a known line box so the text
-  // is truly centred (a fixed height + padding:0 let the browser sit the text
-  // low). height = linePx + 2*padV = FIELD_H.
-  const linePx = Math.round(fontSize * 1.35)
-  const padV = (FIELD_H - linePx) / 2
-  // Optical correction, measured on the platform font (Outfit): with
-  // the line box mathematically centred, the DIGIT glyphs sit 1px high (large
-  // font ascent, no descender on digits: glyph gaps measured 17px above vs
-  // 19px below). Tilting the padding by 1px centres the visible glyph band.
-  const OPTICAL = 1
   const inputStyle: React.CSSProperties = {
     ...commonInput,
     boxSizing: 'border-box',
@@ -205,6 +218,7 @@ export function OutlinedField({
     <textarea
       id={id}
       autoFocus={autoFocus}
+      autoComplete={autoComplete}
       value={value}
       rows={large ? 3 : 3}
       onChange={e => onChange(e.target.value)}
@@ -222,6 +236,7 @@ export function OutlinedField({
       inputMode={inputMode}
       readOnly={readOnly}
       autoFocus={autoFocus}
+      autoComplete={autoComplete}
       value={value}
       onChange={e => onChange(e.target.value)}
       onFocus={() => setFocused(true)}

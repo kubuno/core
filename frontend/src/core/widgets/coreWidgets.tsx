@@ -1,10 +1,10 @@
+import { formatRelative, toDate } from '../../core/intl/datetime'
 // Widgets du core (moduleId 'core') — toujours disponibles sur le tableau de bord,
 // indépendamment des modules installés. Enregistrés en side-effect (import dans main.tsx).
 import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { formatDistanceToNow, parseISO } from 'date-fns'
 import * as Avatar from '@radix-ui/react-avatar'
 import {
   HardDrive, Activity, KeyRound, ArrowRight, ShieldCheck,
@@ -14,12 +14,12 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { api } from '../api/client'
-import { getDateLocale } from '../i18n/dateLocale'
 import type { ApiToken } from '../types'
 import DashboardWidget from './DashboardWidget'
 import { WidgetRegistry } from './WidgetRegistry'
 import { useWidgetConfig } from './WidgetConfigContext'
 import { ClockCanvas, FlipClockCanvas, CLOCK_FACES, type FaceExtras } from './clockFaces'
+import { getPublicConfig } from '../api/publicConfig'
 
 function fmtBytes(n: number): string {
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
@@ -146,7 +146,7 @@ function ActivityWidget() {
                   <p className="text-sm text-text-primary truncate">{label}</p>
                   <p className="text-xs text-text-tertiary">
                     {ev.source_module ? `${ev.source_module} · ` : ''}
-                    {formatDistanceToNow(parseISO(ev.created_at), { addSuffix: true, locale: getDateLocale() })}
+                    {formatRelative(toDate(ev.created_at))}
                   </p>
                 </div>
               </li>
@@ -240,7 +240,7 @@ function TokensWidget() {
   })
   const { data: config } = useQuery({
     queryKey: ['public-config'],
-    queryFn: () => api.get<{ config: Record<string, unknown> }>('/config').then(r => r.data.config),
+    queryFn: getPublicConfig,
     staleTime: 300_000,
   })
 

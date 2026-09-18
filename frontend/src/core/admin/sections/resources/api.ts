@@ -59,6 +59,8 @@ export interface Resource {
   floor_name:       string
   floor_section:    string | null
   capacity:         number
+  /** Never handed back automatically when its meeting empties out. */
+  release_exempt:   boolean
   user_description: string | null
   description:      string | null
   /** The building it sits in, exactly as the internal catalogue publishes it. */
@@ -100,6 +102,7 @@ export interface ResourceInput {
   user_description: string | null
   description:      string | null
   feature_ids:      string[]
+  release_exempt:   boolean
 }
 
 export interface FeatureInput {
@@ -219,9 +222,46 @@ export function useDeleteFeature() {
     api.delete(`/admin/resource-features/${id}`).then(r => r.data))
 }
 
-/** Server message of a failed call, falling back to a sentence of our own. */
-export function errorMessage(err: unknown, fallback: string): string {
-  const detail = (err as { response?: { data?: { message?: string; error?: string } } })
-    ?.response?.data
-  return detail?.message ?? detail?.error ?? fallback
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../../api/errorMessage'
+
+// ── Room usage ───────────────────────────────────────────────────────────────
+
+export interface RoomStats {
+  /** False when the module that holds the bookings is not installed or silent. */
+  available:       boolean
+  reason?:         'module_absent' | 'unreachable' | 'refused' | 'unreadable'
+  bookings:        number
+  booked_hours:    number
+  declined:        number
+  released_hours:  number
+  rooms:           number
+  available_hours: number
+  /** `null` when there is no room at all — a rate over nothing is not zero. */
+  booking_rate:    number | null
+  per_day:  { date: string; hours: number; bookings: number }[]
+  /** `hour` is read on a clock in the zone the request named, not in UTC. */
+  per_hour: { hour: number; hours: number }[]
+  per_room: { resource_id: string; name: string; capacity: number; hours: number; bookings: number; declined: number }[]
+}
+
+/** The figures are the calendar's, relayed by the core: the console never reads
+ *  another component's schema.
+ *
+ *  The browser's own zone travels with the window. "Nine o'clock" and "Monday"
+ *  are what a clock somewhere says about an instant, so the buckets have to be
+ *  cut where the person reading them lives — bucketed in UTC, a Paris morning
+ *  meeting would show up an hour early. */
+export function useRoomStats(from: string, to: string, enabled: boolean) {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  return useQuery({
+    queryKey: ['admin-room-stats', from, to, tz],
+    queryFn:  () => api
+      .get<RoomStats>('/admin/resources/room-stats', { params: { from, to, tz } })
+      .then(r => r.data),
+    enabled,
+    staleTime: 60_000,
+  })
 }

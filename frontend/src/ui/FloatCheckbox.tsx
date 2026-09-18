@@ -1,4 +1,4 @@
-import { clsx } from 'clsx'
+import { cn } from './cn'
 
 interface FloatCheckboxProps {
   selected: boolean
@@ -17,14 +17,14 @@ export function FloatCheckbox({ selected, onToggle, className }: FloatCheckboxPr
       role="checkbox"
       aria-checked={selected}
       onClick={e => { e.stopPropagation(); onToggle() }}
-      className={clsx(
+      className={cn(
         'transition-opacity cursor-pointer',
         selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
         className,
       )}
     >
       <div
-        className={clsx(
+        className={cn(
           'w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm transition-colors',
           selected ? 'bg-primary border-primary' : 'bg-black/30 border-white',
         )}

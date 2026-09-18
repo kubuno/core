@@ -12,6 +12,7 @@
  * primitives can use them without importing the host; they are re-exported here
  * so a module sees the SAME types from `@kubuno/sdk`.
  */
+import { api } from '../api/client'
 import { ExtensionRegistry } from './ExtensionRegistry'
 import { setMentionProviderSource } from '@ui'
 import type { MentionProvider } from '@ui'
@@ -43,4 +44,53 @@ export function getMentionProviders(): MentionProvider[] {
  */
 export function installDefaultMentionSource(): void {
   setMentionProviderSource(getMentionProviders)
+}
+
+/**
+ * The instance's own people, offered wherever `@` is typed.
+ *
+ * A mention field asked the modules and nobody else: with contacts absent — or
+ * simply holding nobody by that name — typing `@` did nothing at all, which
+ * reads as a broken feature rather than an empty one. Yet the one thing every
+ * instance always has is its own accounts, and they belong to the core.
+ *
+ * So the core registers itself as a provider, under the same point and the same
+ * rules as any module. It answers the directory's own endpoint, which means the
+ * administrator's sharing policy applies untouched: a closed directory answers
+ * nobody, a narrowed one answers the caller's unit, and an address travels only
+ * when the policy shares it.
+ */
+export function installDirectoryMentions(): void {
+  registerMentionProvider('core', {
+    id:      'directory',
+    trigger: '@',
+    async search(query, opts) {
+      try {
+        const { data } = await api.get<{ users: DirectoryUser[] }>('/users/search', {
+          params: { q: query, limit: opts?.limit ?? 6 },
+          signal: opts?.signal,
+        })
+        return (data.users ?? []).map(u => ({
+          id:           u.id,
+          label:        u.display_name || u.username,
+          // The address when the policy shares it, the username otherwise —
+          // something to tell two people of the same name apart either way.
+          secondary:    u.email ?? u.username,
+          avatarUrl:    u.avatar_url ?? undefined,
+          email:        u.email ?? undefined,
+          kubunoUserId: u.id,
+        }))
+      } catch {
+        return []   // annuaire fermé, hors périmètre, réseau : rien à proposer
+      }
+    },
+  })
+}
+
+interface DirectoryUser {
+  id:            string
+  username:      string
+  display_name:  string | null
+  avatar_url:    string | null
+  email?:        string | null
 }

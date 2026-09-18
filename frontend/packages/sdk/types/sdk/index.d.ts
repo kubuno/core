@@ -63,10 +63,9 @@ export type { ShareRecipientKind } from '../core/registry/ShareRegistry';
 export type { ShareSection, ShareSectionProps, ShareTarget } from '../core/registry/ShareRegistry';
 export type { ImageSource, ImageSourceProps } from '../core/registry/ImageSourceRegistry';
 export { default as DashboardWidget } from '../core/widgets/DashboardWidget';
-export { default as PdfViewerModal } from '../core/components/PdfViewerModal';
+export { default as PdfViewerModal } from '../core/components/PdfViewerLazy';
 export { useWidgetSize, WidgetSizeContext } from '../core/widgets/WidgetSizeContext';
 export { useWsStore } from '../core/store/wsStore';
-export { getDateLocale } from '../core/i18n/dateLocale';
 export { getIcon, ICON_MAP } from '../core/utils/iconMap';
 export { ComponentRegistry, ThemeScopeContext, ThemePreviewContext, themed } from '../ui/themeRegistry';
 export type { User } from '../core/types';
@@ -80,3 +79,6 @@ export type { VoiceSession, VoiceCallbacks, VoiceErrorCode } from '../core/shell
  * proprement un module dont la `sdk_version` déclarée diffère.
  */
 export declare const SDK_VERSION: 1;
+export * from '../core/intl/datetime';
+export { getDateLocale } from '../core/intl/dateFnsLocaleShim';
+export type { DateFnsLocale } from '../core/intl/dateFnsLocaleShim';

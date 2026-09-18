@@ -1,5 +1,5 @@
+import { cn } from '../../ui/cn'
 import { useState } from 'react'
-import { clsx } from 'clsx'
 import { SlidersHorizontal, PanelRightOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, MenuDropdown, type MenuDropdownPos } from '@ui'
@@ -65,7 +65,7 @@ export default function RightRail() {
                 // `aria-pressed` rather than nothing: the button is a toggle, and
                 // the filled circle is the only other thing saying so.
                 aria-pressed={isActive}
-                className={clsx(
+                className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-full transition-colors',
                   'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
                   isActive

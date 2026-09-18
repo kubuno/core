@@ -118,6 +118,18 @@ export const SETTINGS_PAGES: SettingsPageSpec[] = [
       // back in, or must go through a person. One key, its own group: it is not
       // a detail of the policy above, it is the escape hatch from it.
       { id: 'account_recovery', keys: ['auth.self_service_recovery'] },
+      // Brute-force gate: a CAPTCHA after N failures on an account. Its own
+      // group — it is not a password rule, it is what stands between a guesser
+      // and the password field.
+      { id: 'login_captcha', keys: [
+        'security.login_captcha_after_failures',
+        'security.captcha_type',
+        'security.captcha_length',
+        'security.captcha_distortion',
+        'security.captcha_noise',
+        'security.captcha_slider_tolerance',
+        'security.captcha_math_max',
+      ] },
     ],
   },
 
@@ -458,6 +470,11 @@ export const I18N_DESCRIPTIONS = new Set([
  * timezone list of the calendar module makes mandatory rather than pleasant.
  */
 export const ENUM_OPTIONS: Record<string, ComboboxOption[]> = {
+  'security.captcha_type': [
+    { value: 'text',   label: 'admin.opt_captcha_text' },
+    { value: 'slider', label: 'admin.opt_captcha_slider' },
+    { value: 'math',   label: 'admin.opt_captcha_math' },
+  ],
   'backup.frequency': [
     { value: 'daily',  label: 'admin.opt_backup_daily' },
     { value: 'weekly', label: 'admin.opt_backup_weekly' },
@@ -502,6 +519,31 @@ export const ENUM_OPTIONS: Record<string, ComboboxOption[]> = {
     { value: 'manual', label: 'admin.opt_certmode_manual' },
     { value: 'acme',   label: 'admin.opt_certmode_acme' },
   ],
+}
+
+/**
+ * A key shown only while another ENUM setting in the same block holds one of the
+ * listed values.
+ *
+ * The generic `depends_on` gates a field on a BOOLEAN of the same module, which
+ * cannot express "show this only for one branch of a type selector". The CAPTCHA
+ * group is exactly that shape: `security.captcha_type` picks distorted text, a
+ * slider puzzle or a small sum, and each branch has its own tuning knobs that
+ * mean nothing under the other two. Without this the six branch-specific fields
+ * all showed at once, so an operator setting up the slider was reading three
+ * fields about character distortion that would never apply.
+ *
+ * Keyed by the controlled setting; the value names the controller and the set of
+ * its values that reveal the field. A controller absent from this instance
+ * hides nothing (fail open — better a field too many than a field the operator
+ * can never reach).
+ */
+export const VISIBLE_WHEN: Record<string, { key: string; in: string[] }> = {
+  'security.captcha_length':           { key: 'security.captcha_type', in: ['text'] },
+  'security.captcha_distortion':       { key: 'security.captcha_type', in: ['text'] },
+  'security.captcha_noise':            { key: 'security.captcha_type', in: ['text'] },
+  'security.captcha_slider_tolerance': { key: 'security.captcha_type', in: ['slider'] },
+  'security.captcha_math_max':         { key: 'security.captcha_type', in: ['math'] },
 }
 
 /**

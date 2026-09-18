@@ -21,6 +21,8 @@ export interface ToolbarConfig {
     padding?: ModuleAreaPadding;
 }
 /** Convertit une `ModuleAreaPadding` en style CSS pour `ModuleArea`. */
+/** Marge intérieure par défaut de la zone module, en px. */
+export declare const MODULE_AREA_PADDING = 24;
 export declare function moduleAreaPaddingStyle(p: ModuleAreaPadding | undefined): React.CSSProperties | undefined;
 interface ToolbarState {
     configs: ToolbarConfig[];

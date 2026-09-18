@@ -45,25 +45,32 @@ export const WaffleAppRegistry = {
   getAll(): WaffleModuleEntry[] {
     return [...registry.values()]
   },
-  /** Résout un chemin (ex. /paintsharp/apex/123) vers le module + sous-module via
-   *  l'app au préfixe de chemin le plus long. `null` si aucun module ne correspond. */
-  resolveByPath(pathname: string): ResolvedApp | null {
-    let best: ResolvedApp | null = null
+  /** The app (module or sub-module) a path belongs to, by longest route prefix,
+   *  together with its parent module entry. `null` outside every module. */
+  resolveAppByPath(pathname: string): { entry: WaffleModuleEntry; app: WaffleApp } | null {
+    let best: { entry: WaffleModuleEntry; app: WaffleApp } | null = null
     let bestLen = -1
     for (const entry of registry.values()) {
       for (const app of entry.apps) {
         const p = app.path
         if ((pathname === p || pathname.startsWith(p + '/')) && p.length > bestLen) {
           bestLen = p.length
-          best = {
-            moduleId:    entry.moduleId,
-            moduleLabel: entry.label,
-            subId:       app.id,
-            subLabel:    app.label,
-          }
+          best = { entry, app }
         }
       }
     }
     return best
+  },
+  /** Résout un chemin (ex. /paintsharp/apex/123) vers le module + sous-module via
+   *  l'app au préfixe de chemin le plus long. `null` si aucun module ne correspond. */
+  resolveByPath(pathname: string): ResolvedApp | null {
+    const hit = WaffleAppRegistry.resolveAppByPath(pathname)
+    if (!hit) return null
+    return {
+      moduleId:    hit.entry.moduleId,
+      moduleLabel: hit.entry.label,
+      subId:       hit.app.id,
+      subLabel:    hit.app.label,
+    }
   },
 }

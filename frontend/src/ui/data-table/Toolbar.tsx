@@ -1,5 +1,5 @@
+import { cn } from '../cn'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { clsx } from 'clsx'
 import { MoreHorizontal, Settings2, X } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import { Button } from '../Button'
@@ -137,15 +137,15 @@ export function DataTableToolbar<T>({
   if (!title && !toolbar && !configurableColumns) return null
 
   return (
-    <div className={clsx('flex min-w-0 gap-2', compact ? 'flex-col items-stretch' : 'items-center')}>
+    <div className={cn('flex min-w-0 gap-2', compact ? 'flex-col items-stretch' : 'items-center')}>
       {title != null && (
         <h3 className="min-w-0 flex-1 truncate font-medium text-text-primary" style={{ fontSize: 'var(--kb-text-heading)' }}>
           {title}
         </h3>
       )}
-      {toolbar && <div className={clsx('min-w-0', compact ? '' : 'flex-1')}>{toolbar}</div>}
+      {toolbar && <div className={cn('min-w-0', compact ? '' : 'flex-1')}>{toolbar}</div>}
       {configurableColumns && (
-        <div className={clsx('shrink-0', compact && 'self-end')}>
+        <div className={cn('shrink-0', compact && 'self-end')}>
           <button
             ref={colBtnRef}
             type="button"

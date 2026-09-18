@@ -1,7 +1,7 @@
+import { cn } from '../../../ui/cn'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { clsx } from 'clsx'
 import { Download, HardDrive, SlidersHorizontal } from 'lucide-react'
 import { Button, DataTable, EmptyState, ProgressBar, type DataTableColumn, type DataTableRowAction } from '@ui'
 import { PRIV } from '../../authz/types'
@@ -201,7 +201,7 @@ export default function ConsumersCard({
                   type="button"
                   aria-pressed={filter === f.id}
                   onClick={() => setFilter(f.id)}
-                  className={clsx(
+                  className={cn(
                     'px-3 py-1.5 transition-colors',
                     filter === f.id ? 'bg-primary-light text-primary' : 'text-text-secondary hover:bg-surface-2',
                   )}
@@ -219,7 +219,7 @@ export default function ConsumersCard({
                   type="button"
                   aria-pressed={sort === s.id}
                   onClick={() => setSort(s.id)}
-                  className={clsx(
+                  className={cn(
                     'flex items-center gap-1.5 px-3 py-1.5 transition-colors',
                     sort === s.id ? 'bg-primary-light text-primary' : 'text-text-secondary hover:bg-surface-2',
                   )}

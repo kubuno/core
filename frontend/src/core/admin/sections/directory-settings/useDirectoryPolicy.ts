@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
+import { apiErrorDetail } from '../../../api/errorMessage'
 import type {
   ActiveScope, ResolvedSetting, ResolvedSettingsResponse,
 } from '../../settings/scopeTypes'
@@ -45,7 +46,7 @@ export function useDirectoryPolicy(scope: ActiveScope) {
    * above holds a lock says which unit — replacing that with "échec de
    * l'enregistrement" would send the operator looking for a bug. */
   const reportError = (e: unknown) => {
-    const detail = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+    const detail = apiErrorDetail(e)
     setError(detail ?? t('admin.setting_write_failed'))
   }
 

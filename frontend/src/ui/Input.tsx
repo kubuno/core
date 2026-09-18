@@ -1,8 +1,8 @@
+import { cn } from './cn'
 import React from 'react'
-import { clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
 import type { MentionsConfig } from './mention/types'
 import { MentionInput, type MentionModel } from './mention/MentionInput'
+import { labelWithMark } from './RequiredMark'
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: React.ReactNode
@@ -17,6 +17,17 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
    * exposed via `onMentionsChange` as a `{ text, mentions }` model (the native
    * `value`/`onChange` no longer describe the full field).
    */
+  /**
+   * No chrome: no frame, no background, the focus stroke under the text.
+   *
+   * For a TITLE line — of a document, of an event — which is not a form field
+   * and must not look like one. The variant lives here rather than as a bare
+   * `<input>` copied into every screen: that is the only way it stays the same
+   * everywhere, and the only way the rule "always the primitive" avoids an
+   * exception that would end up being extended.
+   */
+  bare?: boolean
+
   mentions?: MentionsConfig
   /** Called with the `{ text, mentions }` model when `mentions` is enabled. */
   onMentionsChange?: (model: MentionModel) => void
@@ -32,6 +43,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
   rightIcon,
   className,
   id,
+  required,
+  bare = false,
   mentions,
   onMentionsChange,
   defaultMentionValue,
@@ -45,14 +58,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
       <div className="flex flex-col gap-1">
         {label && (
           <label htmlFor={inputId} className="text-sm font-medium text-text-primary">
-            {label}
+            {labelWithMark(label, required)}
           </label>
         )}
         <MentionInput
           mentions={mentions}
           placeholder={props.placeholder}
           disabled={props.disabled}
-          className={twMerge(clsx(error && 'border-danger focus-within:ring-danger', className))}
+          className={cn(cn(error && 'border-danger kb-field-focus-danger', className))}
           defaultValue={defaultMentionValue}
           onMentionsChange={onMentionsChange}
         />
@@ -65,7 +78,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
     <div className="flex flex-col gap-1">
       {label && (
         <label htmlFor={inputId} className="text-sm font-medium text-text-primary">
-          {label}
+          {labelWithMark(label, required)}
         </label>
       )}
       <div className="relative flex items-center">
@@ -75,12 +88,22 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
         <input
           ref={ref}
           id={inputId}
-          className={twMerge(clsx(
-            'w-full rounded-md border bg-white text-sm text-text-primary placeholder:text-text-tertiary',
-            'px-3 py-2 h-9',
-            'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary',
+          // `aria-required`, NOT the native attribute: the native one summons the
+          // browser's own validation bubble, which this project replaces with its
+          // own messages. The asterisk speaks to the eye, this to a screen reader.
+          aria-required={required || undefined}
+          className={cn(cn(
+            'w-full text-text-primary placeholder:text-text-tertiary',
+            bare
+              // One stroke, under the text, and nothing else — least of all the
+              // browser's own ring on top of it. Three pixels, the thickness the
+              // focus stroke has on every other field: a title is not the place
+              // to make the mark harder to see. The transparent border is there
+              // at rest too, so taking focus never nudges the text.
+              ? 'bg-transparent border-0 border-b-[3px] border-transparent rounded-none px-0 py-1 outline-none focus:border-primary'
+              : 'rounded-md border bg-white text-sm px-3 py-2 h-9 kb-field-focus',
             'disabled:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60',
-            error ? 'border-danger focus:ring-danger' : 'border-border',
+            bare ? '' : error ? 'border-danger kb-field-focus-danger' : 'border-border',
             leftIcon && 'pl-9',
             rightIcon && 'pr-9',
             className,

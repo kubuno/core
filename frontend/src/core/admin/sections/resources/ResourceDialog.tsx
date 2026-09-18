@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { Callout, Checkbox, Dropdown, Input, NumberInput, Textarea } from '@ui'
 import { FloatingWindow } from '@ui/FloatingWindow'
 import FieldLabel from './FieldLabel'
+import { RequiredMark } from '@ui/RequiredMark'
 import {
   errorMessage, useBuildings, useCreateResource, useResourceFeatures, useUpdateResource,
   type Resource, type ResourceCategory, type ResourceInput,
@@ -40,6 +41,7 @@ export default function ResourceDialog({
   const [floor,    setFloor]    = useState(resource?.floor_name ?? '')
   const [section,  setSection]  = useState(resource?.floor_section ?? '')
   const [capacity, setCapacity] = useState(resource?.capacity ?? 1)
+  const [releaseExempt, setReleaseExempt] = useState(resource?.release_exempt ?? false)
   const [visible,  setVisible]  = useState(resource?.user_description ?? '')
   const [note,     setNote]     = useState(resource?.description ?? '')
   const [chosen,   setChosen]   = useState<string[]>(resource?.feature_ids ?? [])
@@ -75,6 +77,7 @@ export default function ResourceDialog({
       floor_name:       floor,
       floor_section:    orNull(section),
       capacity,
+      release_exempt: releaseExempt,
       user_description: orNull(visible),
       description:      orNull(note),
       feature_ids:      chosen,
@@ -167,13 +170,14 @@ export default function ResourceDialog({
           <Input
             label={t('admin.res_resource_name')}
             value={name}
+            required
             maxLength={45}
             autoFocus={!resource}
             onChange={e => setName(e.target.value)}
           />
 
           <div className="flex flex-col gap-1">
-            <FieldLabel>{t('admin.res_building')}</FieldLabel>
+            <FieldLabel>{t('admin.res_building')}<RequiredMark /></FieldLabel>
             <Dropdown
               value={buildingId}
               onChange={v => { setBuildingId(v); setFloor('') }}
@@ -187,7 +191,7 @@ export default function ResourceDialog({
 
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1">
-              <FieldLabel>{t('admin.res_floor')}</FieldLabel>
+              <FieldLabel>{t('admin.res_floor')}<RequiredMark /></FieldLabel>
               <Dropdown
                 value={floor}
                 onChange={setFloor}
@@ -213,6 +217,17 @@ export default function ResourceDialog({
               onChange={setCapacity}
             />
           </div>
+
+          {/* Only a meeting room is ever given back automatically, so the
+              exception only means something for one. */}
+          {category === 'meeting_room' && (
+            <Checkbox
+              checked={releaseExempt}
+              onChange={setReleaseExempt}
+              label={t('admin.res_release_exempt')}
+              description={t('admin.res_release_exempt_desc')}
+            />
+          )}
 
           <div className="flex flex-col gap-2">
             <FieldLabel>{t('admin.res_features')}</FieldLabel>

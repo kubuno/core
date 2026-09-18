@@ -34,6 +34,12 @@
     "no_notifications": "No notification"
   },
   "login": {
+    "captcha_slider_label": "Slide the piece into place",
+    "captcha_math_label": "Solve the sum",
+    "captcha_slider_hint": "Use the slider to line the piece up with the empty slot.",
+    "captcha_label": "Type the characters below",
+    "captcha_ph": "Characters shown",
+    "captcha_refresh": "New image",
     "welcome": "Sign in",
     "email": "Email or username",
     "password": "Password",
@@ -146,7 +152,8 @@
     "intro": "Enter your email address and we will send you a link to reset your password.",
     "sent": "If this email is linked to an account, a reset link has been sent.",
     "submit": "Send the link",
-    "back": "Back to sign in"
+    "back": "Back to sign in",
+    "email_label": "Email"
   },
   "oauth": {
     "connecting": "Signing in…"
@@ -2286,6 +2293,22 @@
     "sgrp_signup_desc": "How an account gets into the directory, and what it must prove before it can be used.",
     "sgrp_builtin_oauth": "Built-in providers",
     "sgrp_builtin_oauth_desc": "The two sign-in buttons shipped with the product. Any other provider is declared in the list above.",
+    "opt_captcha_text": "Distorted text",
+    "opt_captcha_slider": "Sliding puzzle",
+    "opt_captcha_math": "Arithmetic",
+    "captcha_preview_title": "Preview — a live example from the server",
+    "captcha_preview_regen": "Generate another",
+    "captcha_preview_slider_hint": "At sign-in, the piece slides into the gap.",
+    "setlabel_security_captcha_type": "Human test type",
+    "setlabel_security_captcha_length": "Code length (text)",
+    "setlabel_security_captcha_distortion": "Distortion strength (text)",
+    "setlabel_security_captcha_noise": "Visual noise (text)",
+    "setlabel_security_captcha_slider_tolerance": "Puzzle tolerance (pixels)",
+    "setlabel_security_captcha_math_max": "Maximum value (math)",
+    "sgrp_login_captcha": "Sign-in CAPTCHA",
+    "sgrp_login_captcha_desc": "Requires an ‘I am not a robot’ check after repeated failures on one account.",
+    "setlabel_security_login_captcha_after_failures": "CAPTCHA after failed sign-ins",
+    "setdesc_security_login_captcha_after_failures": "Past this many consecutive failures on one account, signing in requires solving a CAPTCHA — generated and verified by the server, no third party — until the first success. 0 disables the CAPTCHA.",
     "sgrp_two_factor": "Two-factor authentication",
     "sgrp_two_factor_desc": "What administrators must present in addition to their password.",
     "sgrp_password_policy": "Password management",
@@ -2691,6 +2714,32 @@
     "res_tab_buildings": "Buildings",
     "res_tab_resources": "Resources",
     "res_tab_features": "Features",
+    "res_tab_room_stats": "Room statistics dashboard",
+    "rs_h": "{{value}} h",
+    "rs_hour_tick": "{{hour}}:00",
+    "rs_scope": "{{count}} rooms · {{hours}}-hour working day",
+    "rs_load_failed": "Room statistics could not be loaded.",
+    "rs_no_module": "Calendar is not installed",
+    "rs_no_module_desc": "These figures come from room bookings, which live in Calendar. Install that module to see them.",
+    "rs_unreachable": "Statistics unavailable",
+    "rs_unreachable_desc": "The module holding the bookings did not answer. Try again in a moment.",
+    "rs_bookings": "Bookings",
+    "rs_bookings_sub": "{{count}} declined",
+    "rs_booked_hours": "Booked hours",
+    "rs_rate": "Booking rate",
+    "rs_rate_sub": "of {{hours}} h available",
+    "rs_acceptance": "Acceptance rate",
+    "rs_acceptance_sub": "requests the rooms accepted",
+    "rs_empty": "No booking in this period",
+    "rs_empty_desc": "Book a room from a calendar event and the figures will appear here.",
+    "rs_per_day": "Booked hours per day",
+    "rs_per_hour": "Booked hours by hour of the day",
+    "rs_per_room": "Most-booked rooms",
+    "rs_per_room_empty": "No room was booked in this period.",
+    "rs_room_sub": "{{hours}} h · {{count}} bookings",
+    "rs_release": "Room release",
+    "rs_release_desc": "A room is handed back automatically when the meeting empties of its guests.",
+    "rs_released": "hours released",
     "res_load_failed": "Could not load.",
     "res_retry": "Retry",
     "res_save": "Save",
@@ -3623,7 +3672,16 @@
     "rep_col_gate": "Block reference",
     "rep_col_username": "Username",
     "rep_col_name": "Display name",
-    "rep_col_role": "Role"
+    "rep_col_role": "Role",
+    "ou_scope_selected": "Selected units",
+    "ou_pick_single": "Single selection",
+    "ou_pick_multi": "Multiple selection",
+    "ou_panel_collapse": "Collapse panel",
+    "ud_self_action_blocked": "You cannot perform this action on your own account.",
+    "res_release_exempt": "Never released automatically",
+    "res_release_exempt_desc": "This room stays booked even when the meeting holding it empties out. For rooms whose availability must not depend on guests' answers.",
+    "g_release_exempt": "Meetings keep their room",
+    "g_release_exempt_desc": "A meeting with a member of this group on the guest list never gives its room back automatically, even if everyone declines."
   },
   "account": {
     "add_title": "Add a Kubuno account",
@@ -4167,7 +4225,15 @@
   },
   "modules": {
     "empty": "No module installed at the moment.",
-    "title": "Modules"
+    "title": "Modules",
+    "load_failed": {
+      "title": "Module “{{module}}” unavailable",
+      "reason": {
+        "sdk-mismatch": "Built for a different SDK version ({{detail}}). It will not appear until it is rebuilt and redeployed.",
+        "import-error": "Its interface failed to load: {{detail}}. Most often the module was built against a newer SDK surface than the server serves — rebuild and redeploy the server, or the module.",
+        "no-register": "Its interface exposes no valid entry point ({{detail}})."
+      }
+    }
   },
   "ws_about": "About",
   "ws_copy": "Copy",

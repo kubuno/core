@@ -6,5 +6,5 @@ interface Props {
     fab?: boolean;
     onOpenChange?: (open: boolean) => void;
 }
-export default function WaffleMenu({ allApps, compact, dark, fab, onOpenChange }: Props): import("react").JSX.Element;
+export default function WaffleMenu({ allApps, dark, fab, onOpenChange }: Props): import("react").JSX.Element;
 export {};

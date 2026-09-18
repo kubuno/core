@@ -7,6 +7,7 @@ import { announceAccountSwitched } from '../store/authStore'
 import { api } from '../api/client'
 import { authApi } from '../api/auth'
 import { Button, Input } from '@ui'
+import { apiErrorDetail } from '../api/errorMessage'
 
 interface Props {
   open: boolean
@@ -79,7 +80,7 @@ export default function AddAccountModal({ open, onClose, prefillEmail, slot }: P
       }
       enterNewAccount()
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const msg = apiErrorDetail(err)
       setError(msg ?? t('login.error_generic', { defaultValue: 'Connexion impossible' }))
     } finally {
       setLoading(false)
@@ -128,7 +129,7 @@ export default function AddAccountModal({ open, onClose, prefillEmail, slot }: P
       })
       handleClose()
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const msg = apiErrorDetail(err)
       setError(msg ?? t('account.err_unreachable'))
     } finally {
       setLoading(false)

@@ -7,6 +7,7 @@ import { useModulesStore } from './core/store/modulesStore'
 import { RouteRegistry } from './core/registry/RouteRegistry'
 import Shell from './core/shell/Shell'
 import { DocumentTitle } from './core/shell/DocumentTitle'
+import { useAdminConsoleApp } from './core/admin/useAdminConsoleApp'
 import LoginPage from './core/auth/LoginPage'
 import SetupWizard from './core/setup/SetupWizard'
 import RegisterPage from './core/auth/RegisterPage'
@@ -35,10 +36,48 @@ import { TextFieldMenuHost } from './core/shell/TextFieldMenuHost'
 // (Plus d'import statique : chaque module vit dans son propre dépôt.)
 
 // Écran de chargement initial (avant que la session soit résolue).
+// Rounded (pointy-top) hexagon matching the logo's silhouette, drawn once in a
+// 0–100 viewBox. A thick round-capped segment travels along it (stroke-dashoffset
+// animation) so a line runs around the logo's hexagon while the app loads.
+const HEX_PATH =
+  'M 41.34 9.00 Q 50.00 4.00 58.66 9.00 L 81.18 22.00 Q 89.84 27.00 89.84 37.00 ' +
+  'L 89.84 63.00 Q 89.84 73.00 81.18 78.00 L 58.66 91.00 Q 50.00 96.00 41.34 91.00 ' +
+  'L 18.82 78.00 Q 10.16 73.00 10.16 63.00 L 10.16 37.00 Q 10.16 27.00 18.82 22.00 Z'
+
 function LoadingSplash() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-      <KubunoLogo size={52} className="text-primary animate-pulse" />
+    <div className="min-h-screen flex flex-col items-center justify-center gap-6">
+      <div className="relative flex items-center justify-center" style={{ width: 210, height: 210 }}>
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" fill="none" aria-hidden="true">
+          <defs>
+            {/* Two-colour gradient (previous → next) that flows along the line: its
+                two stops step through the palette in lock-step (stop 2 always one
+                colour ahead of stop 1), so the colour changes continuously; and the
+                gradient rotates in sync with the travelling segment (same 1.4s
+                period), so its direction follows the line's motion. */}
+            <linearGradient id="loader-ring-grad" gradientUnits="userSpaceOnUse" x1="8" y1="50" x2="92" y2="50">
+              <stop offset="0%" stopColor="#52AAEE">
+                <animate attributeName="stop-color" values="#52AAEE;#A12090;#E2318D;#E9813B;#F4D347;#A8DD53;#52AAEE" dur="1.5s" repeatCount="indefinite" />
+              </stop>
+              <stop offset="100%" stopColor="#A12090">
+                <animate attributeName="stop-color" values="#A12090;#E2318D;#E9813B;#F4D347;#A8DD53;#52AAEE;#A12090" dur="1.5s" repeatCount="indefinite" />
+              </stop>
+              <animateTransform attributeName="gradientTransform" type="rotate" from="0 50 50" to="360 50 50" dur="1.4s" repeatCount="indefinite" />
+            </linearGradient>
+          </defs>
+          <path
+            d={HEX_PATH}
+            pathLength={100}
+            stroke="url(#loader-ring-grad)"
+            strokeWidth={4}
+            strokeLinecap="round"
+            strokeDasharray="24 76"
+          >
+            <animate attributeName="stroke-dashoffset" values="0;-100" dur="1.4s" repeatCount="indefinite" />
+          </path>
+        </svg>
+        <KubunoLogo size={156} className="relative animate-pulse" />
+      </div>
       <span className="text-text-secondary text-sm">Chargement…</span>
     </div>
   )
@@ -107,6 +146,8 @@ export default function App() {
   // `t` du host : les libellés internes de la primitive (« Fermer ») suivent la
   // langue de l'utilisateur au lieu des repères anglais de @ui.
   const { t } = useTranslation()
+  // The administration console is an app like a module's: brand, favicon, title.
+  useAdminConsoleApp()
   return (
     // Mounted ABOVE <Routes>: the toast host must survive a route change and
     // cover the whole application — the authentication screens and the admin

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import axios from 'axios'
+import { getPublicConfig } from '../api/publicConfig'
 import * as React from 'react'
 import * as UI from '@ui'
 import { ComponentRegistry } from '@ui'
@@ -182,13 +183,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     try {
       const [themesRes, configRes] = await Promise.all([
         axios.get<{ themes: ThemeDef[] }>('/api/v1/themes'),
-        axios
-          .get<{ config: Record<string, unknown> }>('/api/v1/config')
-          .catch(() => ({ data: { config: {} } })),
+        getPublicConfig().catch(() => ({}) as Record<string, unknown>),
       ])
 
       const themes = themesRes.data.themes
-      const config: Record<string, unknown> = (configRes.data.config as Record<string, unknown>) ?? {}
+      const config: Record<string, unknown> = configRes
       const serverThemeId = (config['appearance.theme'] as string | undefined) ?? 'kubuno-reference'
 
       const localId  = localStorage.getItem(STORAGE_KEY)

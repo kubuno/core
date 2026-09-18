@@ -1002,6 +1002,11 @@ pub struct ResourceDto {
     pub description: Option<String>,
     #[serde(default)]
     pub feature_ids: Vec<Uuid>,
+    /// Never handed back automatically when the meeting holding it empties out.
+    /// The size and duration limits already spare the obvious cases; this is the
+    /// exception an administrator declares for a room no rule can guess.
+    #[serde(default)]
+    pub release_exempt: bool,
     // No `generated_name`, and no identifier: both are the server's to decide.
     // A field the client may send is a field the client will one day disagree
     // with the server about.
@@ -1150,7 +1155,7 @@ pub struct ResourceQuery {
 const RESOURCES_SELECT: &str = r#"
     SELECT r.id, r.name, r.generated_name, r.category, r.resource_type,
            r.floor_name, r.floor_section, r.capacity,
-           r.user_description, r.description,
+           r.user_description, r.description, r.release_exempt,
            r.building_id, b.building_key, b.name AS building_name,
            b.address AS building_address,
            b.latitude::float8  AS building_latitude,
@@ -1201,6 +1206,7 @@ fn resource_json(r: &sqlx::postgres::PgRow) -> Value {
         "capacity":         r.get::<i32, _>("capacity"),
         "user_description": r.get::<Option<String>, _>("user_description"),
         "description":      r.get::<Option<String>, _>("description"),
+        "release_exempt":   r.get::<bool, _>("release_exempt"),
         "building":         building_of(r),
         "feature_ids":      r.get::<Vec<String>, _>("feature_ids"),
         "feature_names":    r.get::<Vec<String>, _>("feature_names"),
@@ -1257,8 +1263,9 @@ pub async fn create_resource(
     let inserted = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO core.resources
              (name, building_id, category, resource_type, floor_name, floor_section,
-              capacity, user_description, description, generated_name, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $1, $10)
+              capacity, user_description, description, generated_name, created_by,
+              release_exempt)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $1, $10, $11)
          RETURNING id",
     )
     .bind(&r.name)
@@ -1271,6 +1278,7 @@ pub async fn create_resource(
     .bind(&r.user_description)
     .bind(&r.description)
     .bind(audit.admin.id)
+    .bind(dto.release_exempt)
     .fetch_one(&mut *tx)
     .await;
 
@@ -1355,7 +1363,7 @@ pub async fn update_resource(
         "UPDATE core.resources
             SET name = $1, building_id = $2, category = $3, resource_type = $4,
                 floor_name = $5, floor_section = $6, capacity = $7,
-                user_description = $8, description = $9
+                user_description = $8, description = $9, release_exempt = $11
           WHERE id = $10",
     )
     .bind(&r.name)
@@ -1368,6 +1376,7 @@ pub async fn update_resource(
     .bind(&r.user_description)
     .bind(&r.description)
     .bind(id)
+    .bind(dto.release_exempt)
     .execute(&mut *tx)
     .await
     {
@@ -1509,6 +1518,101 @@ pub async fn overview(
     })))
 }
 
+
+// ── Room usage ───────────────────────────────────────────────────────────────
+
+/// `GET /admin/resources/room-stats?from=…&to=…` — how the rooms were used.
+///
+/// The console asks here, but the figures are NOT the core's to compute: the
+/// bookings are rows of the calendar module's own schema, and the core does not
+/// read another component's schema — that is what keeps a module replaceable.
+/// So this forwards the question to whichever module holds the bookings and
+/// passes the answer through.
+///
+/// ## When the module is not there
+///
+/// Answers `available: false` rather than an error. A directory of rooms is
+/// useful on an instance that has no calendar installed, and a dashboard that
+/// breaks because an OPTIONAL module is absent would make the whole page a
+/// casualty of an install choice. The console then says the figures need the
+/// calendar, which is true and actionable.
+#[derive(Deserialize)]
+pub struct RoomStatsQuery {
+    pub from: String,
+    pub to:   String,
+    /// The zone the day and hour buckets are cut in — passed straight through,
+    /// unread. Which hour of the day a booking belongs to is a question about a
+    /// clock somewhere, and the module that owns the bookings answers it.
+    #[serde(default)]
+    pub tz:   Option<String>,
+}
+
+pub async fn room_stats(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+    Query(q): Query<RoomStatsQuery>,
+) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::RESOURCES_READ)?;
+
+    const MODULE: &str = "calendar";
+
+    let base_url: Option<String> = sqlx::query_scalar(
+        "SELECT base_url FROM core.module_instances
+          WHERE module_id = $1 ORDER BY registered_at DESC LIMIT 1",
+    )
+    .bind(MODULE)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| { tracing::error!(error = %e, "room_stats: adresse du module"); AppError::Database(e) })?;
+
+    let Some(base_url) = base_url else {
+        return Ok(Json(json!({ "available": false, "reason": "module_absent" })));
+    };
+
+    let url = format!("{}/ipc/room-stats", base_url.trim_end_matches('/'));
+    // The module's OWN secret, never the master one: handing a module the master
+    // key would hand it every other module.
+    // A client built here rather than shared: this is a one-off call to an
+    // optional module, and a page must not hang on it.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+    let resp = client
+        .get(&url)
+        .query(&[("from", &q.from), ("to", &q.to)])
+        .query(&[("tz", q.tz.as_deref().unwrap_or("UTC"))])
+        .header("X-Internal-Secret", state.settings.server.module_secret(MODULE))
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) if r.status().is_success() => match r.json::<Value>().await {
+            Ok(mut body) => {
+                if let Some(obj) = body.as_object_mut() {
+                    obj.insert("available".into(), json!(true));
+                }
+                Ok(Json(body))
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "room_stats: réponse illisible");
+                Ok(Json(json!({ "available": false, "reason": "unreadable" })))
+            }
+        },
+        Ok(r) => {
+            tracing::warn!(status = %r.status(), "room_stats: le module a refusé");
+            Ok(Json(json!({ "available": false, "reason": "refused" })))
+        }
+        Err(e) => {
+            // A module that is registered but not answering is a transient state,
+            // not a reason to fail the page.
+            tracing::warn!(error = %e, "room_stats: module injoignable");
+            Ok(Json(json!({ "available": false, "reason": "unreachable" })))
+        }
+    }
+}
+
 // ── The internal catalogue ───────────────────────────────────────────────────
 
 /// `GET /internal/directory/resources` — the bookable catalogue, for modules.
@@ -1559,6 +1663,9 @@ pub async fn internal_list_resources(
                 "floor_section":    r.get::<Option<String>, _>("floor_section"),
                 "user_description": r.get::<Option<String>, _>("user_description"),
                 "features":         r.get::<Vec<String>, _>("feature_names"),
+                // Published because a module CANNOT honour a rule it cannot see:
+                // the room is given back by the calendar, not by the directory.
+                "release_exempt":   r.get::<bool, _>("release_exempt"),
                 "building":         building_of(r),
             })
         })
@@ -1712,6 +1819,7 @@ mod tests {
             user_description: None,
             description: None,
             feature_ids: vec![],
+            release_exempt: false,
         }
     }
 

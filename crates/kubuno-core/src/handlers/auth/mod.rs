@@ -15,6 +15,7 @@
 //! - [`oauth_users`]    — SSO user lookup, linking and creation
 
 mod accounts;
+mod captcha;
 mod login;
 mod oauth;
 mod oauth_users;
@@ -26,6 +27,7 @@ mod tokens;
 mod totp;
 
 pub use accounts::*;
+pub use captcha::*;
 pub use login::*;
 pub use oauth::*;
 pub use password_reset::*;

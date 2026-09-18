@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useLocation, NavLink, Link } from 'react-router-dom'
+import { useLocation, NavLink } from 'react-router-dom'
 import { MenuDropdown, useMenuDropdown, useIsMobile } from '@ui'
 import { useTranslation } from 'react-i18next'
 import {
@@ -19,7 +19,7 @@ import { Slot } from '../slots/SlotRegistry'
 import { ExtensionRegistry } from '../registry/ExtensionRegistry'
 import { NEW_ACTIONS, type NewActionsProvider } from '../registry/newActions'
 import type { SidebarItem } from '../types'
-import { InstanceLogo } from './InstanceLogo'
+import { BrandLink } from './BrandLink'
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Home, Star, Trash2, Clock, Cloud, Image, Calendar,
@@ -225,16 +225,9 @@ export default function AppSidebar() {
       {/* ── Logo Kubuno — affiché ici quand l'AppHeader global est masqué (sous-module
              à barre de titre), pour qu'il reste en place en haut à gauche. ── */}
       {headerHidden && (
-        <Link
-          to="/"
-          className={`flex items-center gap-1.5 mb-8 flex-shrink-0 hover:opacity-90 transition-opacity ${collapsed ? 'justify-center' : 'pl-2 pr-3'}`}
-          style={{ height: 32 }}
-        >
-          <InstanceLogo size={22} className="text-primary" />
-          {!collapsed && (
-            <span className="text-[22px] font-normal" style={{ color: '#5f6368', letterSpacing: '-0.01em' }}>Kubuno</span>
-          )}
-        </Link>
+        // A direct child of the column, so it stretches to the rail's width and
+        // centres its logo when collapsed.
+        <BrandLink collapsed={collapsed} iconSize={40} className="mt-4 mb-8 flex-shrink-0 h-10" />
       )}
 
       {/* ── Bouton Nouveau / Créer ─────────────────────────────────────── */}

@@ -1,5 +1,5 @@
+import { isAfter, isBefore, isSameDay, toDate } from '../../core/intl/datetime'
 import { useMemo, useCallback, type Dispatch, type SetStateAction } from 'react'
-import { isSameDay, isBefore, isAfter, parseISO } from 'date-fns'
 import { DayView } from './DayView'
 import { MonthView } from './MonthView'
 import { YearView } from './YearView'
@@ -30,8 +30,8 @@ export function CalendarView({
   maxDate?:      string
   disabledDate?: (d: Date) => boolean
 }) {
-  const minD = minDate ? parseISO(minDate) : null
-  const maxD = maxDate ? parseISO(maxDate) : null
+  const minD = minDate ? toDate(minDate) : null
+  const maxD = maxDate ? toDate(maxDate) : null
 
   const isDis = useCallback((d: Date) => {
     if (minD && isBefore(d, minD)) return true

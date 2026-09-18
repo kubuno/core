@@ -1,11 +1,10 @@
+import { formatDate, formatRelative } from '../../../core/intl/datetime'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { formatDistanceToNow, format } from 'date-fns'
 import { Key, Trash2 } from 'lucide-react'
 import { Badge, Callout, EmptyState } from '@ui'
 import { api } from '../../api/client'
-import { getDateLocale } from '../../i18n/dateLocale'
 import type { ApiToken } from '../../types'
 import { NewTokenBanner, CreateTokenForm } from './ApiTokenForms'
 import { TokenScopeList } from './ApiTokenScopePicker'
@@ -57,7 +56,7 @@ export function ApiTokensTab() {
             {soonest && (
               <p className="mt-1 font-medium">
                 {t('settings.tok_legacy_until', {
-                  date: format(new Date(soonest), 'd MMMM yyyy', { locale: getDateLocale() }),
+                  date: formatDate(new Date(soonest), 'dateLong'),
                 })}
               </p>
             )}
@@ -111,9 +110,9 @@ export function ApiTokensTab() {
                         )}
                       </p>
                       <p className="text-xs text-text-tertiary mt-0.5">
-                        {t('settings.tok_created_prefix')} {format(new Date(tok.created_at), 'd MMM yyyy', { locale: getDateLocale() })}
+                        {t('settings.tok_created_prefix')} {formatDate(new Date(tok.created_at), 'date')}
                         {tok.last_used_at && (
-                          <> · {t('settings.tok_used_prefix')} {formatDistanceToNow(new Date(tok.last_used_at), { addSuffix: true, locale: getDateLocale() })}</>
+                          <> · {t('settings.tok_used_prefix')} {formatRelative(new Date(tok.last_used_at))}</>
                         )}
                         {!tok.last_used_at && <> · {t('settings.tok_never_used')}</>}
                       </p>
@@ -128,7 +127,7 @@ export function ApiTokensTab() {
                       }`}>
                         {isExpired
                           ? t('settings.tok_expired')
-                          : `${t('settings.tok_expires_prefix')} ${formatDistanceToNow(new Date(tok.expires_at), { addSuffix: true, locale: getDateLocale() })}`}
+                          : `${t('settings.tok_expires_prefix')} ${formatRelative(new Date(tok.expires_at))}`}
                       </span>
                     ) : (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-surface-2 text-text-secondary">
@@ -155,9 +154,7 @@ export function ApiTokensTab() {
                       {graceOver
                         ? t('settings.tok_legacy_over')
                         : t('settings.tok_legacy_until', {
-                            date: format(new Date(tok.legacy_grace_until), 'd MMMM yyyy', {
-                              locale: getDateLocale(),
-                            }),
+                            date: formatDate(new Date(tok.legacy_grace_until), 'dateLong'),
                           })}
                     </p>
                   )}

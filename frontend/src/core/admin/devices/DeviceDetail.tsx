@@ -1,5 +1,6 @@
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Ban, Check, LogOut, TriangleAlert, Trash2 } from 'lucide-react'
+import { Ban, Check, LogOut, TriangleAlert, Trash2 } from 'lucide-react'
 import { Button, Callout, Card, EmptyState, Spinner, useToast } from '@ui'
 import ConfirmDialog from '@ui/ConfirmDialog'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -9,6 +10,7 @@ import { usePrivileges } from '../../authz/usePrivileges'
 import { useDevice, useForgetDevice, useSetApproval, useSignOutDevice } from '../../devices/useDevices'
 import { DeclaredSignals, DeviceFacts, DeviceTimeline, SessionList } from '../../devices/panels'
 import { approvalLabel, approvalSkin, deviceName } from '../../devices/labels'
+import { useAdminCrumbs } from '../AdminBreadcrumb'
 
 /**
  * One device: what was observed, what was declared, which sessions it holds,
@@ -35,6 +37,13 @@ export default function DeviceDetail({ id, onBack }: { id: string; onBack: () =>
   if (isLoading) {
     return <div className="flex justify-center py-16"><Spinner /></div>
   }
+  // Appended to the console's trail, which is what makes « Appareils » the way
+  // back — a second navigation stacked under it said the same thing twice.
+  useAdminCrumbs(useMemo(
+    () => (data ? [{ label: deviceName(t, data.device), title: deviceName(t, data.device) }] : []),
+    [data, t],
+  ))
+
   if (isError || !data) {
     return (
       <EmptyState
@@ -74,12 +83,6 @@ export default function DeviceDetail({ id, onBack }: { id: string; onBack: () =>
 
   return (
     <div className="min-w-0">
-      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={onBack}>
-          {t('devices.back')}
-        </Button>
-      </div>
-
       <div className="mb-4 flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
         <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
           {deviceName(t, device)}

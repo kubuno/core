@@ -9,7 +9,7 @@ import React from 'react';
 import { type Folder, type FileItem } from '../api';
 import type { ThumbSpec } from '../storageSource';
 import { type DetailsColsView } from './detailsModel';
-export declare function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onToggle, onContextMenu, onLongPress, onOpen, onDragStart, density, hideMeta, cols }: {
+export declare function FileRowBase({ file, thumb, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onContextMenu, onLongPress, onOpen, onDragStart, density, hideMeta, cols }: {
     file: FileItem;
     thumb: ThumbSpec;
     selected: boolean;
@@ -20,16 +20,15 @@ export declare function FileRowBase({ file, thumb, selected, preSelected, focuse
     mergeBottom?: boolean;
     zebra?: boolean;
     onSelect: (id: string, e: React.MouseEvent) => void;
-    onToggle: (id: string) => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onLongPress?: (e: React.MouseEvent) => void;
     onOpen: () => void;
     onDragStart?: (e: React.DragEvent) => void;
-    density?: 'compact' | 'normal' | 'large';
+    density?: 'compact' | 'normal';
     hideMeta?: boolean;
     cols?: DetailsColsView;
 }): React.JSX.Element;
-export declare function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onToggle, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop, density, cols }: {
+export declare function FolderRowBase({ folder, isDragTarget, selected, preSelected, focused, canMove, mergeTop, mergeBottom, zebra, onSelect, onOpen, onContextMenu, onLongPress, onDragStart, onDragOver, onDragLeave, onDrop, density, cols }: {
     folder: Folder;
     isDragTarget: boolean;
     selected: boolean;
@@ -40,7 +39,6 @@ export declare function FolderRowBase({ folder, isDragTarget, selected, preSelec
     mergeBottom?: boolean;
     zebra?: boolean;
     onSelect: (id: string, e: React.MouseEvent) => void;
-    onToggle: (id: string) => void;
     onOpen: () => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onLongPress?: (e: React.MouseEvent) => void;
@@ -48,6 +46,6 @@ export declare function FolderRowBase({ folder, isDragTarget, selected, preSelec
     onDragOver: (e: React.DragEvent) => void;
     onDragLeave: () => void;
     onDrop: (e: React.DragEvent) => void;
-    density?: 'compact' | 'normal' | 'large';
+    density?: 'compact' | 'normal';
     cols?: DetailsColsView;
 }): React.JSX.Element;

@@ -58,5 +58,11 @@ export interface BreadcrumbProps {
     className?: string;
     /** Longest a single segment may grow before it truncates. */
     maxSegmentWidth?: string;
+    /**
+     * Scale of the trail. `lg` turns it into the page's heading — which is what
+     * the file explorer's trail actually is — without touching the consoles that
+     * render it as a secondary line.
+     */
+    size?: 'sm' | 'lg';
 }
-export declare function BreadcrumbBase({ items, ariaLabel, maxVisible, trailing, className, maxSegmentWidth, }: BreadcrumbProps): import("react").JSX.Element | null;
+export declare function BreadcrumbBase({ items, ariaLabel, maxVisible, trailing, className, maxSegmentWidth, size, }: BreadcrumbProps): import("react").JSX.Element | null;

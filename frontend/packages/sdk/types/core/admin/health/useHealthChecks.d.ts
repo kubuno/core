@@ -11,7 +11,13 @@ import type { HealthCheck, HealthReport } from './types';
  * page. Nothing here is gated client-side for the same reason.
  */
 export declare const HEALTH_KEY: readonly ["admin-health-checks"];
-export declare function useHealthChecks(): import("@tanstack/react-query").UseQueryResult<NoInfer<HealthReport>, Error>;
+/**
+ * `enabled` exists for the one caller that lives OUTSIDE the administration:
+ * the top-bar indicator is mounted by the shell, which every signed-in account
+ * renders. Without it, a regular user would fire an administration request on
+ * every page load just to be told no.
+ */
+export declare function useHealthChecks(enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<HealthReport>, Error>;
 /** "Check everything again" — bypasses the server-side cache. */
 export declare function useRefreshHealthChecks(): import("@tanstack/react-query").UseMutationResult<HealthReport, Error, void, unknown>;
 /** Silence a finding, or put it back. Both are audited server-side. */

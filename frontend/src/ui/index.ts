@@ -1,3 +1,4 @@
+export { cn, clsx, type ClassValue } from './cn'
 import type { ComponentType } from 'react'
 
 // Theme override registry — the indirection that lets a theme replace a
@@ -145,6 +146,12 @@ export { SpinnerOverlay } from './Spinner'
 // Project-wide tooltip: modules use this instead of the native `title`.
 export { Tooltip, TOOLTIP_STYLE } from './Tooltip'
 export type { TooltipProps, TooltipSide } from './Tooltip'
+// Project-wide help bubble: the filled, arrow-pointing answer behind a "?".
+export { HelpBubble } from './HelpBubble'
+export type { HelpBubbleProps, HelpBubbleSide } from './HelpBubble'
+// Cross-module labels, as a form field (the data stays the caller's business).
+export { LabelField } from './LabelField'
+export type { LabelFieldProps, LabelOption } from './LabelField'
 export type { DatePickerProps, DatePickerMode } from './DatePicker'
 export type { TabsProps, TabDef } from './Tabs'
 export type { StartPageProps, StartPageRecentItem, StartPageTab, StartPageRecentAction } from './StartPage'

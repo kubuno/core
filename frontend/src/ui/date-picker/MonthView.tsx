@@ -1,7 +1,6 @@
+import { cn } from '../cn'
 import type { Dispatch, SetStateAction } from 'react'
-import { clsx } from 'clsx'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { getYear, getMonth } from 'date-fns'
 import { MONTHS_FR } from './helpers'
 import type { PickerView } from './types'
 
@@ -19,7 +18,7 @@ export function MonthView({
       <div className="flex items-center gap-1 mb-3">
         <button
           type="button"
-          onClick={() => setViewDate(d => { const n = new Date(d); n.setFullYear(getYear(d) - 1); return n })}
+          onClick={() => setViewDate(d => { const n = new Date(d); n.setFullYear(d.getFullYear() - 1); return n })}
           className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-2 text-text-secondary"
         >
           <ChevronLeft size={14} />
@@ -29,11 +28,11 @@ export function MonthView({
           onClick={() => setView('year')}
           className="flex-1 text-sm font-semibold text-center text-text-primary hover:text-primary transition-colors rounded hover:bg-surface-1 py-0.5"
         >
-          {getYear(viewDate)}
+          {viewDate.getFullYear()}
         </button>
         <button
           type="button"
-          onClick={() => setViewDate(d => { const n = new Date(d); n.setFullYear(getYear(d) + 1); return n })}
+          onClick={() => setViewDate(d => { const n = new Date(d); n.setFullYear(d.getFullYear() + 1); return n })}
           className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-2 text-text-secondary"
         >
           <ChevronRight size={14} />
@@ -41,7 +40,7 @@ export function MonthView({
       </div>
       <div className="grid grid-cols-3 gap-1">
         {MONTHS_FR.map((name, idx) => {
-          const isSel = selected && getMonth(selected) === idx && getYear(selected) === getYear(viewDate)
+          const isSel = selected && selected.getMonth() === idx && selected.getFullYear() === viewDate.getFullYear()
           return (
             <button
               key={idx}
@@ -50,7 +49,7 @@ export function MonthView({
                 setViewDate(d => { const n = new Date(d); n.setMonth(idx); return n })
                 setView('day')
               }}
-              className={clsx(
+              className={cn(
                 'h-9 rounded-lg text-sm font-medium transition-colors',
                 isSel ? 'bg-primary text-white' : 'text-text-primary hover:bg-surface-2',
               )}

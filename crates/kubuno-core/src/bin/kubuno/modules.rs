@@ -115,3 +115,90 @@ pub async fn cmd_status() -> Result<()> {
     }
     Ok(())
 }
+
+/// `kubuno modules:install <fichier.kbpkg>` — install a module from a local package.
+/// Delegates to `marketplace::install_local` (extract + verify + relocate into the
+/// store). Does not start the module: the core loads it on its next launch.
+pub async fn cmd_modules_install(sub: &clap::ArgMatches) -> Result<()> {
+    let file = sub
+        .get_one::<String>("file")
+        .expect("clap garantit l'argument « file »");
+    let path = std::path::PathBuf::from(file);
+
+    section("Installation d'un module depuis un paquet local");
+    println!();
+    info(&format!("Paquet : {}", path.display()));
+
+    let settings = Settings::load().context("Chargement de la configuration")?;
+    let report = kubuno_core::modules::marketplace::install_local(&settings, &path)
+        .await
+        .map_err(|e| anyhow::anyhow!("Installation impossible : {e}"))?;
+
+    println!();
+    ok(&format!(
+        "Module « {} » installé (version {})",
+        report.name, report.version
+    ));
+    info(&format!("Identifiant : {}", report.id));
+    info(&format!("Emplacement : {}", report.path));
+    if !report.dependencies.is_empty() {
+        info(&format!(
+            "Dépendances déclarées : {}",
+            report.dependencies.join(", ")
+        ));
+    }
+    println!();
+    warn("Le module sera démarré au prochain lancement du core.");
+    info("Pour l'activer maintenant : systemctl restart kubuno");
+    Ok(())
+}
+
+/// `kubuno modules:list` — list the modules present in the writable store.
+pub async fn cmd_modules_list() -> Result<()> {
+    section("Modules installés dans le store");
+    println!();
+
+    let settings = Settings::load().context("Chargement de la configuration")?;
+    let store = std::path::PathBuf::from(&settings.server.modules_install_dir);
+
+    let mut dirs: Vec<std::path::PathBuf> = match std::fs::read_dir(&store) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir() && p.join("module.toml").is_file())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    dirs.sort();
+
+    if dirs.is_empty() {
+        info(&format!("Aucun module dans le store ({}).", store.display()));
+        info("Installez-en un : kubuno modules:install <fichier.kbpkg>");
+        return Ok(());
+    }
+
+    for dir in &dirs {
+        let id = dir
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?");
+        let version = read_module_version(dir).unwrap_or_else(|| "?".to_string());
+        println!("  {GREEN}●{RESET} {BOLD}{id}{RESET}  {CYAN}{version}{RESET}");
+    }
+    Ok(())
+}
+
+/// Read `[module].version` from a module.toml without deserialising the whole
+/// manifest — enough for a listing.
+fn read_module_version(dir: &std::path::Path) -> Option<String> {
+    let content = std::fs::read_to_string(dir.join("module.toml")).ok()?;
+    for line in content.lines() {
+        let l = line.trim();
+        if let Some(rest) = l.strip_prefix("version") {
+            if let Some(val) = rest.trim_start().strip_prefix('=') {
+                return Some(val.trim().trim_matches('"').to_string());
+            }
+        }
+    }
+    None
+}

@@ -1,5 +1,5 @@
+import { cn } from './cn'
 import React from 'react'
-import { clsx } from 'clsx'
 
 type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'neutral'
 type BadgeSize = 'sm' | 'md'
@@ -38,14 +38,14 @@ const sizes: Record<BadgeSize, string> = {
 export function Badge({ children, variant = 'default', size = 'md', className, dot = false }: BadgeProps) {
   return (
     <span
-      className={clsx(
+      className={cn(
         'inline-flex items-center gap-1 rounded-full font-medium',
         variants[variant],
         sizes[size],
         className,
       )}
     >
-      {dot && <span className={clsx('h-1.5 w-1.5 rounded-full flex-shrink-0', dotVariants[variant])} />}
+      {dot && <span className={cn('h-1.5 w-1.5 rounded-full flex-shrink-0', dotVariants[variant])} />}
       {children}
     </span>
   )

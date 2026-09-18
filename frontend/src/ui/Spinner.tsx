@@ -1,4 +1,4 @@
-import { clsx } from 'clsx'
+import { cn } from './cn'
 
 type SpinnerSize = 'xs' | 'sm' | 'md' | 'lg'
 
@@ -20,7 +20,7 @@ export function Spinner({ size = 'md', className, label = 'Chargement…' }: Spi
     <span
       role="status"
       aria-label={label}
-      className={clsx(
+      className={cn(
         'inline-block rounded-full border-border border-t-primary animate-spin',
         sizes[size],
         className,

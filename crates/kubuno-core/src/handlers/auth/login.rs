@@ -76,6 +76,33 @@ pub async fn login(
         }
     }
 
+    // ── CAPTCHA gate after repeated failures ────────────────────────────────
+    //
+    // Past a configurable number of failures on the SUBMITTED IDENTIFIER
+    // (`security.login_captcha_after_failures`; 0 disables it), the sign-in MUST
+    // carry a solved, single-use challenge before the password is considered —
+    // so a bot cannot probe passwords without solving one each time. The count
+    // is keyed on the identifier (hashed), NOT the account, so it arms
+    // identically whether or not the identifier names a real account: the gate
+    // is not an enumeration oracle, unlike an account-keyed count would be. The
+    // refusal wears the generic invalid-credentials wording; only its machine
+    // code (CAPTCHA_REQUIRED) differs, which is what tells the form to show the
+    // challenge. The argon2 verify above has already run, so timing is unchanged.
+    // See `auth::captcha_gate`.
+    let id_hash = crate::auth::captcha_gate::hash_identifier(&dto.login);
+    let captcha_threshold = crate::auth::captcha_gate::threshold(&state.db).await;
+    if captcha_threshold > 0
+        && crate::auth::captcha_gate::attempt_count(&state.db, &id_hash).await >= captcha_threshold
+    {
+        let solved = match (dto.captcha_id, dto.captcha_answer.as_deref()) {
+            (Some(id), Some(answer)) => crate::auth::captcha::verify(&state.db, id, answer).await,
+            _ => false,
+        };
+        if !solved {
+            return Err(AppError::CaptchaRequired);
+        }
+    }
+
     // ── Account-level throttle (credential stuffing / brute force) ───────────
     //
     // Persistent, per account, shared across instances (`core.login_throttle`) —
@@ -126,6 +153,7 @@ pub async fn login(
                 );
                 // Credentials verified: clear any backoff on this account.
                 crate::auth::login_throttle::record_success(&state.db, found.user.id).await;
+                crate::auth::captcha_gate::record_success(&state.db, &id_hash).await;
                 if found.user.role == "admin" {
                     let ctx = login_context(&headers, client_ip, &found.user);
                     ctx.record(
@@ -167,8 +195,14 @@ pub async fn login(
                 // A definite authentication failure counts against the account
                 // (when it exists locally). A directory *outage* (the `Err` arm
                 // below) does not, so a provider being down cannot lock users out.
+                // Account lockout counts only for a real account.
                 if let Some(candidate) = user_opt.as_ref() {
                     crate::auth::login_throttle::record_failure(&state.db, candidate.id).await;
+                }
+                // The CAPTCHA gate counts on the identifier, real account or not.
+                crate::auth::captcha_gate::record_failure(&state.db, &id_hash).await;
+                if captcha_required_now(&state, &id_hash, captcha_threshold).await {
+                    return Err(AppError::CaptchaRequired);
                 }
                 return Err(invalid());
             }
@@ -179,10 +213,28 @@ pub async fn login(
         }
     }
 
-    let mut user = user_opt.ok_or_else(invalid)?;
+    let mut user = match user_opt {
+        Some(u) => u,
+        None => {
+            // Unknown identifier: it still counts toward the CAPTCHA gate, which
+            // is identifier-keyed precisely so unknown and known look identical.
+            crate::auth::captcha_gate::record_failure(&state.db, &id_hash).await;
+            if captcha_required_now(&state, &id_hash, captcha_threshold).await {
+                return Err(AppError::CaptchaRequired);
+            }
+            return Err(invalid());
+        }
+    };
     if !ok || user.password_hash.is_none() {
-        // Wrong local password on a known account: count it against the account.
+        // Wrong local password on a known account: count it for the account
+        // lockout AND for the identifier-keyed CAPTCHA gate.
         crate::auth::login_throttle::record_failure(&state.db, user.id).await;
+        crate::auth::captcha_gate::record_failure(&state.db, &id_hash).await;
+        // If that failure just crossed the CAPTCHA threshold, tell the form to
+        // present one on the next attempt (same generic message, distinct code).
+        if captcha_required_now(&state, &id_hash, captcha_threshold).await {
+            return Err(AppError::CaptchaRequired);
+        }
         return Err(invalid());
     }
 
@@ -202,6 +254,8 @@ pub async fn login(
     // successful sign-in resets the failure count). Done before the TOTP branch:
     // the password, which is what brute force targets, has been proven correct.
     crate::auth::login_throttle::record_success(&state.db, user.id).await;
+    // The CAPTCHA gate is identifier-keyed; clear that counter too.
+    crate::auth::captcha_gate::record_success(&state.db, &id_hash).await;
 
     // ── The password policy, applied to a password that already exists ───────
     //
@@ -287,6 +341,15 @@ pub async fn login(
         dto.slot,
     )
     .await
+}
+
+/// Whether `user_id` has now failed enough times to require a CAPTCHA on its
+/// next sign-in. Called after recording a failure, so the form is told to start
+/// showing the challenge the moment the count crosses the threshold. `threshold`
+/// of 0 means the gate is off.
+async fn captcha_required_now(state: &AppState, id_hash: &str, threshold: i32) -> bool {
+    threshold > 0
+        && crate::auth::captcha_gate::attempt_count(&state.db, id_hash).await >= threshold
 }
 
 /// Sign-out request. Everything optional: an empty body signs the ACTIVE

@@ -361,7 +361,7 @@ export function useSetWarnPercent() {
     }).then(r => r.data))
 }
 
-export function errorMessage(err: unknown, fallback: string): string {
-  const detail = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
-  return detail?.message ?? detail?.error ?? fallback
-}
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage'

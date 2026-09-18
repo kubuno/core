@@ -8,6 +8,7 @@ import { useConfirm } from '../hooks/useConfirm'
 import ConfirmDialog from '@ui/ConfirmDialog'
 import SettingScopeBar from './settings/SettingScopeBar'
 import { INSTANCE_SCOPE, type ActiveScope, type ResolvedSetting } from './settings/scopeTypes'
+import { apiErrorDetail } from '../api/errorMessage'
 
 /**
  * Administration → Security → Authentication & SSO — **which methods this scope
@@ -93,7 +94,7 @@ export default function AuthMethodsPanel() {
   const fallback = fallbackSetting?.value === true
 
   const errorOf = (e: unknown) =>
-    (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+    apiErrorDetail(e)
 
   const write = useMutation({
     mutationFn: ({ key, value }: { key: string; value: unknown }) =>

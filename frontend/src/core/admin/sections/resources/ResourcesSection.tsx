@@ -1,6 +1,6 @@
 // Buildings and resources — the part of the directory that is not people.
 //
-// One navigation entry, four screens behind tabs. Four leaves in the menu would
+// One navigation entry, five screens behind tabs. Four leaves in the menu would
 // scatter a single subject across the tree, and three of them would be
 // meaningless on their own: a resource cannot exist without a building, and a
 // feature is only ever read next to the resources carrying it.
@@ -21,6 +21,7 @@ import OverviewTab from './OverviewTab'
 import BuildingsTab from './BuildingsTab'
 import ResourcesTab from './ResourcesTab'
 import FeaturesTab from './FeaturesTab'
+import RoomStatsTab from './RoomStatsTab'
 
 export default function ResourcesSection({ params, navigate }: AdminSectionProps) {
   const { t }   = useTranslation()
@@ -38,6 +39,7 @@ export default function ResourcesSection({ params, navigate }: AdminSectionProps
     { id: 'buildings', label: t('admin.res_tab_buildings') },
     { id: 'resources', label: t('admin.res_tab_resources') },
     { id: 'features',  label: t('admin.res_tab_features') },
+    { id: 'room-stats', label: t('admin.res_tab_room_stats') },
   ]
 
   return (
@@ -57,6 +59,7 @@ export default function ResourcesSection({ params, navigate }: AdminSectionProps
       {pane === 'buildings' && <BuildingsTab canManage={canManage} />}
       {pane === 'resources' && <ResourcesTab canManage={canManage} />}
       {pane === 'features'  && <FeaturesTab  canManage={canManage} />}
+      {pane === 'room-stats' && <RoomStatsTab />}
     </div>
   )
 }
