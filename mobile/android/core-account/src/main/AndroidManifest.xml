@@ -29,6 +29,7 @@
         <package android:name="com.kubuno.mail.android" />
         <package android:name="com.kubuno.maps.android" />
         <package android:name="com.kubuno.photos.android" />
+        <package android:name="com.kubuno.docs.android" />
         <intent>
             <action android:name="android.accounts.AccountAuthenticator" />
         </intent>
