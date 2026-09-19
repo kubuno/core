@@ -9,6 +9,31 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Added
+
+- **Kubuno can be built against MySQL/MariaDB or SQLite, not only PostgreSQL.**
+  A new shared component holds everything the three engines disagree about —
+  how bind parameters are numbered, how an "insert or update" is written, how a
+  freshly written row is read back, how JSON is reached into, what an aggregate
+  returns — so a module states its query once and it runs on whichever engine
+  the server was installed with. The engine is chosen when the component is
+  built, which means one package per engine; an installation cannot switch
+  engine without reinstalling.
+- **A portability check for queries.** Statements that no other engine can
+  express are now refused as they are written rather than misbehaving later,
+  including two that would have been dangerous: a parameter used out of order
+  or twice, and the PostgreSQL "does this key exist" operator, which would
+  otherwise have been mistaken for a parameter and shifted every value after it
+  by one.
+
+### Known limitations
+
+- On MySQL and SQLite, events a module publishes are recorded durably but not
+  yet delivered: the core still listens only to PostgreSQL's notification
+  channel and needs a reader for the new event table. The background job queue
+  and the compile-time-checked queries of the core, media and drive are
+  PostgreSQL-only for now.
+
 ### Security
 
 - **Database driver updated past an unfixable advisory.** The previous line

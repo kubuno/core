@@ -8,6 +8,7 @@ members  = [
     "crates/kubuno-mcp",
     "crates/kubuno-seccomp",
     "crates/kubuno-modauth",
+    "crates/kubuno-db",
 ]
 
 [workspace.package]
