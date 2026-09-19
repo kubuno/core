@@ -109,11 +109,20 @@ class KubunoAuthenticator(
             )
         }
 
-        val id = resolveAccountId(account)
+        // The id written on the system account can be STALE: the app that
+        // published it may since have had its data cleared and re-registered the
+        // same (instance, user) under a fresh id, which AccountManagerBridge
+        // deliberately does not overwrite when it re-adopts the entry. Falling
+        // back to the identity finds our own live record in that case; without
+        // it this process refuses to mint, every consumer app gets a re-login
+        // intent, and the whole device looks signed out while the owner app
+        // works fine.
+        val id = resolveAccountId(account)?.takeIf { registry.get(it) != null }
+            ?: localIdFor(account)
         // The system account outlived the Kubuno registration (app data
         // cleared, account forgotten), or it was published by another app whose
         // id we do not know: a sibling may still be able to serve it.
-        val client = id?.takeIf { registry.get(it) != null }?.let { clients.of(it) }
+        val client = id?.let { clients.of(it) }
             ?: return borrowedOr(account, response, id)
 
         return try {
@@ -210,6 +219,23 @@ class KubunoAuthenticator(
             .getUserData(account, KubunoAccounts.USER_DATA_ACCOUNT_ID)
             ?.takeIf { it.isNotEmpty() }
             ?.let(::AccountId)
+
+    /**
+     * Our own registration for the (instance, user) this system account stands
+     * for, regardless of the id written on it. Identity is the stable key; the
+     * id is private to whichever app minted it.
+     */
+    private fun localIdFor(account: Account): AccountId? {
+        val manager = AccountManager.get(context)
+        val serverUrl = manager.getUserData(account, KubunoAccounts.USER_DATA_SERVER_URL)
+            ?.takeIf { it.isNotEmpty() } ?: return null
+        val userId = manager.getUserData(account, KubunoAccounts.USER_DATA_USER_ID)
+            ?.takeIf { it.isNotEmpty() } ?: return null
+        return registry.accounts.value.firstOrNull { record ->
+            record.userId == userId &&
+                record.serverUrl.trimEnd('/').equals(serverUrl.trimEnd('/'), ignoreCase = true)
+        }?.id
+    }
 
     /**
      * Launches the sign-in UI of whichever app the framework bound this
