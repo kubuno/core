@@ -36,11 +36,17 @@ use super::scan::Compiled;
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
 
-const COLUMNS: &str = r#"id, key, label, description, category, kind, pattern, terms, checksum,
+// A macro rather than a `const` so every statement below splices it with
+// `concat!` and is a single compile-time literal.
+macro_rules! columns {
+    () => {
+        r#"id, key, label, description, category, kind, pattern, terms, checksum,
     proximity_terms, proximity_window, proximity_required,
     base_confidence, checksum_bonus, proximity_bonus,
     min_confidence, min_matches, min_unique_matches,
-    is_enabled, is_builtin, created_at, updated_at"#;
+    is_enabled, is_builtin, created_at, updated_at"#
+    };
+}
 
 fn row_to_detector(r: &sqlx::postgres::PgRow) -> Detector {
     let kind: String = r.get("kind");
@@ -88,8 +94,12 @@ fn string_list(raw: &Value) -> Vec<String> {
 // ── Reads ────────────────────────────────────────────────────────────────────
 
 pub async fn list(db: &PgPool) -> Result<Vec<Detector>, AppError> {
-    let sql = format!("SELECT {COLUMNS} FROM core.content_detectors ORDER BY category, label");
-    let rows = sqlx::query(&sql).fetch_all(db).await.map_err(|e| {
+    let sql = concat!(
+        "SELECT ",
+        columns!(),
+        " FROM core.content_detectors ORDER BY category, label"
+    );
+    let rows = sqlx::query(sql).fetch_all(db).await.map_err(|e| {
         tracing::error!(error = %e, "detectors: lecture du catalogue");
         AppError::Database(e)
     })?;
@@ -97,8 +107,8 @@ pub async fn list(db: &PgPool) -> Result<Vec<Detector>, AppError> {
 }
 
 pub async fn get(db: &PgPool, id: Uuid) -> Result<Detector, AppError> {
-    let sql = format!("SELECT {COLUMNS} FROM core.content_detectors WHERE id = $1");
-    let row = sqlx::query(&sql)
+    let sql = concat!("SELECT ", columns!(), " FROM core.content_detectors WHERE id = $1");
+    let row = sqlx::query(sql)
         .bind(id)
         .fetch_optional(db)
         .await
@@ -155,7 +165,7 @@ pub async fn insert(
     draft: &DetectorDraft,
     author: Option<Uuid>,
 ) -> Result<Detector, AppError> {
-    let sql = format!(
+    let sql = concat!(
         r#"INSERT INTO core.content_detectors
                (key, label, description, category, kind, pattern, terms, checksum,
                 proximity_terms, proximity_window, proximity_required,
@@ -163,9 +173,10 @@ pub async fn insert(
                 min_confidence, min_matches, min_unique_matches,
                 is_enabled, is_builtin, created_by, updated_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,FALSE,$19,$19)
-           RETURNING {COLUMNS}"#
+           RETURNING "#,
+        columns!()
     );
-    let row = bind_draft(sqlx::query(&sql), draft)
+    let row = bind_draft(sqlx::query(sql), draft)
         .bind(author)
         .fetch_one(&mut *conn)
         .await
@@ -182,7 +193,7 @@ pub async fn update(
     draft: &DetectorDraft,
     author: Option<Uuid>,
 ) -> Result<Detector, AppError> {
-    let sql = format!(
+    let sql = concat!(
         r#"UPDATE core.content_detectors SET
                key = $1, label = $2, description = $3, category = $4, kind = $5,
                pattern = $6, terms = $7, checksum = $8,
@@ -191,9 +202,10 @@ pub async fn update(
                min_confidence = $15, min_matches = $16, min_unique_matches = $17,
                is_enabled = $18, updated_by = $19
            WHERE id = $20
-           RETURNING {COLUMNS}"#
+           RETURNING "#,
+        columns!()
     );
-    let row = bind_draft(sqlx::query(&sql), draft)
+    let row = bind_draft(sqlx::query(sql), draft)
         .bind(author)
         .bind(id)
         .fetch_optional(&mut *conn)

@@ -280,15 +280,40 @@ pub async fn create(db: &PgPool, new: &NewExport) -> Result<Uuid, AppError> {
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
-const RUN_COLUMNS: &str = "id, scope, origin, services, with_instance, requested_by, actor_label, status, \
+// A macro rather than a `const` so the reads below splice it with `concat!` and
+// hand the driver one compile-time literal.
+macro_rules! run_columns {
+    () => {
+        "id, scope, origin, services, with_instance, requested_by, actor_label, status, \
      requested_at, started_at, finished_at, duration_ms, available_at, expires_at, \
      subjects_total, subjects_done, file_name, destination, size_bytes, entries_count, \
      error, file_deleted, deleted_at, download_count, last_downloaded_at, \
-     download_limit, max_file_mb";
+     download_limit, max_file_mb"
+    };
+}
+
+/// The statement behind the two lookups above, built around a literal predicate.
+///
+/// A macro rather than a runtime `format!`: `concat!` keeps the whole thing a
+/// compile-time `&'static str`, so the query the driver receives is a literal
+/// and the predicate physically cannot be anything a request produced.
+macro_rules! active_sql {
+    ($predicate:literal) => {
+        concat!(
+            "SELECT ",
+            run_columns!(),
+            " FROM core.data_export_runs WHERE status IN ('pending', 'running') AND ",
+            $predicate,
+            " ORDER BY requested_at LIMIT 1"
+        )
+    };
+}
 
 pub async fn get(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
-    let row = sqlx::query(&format!(
-        "SELECT {RUN_COLUMNS} FROM core.data_export_runs WHERE id = $1"
+    let row = sqlx::query(concat!(
+        "SELECT ",
+        run_columns!(),
+        " FROM core.data_export_runs WHERE id = $1"
     ))
     .bind(id)
     .fetch_optional(db)
@@ -316,8 +341,10 @@ pub async fn get(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
 /// a way to fetch one. Whoever needs somebody else's data asks for it with
 /// `core.data_export.execute`, which tells every administrator and waits.
 pub async fn get_admin(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
-    let row = sqlx::query(&format!(
-        "SELECT {RUN_COLUMNS} FROM core.data_export_runs WHERE id = $1 AND origin = 'admin'"
+    let row = sqlx::query(concat!(
+        "SELECT ",
+        run_columns!(),
+        " FROM core.data_export_runs WHERE id = $1 AND origin = 'admin'"
     ))
     .bind(id)
     .fetch_optional(db)
@@ -345,9 +372,10 @@ pub async fn get_admin(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppEr
 /// covering several accounts is not "one's own data" even when the requester
 /// happens to be its author.
 pub async fn get_own(db: &PgPool, id: Uuid, user_id: Uuid) -> Result<Option<ExportRun>, AppError> {
-    let row = sqlx::query(&format!(
-        "SELECT {RUN_COLUMNS} FROM core.data_export_runs \
-          WHERE id = $1 AND requested_by = $2 AND origin = 'self'"
+    let row = sqlx::query(concat!(
+        "SELECT ",
+        run_columns!(),
+        " FROM core.data_export_runs WHERE id = $1 AND requested_by = $2 AND origin = 'self'"
     ))
     .bind(id)
     .bind(user_id)
@@ -375,9 +403,10 @@ pub async fn get_own(db: &PgPool, id: Uuid, user_id: Uuid) -> Result<Option<Expo
 /// stop reading it.
 pub async fn list(db: &PgPool, limit: i64) -> Result<Vec<ExportRun>, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(&format!(
-        "SELECT {RUN_COLUMNS} FROM core.data_export_runs \
-          WHERE origin = 'admin' ORDER BY requested_at DESC LIMIT $1"
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        run_columns!(),
+        " FROM core.data_export_runs WHERE origin = 'admin' ORDER BY requested_at DESC LIMIT $1"
     ))
     .bind(limit)
     .fetch_all(db)
@@ -409,7 +438,7 @@ pub async fn list(db: &PgPool, limit: i64) -> Result<Vec<ExportRun>, AppError> {
 /// console — or the console block everybody's portability — would make each
 /// feature the other's outage.
 pub async fn active_admin(db: &PgPool) -> Result<Option<ExportRun>, AppError> {
-    active_where(db, "origin = 'admin'", None).await
+    active_where(db, active_sql!("origin = 'admin'"), None).await
 }
 
 /// The personal request of `user_id` that has not finished, if any.
@@ -418,22 +447,17 @@ pub async fn active_admin(db: &PgPool) -> Result<Option<ExportRun>, AppError> {
 /// concurrent requests impossible, this makes the refusal a sentence instead of
 /// a constraint violation.
 pub async fn active_for_user(db: &PgPool, user_id: Uuid) -> Result<Option<ExportRun>, AppError> {
-    active_where(db, "origin = 'self' AND requested_by = $1", Some(user_id)).await
+    active_where(db, active_sql!("origin = 'self' AND requested_by = $1"), Some(user_id)).await
 }
 
-/// Shared body of the two lookups above. `predicate` is a literal written here,
-/// never anything that came from a request.
+/// Shared body of the two lookups above. The statement arrives as a literal
+/// assembled by [`active_sql`]; nothing here is built at run time.
 async fn active_where(
     db: &PgPool,
-    predicate: &str,
+    sql: &'static str,
     bind: Option<Uuid>,
 ) -> Result<Option<ExportRun>, AppError> {
-    let sql = format!(
-        "SELECT {RUN_COLUMNS} FROM core.data_export_runs \
-          WHERE status IN ('pending', 'running') AND {predicate} \
-          ORDER BY requested_at LIMIT 1"
-    );
-    let query = sqlx::query(&sql);
+    let query = sqlx::query(sql);
     let query = match bind {
         Some(id) => query.bind(id),
         None => query,
@@ -455,8 +479,10 @@ async fn active_where(
 
 /// One account's own requests, newest first.
 pub async fn list_own(db: &PgPool, user_id: Uuid, limit: i64) -> Result<Vec<ExportRun>, AppError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {RUN_COLUMNS} FROM core.data_export_runs \
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        run_columns!(),
+        " FROM core.data_export_runs \
           WHERE origin = 'self' AND requested_by = $1 \
           ORDER BY requested_at DESC LIMIT $2"
     ))

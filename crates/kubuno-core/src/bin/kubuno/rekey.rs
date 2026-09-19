@@ -179,7 +179,12 @@ async fn survey(pool: &PgPool) -> Result<Vec<(&'static str, i64)>> {
         let sql = format!("SELECT count(*) FROM ({}) s", store.select);
         // A store whose table does not exist yet (migrations behind) counts as empty
         // rather than aborting the whole command.
-        let n: i64 = sqlx::query_scalar(&sql).fetch_one(pool).await.unwrap_or(0);
+        // Safe: `store.select` is a `&'static str` field of the private `STORES`
+        // const array above — every one of them is a literal in this file.
+        let n: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
         out.push((store.label, n));
     }
     Ok(out)

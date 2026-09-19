@@ -419,7 +419,10 @@ pub async fn series(
         filter = what.filter,
     );
 
-    let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
+    // Safe: every fragment spliced above is a `&'static str` — the bucket's own
+    // step/unit and `Counted`'s table, time column and filter, all written in
+    // source. The window bounds and the zone travel as bind parameters.
+    let rows: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(win.axis_from)
         .bind(win.axis_to)
         .bind(win.tz.name())
@@ -460,7 +463,9 @@ pub async fn totals(
         filter = what.filter,
     );
 
-    let row: (i64, i64) = sqlx::query_as(&sql)
+    // Safe: `Counted`'s table, time column, filter and aggregate are all
+    // `&'static str` written in source; the three instants are bound.
+    let row: (i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(win.previous_from)
         .bind(win.from)
         .bind(win.to)
@@ -500,7 +505,9 @@ pub async fn breakdown(
     db: &sqlx::PgPool,
     what: &Counted,
     win: &Window,
-    expr: &str,
+    // Spliced into the SQL text: `&'static str` so the compiler refuses
+    // anything a request could have produced.
+    expr: &'static str,
     limit: i64,
     label: &str,
 ) -> Result<Vec<Slice>, AppError> {
@@ -515,7 +522,9 @@ pub async fn breakdown(
         time = what.time,
     );
 
-    let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
+    // Safe: the grouping expression and `Counted`'s fragments are all
+    // `&'static str`, and `limit` is an integer. The bounds are bound.
+    let rows: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(win.from)
         .bind(win.to)
         .fetch_all(db)

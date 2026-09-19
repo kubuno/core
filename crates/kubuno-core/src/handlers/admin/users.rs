@@ -81,7 +81,11 @@ pub struct ListUsersQuery {
 /// `$4` is an ARRAY, so one selected unit and five go down the same path: the
 /// console can hold a union of branches without the count, the export and the
 /// listing each needing their own predicate.
-const USER_FILTER: &str = r#"
+// A macro rather than a `const` so a statement that needs nothing else is a
+// single compile-time literal, spliced with `concat!`.
+macro_rules! user_filter {
+    () => {
+        r#"
         ($1::text IS NULL OR email ILIKE '%' || $1 || '%'
                OR username ILIKE '%' || $1 || '%'
                OR display_name ILIKE '%' || $1 || '%')
@@ -91,7 +95,9 @@ const USER_FILTER: &str = r#"
                OR ($5::bool AND org_unit_id IN (
                      SELECT d.id FROM unnest($4::uuid[]) AS sel(id),
                                       core.org_unit_descendants(sel.id) AS d)))
-"#;
+"#
+    };
+}
 
 /// Ordering, chosen from a CLOSED list.
 ///
@@ -160,11 +166,14 @@ pub async fn list_users(
     let descendants = q.include_descendants.unwrap_or(false);
     let order = sort_clause(q.sort.as_deref(), q.dir.as_deref());
 
-    let users = sqlx::query_as::<_, User>(&format!(
-        "SELECT * FROM core.users WHERE {USER_FILTER}
-         {order}
-         LIMIT $6 OFFSET $7"
-    ))
+    // Safe: `USER_FILTER` is a literal constant and `order` comes from
+    // `sort_clause`, a closed allow-list that falls back to the default for any
+    // name it does not know — no caller text reaches the statement. Search,
+    // role, units and paging all travel as bind parameters.
+    let users = sqlx::query_as::<_, User>(sqlx::AssertSqlSafe(format!(
+        "SELECT * FROM core.users WHERE {} {order} LIMIT $6 OFFSET $7",
+        user_filter!()
+    )))
     .bind(q.search.as_deref())
     .bind(q.role.as_deref())
     .bind(scope_units.as_deref())
@@ -179,8 +188,9 @@ pub async fn list_users(
     // The total must obey the same perimeter — and the same filters — or the
     // pagination tells the caller how many accounts they are not allowed to see,
     // and offers pages that come back empty.
-    let total: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*)::bigint FROM core.users WHERE {USER_FILTER}"
+    let total: i64 = sqlx::query_scalar(concat!(
+        "SELECT COUNT(*)::bigint FROM core.users WHERE ",
+        user_filter!()
     ))
     .bind(q.search.as_deref())
     .bind(q.role.as_deref())
@@ -279,9 +289,12 @@ pub async fn export_users(
 
     // One more than the ceiling, so "too many" is distinguishable from "exactly
     // the ceiling" without a second COUNT.
-    let users = sqlx::query_as::<_, User>(&format!(
-        "SELECT * FROM core.users WHERE {USER_FILTER} {order} LIMIT $6"
-    ))
+    // Safe: same two fragments as the listing — the `USER_FILTER` literal and
+    // `sort_clause`'s allow-listed ordering.
+    let users = sqlx::query_as::<_, User>(sqlx::AssertSqlSafe(format!(
+        "SELECT * FROM core.users WHERE {} {order} LIMIT $6",
+        user_filter!()
+    )))
     .bind(q.search.as_deref())
     .bind(q.role.as_deref())
     .bind(scope_units.as_deref())
@@ -1506,7 +1519,9 @@ pub async fn admin_stats(
     .map_err(|e| { tracing::error!(error = %e, "admin_stats: top_storage"); AppError::Database(e) })?;
 
     // Séries journalières (zéro-remplies via generate_series)
-    let daily = |table: &str, date_col: &str, days: i64| -> String {
+    // The two spliced names are `&'static str`, so only a literal written below
+    // can reach the statement; `days` is an integer.
+    let daily = |table: &'static str, date_col: &'static str, days: i64| -> String {
         format!(
             "SELECT to_char(d::date, 'YYYY-MM-DD'), COALESCE(c.cnt, 0)::bigint \
              FROM generate_series((CURRENT_DATE - INTERVAL '{n} days')::date, CURRENT_DATE, INTERVAL '1 day') AS d \
@@ -1517,15 +1532,15 @@ pub async fn admin_stats(
         )
     };
 
-    let signups_daily: Vec<(String, i64)> = sqlx::query_as(&daily("core.users", "created_at", 14))
+    let signups_daily: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(daily("core.users", "created_at", 14)))
         .fetch_all(&state.db).await
         .map_err(|e| { tracing::error!(error = %e, "admin_stats: signups_daily"); AppError::Database(e) })?;
 
-    let logins_daily: Vec<(String, i64)> = sqlx::query_as(&daily("core.refresh_tokens", "created_at", 14))
+    let logins_daily: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(daily("core.refresh_tokens", "created_at", 14)))
         .fetch_all(&state.db).await
         .map_err(|e| { tracing::error!(error = %e, "admin_stats: logins_daily"); AppError::Database(e) })?;
 
-    let events_daily: Vec<(String, i64)> = sqlx::query_as(&daily("core.event_log", "created_at", 7))
+    let events_daily: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(daily("core.event_log", "created_at", 7)))
         .fetch_all(&state.db).await
         .unwrap_or_default(); // event_log peut être vide / absente selon l'instance
 

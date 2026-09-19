@@ -27,9 +27,16 @@ use crate::errors::AppError;
 
 /// Columns of a campaign, everywhere. Listed rather than `*` so adding a column
 /// to the table can never silently widen an API response.
-const CAMPAIGN_COLUMNS: &str = "id, name, service, module_id, source_kind, source_host, \
+///
+/// A macro rather than a `const` so call sites splice it with `concat!`: each
+/// query is then a single compile-time literal the driver takes as-is.
+macro_rules! campaign_columns {
+    () => {
+        "id, name, service, module_id, source_kind, source_host, \
      source_port, source_security, since_date, exclude_folders, status, created_by, \
-     actor_label, created_at, started_at, finished_at, error";
+     actor_label, created_at, started_at, finished_at, error"
+    };
+}
 
 /// The key the source credentials are sealed with.
 ///
@@ -57,8 +64,10 @@ pub fn unseal(jwt_secret: &str, sealed: &str) -> Result<String, AppError> {
 // ── Reads ───────────────────────────────────────────────────────────────────
 
 pub async fn list(db: &PgPool) -> Result<Vec<Campaign>, AppError> {
-    sqlx::query_as::<_, Campaign>(&format!(
-        "SELECT {CAMPAIGN_COLUMNS} FROM core.migration_campaigns ORDER BY created_at DESC"
+    sqlx::query_as::<_, Campaign>(concat!(
+        "SELECT ",
+        campaign_columns!(),
+        " FROM core.migration_campaigns ORDER BY created_at DESC"
     ))
     .fetch_all(db)
     .await
@@ -69,8 +78,10 @@ pub async fn list(db: &PgPool) -> Result<Vec<Campaign>, AppError> {
 }
 
 pub async fn get(db: &PgPool, id: Uuid) -> Result<Campaign, AppError> {
-    sqlx::query_as::<_, Campaign>(&format!(
-        "SELECT {CAMPAIGN_COLUMNS} FROM core.migration_campaigns WHERE id = $1"
+    sqlx::query_as::<_, Campaign>(concat!(
+        "SELECT ",
+        campaign_columns!(),
+        " FROM core.migration_campaigns WHERE id = $1"
     ))
     .bind(id)
     .fetch_optional(db)

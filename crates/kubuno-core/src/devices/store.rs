@@ -23,7 +23,9 @@ use crate::errors::AppError;
 
 /// Columns of `core.devices` that may leave the server, plus the two joins the
 /// console needs. `correlation_hash` is absent, deliberately and permanently.
-const DEVICE_COLUMNS: &str = r#"
+macro_rules! device_columns {
+    () => {
+        r#"
     d.id, d.user_id,
     COALESCE(NULLIF(u.display_name, ''), u.username) AS user_label,
     d.correlation_kind, d.label, d.device_type, d.client_kind,
@@ -35,12 +37,22 @@ const DEVICE_COLUMNS: &str = r#"
     (SELECT COUNT(*) FROM core.refresh_tokens rt
       WHERE rt.device_id = d.id AND rt.revoked_at IS NULL AND rt.expires_at > NOW())::bigint
       AS active_sessions
-"#;
+"#
+    };
+}
+const DEVICE_COLUMNS: &str = device_columns!();
 
-const DEVICE_FROM: &str = " FROM core.devices d JOIN core.users u ON u.id = d.user_id ";
+macro_rules! device_from {
+    () => {
+        " FROM core.devices d JOIN core.users u ON u.id = d.user_id "
+    };
+}
+const DEVICE_FROM: &str = device_from!();
 
 /// Columns of a session row. `token_hash` is absent for the same reason.
-const SESSION_COLUMNS: &str = r#"
+macro_rules! session_columns {
+    () => {
+        r#"
     rt.id, rt.user_id,
     COALESCE(NULLIF(u.display_name, ''), u.username) AS user_label,
     rt.device_id,
@@ -49,13 +61,21 @@ const SESSION_COLUMNS: &str = r#"
     rt.device_name, rt.device_type, rt.client_type,
     host(rt.ip_address)::text AS ip_address, rt.country, rt.auth_strength,
     rt.user_agent, rt.created_at, rt.last_used_at, rt.expires_at
-"#;
+"#
+    };
+}
+const SESSION_COLUMNS: &str = session_columns!();
 
-const SESSION_FROM: &str = r#"
+macro_rules! session_from {
+    () => {
+        r#"
      FROM core.refresh_tokens rt
      JOIN core.users u ON u.id = rt.user_id
      LEFT JOIN core.devices d ON d.id = rt.device_id
-"#;
+"#
+    };
+}
+const SESSION_FROM: &str = session_from!();
 
 const DEFAULT_LIMIT: i64 = 50;
 const MAX_LIMIT: i64 = 200;
@@ -139,7 +159,12 @@ fn map_session(row: &sqlx::postgres::PgRow) -> SessionRow {
 /// A delegated operator confined to a branch sees the devices of the accounts
 /// in that branch and nothing else. An empty subtree matches nothing, which is
 /// the correct answer for somebody who does not hold the key at all.
-fn push_scope(builder: &mut QueryBuilder<'_, Postgres>, ctx: &AdminContext, column: &str) {
+fn push_scope(
+    builder: &mut QueryBuilder<Postgres>,
+    ctx: &AdminContext,
+    // Spliced into the SQL text, so only a compile-time literal is accepted.
+    column: &'static str,
+) {
     if let Some(units) = ctx.subtree_filter(keys::SESSIONS_READ) {
         builder.push(format!(
             " AND {column} IS NOT NULL AND {column} = ANY("
@@ -188,7 +213,7 @@ pub async fn list(
     Ok((rows.iter().map(map_device).collect(), total))
 }
 
-fn push_filters(builder: &mut QueryBuilder<'_, Postgres>, query: &DeviceQuery, ctx: &AdminContext) {
+fn push_filters(builder: &mut QueryBuilder<Postgres>, query: &DeviceQuery, ctx: &AdminContext) {
     push_scope(builder, ctx, "u.org_unit_id");
 
     if let Some(text) = clean(&query.q) {
@@ -301,8 +326,13 @@ pub async fn get(db: &PgPool, id: Uuid, ctx: &AdminContext) -> Result<DeviceRow,
 /// One device owned by a given account. Used by the personal screen, where the
 /// only perimeter is "is it mine".
 pub async fn get_owned(db: &PgPool, id: Uuid, user_id: Uuid) -> Result<DeviceRow, AppError> {
-    let sql = format!("SELECT {DEVICE_COLUMNS} {DEVICE_FROM} WHERE d.id = $1 AND d.user_id = $2");
-    let row = sqlx::query(&sql)
+    let sql = concat!(
+        "SELECT ",
+        device_columns!(),
+        device_from!(),
+        " WHERE d.id = $1 AND d.user_id = $2"
+    );
+    let row = sqlx::query(sql)
         .bind(id)
         .bind(user_id)
         .fetch_optional(db)
@@ -318,11 +348,13 @@ pub async fn get_owned(db: &PgPool, id: Uuid, user_id: Uuid) -> Result<DeviceRow
 
 /// Every device of one account, most recently seen first.
 pub async fn for_user(db: &PgPool, user_id: Uuid) -> Result<Vec<DeviceRow>, AppError> {
-    let sql = format!(
-        "SELECT {DEVICE_COLUMNS} {DEVICE_FROM} WHERE d.user_id = $1 \
-         ORDER BY d.last_seen_at DESC, d.id DESC"
+    let sql = concat!(
+        "SELECT ",
+        device_columns!(),
+        device_from!(),
+        " WHERE d.user_id = $1 ORDER BY d.last_seen_at DESC, d.id DESC"
     );
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sql)
         .bind(user_id)
         .fetch_all(db)
         .await
@@ -335,12 +367,14 @@ pub async fn for_user(db: &PgPool, user_id: Uuid) -> Result<Vec<DeviceRow>, AppE
 
 /// Live sessions attached to a device.
 pub async fn sessions_of(db: &PgPool, device_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
-    let sql = format!(
-        "SELECT {SESSION_COLUMNS} {SESSION_FROM} \
-         WHERE rt.device_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > NOW() \
+    let sql = concat!(
+        "SELECT ",
+        session_columns!(),
+        session_from!(),
+        " WHERE rt.device_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > NOW() \
          ORDER BY rt.last_used_at DESC"
     );
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sql)
         .bind(device_id)
         .fetch_all(db)
         .await
@@ -353,12 +387,14 @@ pub async fn sessions_of(db: &PgPool, device_id: Uuid) -> Result<Vec<SessionRow>
 
 /// Live sessions of one account, whatever their device.
 pub async fn sessions_of_user(db: &PgPool, user_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
-    let sql = format!(
-        "SELECT {SESSION_COLUMNS} {SESSION_FROM} \
-         WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > NOW() \
+    let sql = concat!(
+        "SELECT ",
+        session_columns!(),
+        session_from!(),
+        " WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > NOW() \
          ORDER BY rt.last_used_at DESC"
     );
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sql)
         .bind(user_id)
         .fetch_all(db)
         .await
@@ -424,7 +460,7 @@ pub async fn all_sessions(
 }
 
 fn push_session_filters(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     query: &SessionQuery,
     ctx: &AdminContext,
 ) {

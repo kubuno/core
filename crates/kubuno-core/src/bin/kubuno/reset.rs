@@ -37,6 +37,23 @@ fn purge_dir_contents(path: &std::path::Path) -> Option<u32> {
     }
 }
 
+/// Quotes a PostgreSQL identifier for a statement that cannot take a bind
+/// parameter (`DROP SCHEMA` is one).
+///
+/// The name of a schema is not something this command chooses: one form reads
+/// it back from `pg_namespace`, the other takes it from the command line. Both
+/// are therefore escaped rather than trusted — a double quote inside an
+/// identifier is doubled, which is the only escape the quoted-identifier
+/// grammar has, and the result can no longer close the quoting early. An
+/// interior NUL, which PostgreSQL cannot store in a name anyway, is refused
+/// outright rather than silently truncated by the driver.
+fn quote_ident(name: &str) -> Result<String> {
+    if name.contains('\0') {
+        anyhow::bail!("Nom de schéma invalide : {name:?}");
+    }
+    Ok(format!("\"{}\"", name.replace('"', "\"\"")))
+}
+
 pub async fn cmd_app_reset(args: &clap::ArgMatches) -> Result<()> {
     section("Réinitialisation complète de l'application");
     println!();
@@ -112,7 +129,13 @@ pub async fn cmd_app_reset(args: &clap::ArgMatches) -> Result<()> {
     } else {
         for schema in &schemas {
             info(&format!("Suppression du schéma {schema}…"));
-            sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE"))
+            // Safe: the name comes back from `pg_namespace`, so it is escaped
+            // here rather than trusted — `quote_ident` doubles any interior
+            // quote, which is what makes the identifier unable to end early.
+            let ident = quote_ident(schema)?;
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "DROP SCHEMA IF EXISTS {ident} CASCADE"
+            )))
                 .execute(&pool)
                 .await
                 .with_context(|| format!("Suppression du schéma {schema}"))?;
@@ -233,7 +256,12 @@ pub async fn cmd_module_reset(module_id: &str, force: bool, keep_files: bool) ->
 
     // ── 1. Suppression du schéma ─────────────────────────────────────────────
     info(&format!("Suppression du schéma {module_id}…"));
-    sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{module_id}\" CASCADE"))
+    // Safe: `module_id` is a command-line argument, so it is escaped here
+    // rather than trusted — see `quote_ident`.
+    let ident = quote_ident(module_id)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP SCHEMA IF EXISTS {ident} CASCADE"
+    )))
         .execute(&pool)
         .await
         .with_context(|| format!("Suppression du schéma {module_id}"))?;

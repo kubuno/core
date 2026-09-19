@@ -101,9 +101,13 @@ pub async fn ensure_subject_exists<'e, E: sqlx::PgExecutor<'e>>(
         return Ok(());
     };
 
-    let exists: bool = sqlx::query_scalar(&format!(
+    // Safe: `table` is a `&'static str` returned by `subject_relation`, an
+    // exhaustive `match` over the `ScopeKind` enum. The caller's scope is parsed
+    // into that enum before reaching here, so no request text is spliced in; the
+    // subject id travels as a bind parameter.
+    let exists: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS(SELECT 1 FROM {table} WHERE id = $1)"
-    ))
+    )))
     .bind(id)
     .fetch_one(db)
     .await

@@ -476,7 +476,11 @@ pub async fn delete_role(
 
 // ── Assignments ───────────────────────────────────────────────────────────────
 
-const ASSIGNMENT_SELECT: &str = r#"
+// A macro rather than a `const` so the reads below splice it with `concat!`
+// and hand the driver one compile-time literal.
+macro_rules! assignment_select {
+    () => {
+        r#"
     SELECT a.id, a.role_id, r.slug AS role_slug, r.name AS role_name,
            a.subject_user_id, a.subject_group_id,
            COALESCE(u.username || ' <' || u.email || '>', g.name) AS subject_label,
@@ -487,7 +491,9 @@ const ASSIGNMENT_SELECT: &str = r#"
       LEFT JOIN core.users u       ON u.id = a.subject_user_id
       LEFT JOIN core.user_groups g ON g.id = a.subject_group_id
       LEFT JOIN core.org_units ou  ON ou.id = a.scope_org_unit_id
-"#;
+"#
+    };
+}
 
 #[derive(Deserialize)]
 pub struct ListAssignmentsQuery {
@@ -507,15 +513,16 @@ pub async fn list_assignments(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::ROLES_READ)?;
 
-    let sql = format!(
-        "{ASSIGNMENT_SELECT} WHERE ($1::uuid IS NULL OR a.subject_user_id = $1) \
+    let sql = concat!(
+        assignment_select!(),
+        " WHERE ($1::uuid IS NULL OR a.subject_user_id = $1) \
            AND ($2::uuid IS NULL OR a.subject_group_id = $2) \
            AND ($3::uuid IS NULL OR a.role_id = $3) \
            AND ($4 OR a.expires_at IS NULL OR a.expires_at > NOW()) \
          ORDER BY a.created_at DESC"
     );
 
-    let rows = sqlx::query_as::<_, AssignmentRow>(&sql)
+    let rows = sqlx::query_as::<_, AssignmentRow>(sql)
         .bind(q.user_id)
         .bind(q.group_id)
         .bind(q.role_id)
@@ -628,7 +635,7 @@ pub async fn create_assignment(
         }
     })?;
 
-    let row = sqlx::query_as::<_, AssignmentRow>(&format!("{ASSIGNMENT_SELECT} WHERE a.id = $1"))
+    let row = sqlx::query_as::<_, AssignmentRow>(concat!(assignment_select!(), " WHERE a.id = $1"))
         .bind(id)
         .fetch_one(&mut *tx)
         .await
@@ -697,9 +704,7 @@ pub async fn delete_assignment(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query_as::<_, AssignmentRow>(&format!(
-        "{ASSIGNMENT_SELECT} WHERE a.id = $1"
-    ))
+    let row = sqlx::query_as::<_, AssignmentRow>(concat!(assignment_select!(), " WHERE a.id = $1"))
     .bind(id)
     .fetch_optional(&mut *tx)
     .await

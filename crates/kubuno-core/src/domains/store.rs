@@ -23,7 +23,13 @@ use super::model::{Domain, DomainKind};
 use crate::errors::AppError;
 
 /// Columns every read shares, account count included.
-const SELECT_DOMAINS: &str = r#"
+///
+/// A macro rather than a `const` so call sites splice it with `concat!` and end
+/// up with one `&'static str` literal: the query text is fixed at compile time,
+/// which the driver accepts without any audit escape hatch.
+macro_rules! select_domains {
+    () => {
+        r#"
     SELECT d.id, d.name, d.kind, d.parent_id, p.name AS parent_name,
            d.verify_token, d.verified_at, d.last_checked_at, d.last_error,
            d.mx_hosts, d.has_spf, d.has_dmarc, d.mail_checked_at, d.created_at,
@@ -31,7 +37,9 @@ const SELECT_DOMAINS: &str = r#"
              WHERE LOWER(SPLIT_PART(u.email::text, '@', 2)) = d.name)::bigint AS account_count
       FROM core.domains d
       LEFT JOIN core.domains p ON p.id = d.parent_id
-"#;
+"#
+    };
+}
 
 fn from_row(row: &PgRow) -> Result<Domain, AppError> {
     let kind: String = row.try_get("kind").map_err(AppError::Database)?;
@@ -57,8 +65,9 @@ fn from_row(row: &PgRow) -> Result<Domain, AppError> {
 /// Every domain, the primary first, then aliases grouped under the domain they
 /// serve — the order the console renders without having to sort.
 pub async fn list(db: &PgPool) -> Result<Vec<Domain>, AppError> {
-    let rows = sqlx::query(&format!(
-        "{SELECT_DOMAINS} ORDER BY (d.kind = 'primary') DESC, COALESCE(p.name, d.name), d.kind, d.name"
+    let rows = sqlx::query(concat!(
+        select_domains!(),
+        " ORDER BY (d.kind = 'primary') DESC, COALESCE(p.name, d.name), d.kind, d.name"
     ))
     .fetch_all(db)
     .await
@@ -70,7 +79,7 @@ pub async fn list(db: &PgPool) -> Result<Vec<Domain>, AppError> {
 }
 
 pub async fn get(db: &PgPool, id: Uuid) -> Result<Domain, AppError> {
-    let row = sqlx::query(&format!("{SELECT_DOMAINS} WHERE d.id = $1"))
+    let row = sqlx::query(concat!(select_domains!(), " WHERE d.id = $1"))
         .bind(id)
         .fetch_optional(db)
         .await

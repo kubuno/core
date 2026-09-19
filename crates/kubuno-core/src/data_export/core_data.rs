@@ -51,7 +51,9 @@ const INSTANCE_AUDIT_LIMIT: i64 = 100_000;
 /// Every caller builds its own `SELECT` with an explicit column list; this only
 /// removes the repetition of the error handling, which must be identical
 /// everywhere or one failing extract ends up silently empty in an archive.
-async fn json_rows(db: &PgPool, sql: &str, bind: Option<Uuid>) -> Result<Value, AppError> {
+// `sql` is `&'static str`: every caller below passes a literal written here, so
+// no query text can be assembled at run time and the driver takes it as-is.
+async fn json_rows(db: &PgPool, sql: &'static str, bind: Option<Uuid>) -> Result<Value, AppError> {
     let query = sqlx::query_scalar::<_, Value>(sql);
     let query = match bind {
         Some(id) => query.bind(id),

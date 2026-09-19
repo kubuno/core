@@ -580,10 +580,27 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
         Err(e) if is_missing_database(&e) && req.create_database => {
             match connect(req.database.options("postgres")).await {
                 Ok(admin_pool) => {
-                    // Name validated by `database_name_is_safe` — CREATE DATABASE
-                    // takes no bind parameters.
+                    // `CREATE DATABASE` takes no bind parameter, so the name is
+                    // the one piece of request data that reaches a statement's
+                    // text anywhere in the core. It is re-checked HERE, right
+                    // where it is spliced in, rather than relying on the
+                    // validation performed at the top of the handler: the
+                    // allow-list must not be able to drift away from its use.
+                    if !req.database.database_name_is_safe() {
+                        admin_pool.close().await;
+                        return bad_code(
+                            "db.name_invalid",
+                            "Nom de base invalide : lettres, chiffres et « _ » uniquement, sans \
+                             chiffre en première position.",
+                            json!({}),
+                        );
+                    }
+                    // Safe: `database_name_is_safe` accepts only
+                    // `[A-Za-z_][A-Za-z0-9_]{0,62}` — no quote, no space, no
+                    // separator — so the identifier cannot end early or carry a
+                    // second statement.
                     let stmt = format!("CREATE DATABASE \"{db_name}\"");
-                    if let Err(e) = sqlx::query(&stmt).execute(&admin_pool).await {
+                    if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(stmt)).execute(&admin_pool).await {
                         tracing::error!(error = %e, "Création de la base impossible");
                         admin_pool.close().await;
                         return bad_code("install.create_db_failed", format!("Création de la base impossible : {e}"), json!({ "detail": e.to_string() }));

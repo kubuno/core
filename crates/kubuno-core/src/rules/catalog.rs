@@ -413,14 +413,26 @@ async fn purge_vanished(
 /// and clears the flag on those whose module came back. Cheap enough to run at
 /// startup and after an uninstall; never deletes a row.
 pub async fn refresh_orphans(db: &PgPool) -> Result<(), AppError> {
-    for table in ["core.rule_triggers", "core.rule_actions"] {
-        let sql = format!(
-            r#"UPDATE {table} c
+    // One statement per catalogue table, each a whole compile-time literal: the
+    // table name is part of the query text, so it is written out rather than
+    // spliced in at run time. The label beside it is only for the log line.
+    macro_rules! refresh {
+        ($table:literal) => {
+            concat!(
+                "UPDATE ",
+                $table,
+                r#" c
                   SET is_orphan = NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = c.module_id)
                 WHERE c.module_id <> 'core'
                   AND c.is_orphan <> NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = c.module_id)"#
-        );
-        if let Err(e) = sqlx::query(&sql).execute(db).await {
+            )
+        };
+    }
+    for (table, sql) in [
+        ("core.rule_triggers", refresh!("core.rule_triggers")),
+        ("core.rule_actions", refresh!("core.rule_actions")),
+    ] {
+        if let Err(e) = sqlx::query(sql).execute(db).await {
             tracing::error!(error = %e, table = %table, "rules: réévaluation des orphelins");
             return Err(AppError::Database(e));
         }

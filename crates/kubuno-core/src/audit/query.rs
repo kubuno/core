@@ -73,13 +73,20 @@ pub struct AuditQuery {
     pub cursor: Option<String>,
 }
 
-const SELECT_COLUMNS: &str = r#"
+// A macro rather than a `const` so call sites splice it with `concat!` and hand
+// the driver one `&'static str` literal: no part of this query text exists
+// before compile time, and every filter below travels as a bind parameter.
+macro_rules! select_columns {
+    () => {
+        r#"
     id, occurred_at, actor_id, actor_label, actor_role, actor_origin, actor_token_id,
     host(ip_address)::text AS ip_address, user_agent,
     action, module_id, target_type, target_id, target_label,
     before, after, outcome, detail,
     reversible, reverts_entry_id, reverted_by_entry_id
-"#;
+"#
+    };
+}
 
 fn map_row(r: &sqlx::postgres::PgRow) -> AuditRow {
     AuditRow {
@@ -118,8 +125,10 @@ pub async fn list(db: &PgPool, q: &AuditQuery) -> Result<Page, AppError> {
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let cursor = q.cursor.as_deref().and_then(Cursor::decode);
 
-    let sql = format!(
-        r#"SELECT {SELECT_COLUMNS}
+    let sql = concat!(
+        "SELECT ",
+        select_columns!(),
+        r#"
            FROM core.admin_audit
            WHERE ($1::uuid  IS NULL OR actor_id = $1)
              AND ($2::text  IS NULL OR action = $2 OR action LIKE $2 || '.%')
@@ -136,7 +145,7 @@ pub async fn list(db: &PgPool, q: &AuditQuery) -> Result<Page, AppError> {
     );
 
     // One extra row tells us whether a next page exists without a COUNT.
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sql)
         .bind(q.actor_id)
         .bind(q.action.as_deref().filter(|s| !s.is_empty()))
         .bind(q.target_type.as_deref().filter(|s| !s.is_empty()))
@@ -172,8 +181,8 @@ pub async fn list(db: &PgPool, q: &AuditQuery) -> Result<Page, AppError> {
 
 /// Fetches a single entry.
 pub async fn get(db: &PgPool, id: i64) -> Result<AuditRow, AppError> {
-    let sql = format!("SELECT {SELECT_COLUMNS} FROM core.admin_audit WHERE id = $1");
-    let row = sqlx::query(&sql)
+    let sql = concat!("SELECT ", select_columns!(), " FROM core.admin_audit WHERE id = $1");
+    let row = sqlx::query(sql)
         .bind(id)
         .fetch_optional(db)
         .await

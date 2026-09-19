@@ -421,7 +421,9 @@ async fn load_settings(db: &PgPool) -> Result<SettingMap, AppError> {
     Ok(SettingMap(map))
 }
 
-async fn count(db: &PgPool, sql: &str, what: &str) -> Result<i64, AppError> {
+// `sql` is `&'static str`: the four callers above each pass a literal written in
+// this file, so nothing here can be assembled at run time.
+async fn count(db: &PgPool, sql: &'static str, what: &str) -> Result<i64, AppError> {
     sqlx::query_scalar::<_, i64>(sql)
         .fetch_one(db)
         .await

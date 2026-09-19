@@ -511,7 +511,17 @@ pub struct SearchUsersQuery {
 /// production.
 ///
 /// `email` is selected but only *emitted* when `directory.share_email` says so.
-const DIRECTORY_COLUMNS: &str = "id, username, display_name, avatar_url, email";
+// A macro rather than a plain `const` so the four reads below splice it with
+// `concat!` and stay compile-time literals; the `const` is kept because the
+// tests at the bottom of this file assert on the list itself.
+macro_rules! directory_columns {
+    () => {
+        "id, username, display_name, avatar_url, email"
+    };
+}
+/// The same list as a value, for the tests that assert on its contents.
+#[cfg(test)]
+const DIRECTORY_COLUMNS: &str = directory_columns!();
 
 /// The fuller projection, for ONE person whose card is being opened.
 ///
@@ -526,9 +536,14 @@ const DIRECTORY_COLUMNS: &str = "id, username, display_name, avatar_url, email";
 /// exemption — it is exactly the sort of "just this once" that would put a date
 /// of birth on a meeting invitation. Anything appended to this list is
 /// published to every colleague who clicks a name.
-const DIRECTORY_CARD_COLUMNS: &str =
-    "id, username, display_name, first_name, last_name, avatar_url, email, \
-     name_pronunciation, pronouns, work_location, introduction, org_unit_id";
+// A macro rather than a `const` so the read below splices it with `concat!`:
+// one compile-time literal, which the driver accepts without an audit marker.
+macro_rules! directory_card_columns {
+    () => {
+        "id, username, display_name, first_name, last_name, avatar_url, email, \
+     name_pronunciation, pronouns, work_location, introduction, org_unit_id"
+    };
+}
 
 /// Search active accounts — the staff directory, as the caller is entitled to
 /// see it.
@@ -577,8 +592,10 @@ pub async fn search_users(
 
     // The projection comes from `DIRECTORY_COLUMNS`, never from a list typed
     // here: see that constant for why.
-    let sql = format!(
-        r#"SELECT {DIRECTORY_COLUMNS}
+    let sql = concat!(
+        "SELECT ",
+        directory_columns!(),
+        r#"
            FROM core.users
            WHERE is_active = TRUE
              AND ($1 = '' OR username ILIKE '%' || $1 || '%'
@@ -591,7 +608,7 @@ pub async fn search_users(
     );
 
     let users = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(
-        &sql,
+        sql,
     )
     .bind(query)
     .bind(limit)
@@ -660,8 +677,10 @@ pub async fn user_card(
     #[allow(clippy::type_complexity)]
     let row: Option<(uuid::Uuid, String, Option<String>, Option<String>, Option<String>,
                      Option<String>, String, Option<String>, Option<String>, Option<String>,
-                     Option<String>, Option<uuid::Uuid>)> = sqlx::query_as(&format!(
-        "SELECT {DIRECTORY_CARD_COLUMNS} FROM core.users WHERE id = $1 AND is_active = TRUE"
+                     Option<String>, Option<uuid::Uuid>)> = sqlx::query_as(concat!(
+        "SELECT ",
+        directory_card_columns!(),
+        " FROM core.users WHERE id = $1 AND is_active = TRUE"
     ))
     .bind(id)
     .fetch_optional(&state.db)
@@ -769,10 +788,10 @@ pub async fn lookup_users(
     // Same projection as the search, for the same reason: this route is what
     // every module calls to put a name on an author or a mention, and a personal
     // datum appended to the list here would surface in all of them at once.
-    let sql = format!("SELECT {DIRECTORY_COLUMNS} FROM core.users WHERE id = ANY($1)");
+    let sql = concat!("SELECT ", directory_columns!(), " FROM core.users WHERE id = ANY($1)");
 
     let users = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(
-        &sql,
+        sql,
     )
     .bind(&ids)
     .fetch_all(&state.db)
@@ -1163,8 +1182,10 @@ pub async fn internal_list_users(
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let query = q.q.as_deref().unwrap_or("").trim().to_string();
 
-    let sql = format!(
-        r#"SELECT {DIRECTORY_COLUMNS}
+    let sql = concat!(
+        "SELECT ",
+        directory_columns!(),
+        r#"
            FROM core.users
            WHERE is_active = TRUE
              AND ($1 = '' OR username ILIKE '%' || $1 || '%'
@@ -1174,7 +1195,7 @@ pub async fn internal_list_users(
            LIMIT $2"#
     );
 
-    let rows = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(&sql)
+    let rows = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(sql)
         .bind(&query)
         .bind(limit)
         .fetch_all(&state.db)
@@ -1195,9 +1216,13 @@ pub async fn internal_get_user(
     _internal: InternalRequest,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let sql = format!("SELECT {DIRECTORY_COLUMNS} FROM core.users WHERE id = $1 AND is_active = TRUE");
+    let sql = concat!(
+        "SELECT ",
+        directory_columns!(),
+        " FROM core.users WHERE id = $1 AND is_active = TRUE"
+    );
 
-    let row = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(&sql)
+    let row = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(sql)
         .bind(id)
         .fetch_optional(&state.db)
         .await
@@ -1273,7 +1298,11 @@ pub async fn internal_list_groups(
 /// and every people picker must keep answering `display_name`, username and
 /// photo, and adding the structured names there would disclose them everywhere.
 /// This list exists so provisioning — and provisioning alone — can read them.
-const PROVISIONING_COLUMNS: &str = "id, username, display_name, first_name, last_name";
+macro_rules! provisioning_columns {
+    () => {
+        "id, username, display_name, first_name, last_name"
+    };
+}
 
 type ProvisioningRow = (uuid::Uuid, String, Option<String>, Option<String>, Option<String>);
 
@@ -1300,10 +1329,12 @@ pub async fn internal_provisioning_users(
     State(state): State<AppState>,
     _internal: InternalRequest,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let sql = format!(
-        "SELECT {PROVISIONING_COLUMNS} FROM core.users           WHERE is_active = TRUE ORDER BY created_at ASC"
+    let sql = concat!(
+        "SELECT ",
+        provisioning_columns!(),
+        " FROM core.users WHERE is_active = TRUE ORDER BY created_at ASC"
     );
-    let rows = sqlx::query_as::<_, ProvisioningRow>(&sql)
+    let rows = sqlx::query_as::<_, ProvisioningRow>(sql)
         .fetch_all(&state.db)
         .await
         .map_err(|e| {
@@ -1319,10 +1350,12 @@ pub async fn internal_provisioning_user(
     _internal: InternalRequest,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let sql = format!(
-        "SELECT {PROVISIONING_COLUMNS} FROM core.users WHERE id = $1 AND is_active = TRUE"
+    let sql = concat!(
+        "SELECT ",
+        provisioning_columns!(),
+        " FROM core.users WHERE id = $1 AND is_active = TRUE"
     );
-    let row = sqlx::query_as::<_, ProvisioningRow>(&sql)
+    let row = sqlx::query_as::<_, ProvisioningRow>(sql)
         .bind(id)
         .fetch_optional(&state.db)
         .await

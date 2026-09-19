@@ -27,11 +27,19 @@ use super::model::{ActionSpec, ExecutionRow, Mode, Outcome, Rule, Scope, Subject
 /// listens and rebuilds its memory index; nothing queries on the hot path.
 pub const RULES_CHANNEL: &str = "kubuno_rules";
 
-const SELECT_RULE: &str = r#"
+// The column list every read and every RETURNING clause shares. A macro rather
+// than a `const` so call sites can splice it with `concat!`: the result is a
+// single `&'static str` literal, which the driver accepts without an audit
+// escape hatch — no query text here is ever built at run time.
+macro_rules! select_rule {
+    () => {
+        r#"
     id, name, description, trigger_key, conditions, actions, mode, scope,
     threshold_count, threshold_window_s, rollout_percent, severity, priority,
     version, created_at, updated_at
-"#;
+"#
+    };
+}
 
 fn map_rule(r: &sqlx::postgres::PgRow) -> Rule {
     let conditions: Value = r.get("conditions");
@@ -65,8 +73,10 @@ fn map_rule(r: &sqlx::postgres::PgRow) -> Rule {
 
 /// Every rule that is not inactive, ordered as the engine runs them.
 pub async fn load_active(db: &PgPool) -> Result<Vec<Rule>, AppError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {SELECT_RULE} FROM core.rules WHERE mode <> 'inactive' ORDER BY priority, created_at"
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        select_rule!(),
+        " FROM core.rules WHERE mode <> 'inactive' ORDER BY priority, created_at"
     ))
     .fetch_all(db)
     .await
@@ -78,8 +88,10 @@ pub async fn load_active(db: &PgPool) -> Result<Vec<Rule>, AppError> {
 }
 
 pub async fn list_rules(db: &PgPool) -> Result<Vec<Rule>, AppError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {SELECT_RULE} FROM core.rules ORDER BY priority, created_at"
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        select_rule!(),
+        " FROM core.rules ORDER BY priority, created_at"
     ))
     .fetch_all(db)
     .await
@@ -91,7 +103,11 @@ pub async fn list_rules(db: &PgPool) -> Result<Vec<Rule>, AppError> {
 }
 
 pub async fn get_rule(db: &PgPool, id: Uuid) -> Result<Rule, AppError> {
-    let row = sqlx::query(&format!("SELECT {SELECT_RULE} FROM core.rules WHERE id = $1"))
+    let row = sqlx::query(concat!(
+        "SELECT ",
+        select_rule!(),
+        " FROM core.rules WHERE id = $1"
+    ))
         .bind(id)
         .fetch_optional(db)
         .await
@@ -151,13 +167,14 @@ pub async fn insert_rule(
     author: Option<Uuid>,
     note: Option<&str>,
 ) -> Result<Rule, AppError> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(concat!(
         r#"INSERT INTO core.rules
                (name, description, trigger_key, conditions, actions, mode, scope,
                 threshold_count, threshold_window_s, rollout_percent, severity, priority,
                 version, created_by, updated_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $13)
-           RETURNING {SELECT_RULE}"#
+           RETURNING "#,
+        select_rule!()
     ))
     .bind(&draft.name)
     .bind(draft.description.as_deref())
@@ -193,14 +210,15 @@ pub async fn update_rule(
     author: Option<Uuid>,
     note: Option<&str>,
 ) -> Result<Rule, AppError> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(concat!(
         r#"UPDATE core.rules
               SET name = $2, description = $3, trigger_key = $4, conditions = $5,
                   actions = $6, mode = $7, scope = $8, threshold_count = $9,
                   threshold_window_s = $10, rollout_percent = $11, severity = $12,
                   priority = $13, version = version + 1, updated_by = $14
             WHERE id = $1
-        RETURNING {SELECT_RULE}"#
+        RETURNING "#,
+        select_rule!()
     ))
     .bind(id)
     .bind(&draft.name)

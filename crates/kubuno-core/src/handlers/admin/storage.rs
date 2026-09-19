@@ -382,20 +382,24 @@ pub async fn consumers(
         Some("full") => "full",
         _ => "all",
     };
-    let order = match q.sort.as_deref() {
+    let order: &'static str = match q.sort.as_deref() {
         // NULLIF guards the division: an account with no quota has no percentage,
         // and it sinks rather than sorting as infinity.
         Some("percent") => "(u.used_bytes::float8 / NULLIF(u.quota_bytes, 0)) DESC NULLS LAST, u.used_bytes DESC",
         _ => "u.used_bytes DESC",
     };
 
-    let predicate = match filter {
+    let predicate: &'static str = match filter {
         "full" => "u.used_bytes >= u.quota_bytes",
         "near" => "u.quota_bytes > 0 AND u.used_bytes * 100 >= u.quota_bytes * $3",
         _ => "TRUE",
     };
 
-    let rows = sqlx::query(&format!(
+    // Safe: `predicate` and `order` are `&'static str` chosen by an exhaustive
+    // `match` over literals written here — the query string only ever carries
+    // one of those fixed alternatives, never the caller's text. The unit list,
+    // the limit and the warning threshold are bound parameters.
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
         r#"SELECT u.id, u.username, u.email, u.display_name, u.is_active,
                   u.used_bytes, u.quota_bytes,
                   u.org_unit_id, o.name AS unit_name
@@ -406,7 +410,7 @@ pub async fn consumers(
               AND {predicate}
             ORDER BY {order}
             LIMIT $2"#
-    ))
+    )))
     .bind(scope_units.as_deref())
     .bind(limit)
     .bind(warn_percent)

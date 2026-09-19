@@ -322,7 +322,11 @@ pub async fn read(
         ceiling = DETAIL_LIMIT + 1,
     );
 
-    let fetched = sqlx::query(&sql)
+    // Safe: every fragment is a `&'static str` written in source — `Counted`'s
+    // table, time column and filter, and each `DetailColumn::expr` (a private
+    // field only the const catalogues below set). The ceiling and cell clip are
+    // integer constants; the window bounds are bound parameters.
+    let fetched = sqlx::query(sqlx::AssertSqlSafe(sql))
         .bind(win.from)
         .bind(win.to)
         .fetch_all(db)

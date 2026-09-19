@@ -32,14 +32,21 @@ pub const DEFAULT_LIMIT: i64 = 50;
 /// Label recorded on the timeline for work the server did on its own.
 pub const SYSTEM_ACTOR: &str = "Système";
 
-const SELECT_COLUMNS: &str = r#"
+// Macros rather than `const`s so call sites splice them with `concat!`: each
+// query is then a single `&'static str` literal fixed at compile time, and the
+// caller's filters all travel as bind parameters.
+macro_rules! select_columns {
+    () => {
+        r#"
     a.id, a.source, a.kind, a.severity, a.status, a.title, a.summary, a.payload,
     a.module_id, a.subject_user_id, a.org_unit_id, a.is_simulation,
     a.occurrences, a.first_seen_at, a.last_seen_at,
     a.assignee_id, a.assigned_at, a.closed_at, a.created_at,
     s.username        AS subject_label,
     COALESCE(NULLIF(g.display_name, ''), g.username) AS assignee_label
-"#;
+"#
+    };
+}
 
 /// The clause that quarantines simulation alerts.
 ///
@@ -48,13 +55,21 @@ const SELECT_COLUMNS: &str = r#"
 /// notification, or "simulation" becomes a synonym for "enabled, loudly". This
 /// is applied to every default read; seeing them requires asking for them by
 /// name (`?simulation=true` on the queue).
-const NOT_SIMULATED: &str = "a.is_simulation = FALSE";
+macro_rules! not_simulated {
+    () => {
+        "a.is_simulation = FALSE"
+    };
+}
 
-const FROM_JOINS: &str = r#"
+macro_rules! from_joins {
+    () => {
+        r#"
     FROM core.alerts a
     LEFT JOIN core.users s ON s.id = a.subject_user_id
     LEFT JOIN core.users g ON g.id = a.assignee_id
-"#;
+"#
+    };
+}
 
 fn map_row(r: &sqlx::postgres::PgRow) -> AlertRow {
     let id: Uuid = r.get("id");
@@ -468,8 +483,11 @@ pub async fn list(db: &PgPool, q: &AlertQuery, ctx: &AdminContext) -> Result<Pag
         _ => (None, false),
     };
 
-    let sql = format!(
-        r#"SELECT {SELECT_COLUMNS} {FROM_JOINS}
+    let sql = concat!(
+        "SELECT ",
+        select_columns!(),
+        from_joins!(),
+        r#"
            WHERE a.status = ANY($1)
              AND ($2::text[] IS NULL OR a.severity = ANY($2))
              AND ($3::text[] IS NULL OR a.kind     = ANY($3))
@@ -491,7 +509,7 @@ pub async fn list(db: &PgPool, q: &AlertQuery, ctx: &AdminContext) -> Result<Pag
     );
 
     // One extra row answers "is there a next page?" without a COUNT.
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sql)
         .bind(&statuses)
         .bind(severities.as_deref())
         .bind(kinds.as_deref())
@@ -537,8 +555,8 @@ pub async fn list(db: &PgPool, q: &AlertQuery, ctx: &AdminContext) -> Result<Pag
 
 /// One alert. Refuses a kind the caller may not read, exactly like the list.
 pub async fn get(db: &PgPool, id: Uuid, ctx: &AdminContext) -> Result<AlertRow, AppError> {
-    let sql = format!("SELECT {SELECT_COLUMNS} {FROM_JOINS} WHERE a.id = $1");
-    let row = sqlx::query(&sql)
+    let sql = concat!("SELECT ", select_columns!(), from_joins!(), " WHERE a.id = $1");
+    let row = sqlx::query(sql)
         .bind(id)
         .fetch_optional(db)
         .await
@@ -566,16 +584,21 @@ pub async fn get(db: &PgPool, id: Uuid, ctx: &AdminContext) -> Result<AlertRow, 
 /// the only one?" — answered without going back to the queue and re-filtering.
 pub async fn related(db: &PgPool, alert: &AlertRow, ctx: &AdminContext) -> Result<Vec<AlertRow>, AppError> {
     let denied = denied_kinds(ctx);
-    let sql = format!(
-        r#"SELECT {SELECT_COLUMNS} {FROM_JOINS}
+    let sql = concat!(
+        "SELECT ",
+        select_columns!(),
+        from_joins!(),
+        r#"
            WHERE a.id <> $1
              AND a.kind <> ALL($4)
-             AND {NOT_SIMULATED}
+             AND "#,
+        not_simulated!(),
+        r#"
              AND (a.kind = $2 OR ($3::uuid IS NOT NULL AND a.subject_user_id = $3))
            ORDER BY a.last_seen_at DESC
            LIMIT 10"#
     );
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sql)
         .bind(alert.id)
         .bind(&alert.kind)
         .bind(alert.subject_user_id)
