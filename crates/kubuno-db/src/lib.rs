@@ -50,6 +50,7 @@ pub mod journal;
 pub mod pool;
 pub mod query;
 pub mod returning;
+pub mod search;
 pub mod sql;
 pub mod value;
 
@@ -59,6 +60,7 @@ pub use exec::{DbPool, DbRow, DbTx, FromAnyRow, ScalarAnyRow};
 pub use json::JsonVec;
 pub use pool::{connect, DbSettings, MigratorSet, SetupError};
 pub use query::DbQueryBuilder;
+pub use search::{normalize, Field, Query, SearchSql, Weight};
 pub use sql::{lint, Lint, SqlError};
 pub use value::DbValue;
 

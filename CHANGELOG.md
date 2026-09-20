@@ -30,6 +30,18 @@ number at release time, and CI publishes that section as the GitHub Release note
   A module that used a PostgreSQL array converts its column with a single added
   migration, without rewriting the ones already in production.
 
+- **Full-text search now works the same on every database engine.** Search used
+  to rely on PostgreSQL-only machinery (`to_tsvector`, `ts_rank`, the `unaccent`
+  extension, `pg_trgm`), so it only worked on PostgreSQL. A new shared component
+  reduces text to its French word stems and strips accents in the application
+  itself, storing the result in an ordinary text column; a query is reduced the
+  same way and matched against it. Because this happens before the database is
+  touched, a search returns the same results and the same ordering whether the
+  server runs on PostgreSQL, MySQL/MariaDB or SQLite — and no database extension
+  is required. A plural finds the singular ("chevaux" finds "cheval") and an
+  accent-free query finds accented words ("resume" finds "résumé"); titles can
+  be ranked above body text as before. (Fuzzy matching of misspellings, which
+  the old PostgreSQL-only setup offered, is not part of this.)
 - **The database engine can now be chosen at run time, in one binary.** A
   single build carries all three drivers, and the server picks PostgreSQL,
   MySQL/MariaDB or SQLite from its configuration at start-up — an administrator

@@ -178,6 +178,7 @@ each non-portable construct and the helper that replaces it.
 | `NOW()`, `INTERVAL '7 days'` | bind `chrono::Utc::now()`, or `dialect::now()` / `dialect::interval_before()` |
 | `string_agg(...)` | `dialect::string_agg(...)` |
 | `SELECT pg_notify(...)` | `kubuno_db::events::notify(...)` |
+| `to_tsvector`, `plainto_tsquery`, `ts_rank`, `unaccent`, `pg_trgm` | `kubuno_db::search` — stem in Rust into a `TEXT` column (see §2.8) |
 | `DISTINCT ON`, `array_agg`, `SKIP LOCKED` | no portable form — restructure (see §5) |
 
 Two constructs are **refused outright**, on every backend including PostgreSQL:
@@ -315,6 +316,74 @@ single `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` on PostgreSQL/SQLite; th
 same increment plus a locked re-`SELECT` in one transaction on MySQL; and, on
 SQLite, the foundation's single-writer gate on top). See
 `tests/journal_delta.rs`.
+### 2.10 Full-text search
+
+`to_tsvector` / `plainto_tsquery` / `ts_rank`, the `unaccent` extension and
+`pg_trgm` are all PostgreSQL-only. `kubuno_db::search` makes search identical on
+the three engines by moving it into Rust: text is reduced to Snowball **French**
+stems (the same algorithm PostgreSQL's `french` dictionary uses) and stripped of
+diacritics **at write time**, then stored in a plain `TEXT` column; a query is
+put through the same reduction and matched with a portable `LIKE`. Because the
+stemming happens before any SQL, the stored and searched tokens are byte-for-byte
+identical whatever the engine — so a search returns the same rows and the same
+ranking on PostgreSQL, MySQL and SQLite, with no extension.
+
+**Store** — one normalized `TEXT` column per weight class (the portable stand-in
+for `setweight A/B/C`). Compute the columns in Rust on insert/update instead of a
+`tsvector` trigger:
+
+```rust
+use kubuno_db::search::{self, Field, Weight, Query};
+
+// write side (replaces `setweight(to_tsvector('french', unaccent(title)), 'A')`)
+let title_norm = search::normalize(&title);   // e.g. "chevaux" -> "cheval"
+let body_norm  = search::normalize(&body);
+db.execute(
+    "INSERT INTO notes.pages (id, title, title_norm, body_norm) VALUES ($1,$2,$3,$4)",
+    params![id, title, title_norm, body_norm],
+).await?;
+```
+
+**Search** — `Query::build` returns a portable `WHERE` filter, an `ORDER BY`
+score and the bind values (every value bound, never interpolated). Placeholders
+are numbered from `start`, the `WHERE` block then the `ORDER BY` block, so the
+binds slot in between the caller's pre-conditions and its `LIMIT`/`OFFSET`:
+
+```rust
+let fields = [Field::new("title_norm", Weight::A), Field::new("body_norm", Weight::B)];
+if let Some(s) = Query::build(&user_query, &fields, 3) {   // $1,$2 already used
+    let sql = format!(
+        "SELECT * FROM notes.pages \
+         WHERE owner_id = $1 AND is_trashed = $2 AND {} \
+         ORDER BY {} DESC LIMIT ${} OFFSET ${}",
+        s.where_sql, s.order_sql, s.next, s.next + 1);
+    let mut binds = params![owner_id, trashed];
+    binds.extend(s.binds);
+    binds.push(limit.into());
+    binds.push(offset.into());
+    db.fetch_all_as::<Page>(&sql, binds).await?
+} else {
+    // query reduced to no stems: run the plain, unfiltered listing
+};
+```
+
+A term matches when it is a substring of a normalized column, so a stored stem
+`cheval` is found by the query word `chevaux` (both stem to `cheval`), and an
+accent-free query (`resume`) finds an accented word (`résumé`). Every term must
+be present (`AND` across terms); within a term any field satisfies it (`OR`).
+
+**Migration** — drop the `TSVECTOR` column, its `GIN` index and its trigger;
+add `title_norm`/`body_norm` `TEXT` columns and fill them in Rust. A plain
+`B-tree`/no index is enough for a `LIKE '%stem%'`; on a large corpus, an engine's
+own substring index (e.g. a trigram index where available) can be added later
+without changing the query.
+
+**What this does not do:** `pg_trgm`'s typo tolerance is gone — a `LIKE` needs
+the stem to appear as a substring, so a misspelling that survives stemming will
+not match. Stemming still folds inflections and `normalize` folds accents, so
+inflected and accented queries match; only fuzzy/edit-distance matching is out
+of scope. Snowball also leaves a few inflections whole (e.g. the present
+3rd-person plural `-ent`), exactly as PostgreSQL's `french` stemmer does.
 
 ---
 

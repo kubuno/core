@@ -1,6 +1,6 @@
 [package]
 name        = "kubuno-db"
-version     = "0.5.0"
+version     = "0.6.0"
 edition     = "2021"
 description = "Kubuno database foundation: one binary over PostgreSQL / MySQL-MariaDB / SQLite, engine chosen at run time, with placeholder rewriting, a dialect layer and RETURNING emulation"
 license     = "AGPL-3.0"
@@ -27,6 +27,13 @@ chrono     = { version = "0.4", features = ["serde"] }
 thiserror  = "1"
 tracing    = "0.1"
 tokio      = { version = "1", features = ["sync", "time"] }
+# Full-text search made homogeneous across the three engines by stemming in
+# Rust at write time (see `search`). Both are pure-Rust, data-table-only crates
+# with no native dependency, so they travel inside a self-contained `.kbpkg`.
+# `rust-stemmers` is the Snowball French algorithm, the same PostgreSQL runs;
+# `unicode-normalization` strips diacritics via NFD without any DB extension.
+rust-stemmers         = "1.2"
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 tokio    = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
