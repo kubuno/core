@@ -52,6 +52,14 @@ number at release time, and CI publishes that section as the GitHub Release note
   or twice, and the PostgreSQL "does this key exist" operator, which would
   otherwise have been mistaken for a parameter and shifted every value after it
   by one.
+- **Local-first sync now works the same on all three engines.** The change
+  journal that powers offline-capable modules (a monotonic sequence per record,
+  tombstones for deletions, and a delta feed a client resumes from a cursor)
+  used to rely on a PostgreSQL sequence and database triggers that neither
+  MySQL/MariaDB nor SQLite can reproduce. It is now a portable primitive driven
+  from the application, so a module written once syncs correctly whichever
+  engine the server runs, with the counter proven collision-free under
+  concurrent writers on every engine.
 
 ### Known limitations
 

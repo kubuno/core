@@ -262,6 +262,59 @@ the default `jsonb_ops` if you also need key-existence operators. The
 declares the column JSON from the start — `tags JSON NOT NULL` (MySQL) /
 `tags TEXT NOT NULL` (SQLite), or `Backend::col_json()` in a generated migration
 — and never carry an `ALTER`.
+### 2.9 Delta sync: the change journal
+
+The local-first modules (calendar, tasks, notes, assistant, wiki, drive, mail,
+contacts, chat) share one delta-sync layer: a monotonic `change_seq` per record,
+a tombstone per deletion, a feed pulled from a cursor. On PostgreSQL that is a
+`SEQUENCE` plus a `BEFORE UPDATE`/`AFTER DELETE` trigger pair — neither of which
+MySQL or SQLite has, and the child "no-op bump" (`UPDATE ... SET change_seq =
+change_seq`) does not even survive MySQL. The [`journal`](src/journal.rs) module
+lifts the whole mechanism into a portable, application-driven primitive.
+
+Tables a module creates (one shared counter per schema, one tombstone table per
+synced entity; `domain` is `VARCHAR` so MySQL can key it):
+
+```sql
+CREATE TABLE calendar.change_counter (domain VARCHAR(190) NOT NULL PRIMARY KEY, n BIGINT NOT NULL);
+CREATE TABLE calendar.event_tombstones (
+    id {uuid} NOT NULL PRIMARY KEY, owner_id {uuid} NOT NULL,
+    change_seq BIGINT NOT NULL, deleted_at {timestamptz} NOT NULL);
+-- the live table gains a plain column, no default, no trigger:
+ALTER TABLE calendar.events ADD COLUMN change_seq BIGINT NOT NULL DEFAULT 0;
+CREATE INDEX idx_events_change_seq ON calendar.events(owner_id, change_seq);
+```
+
+(`{uuid}`/`{timestamptz}` per `Backend::col_uuid()` / `col_timestamptz()`.)
+
+The diff from the trigger design is that the seq is taken in Rust and bound into
+the same `INSERT`/`UPDATE`/`DELETE`, all on one `DbTx`:
+
+```rust
+let mut tx = pool.begin().await?;
+let seq = journal::next_seq(&mut tx, "calendar.change_counter", "events").await?;
+tx.execute("UPDATE calendar.events SET title=$1, change_seq=$2 WHERE id=$3",
+           params![title, seq, id]).await?;
+tx.commit().await?;                                    // was: BEFORE UPDATE trigger
+
+// delete → tombstone, atomically:
+let seq = journal::next_seq(&mut tx, "calendar.change_counter", "events").await?;
+tx.execute("DELETE FROM calendar.events WHERE id=$1", params![id]).await?;
+journal::record_tombstone(&mut tx, "calendar.event_tombstones", id, owner, seq).await?;
+
+// child bumps parent (replaces the no-op UPDATE, which MySQL cannot observe):
+journal::touch(&mut tx, "calendar.events", "calendar.change_counter", "events", "id", event_id).await?;
+
+// the pull, live rows + tombstones unified and ordered:
+let changes = journal::changes_since(pool, "calendar.events", "calendar.event_tombstones",
+                                     owner, cursor, limit).await?;
+```
+
+`next_seq` is collision-free under concurrent writers on all three engines (a
+single `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` on PostgreSQL/SQLite; the
+same increment plus a locked re-`SELECT` in one transaction on MySQL; and, on
+SQLite, the foundation's single-writer gate on top). See
+`tests/journal_delta.rs`.
 
 ---
 

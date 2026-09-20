@@ -13,7 +13,10 @@
 //!   methods on [`Backend`];
 //! * [`returning`] — how to get a row back on MySQL, which has no `RETURNING`;
 //! * [`pool`] — connecting, the per-engine session policy, migrations;
-//! * [`events`] — `pg_notify` and its outbox fallback.
+//! * [`events`] — `pg_notify` and its outbox fallback;
+//! * [`journal`] — the portable change-journal primitive (monotonic per-domain
+//!   sequence, tombstones, delta pull) that replaces the PostgreSQL
+//!   sequence-and-trigger delta layer the modules share.
 //!
 //! # Why an enum rather than a generic `Pool<DB>`
 //!
@@ -43,6 +46,7 @@ pub mod dialect;
 pub mod events;
 pub mod exec;
 pub mod json;
+pub mod journal;
 pub mod pool;
 pub mod query;
 pub mod returning;
@@ -50,6 +54,7 @@ pub mod sql;
 pub mod value;
 
 pub use dialect::Backend;
+pub use journal::{changes_since, next_seq, next_seq_on_pool, record_tombstone, touch, Change};
 pub use exec::{DbPool, DbRow, DbTx, FromAnyRow, ScalarAnyRow};
 pub use json::JsonVec;
 pub use pool::{connect, DbSettings, MigratorSet, SetupError};
