@@ -11,6 +11,14 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **The database engine can now be chosen at run time, in one binary.** A
+  single build carries all three drivers, and the server picks PostgreSQL,
+  MySQL/MariaDB or SQLite from its configuration at start-up — an administrator
+  can switch without reinstalling. This removes the per-engine build: one
+  artefact runs on any of the three. Each engine's concurrency discipline
+  lives in the shared layer, invisible to the modules — on SQLite, writes are
+  serialised through a single-writer queue with WAL and automatic retry, and
+  MySQL connections are set to UTC and a case-sensitive collation.
 - **Kubuno can be built against MySQL/MariaDB or SQLite, not only PostgreSQL.**
   A new shared component holds everything the three engines disagree about —
   how bind parameters are numbered, how an "insert or update" is written, how a

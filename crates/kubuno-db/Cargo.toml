@@ -1,8 +1,8 @@
 [package]
 name        = "kubuno-db"
-version     = "0.1.0"
+version     = "0.2.0"
 edition     = "2021"
-description = "Kubuno database foundation: one compile-time backend (PostgreSQL / MySQL-MariaDB / SQLite), placeholder rewriting and a dialect layer for what the three engines spell differently"
+description = "Kubuno database foundation: one binary over PostgreSQL / MySQL-MariaDB / SQLite, engine chosen at run time, with placeholder rewriting, a dialect layer and RETURNING emulation"
 license     = "AGPL-3.0"
 repository  = "https://github.com/kubuno/core"
 readme      = "README.md"
@@ -10,12 +10,15 @@ readme      = "README.md"
 # Explicit (non-workspace) dependency versions on purpose: this crate is pulled
 # standalone by every module repo (its own workspace) via a git tag, so it must
 # resolve identically no matter which workspace consumes it.
+#
+# All three drivers are compiled in: the engine is a run-time choice, so there
+# are no per-backend features to forget. `default-features = false` keeps sqlx's
+# own defaults out; the three DB drivers and the codecs are listed explicitly.
 [dependencies]
 sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio", "tls-rustls", "uuid", "chrono", "json", "migrate",
-    # `derive`/`macros`: the FromRow derive modules use, and `sqlx::migrate!`,
-    # which this crate re-exports through the `migrations!` macro.
     "derive", "macros",
+    "postgres", "mysql", "sqlite",
 ] }
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -23,15 +26,8 @@ uuid       = { version = "1", features = ["v4", "serde"] }
 chrono     = { version = "0.4", features = ["serde"] }
 thiserror  = "1"
 tracing    = "0.1"
+tokio      = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]
-tokio    = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tokio    = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tempfile = "3"
-
-[features]
-# Exactly one backend must be enabled. `default-features = false` is therefore
-# mandatory in every consumer that does not want PostgreSQL.
-default          = ["backend-postgres"]
-backend-postgres = ["sqlx/postgres"]
-backend-mysql    = ["sqlx/mysql"]
-backend-sqlite   = ["sqlx/sqlite"]

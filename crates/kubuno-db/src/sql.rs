@@ -42,10 +42,7 @@
 
 use std::borrow::Cow;
 
-use crate::dialect::{Backend, BACKEND};
-
-/// True when `$n` has to become `?`.
-const REWRITES_PLACEHOLDERS: bool = !matches!(BACKEND, Backend::Postgres);
+use crate::dialect::Backend;
 
 /// A query text that cannot be executed as written.
 ///
@@ -89,7 +86,8 @@ pub enum SqlError {
 ///
 /// On PostgreSQL the string is returned borrowed and unchanged; the scan still
 /// runs, because its job there is to catch non-portable SQL early.
-pub fn prepare(sql: &str) -> Result<Cow<'_, str>, SqlError> {
+pub fn prepare(sql: &str, backend: Backend) -> Result<Cow<'_, str>, SqlError> {
+    let rewrites = backend.rewrites_placeholders();
     let b = sql.as_bytes();
     let mut out: Option<String> = None;
     let mut copied_upto = 0usize;
@@ -123,7 +121,7 @@ pub fn prepare(sql: &str) -> Result<Cow<'_, str>, SqlError> {
                         });
                     }
                     expected += 1;
-                    if REWRITES_PLACEHOLDERS {
+                    if rewrites {
                         let buf = out.get_or_insert_with(|| String::with_capacity(sql.len()));
                         buf.push_str(&sql[copied_upto..i]);
                         buf.push('?');
@@ -146,15 +144,6 @@ pub fn prepare(sql: &str) -> Result<Cow<'_, str>, SqlError> {
         }
         None => Cow::Borrowed(sql),
     })
-}
-
-/// The **only** `AssertSqlSafe` in the whole platform.
-///
-/// Takes text that came out of [`prepare`], i.e. developer-written SQL with at
-/// most its placeholder syntax changed. Anything else must go through bind
-/// parameters.
-pub(crate) fn assert_safe(sql: Cow<'_, str>) -> sqlx::AssertSqlSafe<String> {
-    sqlx::AssertSqlSafe(sql.into_owned())
 }
 
 /// Turns a [`SqlError`] into the sqlx error modules already handle.
@@ -326,13 +315,14 @@ pub fn lint(sql: &str) -> Vec<Lint> {
 mod tests {
     use super::*;
 
-    /// What `prepare` produces on the backend this test binary was built for.
+    /// What `prepare` produces on a rewriting engine (MySQL/SQLite turn `$n`
+    /// into `?`); `prepare_pg` keeps PostgreSQL's `$n`.
     fn ok(sql: &str) -> String {
-        prepare(sql).expect("should be portable").into_owned()
+        prepare(sql, Backend::MySql).expect("should be portable").into_owned()
     }
 
-    fn expected(pg: &str, other: &str) -> String {
-        if REWRITES_PLACEHOLDERS { other.to_string() } else { pg.to_string() }
+    fn expected(_pg: &str, rewritten: &str) -> String {
+        rewritten.to_string()
     }
 
     #[test]
@@ -350,10 +340,8 @@ mod tests {
     fn handles_two_digit_placeholders() {
         let sql = (1..=12).map(|n| format!("c{n} = ${n}")).collect::<Vec<_>>().join(" AND ");
         let got = ok(&format!("SELECT 1 WHERE {sql}"));
-        if REWRITES_PLACEHOLDERS {
-            assert_eq!(got.matches('?').count(), 12, "{got}");
-            assert!(!got.contains('$'), "{got}");
-        }
+        assert_eq!(got.matches('?').count(), 12, "{got}");
+        assert!(!got.contains('$'), "{got}");
     }
 
     #[test]
@@ -424,13 +412,13 @@ mod tests {
 
     #[test]
     fn rejects_out_of_order_placeholders() {
-        let err = prepare("SELECT * FROM t WHERE a = $2 AND b = $1").unwrap_err();
+        let err = prepare("SELECT * FROM t WHERE a = $2 AND b = $1", Backend::Postgres).unwrap_err();
         assert!(matches!(err, SqlError::PlaceholderOrder { found: 2, expected: 1, .. }), "{err}");
     }
 
     #[test]
     fn rejects_reused_placeholders() {
-        let err = prepare("SELECT * FROM t WHERE a = $1 OR b = $1").unwrap_err();
+        let err = prepare("SELECT * FROM t WHERE a = $1 OR b = $1", Backend::Postgres).unwrap_err();
         assert!(matches!(err, SqlError::PlaceholderOrder { found: 1, expected: 2, .. }), "{err}");
     }
 
@@ -440,6 +428,7 @@ mod tests {
         let err = prepare(
             "UPDATE forms.themes SET theme = $1 \
              WHERE theme ? 'fontFamily' AND theme->>'fontFamily' LIKE '%Some Sans%'",
+            Backend::Postgres,
         )
         .unwrap_err();
         assert!(matches!(err, SqlError::StrayQuestionMark { .. }), "{err}");
@@ -449,7 +438,7 @@ mod tests {
     fn rejects_the_other_json_operators() {
         for sql in ["SELECT 1 WHERE m ?| array['a']", "SELECT 1 WHERE m ?& array['a']"] {
             assert!(
-                matches!(prepare(sql).unwrap_err(), SqlError::StrayQuestionMark { .. }),
+                matches!(prepare(sql, Backend::Postgres).unwrap_err(), SqlError::StrayQuestionMark { .. }),
                 "{sql} should be refused"
             );
         }
@@ -463,7 +452,7 @@ mod tests {
     #[test]
     fn rejects_unterminated_literal() {
         assert!(matches!(
-            prepare("SELECT 'oops").unwrap_err(),
+            prepare("SELECT 'oops", Backend::Postgres).unwrap_err(),
             SqlError::Unterminated { kind: "string literal", .. }
         ));
     }
@@ -471,8 +460,8 @@ mod tests {
     #[test]
     fn postgres_output_is_borrowed() {
         let sql = "SELECT * FROM t WHERE a = $1";
-        let got = prepare(sql).unwrap();
-        assert_eq!(matches!(got, Cow::Borrowed(_)), !REWRITES_PLACEHOLDERS);
+        let got = prepare(sql, Backend::Postgres).unwrap();
+        assert!(matches!(got, Cow::Borrowed(_)), "PostgreSQL keeps $n, so no copy");
     }
 
     #[test]
