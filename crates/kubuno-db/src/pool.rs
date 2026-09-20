@@ -120,7 +120,7 @@ pub mod duration_secs {
 /// Opens the pool for the configured engine and makes `schema` usable.
 pub async fn connect(settings: &DbSettings, schema: &'static str) -> Result<DbPool, SetupError> {
     let pool = match settings.backend()? {
-        Backend::Postgres => open_pg(settings).await?,
+        Backend::Postgres => open_pg(settings, schema).await?,
         Backend::MySql => open_mysql(settings, schema).await?,
         Backend::Sqlite => open_sqlite(settings, schema).await?,
     };
@@ -128,7 +128,7 @@ pub async fn connect(settings: &DbSettings, schema: &'static str) -> Result<DbPo
     Ok(pool)
 }
 
-async fn open_pg(s: &DbSettings) -> Result<DbPool, SetupError> {
+async fn open_pg(s: &DbSettings, schema: &'static str) -> Result<DbPool, SetupError> {
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
     let opts = if s.host.is_some() || s.user.is_some() {
@@ -143,10 +143,31 @@ async fn open_pg(s: &DbSettings) -> Result<DbPool, SetupError> {
             .map_err(|e| SetupError::Settings(e.to_string()))?
     };
 
+    // Put the module's schema on the search path, the way each module's
+    // bootstrap used to before the foundation owned it. Two reasons it must
+    // live here:
+    //   * a migration written before multi-engine support spelled its tables
+    //     unqualified (`CREATE TABLE foo`), trusting the search path —
+    //     re-qualifying it to `<schema>.foo` would change its bytes and so its
+    //     checksum, and an already migrated PostgreSQL instance would refuse to
+    //     start. With the path set, those files stay byte-identical.
+    //   * `public` stays on the path so an extension the core installs there
+    //     (uuid-ossp, pg_trgm) resolves unqualified.
+    // `after_connect` wants a `'static` statement (like the MySQL literals
+    // below). `schema` is already `'static`, so leak the one formatted string
+    // once — a single bounded allocation for the life of the pool.
+    let set_path: &'static str =
+        Box::leak(format!("SET search_path = {schema}, public").into_boxed_str());
     let pool = PgPoolOptions::new()
         .max_connections(s.max_connections)
         .min_connections(s.min_connections)
         .acquire_timeout(s.connect_timeout)
+        .after_connect(move |conn, _meta| {
+            Box::pin(async move {
+                conn.execute(set_path).await?;
+                Ok(())
+            })
+        })
         .connect_with(opts)
         .await?;
     Ok(DbPool::Pg(pool))

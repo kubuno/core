@@ -11,6 +11,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **A module's PostgreSQL migrations keep working untouched.** The engine puts
+  the module's schema on PostgreSQL's search path on every connection, as each
+  module's own start-up used to. A migration written before multi-engine
+  support, which named its tables without a schema prefix, therefore stays
+  byte-for-byte the same — so an existing PostgreSQL instance still recognises
+  it and does not refuse to start.
 - **Dynamic searches work on every engine.** Queries whose shape is decided at
   run time — a filter panel where each control is optional, an "in this list"
   of unknown length — are built through a small dialect-aware builder instead of
