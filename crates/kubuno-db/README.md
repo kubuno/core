@@ -141,6 +141,7 @@ versions.
 | `Uuid` | `UUID` | `BINARY(16)` | `BLOB` |
 | `DateTime<Utc>` | `TIMESTAMPTZ` | `DATETIME(6)` | `TEXT` (`%F %T%.f`, UTC) |
 | `serde_json::Value` | `JSONB` | `JSON` | `TEXT` |
+| `Vec<String>` / `Vec<Uuid>` (a small list) | `JSONB` | `JSON` | `TEXT` — as a JSON array; see §2.8 |
 | `Vec<u8>` | `BYTEA` | `LONGBLOB` | `BLOB` |
 | `String` (indexed/unique) | `TEXT` | `VARCHAR(n)` — MySQL cannot index a `TEXT` without a prefix length | `TEXT` |
 
@@ -164,7 +165,8 @@ each non-portable construct and the helper that replaces it.
 
 | PostgreSQL | replacement |
 |---|---|
-| `x = ANY($n)` | `format!("x IN ({})", dialect::in_list(start, n))` + one `.bind()` per element |
+| `x = ANY($n)` (an `IN`-list of bound values) | `format!("x IN ({})", dialect::in_list(start, n))` + one `.bind()` per element |
+| `x = ANY(col)` (`col` is a `TEXT[]`/`UUID[]` **column**) | store the column as a JSON array and filter with `Backend::json_array_contains("col", n)` — see §2.8 |
 | `expr::bigint` | `dialect::cast("expr", SqlType::BigInt)` |
 | `SUM(c)`, `COUNT(*)`, `AVG(c)` | `dialect::sum_bigint`, `count_bigint`, `avg_double` — the *return type* differs per engine (see §4) |
 | `ON CONFLICT (a) DO UPDATE SET ...` | `dialect::upsert(table, &["a"], &[Assign::…])` |
@@ -187,6 +189,79 @@ Two constructs are **refused outright**, on every backend including PostgreSQL:
 
 Failing loudly is deliberate. A query that is silently one bind off is the kind
 of defect only production finds.
+
+### 2.8 Array columns become JSON
+
+PostgreSQL's `TEXT[]` and `UUID[]` have no equivalent on MySQL or SQLite. The
+portable representation of a small list column is a **JSON array**, and the
+foundation makes writing, reading and filtering one ergonomic on all three
+engines. (A list that needs atomicity or an inverted index becomes a child
+table instead — out of scope here.)
+
+**Write** — bind the vector; it becomes a JSON array through `DbValue::Json`:
+
+```rust
+let tags: Vec<String> = vec!["red".into(), "green".into()];
+db.execute("INSERT INTO photos.items (id, tags) VALUES ($1, $2)",
+           params![id, tags]).await?;         // Vec<String>, &[String], Vec<Uuid>, … all work
+```
+
+`From` impls cover `Vec<String>`/`Vec<Uuid>` (owned, `&[..]`, `&Vec<..>`, and
+`Option<Vec<..>>` for a nullable column). `Vec<Uuid>` is written as an array of
+hyphenated strings, the spelling `uuid`'s own `Serialize` uses.
+
+**Read** — two paths, both portable across the three drivers:
+
+```rust
+// (a) the sqlx-native derive attribute — the common case:
+#[derive(sqlx::FromRow)]
+struct Item { id: Uuid, #[sqlx(json)] tags: Vec<String> }
+
+// (b) the JsonVec<T> wrapper — needed on the hand-mapped DbRow::try_get path,
+//     where a plain Vec<String> would mean PostgreSQL's TEXT[], not a JSON array:
+#[derive(sqlx::FromRow)]
+struct Item2 { id: Uuid, tags: JsonVec<String> }   // Derefs to Vec<String>
+let tags: JsonVec<String> = row.try_get("tags")?;
+```
+
+**Filter** — `Backend::json_array_contains(col, n)` replaces `value = ANY(col)`
+and its GIN index. The candidate is a bound value, never interpolated (for a
+UUID, bind `uuid.to_string()`):
+
+```rust
+let frag = db.backend().json_array_contains("tags", 1);   // $1 is the candidate
+let rows: Vec<Item> =
+    db.fetch_all_as(&format!("SELECT * FROM photos.items WHERE {frag}"),
+                    params!["green"]).await?;
+```
+
+It emits `col @> jsonb_build_array($n)` on PostgreSQL (a `jsonb` GIN index
+serves it), `JSON_CONTAINS(col, JSON_QUOTE($n))` on MySQL, and
+`EXISTS (SELECT 1 FROM json_each(col) WHERE value = $n)` on SQLite.
+
+**Migrating an existing `TEXT[]`/`UUID[]` column (octet-safe).** The PostgreSQL
+migration that first created the column is *frozen* — its bytes and checksum
+must not change (§2.6), and its tables are named without a schema prefix,
+trusting the search path the pool sets. So the conversion is a **new** migration
+file appended to `migrations/postgres/`, spelled the same unqualified way:
+
+```sql
+-- migrations/postgres/000042_tags_to_jsonb.up.sql
+-- TEXT[]  → jsonb array of strings.  (For a UUID[] column, to_jsonb() yields an
+-- array of the UUIDs' text form, exactly what JsonVec<Uuid> reads back.)
+ALTER TABLE items ALTER COLUMN tags TYPE jsonb USING to_jsonb(tags);
+
+-- Swap the array GIN index for a jsonb one so `@>` (json_array_contains) is indexed.
+DROP INDEX IF EXISTS idx_items_tags;                 -- was: USING gin (tags)  [array_ops]
+CREATE INDEX idx_items_tags ON items USING gin (tags jsonb_path_ops);
+```
+
+`jsonb_path_ops` is the smaller, faster GIN opclass for `@>`-only lookups; use
+the default `jsonb_ops` if you also need key-existence operators. The
+**MySQL and SQLite** migration directories are new, so their `CREATE TABLE`
+declares the column JSON from the start — `tags JSON NOT NULL` (MySQL) /
+`tags TEXT NOT NULL` (SQLite), or `Backend::col_json()` in a generated migration
+— and never carry an `ALTER`.
 
 ---
 
@@ -283,8 +358,11 @@ on the three engines:
   changes that.
 * **Full-text search.** `tsvector`/`pg_trgm` against `MATCH ... AGAINST` against
   FTS5: three different engines with three different query languages.
-* **PostgreSQL-specific types**: arrays, `INET`, `CITEXT`, ranges, `INTERVAL` as
-  a column type.
+* **PostgreSQL-specific types**: the native array type (`TEXT[]`, `UUID[]`),
+  `INET`, `CITEXT`, ranges, `INTERVAL` as a column type. A *small list* column is
+  the exception — it is carried portably as a JSON array (§2.8); it is only the
+  native array **type**, with its operators and GIN opclasses, that has no
+  cross-engine form.
 * **Concurrency semantics.** `SERIALIZABLE` does not mean the same thing in the
   three engines, and MySQL reports 0 affected rows for an `UPDATE` that changed
   nothing. A module that reasons on `rows_affected` must be re-read.
@@ -293,19 +371,24 @@ on the three engines:
 
 ## 6. Testing
 
+All three drivers are always compiled in (there are no per-engine features), so
+one command builds and tests everything. SQLite round-trips run unconditionally
+on a temp file; the MySQL/MariaDB round-trips run only when a throwaway server
+URL is provided, and **fail** rather than skip if that URL is set but unreachable
+— a test that quietly does nothing is worse than no test.
+
 ```sh
-# SQLite needs nothing
-cargo test -p kubuno-db --no-default-features --features backend-sqlite
+# SQLite round-trips run with no setup:
+SQLX_OFFLINE=true cargo test -p kubuno-db
 
-KUBUNO_DB_TEST_URL=postgres://user:pass@localhost/throwaway \
-  cargo test -p kubuno-db --no-default-features --features backend-postgres
-
-KUBUNO_DB_TEST_URL=mysql://user:pass@localhost/throwaway \
-  cargo test -p kubuno-db --no-default-features --features backend-mysql
+# add the MySQL/MariaDB round-trips by pointing at a throwaway server
+# (a disposable datadir, a non-standard port, never a shared database):
+KUBUNO_QB_MYSQL_URL=mysql://root@127.0.0.1:3399/throwaway \
+  SQLX_OFFLINE=true cargo test -p kubuno-db
 ```
 
-The integration tests **fail** rather than skip when the server is missing: a
-test that quietly does nothing is worse than no test.
+CI runs `cargo clippy -p kubuno-db --all-targets -- -D warnings` with all three
+drivers linked; keep it green.
 
 ---
 

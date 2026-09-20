@@ -22,6 +22,14 @@ number at release time, and CI publishes that section as the GitHub Release note
   of unknown length — are built through a small dialect-aware builder instead of
   a PostgreSQL-only one. Values still travel only as bound parameters, never as
   text, so the search box cannot be turned into a way to reach the database.
+- **List columns work the same on every engine.** A column that holds a small
+  list of tags or ids — a PostgreSQL array in the past — is now stored as a JSON
+  array, which MySQL and SQLite also understand. Writing one takes the plain Rust
+  vector, reading it gives the vector back, and a "does this list contain X?"
+  filter is written once and runs on all three engines (indexed on PostgreSQL).
+  A module that used a PostgreSQL array converts its column with a single added
+  migration, without rewriting the ones already in production.
+
 - **The database engine can now be chosen at run time, in one binary.** A
   single build carries all three drivers, and the server picks PostgreSQL,
   MySQL/MariaDB or SQLite from its configuration at start-up — an administrator

@@ -294,6 +294,31 @@ impl Backend {
         }
     }
 
+    /// Whether a JSON **array** column contains a scalar value — the portable
+    /// replacement for PostgreSQL's `value = ANY(col)` over a `TEXT[]`/`UUID[]`.
+    /// `n` is the placeholder number of the candidate, bound as plain text (for
+    /// a UUID, bind `uuid.to_string()`); it is never interpolated.
+    ///
+    /// * PostgreSQL: `col @> jsonb_build_array($n)` — a containment test a GIN
+    ///   index on the `jsonb` column can serve, so it replaces the old GIN on
+    ///   the array.
+    /// * MySQL/MariaDB: `JSON_CONTAINS(col, JSON_QUOTE($n))` — `JSON_QUOTE`
+    ///   turns the bound string into the JSON scalar `"…"` the function needs.
+    /// * SQLite: `EXISTS (SELECT 1 FROM json_each(col) WHERE value = $n)`.
+    ///
+    /// The column must hold a JSON array of scalars (what a `Vec<String>` /
+    /// `Vec<Uuid>` bound through [`crate::DbValue`] writes). On PostgreSQL it
+    /// must be `jsonb`, not `json` — see this crate's README for the migration.
+    pub fn json_array_contains(self, col: &'static str, n: usize) -> String {
+        match self {
+            Backend::Postgres => format!("{col} @> jsonb_build_array(${n})"),
+            Backend::MySql => format!("JSON_CONTAINS({col}, JSON_QUOTE(${n}))"),
+            Backend::Sqlite => {
+                format!("EXISTS (SELECT 1 FROM json_each({col}) WHERE value = ${n})")
+            }
+        }
+    }
+
     // ── aggregates ────────────────────────────────────────────────────────────
     //
     // The return *type* of an aggregate differs between engines and sqlx
@@ -453,6 +478,22 @@ mod tests {
     }
 
     #[test]
+    fn json_array_contains_spells_each_engine() {
+        assert_eq!(
+            Backend::Postgres.json_array_contains("tags", 3),
+            "tags @> jsonb_build_array($3)"
+        );
+        assert_eq!(
+            Backend::MySql.json_array_contains("tags", 3),
+            "JSON_CONTAINS(tags, JSON_QUOTE($3))"
+        );
+        assert_eq!(
+            Backend::Sqlite.json_array_contains("tags", 3),
+            "EXISTS (SELECT 1 FROM json_each(tags) WHERE value = $3)"
+        );
+    }
+
+    #[test]
     fn upsert_uses_the_local_spelling() {
         let assigns = [
             Assign::Incoming("kdbx_path"),
@@ -484,6 +525,7 @@ mod tests {
                 b.json_has_key("m", "k"),
                 b.json_has_any_key("m", &["a", "b"]),
                 b.json_has_all_keys("m", &["a", "b"]),
+                b.json_array_contains("tags", 1),
                 b.sum_bigint("size"),
                 b.count_bigint("*"),
                 b.avg_double("size"),

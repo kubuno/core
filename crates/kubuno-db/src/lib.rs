@@ -42,6 +42,7 @@
 pub mod dialect;
 pub mod events;
 pub mod exec;
+pub mod json;
 pub mod pool;
 pub mod query;
 pub mod returning;
@@ -50,6 +51,7 @@ pub mod value;
 
 pub use dialect::Backend;
 pub use exec::{DbPool, DbRow, DbTx, FromAnyRow, ScalarAnyRow};
+pub use json::JsonVec;
 pub use pool::{connect, DbSettings, MigratorSet, SetupError};
 pub use query::DbQueryBuilder;
 pub use sql::{lint, Lint, SqlError};

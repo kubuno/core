@@ -92,6 +92,69 @@ impl From<&[u8]> for DbValue {
     }
 }
 
+// ── array-shaped values, carried as JSON ────────────────────────────────────
+//
+// PostgreSQL has `TEXT[]`/`UUID[]`; MySQL and SQLite have no array type at all,
+// so the portable representation of a small list column is a JSON array. These
+// route straight through the existing `DbValue::Json` variant — no new variant,
+// no new `bind_all!` arm — so `params![tags]` works and a `NULL` array is a
+// typed JSON NULL. The JSON is built element by element (infallibly) and is
+// byte-identical to what `serde_json::to_value` would produce, so a column
+// written here reads back through `JsonVec<T>` (or `#[sqlx(json)] Vec<T>`).
+
+/// A JSON array of the strings, e.g. `["red","green"]`. Infallible.
+fn json_string_array<I: IntoIterator<Item = String>>(it: I) -> JsonValue {
+    JsonValue::Array(it.into_iter().map(JsonValue::String).collect())
+}
+
+/// A JSON array of the UUIDs as hyphenated strings — the exact spelling `uuid`'s
+/// own `Serialize` uses, so `JsonVec<Uuid>` decodes it back.
+fn json_uuid_array<'a, I: IntoIterator<Item = &'a Uuid>>(it: I) -> JsonValue {
+    JsonValue::Array(it.into_iter().map(|u| JsonValue::String(u.to_string())).collect())
+}
+
+impl From<Vec<String>> for DbValue {
+    fn from(v: Vec<String>) -> Self {
+        DbValue::Json(Some(json_string_array(v)))
+    }
+}
+impl From<&[String]> for DbValue {
+    fn from(v: &[String]) -> Self {
+        DbValue::Json(Some(json_string_array(v.iter().cloned())))
+    }
+}
+impl From<&Vec<String>> for DbValue {
+    fn from(v: &Vec<String>) -> Self {
+        DbValue::Json(Some(json_string_array(v.iter().cloned())))
+    }
+}
+impl From<Option<Vec<String>>> for DbValue {
+    fn from(v: Option<Vec<String>>) -> Self {
+        DbValue::Json(v.map(json_string_array))
+    }
+}
+
+impl From<Vec<Uuid>> for DbValue {
+    fn from(v: Vec<Uuid>) -> Self {
+        DbValue::Json(Some(json_uuid_array(v.iter())))
+    }
+}
+impl From<&[Uuid]> for DbValue {
+    fn from(v: &[Uuid]) -> Self {
+        DbValue::Json(Some(json_uuid_array(v.iter())))
+    }
+}
+impl From<&Vec<Uuid>> for DbValue {
+    fn from(v: &Vec<Uuid>) -> Self {
+        DbValue::Json(Some(json_uuid_array(v.iter())))
+    }
+}
+impl From<Option<Vec<Uuid>>> for DbValue {
+    fn from(v: Option<Vec<Uuid>>) -> Self {
+        DbValue::Json(v.map(|v| json_uuid_array(v.iter())))
+    }
+}
+
 /// Builds a `Vec<DbValue>` from a comma-separated list, in bind order.
 ///
 /// ```ignore
@@ -117,6 +180,29 @@ mod tests {
         assert_eq!(DbValue::from("x"), DbValue::Text(Some("x".into())));
         let u = Uuid::nil();
         assert_eq!(DbValue::from(&u), DbValue::Uuid(Some(u)));
+    }
+
+    #[test]
+    fn string_vec_becomes_a_json_array() {
+        let tags = vec!["red".to_string(), "green".to_string()];
+        assert_eq!(
+            DbValue::from(&tags),
+            DbValue::Json(Some(serde_json::json!(["red", "green"])))
+        );
+        // Owned, borrowed slice and the moved form all agree.
+        assert_eq!(DbValue::from(tags.clone()), DbValue::from(tags.as_slice()));
+        assert_eq!(DbValue::from(None::<Vec<String>>), DbValue::Json(None));
+    }
+
+    #[test]
+    fn uuid_vec_becomes_a_json_array_of_hyphenated_strings() {
+        let ids = vec![Uuid::nil()];
+        // Matches uuid's own Serialize, so `serde_json::to_value` would agree.
+        assert_eq!(DbValue::from(&ids), DbValue::from(serde_json::to_value(&ids).unwrap()));
+        assert_eq!(
+            DbValue::from(ids.as_slice()),
+            DbValue::Json(Some(serde_json::json!(["00000000-0000-0000-0000-000000000000"])))
+        );
     }
 
     #[test]
