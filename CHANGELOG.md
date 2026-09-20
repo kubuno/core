@@ -11,6 +11,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Dynamic searches work on every engine.** Queries whose shape is decided at
+  run time — a filter panel where each control is optional, an "in this list"
+  of unknown length — are built through a small dialect-aware builder instead of
+  a PostgreSQL-only one. Values still travel only as bound parameters, never as
+  text, so the search box cannot be turned into a way to reach the database.
 - **The database engine can now be chosen at run time, in one binary.** A
   single build carries all three drivers, and the server picks PostgreSQL,
   MySQL/MariaDB or SQLite from its configuration at start-up — an administrator
