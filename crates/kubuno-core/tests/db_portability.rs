@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use kubuno_core::database::outbox::OutboxPoller;
 use kubuno_core::events::{AppEvent, EventBus};
 use kubuno_core::jobs::portable;
@@ -67,64 +67,233 @@ async fn maybe_pool(engine: &str, env: &str) -> Option<DbPool> {
     }
 }
 
-/// Creates a fresh `core` namespace with the two tables the test drives, in the
-/// pool's own dialect. Drops first so the test is idempotent on a shared server.
+/// Wipes the `core` namespace so the full migration set can run from scratch on
+/// a shared server. PostgreSQL drops and recreates the schema (the migrator
+/// wants it to exist before it makes `core._sqlx_migrations`); MySQL drops every
+/// table it holds (FK checks off, out-of-order); SQLite uses a fresh file per
+/// test, so there is nothing to reset.
+async fn reset_schema(pool: &DbPool) {
+    match pool {
+        DbPool::Pg(_) => {
+            pool.execute("DROP SCHEMA IF EXISTS core CASCADE", params![])
+                .await
+                .expect("drop schema pg");
+            pool.execute("CREATE SCHEMA core", params![])
+                .await
+                .expect("recreate schema pg");
+        }
+        DbPool::My(p) => {
+            use sqlx::Executor;
+            let rows: Vec<(String,)> = sqlx::query_as(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'core'",
+            )
+            .fetch_all(p)
+            .await
+            .expect("list core tables");
+            let mut sql = String::from("SET FOREIGN_KEY_CHECKS=0;");
+            for (t,) in &rows {
+                sql.push_str(&format!("DROP TABLE IF EXISTS `{t}`;"));
+            }
+            sql.push_str("SET FOREIGN_KEY_CHECKS=1;");
+            p.execute(sql.as_str()).await.expect("drop core tables");
+        }
+        DbPool::Sq(_) => {}
+    }
+}
+
+/// Brings the pool to the COMPLETE `core` schema by running the real migrator
+/// (`kubuno_db::migrations!` over the 3 dialect directories), the same call the
+/// server makes at boot. This exercises every consolidated MySQL/SQLite table
+/// against a live engine, not just the two the queue/outbox tests drive.
 async fn setup(pool: &DbPool) {
     kubuno_db::pool::ensure_schema(pool, SCHEMA)
         .await
         .expect("ensure schema");
-    for t in ["core.jobs", "core.kubuno_event_outbox"] {
-        pool.execute(&format!("DROP TABLE IF EXISTS {t}"), params![])
-            .await
-            .expect("drop");
-    }
-
-    let jobs_ddl = match pool.backend() {
-        Backend::Postgres => {
-            "CREATE TABLE core.jobs (
-                 id UUID PRIMARY KEY, job_type VARCHAR(100) NOT NULL, module_id VARCHAR(100),
-                 payload JSONB NOT NULL DEFAULT '{}', status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                 attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3,
-                 error TEXT, run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                 started_at TIMESTAMPTZ, done_at TIMESTAMPTZ,
-                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())"
-        }
-        Backend::MySql => {
-            "CREATE TABLE core.jobs (
-                 id BINARY(16) PRIMARY KEY, job_type VARCHAR(100) NOT NULL, module_id VARCHAR(100),
-                 payload JSON NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                 attempts INT NOT NULL DEFAULT 0, max_attempts INT NOT NULL DEFAULT 3,
-                 error TEXT, run_after DATETIME(6) NOT NULL,
-                 started_at DATETIME(6), done_at DATETIME(6),
-                 created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6))"
-        }
-        Backend::Sqlite => {
-            "CREATE TABLE core.jobs (
-                 id BLOB PRIMARY KEY, job_type TEXT NOT NULL, module_id TEXT,
-                 payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
-                 attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3,
-                 error TEXT, run_after TEXT NOT NULL,
-                 started_at TEXT, done_at TEXT,
-                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-        }
-    };
-    pool.execute(jobs_ddl, params![]).await.expect("create jobs");
-
-    // The outbox: kubuno-db creates it for MySQL/SQLite; PostgreSQL needs it here.
-    if pool.backend() == Backend::Postgres {
-        pool.execute(
-            "CREATE TABLE core.kubuno_event_outbox (
-                 id UUID PRIMARY KEY, channel VARCHAR(64) NOT NULL, payload TEXT NOT NULL,
-                 created_at TIMESTAMPTZ NOT NULL, delivered_at TIMESTAMPTZ)",
-            params![],
-        )
+    reset_schema(pool).await;
+    kubuno_core::database::migrations::run(pool)
         .await
-        .expect("create outbox pg");
-    } else {
+        .expect("run full core migrations");
+    // The event outbox is created at runtime (not by a migration) on engines
+    // that have no LISTEN/NOTIFY; PostgreSQL uses pg_notify and needs none.
+    if pool.backend() != Backend::Postgres {
         kubuno_db::events::ensure_outbox(pool, SCHEMA)
             .await
             .expect("ensure outbox");
     }
+}
+
+// ── Representative round-trips across the migrated schema ────────────────────
+
+#[derive(sqlx::FromRow)]
+struct UserRow {
+    role: String,
+    is_active: bool,
+    #[sqlx(json)]
+    preferences: serde_json::Value,
+}
+
+#[derive(sqlx::FromRow)]
+struct TokenRow {
+    is_legacy: bool,
+    #[sqlx(json)]
+    scopes: Vec<String>,
+}
+
+/// Drives one row through each of the main subsystems (org tree, users,
+/// sessions, API tokens, modules, roles, rules, settings, audit) on whichever
+/// engine the pool speaks, asserting UUID/BLOB keys, JSON columns, booleans,
+/// enum CHECKs, timestamps and the BIGSERIAL/AUTO_INCREMENT read-back all
+/// round-trip. Every identifier is random, so a shared server never collides.
+async fn schema_round_trips(pool: &DbPool) {
+    // The migrations seed exactly one root org unit; hang a child off it so we
+    // never trip PostgreSQL's single-root partial UNIQUE.
+    let root: Uuid = pool
+        .fetch_scalar(
+            "SELECT id FROM core.org_units WHERE parent_id IS NULL",
+            params![],
+        )
+        .await
+        .expect("seeded root org unit");
+    let ou = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.org_units (id, name, parent_id) VALUES ($1, $2, $3)",
+        params![ou, format!("ou-{ou}"), root],
+    )
+    .await
+    .expect("insert org_unit");
+
+    // users: UUID pk, JSON preferences, enum-checked role, boolean, timestamps.
+    let uid = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role, preferences, org_unit_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        params![
+            uid,
+            format!("u-{uid}@example.test"),
+            format!("user-{uid}"),
+            "argon2-hash",
+            "admin",
+            serde_json::json!({"theme": "dark", "count": 3}),
+            ou
+        ],
+    )
+    .await
+    .expect("insert user");
+
+    let u: UserRow = pool
+        .fetch_one_as(
+            "SELECT role, is_active, preferences FROM core.users WHERE id = $1",
+            params![uid],
+        )
+        .await
+        .expect("select user");
+    assert_eq!(u.role, "admin", "enum-checked role round-trips");
+    assert!(u.is_active, "boolean default TRUE round-trips");
+    assert_eq!(u.preferences["count"], serde_json::json!(3), "JSON round-trips");
+
+    // refresh_tokens (a session): FK to users, a real timestamp.
+    let rt = Uuid::new_v4();
+    let expires: DateTime<Utc> = Utc::now() + chrono::Duration::days(1);
+    pool.execute(
+        "INSERT INTO core.refresh_tokens (id, user_id, token_hash, expires_at) \
+         VALUES ($1, $2, $3, $4)",
+        params![rt, uid, format!("hash-{rt}"), expires],
+    )
+    .await
+    .expect("insert refresh_token");
+
+    // api_tokens: a JSON array column that the PostgreSQL CHECK
+    // (jsonb_array_length(scopes) > 0) validates — proof the JSON binds right.
+    let tid = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.api_tokens (id, user_id, name, token_hash, scopes) \
+         VALUES ($1, $2, $3, $4, $5)",
+        params![
+            tid,
+            uid,
+            "ci-token",
+            format!("th-{tid}"),
+            vec!["core.mcp.execute".to_string(), "core.module_admin.execute".to_string()]
+        ],
+    )
+    .await
+    .expect("insert api_token");
+    let tok: TokenRow = pool
+        .fetch_one_as(
+            "SELECT is_legacy, scopes FROM core.api_tokens WHERE id = $1",
+            params![tid],
+        )
+        .await
+        .expect("select api_token");
+    assert!(!tok.is_legacy, "boolean default FALSE round-trips");
+    assert_eq!(tok.scopes.len(), 2, "JSON array column round-trips");
+
+    // modules: JSON dependencies array.
+    let mid = format!("mod-{}", Uuid::new_v4());
+    pool.execute(
+        "INSERT INTO core.modules (id, display_name, version, dependencies) \
+         VALUES ($1, $2, $3, $4)",
+        params![
+            mid.clone(),
+            "Test Module",
+            "1.0.0",
+            vec!["core".to_string()]
+        ],
+    )
+    .await
+    .expect("insert module");
+
+    // roles: unique slug (migrations seed a handful).
+    let role_id = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.roles (id, slug, name) VALUES ($1, $2, $3)",
+        params![role_id, format!("role-{role_id}"), "Test Role"],
+    )
+    .await
+    .expect("insert role");
+
+    // rules: JSON conditions/actions carry their table defaults; a real key.
+    let rule_id = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.rules (id, name, trigger_key) VALUES ($1, $2, $3)",
+        params![rule_id, format!("rule-{rule_id}"), "auth.login.failed"],
+    )
+    .await
+    .expect("insert rule");
+
+    // settings + setting_values: JSON value, composite PK, the binary sentinel
+    // default on scope_id (instance scope).
+    let skey = format!("test.setting.{}", Uuid::new_v4());
+    pool.execute(
+        "INSERT INTO core.settings (key, value) VALUES ($1, $2)",
+        params![skey.clone(), serde_json::json!({"enabled": true})],
+    )
+    .await
+    .expect("insert setting");
+    pool.execute(
+        "INSERT INTO core.setting_values (key, scope_type, value) VALUES ($1, $2, $3)",
+        params![skey.clone(), "instance", serde_json::json!(42)],
+    )
+    .await
+    .expect("insert setting_value");
+
+    // admin_audit: BIGSERIAL / AUTO_INCREMENT id, read back by re-select (the
+    // portable stand-in for RETURNING).
+    let action = format!("test.action.{}", Uuid::new_v4());
+    pool.execute(
+        "INSERT INTO core.admin_audit (actor_label, action) VALUES ($1, $2)",
+        params![format!("actor-{uid}"), action.clone()],
+    )
+    .await
+    .expect("insert admin_audit");
+    let audit_id: i64 = pool
+        .fetch_scalar(
+            "SELECT id FROM core.admin_audit WHERE action = $1",
+            params![action],
+        )
+        .await
+        .expect("select admin_audit id");
+    assert!(audit_id > 0, "auto-increment id assigned");
 }
 
 // ── Chantier C: the portable job queue ──────────────────────────────────────
@@ -248,6 +417,7 @@ async fn exercise_outbox(pool: &DbPool) {
 
 async fn run_all(pool: &DbPool) {
     setup(pool).await;
+    schema_round_trips(pool).await;
     exercise_jobs(pool).await;
     // The transactional outbox is the fallback for engines WITHOUT
     // `LISTEN`/`NOTIFY`: on PostgreSQL `kubuno_db::events::notify` publishes with

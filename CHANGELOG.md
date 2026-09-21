@@ -36,6 +36,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **The server's own schema is prepared per engine.** The core's database
   schema is split so the right form is applied for the engine an administrator
   chooses; the existing PostgreSQL form is unchanged and keeps its history.
+- **MySQL/MariaDB and SQLite installs get the complete core schema.** The whole
+  server schema — every table an administrator's instance needs (accounts,
+  sessions, API tokens, the module catalogue, roles and rules, jobs, audit,
+  devices, domains, alerts, holidays, storage accounting, settings and the rest)
+  — is now authored for MySQL/MariaDB and SQLite as a single consolidated form
+  matching the PostgreSQL one, so a fresh install on either engine builds the
+  same structure the PostgreSQL install has always had.
 - **A module's PostgreSQL migrations keep working untouched.** The engine puts
   the module's schema on PostgreSQL's search path on every connection, as each
   module's own start-up used to. A migration written before multi-engine

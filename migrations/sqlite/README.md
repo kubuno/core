@@ -1,12 +1,17 @@
 # SQLite migrations for the core schema
 
 This directory holds the SQLite form of the `core` schema, consumed by
-`kubuno_db::migrations!` when the administrator selects the MySQL engine.
+`kubuno_db::migrations!` when the administrator selects the SQLite engine.
 
-Status: **not yet authored.** The PostgreSQL migrations under `../postgres`
-(137 numbered steps) are the source of truth and must be consolidated into an
-equivalent MySQL shape (no extensions, no PL/pgSQL triggers/functions,
-``BLOB` UUIDs, TEXT timestamps, JSON columns for the former
-`UUID[]`/`jsonb` array columns, and a `kubuno_event_outbox` table — see
-`kubuno_db::events::ensure_outbox`). Consolidate into a small number of
-`CREATE TABLE` migrations rather than replaying the 137 incremental PG steps.
+`000001_core_schema` is the **consolidated final shape** the 138 PostgreSQL
+migrations under `../postgres` reach — one `CREATE TABLE` per table (78 tables),
+not a replay of the incremental steps. `core` is an ATTACHed database file, so
+tables and indexes are qualified `core.`, foreign-key REFERENCES are unqualified
+(same database), and kubuno-db enables `PRAGMA foreign_keys`.
+
+Type/behaviour mapping: `UUID` → `BLOB`; `TIMESTAMPTZ` → `TEXT` (UTC); `JSONB`/
+`JSON` and the former `TEXT[]` list columns → `TEXT` holding JSON; `BOOLEAN` →
+`INTEGER`; `BIGSERIAL` → `INTEGER PRIMARY KEY AUTOINCREMENT`. The plpgsql
+triggers and the conditional UNIQUE indexes are enforced in Rust (updated_at
+too); plain partial indexes are flattened. tsvector/GIN search becomes
+per-engine `ILIKE` (`Backend::ilike`).
