@@ -6,8 +6,10 @@
 -- Type/behaviour mapping: UUID -> BLOB, TIMESTAMPTZ -> TEXT (UTC), JSONB/
 -- JSON and TEXT[] list columns -> TEXT holding JSON, BOOLEAN -> INTEGER,
 -- BIGSERIAL -> INTEGER PRIMARY KEY AUTOINCREMENT. plpgsql triggers and the
--- conditional UNIQUE indexes are enforced in Rust (updated_at too); plain
--- partial indexes are flattened. tsvector/GIN search -> ILIKE per engine.
+-- conditional UNIQUE indexes are enforced in Rust; the one exception is
+-- `updated_at`, refreshed by an AFTER-UPDATE trigger per table (see the end of
+-- this file), mirroring PostgreSQL's `set_updated_at()`. Plain partial indexes
+-- are flattened. tsvector/GIN search -> ILIKE per engine.
 
 CREATE TABLE "core"."acme_state" (
     "id" INTEGER NOT NULL DEFAULT 1,
@@ -1692,3 +1694,204 @@ INSERT INTO "core"."content_detectors" ("id", "key", "label", "description", "ca
 INSERT INTO "core"."content_detectors" ("id", "key", "label", "description", "category", "kind", "pattern", "terms", "checksum", "proximity_terms", "proximity_window", "proximity_required", "base_confidence", "checksum_bonus", "proximity_bonus", "min_confidence", "min_matches", "min_unique_matches", "is_enabled", "is_builtin", "created_by", "updated_by") VALUES (X'8c14534b6d1a49d599aa99f9fb31fd83', 'core.private_key', 'Clé privée SSH ou PGP', 'En-tête de bloc de clé privée (OpenSSH, RSA, EC, DSA, PGP). Une seule occurrence suffit : une clé privée qui sort est une compromission complète.', 'secret', 'regex', '-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----', '[]', NULL, '[]', 0, 0, 0.98, 0, 0, 0.7, 1, 1, 1, 1, NULL, NULL);
 INSERT INTO "core"."content_detectors" ("id", "key", "label", "description", "category", "kind", "pattern", "terms", "checksum", "proximity_terms", "proximity_window", "proximity_required", "base_confidence", "checksum_bonus", "proximity_bonus", "min_confidence", "min_matches", "min_unique_matches", "is_enabled", "is_builtin", "created_by", "updated_by") VALUES (X'ae78406878024d6f8b575126b0b906dc', 'core.api_token', 'Jeton d''API', 'Jeton d''accès : secret interne Kubuno, jeton porteur JWT, clé d''API de forme courante, ou affectation explicite d''une clé.', 'secret', 'regex', '\bkbms1\.[a-z0-9_-]+\.[A-Za-z0-9_-]{20,}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b|(?i:\b(?:api[_-]?key|api[_-]?token|secret[_-]?key|access[_-]?token)\b["'' :=]{1,4}[A-Za-z0-9_\-]{16,})', '[]', NULL, '[]', 0, 0, 0.9, 0, 0, 0.7, 1, 1, 1, 1, NULL, NULL);
 INSERT INTO "core"."content_detectors" ("id", "key", "label", "description", "category", "kind", "pattern", "terms", "checksum", "proximity_terms", "proximity_window", "proximity_required", "base_confidence", "checksum_bonus", "proximity_bonus", "min_confidence", "min_matches", "min_unique_matches", "is_enabled", "is_builtin", "created_by", "updated_by") VALUES (X'aee98d3dffd2426093307157171e6a18', 'core.password', 'Mot de passe en clair', 'Un mot de passe annoncé puis écrit. La forme seule ne vaut rien — c''est le signe adjacent (« : », « = », « est ») qui fait la détection, d''où la proximité obligatoire.', 'secret', 'wordlist', NULL, '["mot de passe","mots de passe","motdepasse","password","passwd","mdp","pwd","passphrase"]', NULL, '[":","=","est ","sera ","voici","temporaire","provisoire","initial"]', 40, 1, 0.4, 0, 0.4, 0.7, 1, 1, 1, 1, NULL, NULL);
+
+-- ── updated_at refresh (the plpgsql BEFORE-UPDATE trigger, per engine) ────────
+-- PostgreSQL refreshes `updated_at` with `core.set_updated_at()`; MySQL with an
+-- `ON UPDATE CURRENT_TIMESTAMP` column clause. SQLite has neither, so one
+-- AFTER-UPDATE trigger per table stamps the row. The `WHEN NEW.updated_at =
+-- OLD.updated_at` guard makes it idempotent (its own write does not re-fire it,
+-- recursive_triggers on or off) and lets a statement that sets `updated_at`
+-- itself win. The row is found by `rowid` (every table here is a rowid table),
+-- so it works whatever the primary key is.
+CREATE TRIGGER "core"."acme_state_set_updated_at" AFTER UPDATE ON "acme_state"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."acme_state" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."alerts_set_updated_at" AFTER UPDATE ON "alerts"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."alerts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."buildings_set_updated_at" AFTER UPDATE ON "buildings"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."buildings" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."clipboard_items_set_updated_at" AFTER UPDATE ON "clipboard_items"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."clipboard_items" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."collab_snapshots_set_updated_at" AFTER UPDATE ON "collab_snapshots"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."collab_snapshots" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."content_detectors_set_updated_at" AFTER UPDATE ON "content_detectors"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."content_detectors" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."domains_set_updated_at" AFTER UPDATE ON "domains"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."domains" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."holiday_calendars_set_updated_at" AFTER UPDATE ON "holiday_calendars"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."holiday_calendars" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."holiday_unit_prefs_set_updated_at" AFTER UPDATE ON "holiday_unit_prefs"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."holiday_unit_prefs" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."holidays_set_updated_at" AFTER UPDATE ON "holidays"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."holidays" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."labels_set_updated_at" AFTER UPDATE ON "labels"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."labels" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."ldap_directories_set_updated_at" AFTER UPDATE ON "ldap_directories"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."ldap_directories" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."login_captcha_gate_set_updated_at" AFTER UPDATE ON "login_captcha_gate"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."login_captcha_gate" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."login_throttle_set_updated_at" AFTER UPDATE ON "login_throttle"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."login_throttle" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."migration_accounts_set_updated_at" AFTER UPDATE ON "migration_accounts"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."migration_accounts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."module_usage_daily_set_updated_at" AFTER UPDATE ON "module_usage_daily"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."module_usage_daily" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."modules_set_updated_at" AFTER UPDATE ON "modules"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."modules" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."oauth_providers_set_updated_at" AFTER UPDATE ON "oauth_providers"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."oauth_providers" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."org_units_set_updated_at" AFTER UPDATE ON "org_units"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."org_units" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."privileges_set_updated_at" AFTER UPDATE ON "privileges"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."privileges" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."remote_mounts_set_updated_at" AFTER UPDATE ON "remote_mounts"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."remote_mounts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."resource_features_set_updated_at" AFTER UPDATE ON "resource_features"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."resource_features" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."resources_set_updated_at" AFTER UPDATE ON "resources"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."resources" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."roles_set_updated_at" AFTER UPDATE ON "roles"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."roles" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."rule_actions_set_updated_at" AFTER UPDATE ON "rule_actions"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."rule_actions" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."rule_triggers_set_updated_at" AFTER UPDATE ON "rule_triggers"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."rule_triggers" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."rules_set_updated_at" AFTER UPDATE ON "rules"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."rules" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."setting_values_set_updated_at" AFTER UPDATE ON "setting_values"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."setting_values" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."settings_set_updated_at" AFTER UPDATE ON "settings"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."settings" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."target_audiences_set_updated_at" AFTER UPDATE ON "target_audiences"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."target_audiences" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."user_groups_set_updated_at" AFTER UPDATE ON "user_groups"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."user_groups" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;
+CREATE TRIGGER "core"."users_set_updated_at" AFTER UPDATE ON "users"
+    FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
+    BEGIN
+        UPDATE "core"."users" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+            WHERE rowid = NEW.rowid;
+    END;

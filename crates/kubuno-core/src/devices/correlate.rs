@@ -395,17 +395,20 @@ pub async fn record_event_tx(
 type LegacySession = (Uuid, Uuid, Option<String>, Option<String>, Option<String>);
 
 pub async fn backfill(db: &DbPool) -> Result<u64, AppError> {
-    // NOTE (multi-DBMS): `host(ip_address)::text` is PostgreSQL-only; flagged in
-    // the port report. `NOW()` is replaced by a bound instant.
+    // `host(ip_address)` is spelled per engine (`Backend::inet_text`); `NOW()` is
+    // replaced by a bound instant.
     let rows: Vec<LegacySession> = db
         .fetch_all_as::<LegacySession>(
-            r#"SELECT id, user_id, user_agent, client_type, host(ip_address)::text
+            &format!(
+                r#"SELECT id, user_id, user_agent, client_type, {ip}
              FROM core.refresh_tokens
             WHERE device_id IS NULL
               AND revoked_at IS NULL
               AND expires_at > $1
             ORDER BY created_at
             LIMIT 5000"#,
+                ip = db.backend().inet_text("ip_address")
+            ),
             params![Utc::now()],
         )
         .await

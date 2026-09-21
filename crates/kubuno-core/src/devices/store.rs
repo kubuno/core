@@ -14,7 +14,7 @@
 //! could drift.
 
 use chrono::Utc;
-use kubuno_db::{params, DbPool, DbQueryBuilder, DbTx};
+use kubuno_db::{params, Backend, DbPool, DbQueryBuilder, DbTx};
 use serde::Deserialize;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -25,13 +25,13 @@ use crate::errors::AppError;
 
 /// Columns of `core.devices` that may leave the server, plus the two joins the
 /// console needs. `correlation_hash` is absent, deliberately and permanently.
-//
-// NOTE (multi-DBMS): `host(d.last_ip)::text` and the inline `(SELECT COUNT(*)
-// ...)::bigint` cast are PostgreSQL-only. They are kept verbatim here and
-// flagged in the port report; the inet column and the cast need a portable
-// spelling once the core migrations gain a MySQL/SQLite form.
-macro_rules! device_columns {
-    () => {
+///
+/// `host(d.last_ip)` and `NOW()` are spelled for the running engine
+/// (`Backend::inet_text` / `Backend::now`); the active-session count is a bare
+/// `COUNT(*)` (the former `::bigint` cast is redundant — `COUNT` already decodes
+/// as `i64` on all three engines).
+fn device_columns(backend: Backend) -> String {
+    format!(
         r#"
     d.id, d.user_id,
     COALESCE(NULLIF(u.display_name, ''), u.username) AS user_label,
@@ -39,15 +39,16 @@ macro_rules! device_columns {
     d.platform, d.platform_version, d.browser, d.browser_version,
     d.signal_level, d.disk_encrypted, d.screen_lock,
     d.declared_platform, d.declared_version, d.declared_app_version, d.declared_at,
-    d.first_seen_at, d.last_seen_at, host(d.last_ip)::text AS last_ip, d.last_country,
+    d.first_seen_at, d.last_seen_at, {last_ip} AS last_ip, d.last_country,
     d.approval, d.approval_by, d.approval_label, d.approval_at, d.approval_reason,
     (SELECT COUNT(*) FROM core.refresh_tokens rt
-      WHERE rt.device_id = d.id AND rt.revoked_at IS NULL AND rt.expires_at > NOW())::bigint
+      WHERE rt.device_id = d.id AND rt.revoked_at IS NULL AND rt.expires_at > {now})
       AS active_sessions
-"#
-    };
+"#,
+        last_ip = backend.inet_text("d.last_ip"),
+        now = backend.now(),
+    )
 }
-const DEVICE_COLUMNS: &str = device_columns!();
 
 macro_rules! device_from {
     () => {
@@ -57,11 +58,12 @@ macro_rules! device_from {
 const DEVICE_FROM: &str = device_from!();
 
 /// Columns of a session row. `token_hash` is absent for the same reason.
-//
-// NOTE (multi-DBMS): `host(rt.ip_address)::text` and `CONCAT_WS` are not
-// portable to SQLite; kept verbatim and flagged in the port report.
-macro_rules! session_columns {
-    () => {
+///
+/// `host(rt.ip_address)` is spelled per engine (`Backend::inet_text`). `CONCAT_WS`
+/// is native on all three (PostgreSQL 9.1+, MySQL, SQLite 3.44+, and the bundled
+/// SQLite is newer).
+fn session_columns(backend: Backend) -> String {
+    format!(
         r#"
     rt.id, rt.user_id,
     COALESCE(NULLIF(u.display_name, ''), u.username) AS user_label,
@@ -69,12 +71,12 @@ macro_rules! session_columns {
     COALESCE(d.label, NULLIF(TRIM(CONCAT_WS(' ', d.browser, d.platform)), ''), rt.device_name)
         AS device_label,
     rt.device_name, rt.device_type, rt.client_type,
-    host(rt.ip_address)::text AS ip_address, rt.country, rt.auth_strength,
+    {ip} AS ip_address, rt.country, rt.auth_strength,
     rt.user_agent, rt.created_at, rt.last_used_at, rt.expires_at
-"#
-    };
+"#,
+        ip = backend.inet_text("rt.ip_address"),
+    )
 }
-const SESSION_COLUMNS: &str = session_columns!();
 
 macro_rules! session_from {
     () => {
@@ -146,7 +148,7 @@ pub async fn list(
     let offset = query.offset.unwrap_or(0).max(0);
 
     let mut builder = DbQueryBuilder::new(db.backend(), "SELECT ");
-    builder.push(DEVICE_COLUMNS).push(DEVICE_FROM).push(" WHERE TRUE ");
+    builder.push(device_columns(db.backend())).push(DEVICE_FROM).push(" WHERE TRUE ");
     push_filters(&mut builder, query, ctx);
     builder.push_order_by("d.last_seen_at DESC, d.id DESC");
     builder.push_limit_offset(limit, offset);
@@ -176,18 +178,24 @@ fn push_filters(builder: &mut DbQueryBuilder, query: &DeviceQuery, ctx: &AdminCo
     push_scope(builder, ctx, "u.org_unit_id");
 
     if let Some(text) = clean(&query.q) {
-        // NOTE (multi-DBMS): ILIKE is PostgreSQL-only; flagged in the port report.
-        builder.push(" AND (d.label ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%' OR d.platform ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%' OR d.browser ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%' OR u.username ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%' OR u.email ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%')");
+        // Case-insensitive contains, spelled per engine (`Backend::ilike`), with
+        // the `%text%` wildcards carried by the bind rather than concatenated in
+        // SQL (the old `'%' || $n || '%'` used `||`, which is logical-OR on
+        // MySQL). One bind per column keeps the placeholder order positional.
+        let backend = builder.backend();
+        let pat = format!("%{text}%");
+        builder.push(" AND (");
+        for (i, col) in ["d.label", "d.platform", "d.browser", "u.username", "u.email"]
+            .iter()
+            .enumerate()
+        {
+            if i > 0 {
+                builder.push(" OR ");
+            }
+            let n = builder.bind_only(pat.clone());
+            builder.push(backend.ilike(*col, n));
+        }
+        builder.push(")");
     }
     if let Some(value) = clean(&query.device_type) {
         builder.push(" AND d.device_type = ");
@@ -267,7 +275,7 @@ pub async fn facets(
 /// One device, checked against the caller's perimeter.
 pub async fn get(db: &DbPool, id: Uuid, ctx: &AdminContext) -> Result<DeviceRow, AppError> {
     let mut builder = DbQueryBuilder::new(db.backend(), "SELECT ");
-    builder.push(DEVICE_COLUMNS).push(DEVICE_FROM).push(" WHERE d.id = ");
+    builder.push(device_columns(db.backend())).push(DEVICE_FROM).push(" WHERE d.id = ");
     builder.push_bind(id);
     push_scope(&mut builder, ctx, "u.org_unit_id");
 
@@ -284,14 +292,13 @@ pub async fn get(db: &DbPool, id: Uuid, ctx: &AdminContext) -> Result<DeviceRow,
 /// One device owned by a given account. Used by the personal screen, where the
 /// only perimeter is "is it mine".
 pub async fn get_owned(db: &DbPool, id: Uuid, user_id: Uuid) -> Result<DeviceRow, AppError> {
-    let sql = concat!(
-        "SELECT ",
-        device_columns!(),
-        device_from!(),
-        " WHERE d.id = $1 AND d.user_id = $2"
+    let sql = format!(
+        "SELECT {}{} WHERE d.id = $1 AND d.user_id = $2",
+        device_columns(db.backend()),
+        DEVICE_FROM
     );
     let row = db
-        .fetch_optional_as::<DeviceRow>(sql, params![id, user_id])
+        .fetch_optional_as::<DeviceRow>(&sql, params![id, user_id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, device_id = %id, "devices: reading a personal device");
@@ -302,14 +309,13 @@ pub async fn get_owned(db: &DbPool, id: Uuid, user_id: Uuid) -> Result<DeviceRow
 
 /// Every device of one account, most recently seen first.
 pub async fn for_user(db: &DbPool, user_id: Uuid) -> Result<Vec<DeviceRow>, AppError> {
-    let sql = concat!(
-        "SELECT ",
-        device_columns!(),
-        device_from!(),
-        " WHERE d.user_id = $1 ORDER BY d.last_seen_at DESC, d.id DESC"
+    let sql = format!(
+        "SELECT {}{} WHERE d.user_id = $1 ORDER BY d.last_seen_at DESC, d.id DESC",
+        device_columns(db.backend()),
+        DEVICE_FROM
     );
     let rows = db
-        .fetch_all_as::<DeviceRow>(sql, params![user_id])
+        .fetch_all_as::<DeviceRow>(&sql, params![user_id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %user_id, "devices: devices of an account");
@@ -320,15 +326,14 @@ pub async fn for_user(db: &DbPool, user_id: Uuid) -> Result<Vec<DeviceRow>, AppE
 
 /// Live sessions attached to a device.
 pub async fn sessions_of(db: &DbPool, device_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
-    let sql = concat!(
-        "SELECT ",
-        session_columns!(),
-        session_from!(),
-        " WHERE rt.device_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > $2 \
-         ORDER BY rt.last_used_at DESC"
+    let sql = format!(
+        "SELECT {}{} WHERE rt.device_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > $2 \
+         ORDER BY rt.last_used_at DESC",
+        session_columns(db.backend()),
+        SESSION_FROM
     );
     let rows = db
-        .fetch_all_as::<SessionRow>(sql, params![device_id, Utc::now()])
+        .fetch_all_as::<SessionRow>(&sql, params![device_id, Utc::now()])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, device_id = %device_id, "devices: sessions of the device");
@@ -339,15 +344,14 @@ pub async fn sessions_of(db: &DbPool, device_id: Uuid) -> Result<Vec<SessionRow>
 
 /// Live sessions of one account, whatever their device.
 pub async fn sessions_of_user(db: &DbPool, user_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
-    let sql = concat!(
-        "SELECT ",
-        session_columns!(),
-        session_from!(),
-        " WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > $2 \
-         ORDER BY rt.last_used_at DESC"
+    let sql = format!(
+        "SELECT {}{} WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > $2 \
+         ORDER BY rt.last_used_at DESC",
+        session_columns(db.backend()),
+        SESSION_FROM
     );
     let rows = db
-        .fetch_all_as::<SessionRow>(sql, params![user_id, Utc::now()])
+        .fetch_all_as::<SessionRow>(&sql, params![user_id, Utc::now()])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %user_id, "devices: sessions of the account");
@@ -383,7 +387,7 @@ pub async fn all_sessions(
 
     let mut builder = DbQueryBuilder::new(db.backend(), "SELECT ");
     builder
-        .push(SESSION_COLUMNS)
+        .push(session_columns(db.backend()))
         .push(SESSION_FROM)
         .push(" WHERE rt.revoked_at IS NULL AND rt.expires_at > ");
     builder.push_bind(Utc::now());
@@ -419,16 +423,23 @@ fn push_session_filters(builder: &mut DbQueryBuilder, query: &SessionQuery, ctx:
     push_scope(builder, ctx, "u.org_unit_id");
 
     if let Some(text) = clean(&query.q) {
-        // NOTE (multi-DBMS): ILIKE and `host()` are PostgreSQL-only; flagged.
-        builder.push(" AND (u.username ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%' OR u.email ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%' OR rt.device_name ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%' OR host(rt.ip_address) ILIKE '%' || ");
-        builder.push_bind(text.to_string());
-        builder.push(" || '%')");
+        // Case-insensitive contains per engine (`Backend::ilike`); the `host()`
+        // accessor is spelled by `Backend::inet_text` and matched with a plain
+        // `LIKE` (an address has no case to fold). The `%text%` wildcards ride
+        // on the binds, not on `||` (logical-OR on MySQL).
+        let backend = builder.backend();
+        let pat = format!("%{text}%");
+        builder.push(" AND (");
+        for (i, col) in ["u.username", "u.email", "rt.device_name"].iter().enumerate() {
+            if i > 0 {
+                builder.push(" OR ");
+            }
+            let n = builder.bind_only(pat.clone());
+            builder.push(backend.ilike(*col, n));
+        }
+        let n = builder.bind_only(pat.clone());
+        builder.push(format!(" OR {} LIKE ${n}", backend.inet_text("rt.ip_address")));
+        builder.push(")");
     }
     if let Some(value) = clean(&query.client_type) {
         builder.push(" AND rt.client_type = ");
@@ -455,15 +466,18 @@ pub async fn events_of(
     device_id: Uuid,
     limit: i64,
 ) -> Result<Vec<DeviceEventRow>, AppError> {
-    // NOTE (multi-DBMS): `host(ip_address)::text` is PostgreSQL-only; flagged.
+    // `host(ip_address)` is spelled per engine (`Backend::inet_text`).
     let rows = db
         .fetch_all_as::<DeviceEventRow>(
-            "SELECT id, occurred_at, kind, host(ip_address)::text AS ip_address, country,
+            &format!(
+                "SELECT id, occurred_at, kind, {ip} AS ip_address, country,
                 actor_id, actor_label, detail
            FROM core.device_events
           WHERE device_id = $1
           ORDER BY occurred_at DESC, id DESC
           LIMIT $2",
+                ip = db.backend().inet_text("ip_address")
+            ),
             params![device_id, limit.clamp(1, 200)],
         )
         .await
