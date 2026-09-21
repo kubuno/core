@@ -193,7 +193,7 @@ fn push_filters(builder: &mut DbQueryBuilder, query: &DeviceQuery, ctx: &AdminCo
                 builder.push(" OR ");
             }
             let n = builder.bind_only(pat.clone());
-            builder.push(backend.ilike(*col, n));
+            builder.push(backend.ilike(col, n));
         }
         builder.push(")");
     }
@@ -435,7 +435,7 @@ fn push_session_filters(builder: &mut DbQueryBuilder, query: &SessionQuery, ctx:
                 builder.push(" OR ");
             }
             let n = builder.bind_only(pat.clone());
-            builder.push(backend.ilike(*col, n));
+            builder.push(backend.ilike(col, n));
         }
         let n = builder.bind_only(pat.clone());
         builder.push(format!(" OR {} LIKE ${n}", backend.inet_text("rt.ip_address")));
