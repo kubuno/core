@@ -58,7 +58,7 @@ pub use model::{
 };
 pub use user_agent::{normalise, Normalised};
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 /// Startup wiring: loads the optional country database, then attaches every
 /// pre-existing session to a device.
@@ -67,7 +67,7 @@ use sqlx::PgPool;
 /// inventory that failed to backfill is an inventory that is merely incomplete
 /// until the next sign-in, which is strictly better than an instance that
 /// refuses to start over a reporting feature.
-pub async fn bootstrap(db: &PgPool) {
+pub async fn bootstrap(db: &DbPool) {
     // Configured path wins; an empty value disables the lookup entirely.
     let path = declared::country_db_path(db).await;
     geoip::init(&path);

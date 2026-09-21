@@ -281,7 +281,7 @@ impl Rule {
 }
 
 /// One row of the execution log, as the API serves it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ExecutionRow {
     pub id: i64,
     pub rule_id: Uuid,
@@ -308,7 +308,7 @@ pub struct ExecutionRow {
 }
 
 /// One version snapshot, as the API serves it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct VersionRow {
     pub version: i32,
     pub snapshot: Value,

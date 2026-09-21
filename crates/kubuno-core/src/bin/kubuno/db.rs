@@ -5,6 +5,7 @@ use kubuno_core::{
     config::Settings,
     database::{migrations, pool::create_pool, seed},
 };
+use kubuno_db::params;
 use std::process::Command as Proc;
 
 use crate::display::*;
@@ -123,17 +124,15 @@ pub async fn cmd_db_reset(args: &clap::ArgMatches) -> Result<()> {
         .context("Connexion à la base de données")?;
 
     info("Suppression du schéma core…");
-    sqlx::query("DROP SCHEMA IF EXISTS core CASCADE")
-        .execute(&pool)
+    pool.execute("DROP SCHEMA IF EXISTS core CASCADE", params![])
         .await
         .context("Suppression du schéma core")?;
     ok("Schéma core supprimé.");
 
-    // _sqlx_migrations est dans le schéma public — il survit au DROP SCHEMA core.
-    // Sans ce DELETE, sqlx considère les migrations comme déjà appliquées et les saute,
-    // laissant la base dans un état incohérent (core.users inexistante).
-    sqlx::query("DELETE FROM _sqlx_migrations")
-        .execute(&pool)
+    // _sqlx_migrations lives in the public schema — it survives DROP SCHEMA core.
+    // Without this DELETE, sqlx considers the migrations already applied and skips
+    // them, leaving the database inconsistent (core.users missing).
+    pool.execute("DELETE FROM _sqlx_migrations", params![])
         .await
         .context("Réinitialisation de la table _sqlx_migrations")?;
     ok("Historique migrations réinitialisé.");
@@ -185,18 +184,19 @@ pub async fn cmd_db_status() -> Result<()> {
         .await
         .context("Connexion à la base de données")?;
 
-    let (pg_version,): (String,) = sqlx::query_as("SELECT version()")
-        .fetch_one(&pool)
+    let (pg_version,): (String,) = pool
+        .fetch_one_as("SELECT version()", params![])
         .await
         .context("Requête version PostgreSQL")?;
     ok(&format!("Connecté — {pg_version}"));
 
-    let rows: Vec<(i64, String, bool)> = sqlx::query_as(
-        "SELECT version, description, success FROM _sqlx_migrations ORDER BY version",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(i64, String, bool)> = pool
+        .fetch_all_as(
+            "SELECT version, description, success FROM _sqlx_migrations ORDER BY version",
+            params![],
+        )
+        .await
+        .unwrap_or_default();
 
     println!();
     if rows.is_empty() {

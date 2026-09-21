@@ -18,6 +18,7 @@ use axum::{
     Json,
 };
 use bytes::Bytes;
+use kubuno_db::{params, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::json;
 use validator::Validate;
@@ -92,6 +93,16 @@ pub async fn get_me(
 
 /// Flux d'activité personnel : derniers événements de l'utilisateur connecté,
 /// tous modules confondus (filtre sur payload.user_id).
+/// One activity row, decoded portably from any engine (was hand-mapped columns).
+#[derive(sqlx::FromRow)]
+struct ActivityRow {
+    id:            i64,
+    event_type:    String,
+    source_module: Option<String>,
+    payload:       serde_json::Value,
+    created_at:    chrono::DateTime<chrono::Utc>,
+}
+
 pub async fn me_activity(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -99,32 +110,35 @@ pub async fn me_activity(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let limit: i64 = q.get("limit").and_then(|v| v.parse().ok()).unwrap_or(15).clamp(1, 50);
 
-    let rows = sqlx::query(
+    // `payload->>'user_id'` (PostgreSQL JSON-text extraction) is emitted per
+    // engine by `Backend::json_text`.
+    let backend = state.db.backend();
+    let sql = format!(
         r#"SELECT id, event_type, source_module, payload, created_at
            FROM core.event_log
-           WHERE payload->>'user_id' = $1
+           WHERE {} = $1
            ORDER BY created_at DESC
            LIMIT $2"#,
-    )
-    .bind(user.id.to_string())
-    .bind(limit)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!("me_activity query failed: {e}");
-        e
-    })?;
+        backend.json_text("payload", &["user_id"]),
+    );
+    let rows = state
+        .db
+        .fetch_all_as::<ActivityRow>(&sql, params![user.id.to_string(), limit])
+        .await
+        .map_err(|e| {
+            tracing::error!("me_activity query failed: {e}");
+            e
+        })?;
 
     let events: Vec<_> = rows
         .into_iter()
         .map(|r| {
-            use sqlx::Row;
             json!({
-                "id": r.get::<i64, _>("id"),
-                "event_type": r.get::<String, _>("event_type"),
-                "source_module": r.get::<Option<String>, _>("source_module"),
-                "payload": r.get::<serde_json::Value, _>("payload"),
-                "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
+                "id": r.id,
+                "event_type": r.event_type,
+                "source_module": r.source_module,
+                "payload": r.payload,
+                "created_at": r.created_at,
             })
         })
         .collect();
@@ -226,45 +240,51 @@ pub async fn update_me(
         AppError::Database(e)
     })?;
 
-    let updated = sqlx::query_as::<_, crate::models::user::User>(
+    // No RETURNING inside a tx (a DbTx cannot read a struct): the row is written
+    // here and read back by id after the commit. `preferences` is bound at both
+    // $3 and $4 because a positional placeholder is never reused across engines.
+    // NOTE: the `::jsonb`/`::text`/`::date`/`::boolean` casts and the `||` JSON
+    // concatenation are PostgreSQL-specific.
+    tx.execute(
         r#"UPDATE core.users
            SET display_name = COALESCE($1, display_name),
                avatar_url   = COALESCE($2, avatar_url),
-               preferences  = CASE WHEN $3::jsonb IS NOT NULL THEN preferences || $3 ELSE preferences END,
+               preferences  = CASE WHEN $3::jsonb IS NOT NULL THEN preferences || $4 ELSE preferences END,
                -- One boolean "did the request carry this field" per column, so
                -- an explicit null erases and an absent field is left alone.
-               first_name         = CASE WHEN $4::boolean  THEN $5::text  ELSE first_name END,
-               last_name          = CASE WHEN $6::boolean  THEN $7::text  ELSE last_name END,
-               name_pronunciation = CASE WHEN $8::boolean  THEN $9::text  ELSE name_pronunciation END,
-               pronouns           = CASE WHEN $10::boolean THEN $11::text ELSE pronouns END,
-               work_location      = CASE WHEN $12::boolean THEN $13::text ELSE work_location END,
-               introduction       = CASE WHEN $14::boolean THEN $15::text ELSE introduction END,
-               gender             = CASE WHEN $16::boolean THEN $17::text ELSE gender END,
-               birthday           = CASE WHEN $18::boolean THEN $19::date ELSE birthday END
-           WHERE id = $20
-           RETURNING *"#,
+               first_name         = CASE WHEN $5::boolean  THEN $6::text  ELSE first_name END,
+               last_name          = CASE WHEN $7::boolean  THEN $8::text  ELSE last_name END,
+               name_pronunciation = CASE WHEN $9::boolean  THEN $10::text ELSE name_pronunciation END,
+               pronouns           = CASE WHEN $11::boolean THEN $12::text ELSE pronouns END,
+               work_location      = CASE WHEN $13::boolean THEN $14::text ELSE work_location END,
+               introduction       = CASE WHEN $15::boolean THEN $16::text ELSE introduction END,
+               gender             = CASE WHEN $17::boolean THEN $18::text ELSE gender END,
+               birthday           = CASE WHEN $19::boolean THEN $20::date ELSE birthday END
+           WHERE id = $21"#,
+        params![
+            dto.display_name.as_deref(),
+            dto.avatar_url.as_deref(),
+            dto.preferences.clone(),
+            dto.preferences.clone(),
+            dto.first_name.is_some(),
+            dto.first_name.clone().flatten(),
+            dto.last_name.is_some(),
+            dto.last_name.clone().flatten(),
+            dto.name_pronunciation.is_some(),
+            dto.name_pronunciation.clone().flatten(),
+            dto.pronouns.is_some(),
+            dto.pronouns.clone().flatten(),
+            dto.work_location.is_some(),
+            dto.work_location.clone().flatten(),
+            dto.introduction.is_some(),
+            dto.introduction.clone().flatten(),
+            dto.gender.is_some(),
+            dto.gender.clone().flatten(),
+            dto.birthday.is_some(),
+            dto.birthday.flatten(),
+            user.id
+        ],
     )
-    .bind(dto.display_name.as_deref())
-    .bind(dto.avatar_url.as_deref())
-    .bind(dto.preferences.as_ref())
-    .bind(dto.first_name.is_some())
-    .bind(dto.first_name.clone().flatten())
-    .bind(dto.last_name.is_some())
-    .bind(dto.last_name.clone().flatten())
-    .bind(dto.name_pronunciation.is_some())
-    .bind(dto.name_pronunciation.clone().flatten())
-    .bind(dto.pronouns.is_some())
-    .bind(dto.pronouns.clone().flatten())
-    .bind(dto.work_location.is_some())
-    .bind(dto.work_location.clone().flatten())
-    .bind(dto.introduction.is_some())
-    .bind(dto.introduction.clone().flatten())
-    .bind(dto.gender.is_some())
-    .bind(dto.gender.clone().flatten())
-    .bind(dto.birthday.is_some())
-    .bind(dto.birthday.flatten())
-    .bind(user.id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, user_id = %user.id, "update_me: écriture du profil");
@@ -276,13 +296,27 @@ pub async fn update_me(
     // table the resolver reads. Keeping them in step is what makes a personal
     // override survive its unit's default changing underneath it.
     if let Some(patch) = dto.preferences.as_ref() {
-        crate::settings::store::sync_user_preferences(&mut tx, user.id, patch).await?;
+        crate::settings::store::sync_user_preferences(&state.db, &mut tx, user.id, patch).await?;
     }
 
     tx.commit().await.map_err(|e| {
         tracing::error!(error = %e, user_id = %user.id, "update_me: commit");
         AppError::Database(e)
     })?;
+
+    // Read the updated row back once the transaction has committed (the write ran
+    // without a RETURNING clause).
+    let updated = state
+        .db
+        .fetch_one_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1",
+            params![user.id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user.id, "update_me: relecture du profil");
+            AppError::Database(e)
+        })?;
 
     // What the request actually carried, rather than the three names this event
     // used to announce whatever had been sent. A subscriber that reacts to a
@@ -364,14 +398,13 @@ pub async fn change_password(
     // Clearing must_change_password here is what lifts the forced-change screen
     // and re-opens administrative writes. `password_changed_at` restarts the
     // expiry clock — and is what a forced change, once made, actually resets.
-    sqlx::query(
+    let now = chrono::Utc::now();
+    tx.execute(
         "UPDATE core.users \
-            SET password_hash = $1, must_change_password = FALSE, password_changed_at = NOW() \
-          WHERE id = $2",
+            SET password_hash = $1, must_change_password = FALSE, password_changed_at = $2 \
+          WHERE id = $3",
+        params![&new_hash, now, user.id],
     )
-    .bind(&new_hash)
-    .bind(user.id)
-    .execute(&mut *tx)
     .await?;
 
     // In the same transaction as the change: a history that commits without the
@@ -380,12 +413,11 @@ pub async fn change_password(
     crate::settings::password_policy::remember(&mut tx, user.id, &new_hash, policy.history_depth)
         .await?;
 
-    sqlx::query(
-        "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'password_change'
-         WHERE user_id = $1 AND revoked_at IS NULL",
+    tx.execute(
+        "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'password_change'
+         WHERE user_id = $2 AND revoked_at IS NULL",
+        params![now, user.id],
     )
-    .bind(user.id)
-    .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
@@ -431,18 +463,20 @@ pub async fn list_sessions(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let sessions = sqlx::query_as::<_, RefreshToken>(
-        r#"SELECT id, user_id, token_hash, device_name, device_type,
-                  host(ip_address)::text as ip_address, user_agent,
-                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
-                  family_id, client_type
-           FROM core.refresh_tokens
-           WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
-           ORDER BY last_used_at DESC"#,
-    )
-    .bind(user.id)
-    .fetch_all(&state.db)
-    .await?;
+    // NOTE: `host(ip_address)::text` is PostgreSQL's inet accessor + cast.
+    let sessions = state
+        .db
+        .fetch_all_as::<RefreshToken>(
+            r#"SELECT id, user_id, token_hash, device_name, device_type,
+                      host(ip_address)::text as ip_address, user_agent,
+                      expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                      family_id, client_type
+               FROM core.refresh_tokens
+               WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
+               ORDER BY last_used_at DESC"#,
+            params![user.id, chrono::Utc::now()],
+        )
+        .await?;
 
     Ok(Json(json!({ "sessions": sessions })))
 }
@@ -452,16 +486,15 @@ pub async fn revoke_session(
     AuthUser(user): AuthUser,
     Path(session_id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let affected = sqlx::query(
-        "UPDATE core.refresh_tokens
-         SET revoked_at = NOW(), revoke_reason = 'logout'
-         WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL",
-    )
-    .bind(session_id)
-    .bind(user.id)
-    .execute(&state.db)
-    .await?
-    .rows_affected();
+    let affected = state
+        .db
+        .execute(
+            "UPDATE core.refresh_tokens
+             SET revoked_at = $1, revoke_reason = 'logout'
+             WHERE id = $2 AND user_id = $3 AND revoked_at IS NULL",
+            params![chrono::Utc::now(), session_id, user.id],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound("Session introuvable".into()));
@@ -474,14 +507,15 @@ pub async fn revoke_all_sessions(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    sqlx::query(
-        "UPDATE core.refresh_tokens
-         SET revoked_at = NOW(), revoke_reason = 'logout'
-         WHERE user_id = $1 AND revoked_at IS NULL",
-    )
-    .bind(user.id)
-    .execute(&state.db)
-    .await?;
+    state
+        .db
+        .execute(
+            "UPDATE core.refresh_tokens
+             SET revoked_at = $1, revoke_reason = 'logout'
+             WHERE user_id = $2 AND revoked_at IS NULL",
+            params![chrono::Utc::now(), user.id],
+        )
+        .await?;
 
     Ok(Json(json!({ "message": "Toutes les sessions révoquées" })))
 }
@@ -591,35 +625,47 @@ pub async fn search_users(
     let anchor = caller.org_unit_id;
 
     // The projection comes from `DIRECTORY_COLUMNS`, never from a list typed
-    // here: see that constant for why.
-    let sql = concat!(
-        "SELECT ",
-        directory_columns!(),
-        r#"
-           FROM core.users
-           WHERE is_active = TRUE
-             AND ($1 = '' OR username ILIKE '%' || $1 || '%'
-                          OR display_name ILIKE '%' || $1 || '%')
-             AND (NOT $3::boolean
-                  OR ($4::uuid IS NOT NULL
-                      AND org_unit_id IN (SELECT d.id FROM core.org_unit_descendants($4) d)))
-           ORDER BY display_name ASC NULLS LAST
-           LIMIT $2"#
+    // here: see that constant for why. Built dynamically so the search predicate
+    // (and its pattern) is only present when there is text to match, and the
+    // unit narrowing only when it applies — the former `$n = ''` / `NOT
+    // $n::boolean` tricks are replaced by branching in Rust.
+    // NOTE: `core.org_unit_descendants(...)` (set-returning function), `ILIKE`
+    // and `NULLS LAST` are PostgreSQL-only.
+    let mut qb = DbQueryBuilder::new(
+        state.db.backend(),
+        concat!("SELECT ", directory_columns!(), " FROM core.users WHERE is_active = TRUE"),
     );
+    if !query.is_empty() {
+        let pattern = format!("%{query}%");
+        qb.push(" AND (username ILIKE ")
+            .push_bind(pattern.clone())
+            .push(" OR display_name ILIKE ")
+            .push_bind(pattern)
+            .push(")");
+    }
+    if restrict {
+        match anchor {
+            Some(a) => {
+                qb.push(" AND org_unit_id IN (SELECT d.id FROM core.org_unit_descendants(")
+                    .push_bind(a)
+                    .push(") d)");
+            }
+            // Narrowed but attached to no unit: an empty directory, the closed
+            // side of the failure (as the original NULL-anchor branch produced).
+            None => {
+                qb.push(" AND FALSE");
+            }
+        }
+    }
+    qb.push(" ORDER BY display_name ASC NULLS LAST LIMIT ").push_bind(limit);
 
-    let users = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(
-        sql,
-    )
-    .bind(query)
-    .bind(limit)
-    .bind(restrict)
-    .bind(anchor)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, caller = %caller.id, "search_users: lecture de l'annuaire impossible");
-        AppError::Database(e)
-    })?;
+    let users = qb
+        .fetch_all_as::<(uuid::Uuid, String, Option<String>, Option<String>, String)>(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, caller = %caller.id, "search_users: lecture de l'annuaire impossible");
+            AppError::Database(e)
+        })?;
 
     let result: Vec<serde_json::Value> = users
         .into_iter()
@@ -677,18 +723,21 @@ pub async fn user_card(
     #[allow(clippy::type_complexity)]
     let row: Option<(uuid::Uuid, String, Option<String>, Option<String>, Option<String>,
                      Option<String>, String, Option<String>, Option<String>, Option<String>,
-                     Option<String>, Option<uuid::Uuid>)> = sqlx::query_as(concat!(
-        "SELECT ",
-        directory_card_columns!(),
-        " FROM core.users WHERE id = $1 AND is_active = TRUE"
-    ))
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, %id, "user_card: lecture du profil impossible");
-        AppError::Database(e)
-    })?;
+                     Option<String>, Option<uuid::Uuid>)> = state
+        .db
+        .fetch_optional_as(
+            concat!(
+                "SELECT ",
+                directory_card_columns!(),
+                " FROM core.users WHERE id = $1 AND is_active = TRUE"
+            ),
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, %id, "user_card: lecture du profil impossible");
+            AppError::Database(e)
+        })?;
 
     let (uid, username, display_name, first_name, last_name, avatar_url, email,
          name_pronunciation, pronouns, work_location, introduction, org_unit_id) =
@@ -697,17 +746,19 @@ pub async fn user_card(
     // Narrowed directories answer only inside the caller's own unit and its
     // sub-units — the same anchor the search uses, so one policy, one meaning.
     if policy.audience == settings::directory::Audience::SameUnit && caller.id != id {
-        let same: Option<bool> = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1) d WHERE d.id = $2)",
-        )
-        .bind(caller.org_unit_id)
-        .bind(org_unit_id)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "user_card: portée d'unité illisible");
-            AppError::Database(e)
-        })?;
+        // NOTE: `core.org_unit_descendants(...)` is a PostgreSQL set-returning
+        // function (Postgres-only).
+        let same: Option<bool> = state
+            .db
+            .fetch_optional_scalar::<bool>(
+                "SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1) d WHERE d.id = $2)",
+                params![caller.org_unit_id, org_unit_id],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "user_card: portée d'unité illisible");
+                AppError::Database(e)
+            })?;
         if same != Some(true) {
             return Err(AppError::NotFound("Compte introuvable".into()));
         }
@@ -715,9 +766,12 @@ pub async fn user_card(
 
     // The unit's NAME, not its id: a card is read by a person.
     let org_unit: Option<String> = match org_unit_id {
-        Some(ou) => sqlx::query_scalar("SELECT name FROM core.org_units WHERE id = $1")
-            .bind(ou)
-            .fetch_optional(&state.db)
+        Some(ou) => state
+            .db
+            .fetch_optional_scalar::<String>(
+                "SELECT name FROM core.org_units WHERE id = $1",
+                params![ou],
+            )
             .await
             .ok()
             .flatten(),
@@ -788,18 +842,20 @@ pub async fn lookup_users(
     // Same projection as the search, for the same reason: this route is what
     // every module calls to put a name on an author or a mention, and a personal
     // datum appended to the list here would surface in all of them at once.
-    let sql = concat!("SELECT ", directory_columns!(), " FROM core.users WHERE id = ANY($1)");
+    // `= ANY($1)` becomes a portable `IN (...)`.
+    let mut qb = DbQueryBuilder::new(
+        state.db.backend(),
+        concat!("SELECT ", directory_columns!(), " FROM core.users WHERE id"),
+    );
+    qb.push_in(ids.iter().copied());
 
-    let users = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(
-        sql,
-    )
-    .bind(&ids)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, caller = %caller.id, "lookup_users: résolution des comptes impossible");
-        AppError::Database(e)
-    })?;
+    let users = qb
+        .fetch_all_as::<(uuid::Uuid, String, Option<String>, Option<String>, String)>(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, caller = %caller.id, "lookup_users: résolution des comptes impossible");
+            AppError::Database(e)
+        })?;
 
     let result: Vec<serde_json::Value> = users
         .into_iter()
@@ -838,10 +894,12 @@ pub async fn setup_totp(
     )
     .map_err(AppError::Internal)?;
 
-    sqlx::query("UPDATE core.users SET totp_pending_secret = $1 WHERE id = $2")
-        .bind(&encrypted)
-        .bind(user.id)
-        .execute(&state.db)
+    state
+        .db
+        .execute(
+            "UPDATE core.users SET totp_pending_secret = $1 WHERE id = $2",
+            params![&encrypted, user.id],
+        )
         .await?;
 
     Ok(Json(json!({ "uri": uri, "secret": secret_base32 })))
@@ -874,17 +932,18 @@ pub async fn enable_totp(
         return Err(AppError::Validation("Code incorrect".into()));
     }
 
-    sqlx::query(
-        "UPDATE core.users
-         SET totp_secret = totp_pending_secret,
-             totp_pending_secret = NULL,
-             totp_enabled = TRUE
-         WHERE id = $1",
-    )
-    .bind(user.id)
-    .execute(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, user_id = %user.id, "enable_totp: activation"); AppError::Database(e) })?;
+    state
+        .db
+        .execute(
+            "UPDATE core.users
+             SET totp_secret = totp_pending_secret,
+                 totp_pending_secret = NULL,
+                 totp_enabled = TRUE
+             WHERE id = $1",
+            params![user.id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, user_id = %user.id, "enable_totp: activation"); AppError::Database(e) })?;
 
     let codes = backup_codes::replace_all(&state.db, user.id).await?;
 
@@ -945,17 +1004,18 @@ pub async fn disable_totp(
         return Err(AppError::Validation("Code incorrect".into()));
     }
 
-    sqlx::query(
-        "UPDATE core.users
-         SET totp_secret = NULL,
-             totp_pending_secret = NULL,
-             totp_enabled = FALSE
-         WHERE id = $1",
-    )
-    .bind(user.id)
-    .execute(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, user_id = %user.id, "disable_totp: désactivation"); AppError::Database(e) })?;
+    state
+        .db
+        .execute(
+            "UPDATE core.users
+             SET totp_secret = NULL,
+                 totp_pending_secret = NULL,
+                 totp_enabled = FALSE
+             WHERE id = $1",
+            params![user.id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, user_id = %user.id, "disable_totp: désactivation"); AppError::Database(e) })?;
 
     // Codes exist to stand in for the second factor; with no second factor they
     // would be a standing password bypass.
@@ -1044,13 +1104,21 @@ pub async fn upload_avatar(
 
     let avatar_url = format!("/api/v1/users/{}/avatar", user.id);
 
-    let updated = sqlx::query_as::<_, crate::models::user::User>(
-        "UPDATE core.users SET avatar_url = $1 WHERE id = $2 RETURNING *",
-    )
-    .bind(&avatar_url)
-    .bind(user.id)
-    .fetch_one(&state.db)
-    .await?;
+    // No RETURNING: update, then read the row back by id.
+    state
+        .db
+        .execute(
+            "UPDATE core.users SET avatar_url = $1 WHERE id = $2",
+            params![&avatar_url, user.id],
+        )
+        .await?;
+    let updated = state
+        .db
+        .fetch_one_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1",
+            params![user.id],
+        )
+        .await?;
 
     Ok(Json(json!({ "user": updated })))
 }
@@ -1182,23 +1250,26 @@ pub async fn internal_list_users(
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let query = q.q.as_deref().unwrap_or("").trim().to_string();
 
-    let sql = concat!(
-        "SELECT ",
-        directory_columns!(),
-        r#"
-           FROM core.users
-           WHERE is_active = TRUE
-             AND ($1 = '' OR username ILIKE '%' || $1 || '%'
-                          OR display_name ILIKE '%' || $1 || '%'
-                          OR email::text ILIKE '%' || $1 || '%')
-           ORDER BY display_name ASC NULLS LAST
-           LIMIT $2"#
+    // NOTE: `email::text`, `ILIKE` and `NULLS LAST` are PostgreSQL-only; the
+    // search predicate is included only when there is text to match.
+    let mut qb = DbQueryBuilder::new(
+        state.db.backend(),
+        concat!("SELECT ", directory_columns!(), " FROM core.users WHERE is_active = TRUE"),
     );
+    if !query.is_empty() {
+        let pattern = format!("%{query}%");
+        qb.push(" AND (username ILIKE ")
+            .push_bind(pattern.clone())
+            .push(" OR display_name ILIKE ")
+            .push_bind(pattern.clone())
+            .push(" OR email::text ILIKE ")
+            .push_bind(pattern)
+            .push(")");
+    }
+    qb.push(" ORDER BY display_name ASC NULLS LAST LIMIT ").push_bind(limit);
 
-    let rows = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(sql)
-        .bind(&query)
-        .bind(limit)
-        .fetch_all(&state.db)
+    let rows = qb
+        .fetch_all_as::<(uuid::Uuid, String, Option<String>, Option<String>, String)>(&state.db)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "annuaire interne : lecture impossible");
@@ -1216,15 +1287,16 @@ pub async fn internal_get_user(
     _internal: InternalRequest,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let sql = concat!(
-        "SELECT ",
-        directory_columns!(),
-        " FROM core.users WHERE id = $1 AND is_active = TRUE"
-    );
-
-    let row = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, Option<String>, String)>(sql)
-        .bind(id)
-        .fetch_optional(&state.db)
+    let row = state
+        .db
+        .fetch_optional_as::<(uuid::Uuid, String, Option<String>, Option<String>, String)>(
+            concat!(
+                "SELECT ",
+                directory_columns!(),
+                " FROM core.users WHERE id = $1 AND is_active = TRUE"
+            ),
+            params![id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, %id, "annuaire interne : lecture d'un compte impossible");
@@ -1245,20 +1317,21 @@ pub async fn internal_user_groups(
     _internal: InternalRequest,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = sqlx::query_as::<_, (uuid::Uuid, String, bool)>(
-        r#"SELECT g.id, g.name, g.release_exempt
-             FROM core.user_group_members m
-             JOIN core.user_groups g ON g.id = m.group_id
-            WHERE m.user_id = $1
-            ORDER BY g.name"#,
-    )
-    .bind(id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, %id, "annuaire interne : groupes d'un compte impossibles à lire");
-        AppError::Database(e)
-    })?;
+    let rows = state
+        .db
+        .fetch_all_as::<(uuid::Uuid, String, bool)>(
+            r#"SELECT g.id, g.name, g.release_exempt
+                 FROM core.user_group_members m
+                 JOIN core.user_groups g ON g.id = m.group_id
+                WHERE m.user_id = $1
+                ORDER BY g.name"#,
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, %id, "annuaire interne : groupes d'un compte impossibles à lire");
+            AppError::Database(e)
+        })?;
 
     Ok(Json(json!({
         // `release_exempt` travels with the membership because the rule is applied
@@ -1279,15 +1352,17 @@ pub async fn internal_list_groups(
     State(state): State<AppState>,
     _internal: InternalRequest,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = sqlx::query_as::<_, (uuid::Uuid, String)>(
-        "SELECT id, name FROM core.user_groups ORDER BY name",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "annuaire interne : liste des groupes impossible à lire");
-        AppError::Database(e)
-    })?;
+    let rows = state
+        .db
+        .fetch_all_as::<(uuid::Uuid, String)>(
+            "SELECT id, name FROM core.user_groups ORDER BY name",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "annuaire interne : liste des groupes impossible à lire");
+            AppError::Database(e)
+        })?;
 
     Ok(Json(json!({
         "groups": rows.into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>()
@@ -1329,13 +1404,16 @@ pub async fn internal_provisioning_users(
     State(state): State<AppState>,
     _internal: InternalRequest,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let sql = concat!(
-        "SELECT ",
-        provisioning_columns!(),
-        " FROM core.users WHERE is_active = TRUE ORDER BY created_at ASC"
-    );
-    let rows = sqlx::query_as::<_, ProvisioningRow>(sql)
-        .fetch_all(&state.db)
+    let rows = state
+        .db
+        .fetch_all_as::<ProvisioningRow>(
+            concat!(
+                "SELECT ",
+                provisioning_columns!(),
+                " FROM core.users WHERE is_active = TRUE ORDER BY created_at ASC"
+            ),
+            params![],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "provisioning mail : liste des comptes impossible");
@@ -1350,14 +1428,16 @@ pub async fn internal_provisioning_user(
     _internal: InternalRequest,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let sql = concat!(
-        "SELECT ",
-        provisioning_columns!(),
-        " FROM core.users WHERE id = $1 AND is_active = TRUE"
-    );
-    let row = sqlx::query_as::<_, ProvisioningRow>(sql)
-        .bind(id)
-        .fetch_optional(&state.db)
+    let row = state
+        .db
+        .fetch_optional_as::<ProvisioningRow>(
+            concat!(
+                "SELECT ",
+                provisioning_columns!(),
+                " FROM core.users WHERE id = $1 AND is_active = TRUE"
+            ),
+            params![id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, %id, "provisioning mail : lecture d'un compte impossible");

@@ -17,9 +17,55 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use kubuno_db::dialect::SqlType;
+use kubuno_db::{params, Backend, DbPool, DbRow, DbValue};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
+
+/// Map a raw row (a `RETURNING`, a reselect, or a `SELECT * ... FOR UPDATE`) into
+/// the full `User`. Used inside audited transactions, where `DbTx` cannot decode
+/// structs directly, and in the per-id bulk loops that replace `= ANY(...)`.
+fn user_from_row(row: &DbRow) -> Result<User, sqlx::Error> {
+    Ok(User {
+        id:                   row.try_get("id")?,
+        email:                row.try_get("email")?,
+        username:             row.try_get("username")?,
+        password_hash:        row.try_get("password_hash")?,
+        display_name:         row.try_get("display_name")?,
+        first_name:           row.try_get("first_name")?,
+        last_name:            row.try_get("last_name")?,
+        avatar_url:           row.try_get("avatar_url")?,
+        role:                 row.try_get("role")?,
+        quota_bytes:          row.try_get("quota_bytes")?,
+        used_bytes:           row.try_get("used_bytes")?,
+        is_active:            row.try_get("is_active")?,
+        email_verified:       row.try_get("email_verified")?,
+        oauth_provider:       row.try_get("oauth_provider")?,
+        oauth_id:             row.try_get("oauth_id")?,
+        preferences:          row.try_get("preferences")?,
+        org_unit_id:          row.try_get("org_unit_id")?,
+        name_pronunciation:   row.try_get("name_pronunciation")?,
+        pronouns:             row.try_get("pronouns")?,
+        work_location:        row.try_get("work_location")?,
+        introduction:         row.try_get("introduction")?,
+        gender:               row.try_get("gender")?,
+        birthday:             row.try_get("birthday")?,
+        created_at:           row.try_get("created_at")?,
+        updated_at:           row.try_get("updated_at")?,
+        last_login_at:        row.try_get("last_login_at")?,
+        password_changed_at:  row.try_get("password_changed_at")?,
+        totp_enabled:         row.try_get("totp_enabled")?,
+        must_change_password: row.try_get("must_change_password")?,
+        admin_2fa_grace_until: row.try_get("admin_2fa_grace_until")?,
+        totp_secret:          row.try_get("totp_secret")?,
+        totp_pending_secret:  row.try_get("totp_pending_secret")?,
+        ldap_directory_id:    row.try_get("ldap_directory_id")?,
+        ldap_dn:              row.try_get("ldap_dn")?,
+        ldap_uid:             row.try_get("ldap_uid")?,
+        ldap_synced_at:       row.try_get("ldap_synced_at")?,
+    })
+}
 
 /// Label shown in the trail for a user target: readable without a join, and
 /// still meaningful once the account is gone.
@@ -69,34 +115,86 @@ pub struct ListUsersQuery {
     pub counts: Option<bool>,
 }
 
-/// The perimeter shared by the listing and its total.
+/// Builds the shared listing predicate (search, role, scope, unit filter) as an
+/// SQL fragment plus its ordered binds, numbered from `$1`.
 ///
-/// One string for both, because they must describe the *same* set: a total
-/// computed on a wider predicate reports pages that the listing cannot show, and
-/// the operator reads it as accounts being hidden from them.
+/// One builder for the listing, its count and the export, so they describe the
+/// *same* set: a total computed on a wider predicate reports pages the listing
+/// cannot show, and the operator reads it as accounts being hidden from them.
 ///
-/// Parameters, in order: `$1` search, `$2` role, `$3` scope units,
-/// `$4` unit filter (one OR several), `$5` include descendants.
-///
-/// `$4` is an ARRAY, so one selected unit and five go down the same path: the
-/// console can hold a union of branches without the count, the export and the
-/// listing each needing their own predicate.
-// A macro rather than a `const` so a statement that needs nothing else is a
-// single compile-time literal, spliced with `concat!`.
-macro_rules! user_filter {
-    () => {
-        r#"
-        ($1::text IS NULL OR email ILIKE '%' || $1 || '%'
-               OR username ILIKE '%' || $1 || '%'
-               OR display_name ILIKE '%' || $1 || '%')
-    AND ($2::text IS NULL OR role = $2)
-    AND ($3::uuid[] IS NULL OR (org_unit_id IS NOT NULL AND org_unit_id = ANY($3)))
-    AND ($4::uuid[] IS NULL OR org_unit_id = ANY($4)
-               OR ($5::bool AND org_unit_id IN (
-                     SELECT d.id FROM unnest($4::uuid[]) AS sel(id),
-                                      core.org_unit_descendants(sel.id) AS d)))
-"#
-    };
+/// `scope_units = None` means "no restriction" (instance scope or superuser); an
+/// **empty** slice means "nothing" (`IN (NULL)` matches no row), the right answer
+/// for a caller who does not hold `core.users.read` at all. The array `= ANY(...)`
+/// membership tests of the old PostgreSQL statement become portable `IN (...)`
+/// lists; only the descendants expansion keeps a PostgreSQL set-returning
+/// function (`core.org_unit_descendants`) — see the report.
+fn build_user_filter(
+    backend: Backend,
+    search: Option<&str>,
+    role: Option<&str>,
+    scope_units: Option<&[Uuid]>,
+    units: Option<&[Uuid]>,
+    descendants: bool,
+) -> (String, Vec<DbValue>) {
+    let mut binds: Vec<DbValue> = Vec::new();
+    let mut clauses: Vec<String> = vec!["TRUE".to_string()];
+
+    if let Some(s) = search {
+        let like = format!("%{s}%");
+        let n = binds.len() + 1;
+        binds.push(like.clone().into());
+        binds.push(like.clone().into());
+        binds.push(like.into());
+        clauses.push(format!(
+            "({} OR {} OR {})",
+            backend.ilike("email", n),
+            backend.ilike("username", n + 1),
+            backend.ilike("display_name", n + 2),
+        ));
+    }
+
+    if let Some(r) = role {
+        let n = binds.len() + 1;
+        binds.push(r.to_string().into());
+        clauses.push(format!("role = ${n}"));
+    }
+
+    if let Some(scope) = scope_units {
+        let start = binds.len() + 1;
+        for u in scope {
+            binds.push((*u).into());
+        }
+        clauses.push(format!(
+            "(org_unit_id IS NOT NULL AND org_unit_id IN ({}))",
+            backend.in_list(start, scope.len()),
+        ));
+    }
+
+    if let Some(us) = units {
+        let start = binds.len() + 1;
+        for u in us {
+            binds.push((*u).into());
+        }
+        let direct = format!("org_unit_id IN ({})", backend.in_list(start, us.len()));
+        if descendants {
+            let dstart = binds.len() + 1;
+            for u in us {
+                binds.push((*u).into());
+            }
+            let values = (0..us.len())
+                .map(|i| format!("(${})", dstart + i))
+                .collect::<Vec<_>>()
+                .join(", ");
+            clauses.push(format!(
+                "({direct} OR org_unit_id IN (SELECT d.id FROM (VALUES {values}) AS sel(id), \
+                 core.org_unit_descendants(sel.id) AS d))"
+            ));
+        } else {
+            clauses.push(direct);
+        }
+    }
+
+    (clauses.join(" AND "), binds)
 }
 
 /// Ordering, chosen from a CLOSED list.
@@ -131,8 +229,8 @@ fn requested_units(q: &ListUsersQuery) -> Option<Vec<Uuid>> {
     let mut units: Vec<Uuid> = q.org_unit_id.into_iter().collect();
     if let Some(raw) = q.org_unit_ids.as_deref() {
         // A malformed id is dropped rather than failing the listing: it can only
-        // widen the perimeter, never leak past `scope_units` ($3), which is the
-        // predicate that actually confines a delegated administrator.
+        // widen the perimeter, never leak past `scope_units` (the predicate that
+        // actually confines a delegated administrator).
         units.extend(raw.split(',').filter_map(|s| Uuid::parse_str(s.trim()).ok()));
     }
     units.sort_unstable();
@@ -165,41 +263,51 @@ pub async fn list_users(
     let units = requested_units(&q);
     let descendants = q.include_descendants.unwrap_or(false);
     let order = sort_clause(q.sort.as_deref(), q.dir.as_deref());
+    let backend = state.db.backend();
 
-    // Safe: `USER_FILTER` is a literal constant and `order` comes from
-    // `sort_clause`, a closed allow-list that falls back to the default for any
-    // name it does not know — no caller text reaches the statement. Search,
-    // role, units and paging all travel as bind parameters.
-    let users = sqlx::query_as::<_, User>(sqlx::AssertSqlSafe(format!(
-        "SELECT * FROM core.users WHERE {} {order} LIMIT $6 OFFSET $7",
-        user_filter!()
-    )))
-    .bind(q.search.as_deref())
-    .bind(q.role.as_deref())
-    .bind(scope_units.as_deref())
-    .bind(units.as_deref())
-    .bind(descendants)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_users"); AppError::Database(e) })?;
+    // `order` comes from `sort_clause`, a closed allow-list that falls back to
+    // the default for any name it does not know — no caller text reaches the
+    // statement. Search, role, units and paging all travel as bind parameters.
+    let (where_sql, mut binds) = build_user_filter(
+        backend,
+        q.search.as_deref(),
+        q.role.as_deref(),
+        scope_units.as_deref(),
+        units.as_deref(),
+        descendants,
+    );
+    let limit_n = binds.len() + 1;
+    binds.push(limit.into());
+    let offset_n = binds.len() + 1;
+    binds.push(offset.into());
+    let list_sql =
+        format!("SELECT * FROM core.users WHERE {where_sql} {order} LIMIT ${limit_n} OFFSET ${offset_n}");
+    let users = state
+        .db
+        .fetch_all_as::<User>(&list_sql, binds)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_users"); AppError::Database(e) })?;
 
     // The total must obey the same perimeter — and the same filters — or the
     // pagination tells the caller how many accounts they are not allowed to see,
     // and offers pages that come back empty.
-    let total: i64 = sqlx::query_scalar(concat!(
-        "SELECT COUNT(*)::bigint FROM core.users WHERE ",
-        user_filter!()
-    ))
-    .bind(q.search.as_deref())
-    .bind(q.role.as_deref())
-    .bind(scope_units.as_deref())
-    .bind(units.as_deref())
-    .bind(descendants)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_users: total"); AppError::Database(e) })?;
+    let (count_where, count_binds) = build_user_filter(
+        backend,
+        q.search.as_deref(),
+        q.role.as_deref(),
+        scope_units.as_deref(),
+        units.as_deref(),
+        descendants,
+    );
+    let count_sql = format!(
+        "SELECT {} FROM core.users WHERE {count_where}",
+        backend.count_bigint("*")
+    );
+    let total: i64 = state
+        .db
+        .fetch_scalar::<i64>(&count_sql, count_binds)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_users: total"); AppError::Database(e) })?;
 
     let mut body = json!({ "users": users, "total": total, "limit": limit, "offset": offset });
 
@@ -209,16 +317,27 @@ pub async fn list_users(
     // Deliberately NOT narrowed by the search/role/unit filters: this describes
     // the directory, not the current page.
     if q.counts.unwrap_or(false) {
-        let counts: Vec<(Uuid, i64)> = sqlx::query_as(
-            "SELECT org_unit_id, COUNT(*)::bigint FROM core.users
-             WHERE org_unit_id IS NOT NULL
-               AND ($1::uuid[] IS NULL OR org_unit_id = ANY($1))
-             GROUP BY org_unit_id",
-        )
-        .bind(scope_units.as_deref())
-        .fetch_all(&state.db)
-        .await
-        .map_err(|e| { tracing::error!(error = %e, "list_users: org_unit_counts"); AppError::Database(e) })?;
+        let mut counts_binds: Vec<DbValue> = Vec::new();
+        let mut counts_sql = format!(
+            "SELECT org_unit_id, {} FROM core.users WHERE org_unit_id IS NOT NULL",
+            backend.count_bigint("*")
+        );
+        if let Some(scope) = scope_units.as_deref() {
+            counts_sql.push_str(&format!(
+                " AND org_unit_id IN ({})",
+                backend.in_list(1, scope.len())
+            ));
+            for u in scope {
+                counts_binds.push((*u).into());
+            }
+        }
+        counts_sql.push_str(" GROUP BY org_unit_id");
+
+        let counts: Vec<(Uuid, i64)> = state
+            .db
+            .fetch_all_as::<(Uuid, i64)>(&counts_sql, counts_binds)
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "list_users: org_unit_counts"); AppError::Database(e) })?;
 
         body["org_unit_counts"] = json!(counts
             .into_iter()
@@ -286,24 +405,26 @@ pub async fn export_users(
     let units = requested_units(&q);
     let descendants = q.include_descendants.unwrap_or(false);
     let order = sort_clause(q.sort.as_deref(), q.dir.as_deref());
+    let backend = state.db.backend();
 
     // One more than the ceiling, so "too many" is distinguishable from "exactly
-    // the ceiling" without a second COUNT.
-    // Safe: same two fragments as the listing — the `USER_FILTER` literal and
-    // `sort_clause`'s allow-listed ordering.
-    let users = sqlx::query_as::<_, User>(sqlx::AssertSqlSafe(format!(
-        "SELECT * FROM core.users WHERE {} {order} LIMIT $6",
-        user_filter!()
-    )))
-    .bind(q.search.as_deref())
-    .bind(q.role.as_deref())
-    .bind(scope_units.as_deref())
-    .bind(units.as_deref())
-    .bind(descendants)
-    .bind(EXPORT_MAX + 1)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "export_users"); AppError::Database(e) })?;
+    // the ceiling" without a second COUNT. Same predicate as the listing.
+    let (where_sql, mut binds) = build_user_filter(
+        backend,
+        q.search.as_deref(),
+        q.role.as_deref(),
+        scope_units.as_deref(),
+        units.as_deref(),
+        descendants,
+    );
+    let limit_n = binds.len() + 1;
+    binds.push((EXPORT_MAX + 1).into());
+    let export_sql = format!("SELECT * FROM core.users WHERE {where_sql} {order} LIMIT ${limit_n}");
+    let users = state
+        .db
+        .fetch_all_as::<User>(&export_sql, binds)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "export_users"); AppError::Database(e) })?;
 
     if users.len() as i64 > EXPORT_MAX {
         return Err(AppError::Validation(format!(
@@ -313,13 +434,13 @@ pub async fn export_users(
 
     // Unit names in one query: the alternative is a join on a listing that
     // already carries its own perimeter, or one lookup per row.
-    let unit_names: std::collections::HashMap<Uuid, String> =
-        sqlx::query_as::<_, (Uuid, String)>("SELECT id, name FROM core.org_units")
-            .fetch_all(&state.db)
-            .await
-            .map_err(|e| { tracing::error!(error = %e, "export_users: unités"); AppError::Database(e) })?
-            .into_iter()
-            .collect();
+    let unit_names: std::collections::HashMap<Uuid, String> = state
+        .db
+        .fetch_all_as::<(Uuid, String)>("SELECT id, name FROM core.org_units", params![])
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "export_users: unités"); AppError::Database(e) })?
+        .into_iter()
+        .collect();
 
     // Requested columns, in the CLOSED list's own order so the file's shape does
     // not depend on the order the console happened to send them in.
@@ -433,14 +554,14 @@ pub async fn create_user(
         ctx.require_superuser("création d'un administrateur")?;
     }
 
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM core.users WHERE email = $1 OR username = $2)",
-    )
-    .bind(&dto.email)
-    .bind(&dto.username)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "create_user: unicité"); AppError::Database(e) })?;
+    let exists: bool = state
+        .db
+        .fetch_scalar::<bool>(
+            "SELECT EXISTS(SELECT 1 FROM core.users WHERE email = $1 OR username = $2)",
+            params![&dto.email, &dto.username],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "create_user: unicité"); AppError::Database(e) })?;
 
     if exists {
         return Err(AppError::Conflict("Email ou username déjà utilisé".into()));
@@ -473,22 +594,34 @@ pub async fn create_user(
     // no user can appear without a record of who created it.
     let mut tx = audit.begin(&state.db).await?;
 
-    let user = sqlx::query_as::<_, User>(
-        r#"INSERT INTO core.users (email, username, password_hash, display_name, role, quota_bytes,
+    // The key is generated in Rust rather than by the database: MySQL and SQLite
+    // have no `RETURNING`, so a process-side id is the only portable way to know
+    // the row's identity for the reselect and the audit target.
+    let user_id = kubuno_db::new_id();
+    let now = chrono::Utc::now();
+    let raw = kubuno_db::returning::insert_returning_row(
+        &mut tx,
+        r#"INSERT INTO core.users (id, email, username, password_hash, display_name, role, quota_bytes,
                                    org_unit_id, password_changed_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-           RETURNING *"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+        params![
+            user_id,
+            &dto.email,
+            &dto.username,
+            &hash,
+            dto.display_name.as_deref(),
+            role,
+            quota,
+            dto.org_unit_id,
+            now
+        ],
+        "*",
+        &kubuno_db::returning::reselect_by_id("core.users", "*"),
+        params![user_id],
     )
-    .bind(&dto.email)
-    .bind(&dto.username)
-    .bind(&hash)
-    .bind(dto.display_name.as_deref())
-    .bind(role)
-    .bind(quota)
-    .bind(dto.org_unit_id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| { tracing::error!(error = %e, "create_user: insertion"); AppError::Database(e) })?;
+    let user = user_from_row(&raw).map_err(AppError::Database)?;
 
     // The password the account was handed enters the history straight away:
     // otherwise "no reuse" would let its owner change it once and set it back to
@@ -540,9 +673,9 @@ pub async fn get_user(
     ctx: AdminCtx,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let user = sqlx::query_as::<_, User>("SELECT * FROM core.users WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.db)
+    let user = state
+        .db
+        .fetch_optional_as::<User>("SELECT * FROM core.users WHERE id = $1", params![id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "get_user"); AppError::Database(e) })?
         .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
@@ -683,12 +816,12 @@ pub async fn update_user(
     // Read the previous state inside the transaction: the `before` snapshot is
     // then the exact row the UPDATE is about to overwrite, not one a concurrent
     // request may have changed in between.
-    let previous = sqlx::query_as::<_, User>("SELECT * FROM core.users WHERE id = $1 FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let previous = tx
+        .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "update_user: lecture"); AppError::Database(e) })?
         .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
+    let previous = user_from_row(&previous).map_err(AppError::Database)?;
 
     // Perimeter: the unit the account is in today, and — when the edit moves it —
     // the unit it is going to. Checking only the first would let a delegated
@@ -703,9 +836,14 @@ pub async fn update_user(
         ctx.require_for_unit(keys::USER_SUSPENSION, previous.org_unit_id)?;
     }
     // Guard 3: never act on an account holding a role the caller does not hold.
-    ensure_can_act_on_user(&mut tx, &ctx, id).await?;
+    ensure_can_act_on_user(&state.db, &ctx, id).await?;
 
-    let user = sqlx::query_as::<_, User>(
+    // `is_active` feeds two placeholders ($3 for the COALESCE, $6 for the
+    // `deleted_at` reset); the engine-agnostic layer numbers placeholders
+    // strictly and never reuses one, so it is bound twice. `id` moves to the last
+    // placeholder ($23) so every `$n` appears once, in increasing order.
+    let raw = kubuno_db::returning::update_returning_row(
+        &mut tx,
         r#"UPDATE core.users
            SET role        = COALESCE($1, role),
                quota_bytes = COALESCE($2, quota_bytes),
@@ -716,46 +854,51 @@ pub async fn update_user(
                -- alternative — leaving the stamp — would let the purge job
                -- delete a live account weeks later because somebody had once
                -- deleted it and changed their mind.
-               deleted_at  = CASE WHEN $3 IS TRUE THEN NULL ELSE deleted_at END,
+               deleted_at  = CASE WHEN $6 IS TRUE THEN NULL ELSE deleted_at END,
                -- Three-state, exactly as on `PATCH /me`: the boolean says the
                -- request carried the field, so an explicit null erases it.
-               first_name         = CASE WHEN $7::boolean  THEN $8::text  ELSE first_name END,
-               last_name          = CASE WHEN $9::boolean  THEN $10::text ELSE last_name END,
-               name_pronunciation = CASE WHEN $11::boolean THEN $12::text ELSE name_pronunciation END,
-               pronouns           = CASE WHEN $13::boolean THEN $14::text ELSE pronouns END,
-               work_location      = CASE WHEN $15::boolean THEN $16::text ELSE work_location END,
-               introduction       = CASE WHEN $17::boolean THEN $18::text ELSE introduction END,
-               gender             = CASE WHEN $19::boolean THEN $20::text ELSE gender END,
-               birthday           = CASE WHEN $21::boolean THEN $22::date ELSE birthday END
-           WHERE id = $6
-           RETURNING *"#,
+               first_name         = CASE WHEN $7  THEN $8  ELSE first_name END,
+               last_name          = CASE WHEN $9  THEN $10 ELSE last_name END,
+               name_pronunciation = CASE WHEN $11 THEN $12 ELSE name_pronunciation END,
+               pronouns           = CASE WHEN $13 THEN $14 ELSE pronouns END,
+               work_location      = CASE WHEN $15 THEN $16 ELSE work_location END,
+               introduction       = CASE WHEN $17 THEN $18 ELSE introduction END,
+               gender             = CASE WHEN $19 THEN $20 ELSE gender END,
+               birthday           = CASE WHEN $21 THEN $22 ELSE birthday END
+           WHERE id = $23"#,
+        params![
+            dto.role.as_deref(),
+            dto.quota_bytes,
+            dto.is_active,
+            dto.display_name.as_deref(),
+            dto.org_unit_id,
+            dto.is_active,
+            dto.first_name.is_some(),
+            dto.first_name.clone().flatten(),
+            dto.last_name.is_some(),
+            dto.last_name.clone().flatten(),
+            dto.name_pronunciation.is_some(),
+            dto.name_pronunciation.clone().flatten(),
+            dto.pronouns.is_some(),
+            dto.pronouns.clone().flatten(),
+            dto.work_location.is_some(),
+            dto.work_location.clone().flatten(),
+            dto.introduction.is_some(),
+            dto.introduction.clone().flatten(),
+            dto.gender.is_some(),
+            dto.gender.clone().flatten(),
+            dto.birthday.is_some(),
+            dto.birthday.flatten(),
+            id
+        ],
+        "*",
+        &kubuno_db::returning::reselect_by_id("core.users", "*"),
+        params![id],
     )
-    .bind(dto.role.as_deref())
-    .bind(dto.quota_bytes)
-    .bind(dto.is_active)
-    .bind(dto.display_name.as_deref())
-    .bind(dto.org_unit_id)
-    .bind(id)
-    .bind(dto.first_name.is_some())
-    .bind(dto.first_name.clone().flatten())
-    .bind(dto.last_name.is_some())
-    .bind(dto.last_name.clone().flatten())
-    .bind(dto.name_pronunciation.is_some())
-    .bind(dto.name_pronunciation.clone().flatten())
-    .bind(dto.pronouns.is_some())
-    .bind(dto.pronouns.clone().flatten())
-    .bind(dto.work_location.is_some())
-    .bind(dto.work_location.clone().flatten())
-    .bind(dto.introduction.is_some())
-    .bind(dto.introduction.clone().flatten())
-    .bind(dto.gender.is_some())
-    .bind(dto.gender.clone().flatten())
-    .bind(dto.birthday.is_some())
-    .bind(dto.birthday.flatten())
-    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| { tracing::error!(error = %e, "update_user: écriture"); AppError::Database(e) })?
     .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
+    let user = user_from_row(&raw).map_err(AppError::Database)?;
 
     // Keep the two representations of "is an administrator" in step, then check
     // the post-state: a demotion, or a deactivation, must never empty the
@@ -833,22 +976,30 @@ pub async fn bulk_set_org_unit(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let unit_name: String = sqlx::query_scalar("SELECT name FROM core.org_units WHERE id = $1")
-        .bind(dto.org_unit_id)
-        .fetch_optional(&mut *tx)
+    let unit_name: String = tx
+        .fetch_optional_scalar::<String>(
+            "SELECT name FROM core.org_units WHERE id = $1",
+            params![dto.org_unit_id],
+        )
         .await
         .map_err(|e| { tracing::error!(error = %e, "bulk_set_org_unit: unité"); AppError::Database(e) })?
         .ok_or_else(|| AppError::NotFound(format!("Unité {}", dto.org_unit_id)))?;
 
-    // Ordered by id, and locked: two concurrent bulk moves take the rows in the
-    // same order, so they queue instead of deadlocking.
-    let previous = sqlx::query_as::<_, User>(
-        "SELECT * FROM core.users WHERE id = ANY($1) ORDER BY id FOR UPDATE",
-    )
-    .bind(&ids)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "bulk_set_org_unit: lecture"); AppError::Database(e) })?;
+    // Locked one row at a time, in the sorted id order, so two concurrent bulk
+    // moves take the rows in the same order and queue instead of deadlocking.
+    // The old single `WHERE id = ANY(...) ORDER BY id FOR UPDATE` had no portable
+    // form (arrays exist only on PostgreSQL), so the loop reproduces its lock
+    // ordering.
+    let mut previous: Vec<User> = Vec::with_capacity(ids.len());
+    for uid in &ids {
+        if let Some(row) = tx
+            .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![*uid])
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "bulk_set_org_unit: lecture"); AppError::Database(e) })?
+        {
+            previous.push(user_from_row(&row).map_err(AppError::Database)?);
+        }
+    }
 
     if previous.len() != ids.len() {
         return Err(AppError::NotFound(format!(
@@ -862,7 +1013,7 @@ pub async fn bulk_set_org_unit(
     // prevent, so the refusal has to come first.
     for user in &previous {
         ctx.require_for_unit(keys::USERS_UPDATE, user.org_unit_id)?;
-        ensure_can_act_on_user(&mut tx, &ctx, user.id).await?;
+        ensure_can_act_on_user(&state.db, &ctx, user.id).await?;
     }
 
     let moving: Vec<Uuid> = previous
@@ -876,13 +1027,19 @@ pub async fn bulk_set_org_unit(
         return Ok(Json(json!({ "moved": 0, "org_unit_id": dto.org_unit_id })));
     }
 
-    let moved = sqlx::query("UPDATE core.users SET org_unit_id = $1 WHERE id = ANY($2)")
-        .bind(dto.org_unit_id)
-        .bind(&moving)
-        .execute(&mut *tx)
+    let backend = tx.backend();
+    let mut binds: Vec<DbValue> = vec![dto.org_unit_id.into()];
+    let move_sql = format!(
+        "UPDATE core.users SET org_unit_id = $1 WHERE id IN ({})",
+        backend.in_list(2, moving.len())
+    );
+    for uid in &moving {
+        binds.push((*uid).into());
+    }
+    let moved = tx
+        .execute(&move_sql, binds)
         .await
-        .map_err(|e| { tracing::error!(error = %e, "bulk_set_org_unit: écriture"); AppError::Database(e) })?
-        .rows_affected();
+        .map_err(|e| { tracing::error!(error = %e, "bulk_set_org_unit: écriture"); AppError::Database(e) })?;
 
     // The diff names the accounts and where each came from: the entry has to be
     // enough on its own to put the directory back the way it was.
@@ -936,19 +1093,27 @@ fn bulk_ids(raw: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
 /// The selected accounts, locked in id order so two concurrent bulk operations
 /// queue instead of deadlocking, with every guard applied BEFORE a single row is
 /// written — a partial run is exactly what the transaction is here to prevent.
+///
+/// The old `WHERE id = ANY(...) ORDER BY id FOR UPDATE` had no portable form, so
+/// each row is locked in turn, in the sorted id order, reproducing its lock
+/// ordering.
 async fn bulk_load_and_authorise(
-    tx: &mut crate::audit::AuditTx<'_>,
+    db: &DbPool,
+    tx: &mut crate::audit::AuditTx,
     ctx: &AdminCtx,
     ids: &[Uuid],
     privilege: &str,
 ) -> Result<Vec<User>, AppError> {
-    let users = sqlx::query_as::<_, User>(
-        "SELECT * FROM core.users WHERE id = ANY($1) ORDER BY id FOR UPDATE",
-    )
-    .bind(ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "bulk: lecture"); AppError::Database(e) })?;
+    let mut users: Vec<User> = Vec::with_capacity(ids.len());
+    for uid in ids {
+        if let Some(row) = tx
+            .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![*uid])
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "bulk: lecture"); AppError::Database(e) })?
+        {
+            users.push(user_from_row(&row).map_err(AppError::Database)?);
+        }
+    }
 
     if users.len() != ids.len() {
         return Err(AppError::NotFound(format!(
@@ -958,7 +1123,7 @@ async fn bulk_load_and_authorise(
     }
     for user in &users {
         ctx.require_for_unit(privilege, user.org_unit_id)?;
-        ensure_can_act_on_user(tx, ctx, user.id).await?;
+        ensure_can_act_on_user(db, ctx, user.id).await?;
     }
     Ok(users)
 }
@@ -982,7 +1147,7 @@ pub async fn bulk_set_active(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let ids = bulk_ids(&dto.user_ids)?;
     let mut tx = audit.begin(&state.db).await?;
-    let previous = bulk_load_and_authorise(&mut tx, &ctx, &ids, keys::USERS_UPDATE).await?;
+    let previous = bulk_load_and_authorise(&state.db, &mut tx, &ctx, &ids, keys::USERS_UPDATE).await?;
 
     let changing: Vec<Uuid> = previous
         .iter()
@@ -998,19 +1163,23 @@ pub async fn bulk_set_active(
     // Reactivating cancels a pending destruction, exactly as the single-account
     // update does: leaving the stamp would let the purge job delete a live
     // account weeks later because somebody had once deleted it and changed
-    // their mind.
-    let changed = sqlx::query(
-        "UPDATE core.users
-            SET is_active  = $1,
-                deleted_at = CASE WHEN $1 IS TRUE THEN NULL ELSE deleted_at END
-          WHERE id = ANY($2)",
-    )
-    .bind(dto.is_active)
-    .bind(&changing)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "bulk_set_active: écriture"); AppError::Database(e) })?
-    .rows_affected();
+    // their mind. `is_active` feeds two placeholders and is bound twice.
+    let backend = tx.backend();
+    let mut binds: Vec<DbValue> = vec![dto.is_active.into(), dto.is_active.into()];
+    let sql = format!(
+        "UPDATE core.users \
+            SET is_active  = $1, \
+                deleted_at = CASE WHEN $2 IS TRUE THEN NULL ELSE deleted_at END \
+          WHERE id IN ({})",
+        backend.in_list(3, changing.len())
+    );
+    for uid in &changing {
+        binds.push((*uid).into());
+    }
+    let changed = tx
+        .execute(&sql, binds)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "bulk_set_active: écriture"); AppError::Database(e) })?;
 
     // `core.superadmin_ids()` counts ACTIVE accounts only: suspending the last
     // super-administrator is caught here like any other removal.
@@ -1059,31 +1228,44 @@ pub async fn bulk_delete_users(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let ids = bulk_ids(&dto.user_ids)?;
     let mut tx = audit.begin(&state.db).await?;
-    let previous = bulk_load_and_authorise(&mut tx, &ctx, &ids, keys::USERS_DELETE).await?;
+    let previous = bulk_load_and_authorise(&state.db, &mut tx, &ctx, &ids, keys::USERS_DELETE).await?;
 
     // Accounts already carrying the stamp are left alone: re-stamping `deleted_at`
     // would push their purge date back, quietly keeping data that was due to go.
-    // Asked of the database rather than of `User`, which does not map the column.
-    let deleting: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM core.users WHERE id = ANY($1) AND deleted_at IS NULL ORDER BY id",
-    )
-    .bind(&ids)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "bulk_delete_users: tri"); AppError::Database(e) })?;
+    // Asked of the database rather than of `User`, which does not map the column;
+    // one probe per id, in the already-sorted order.
+    let mut deleting: Vec<Uuid> = Vec::new();
+    for uid in &ids {
+        if let Some(found) = tx
+            .fetch_optional_scalar::<Uuid>(
+                "SELECT id FROM core.users WHERE id = $1 AND deleted_at IS NULL",
+                params![*uid],
+            )
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "bulk_delete_users: tri"); AppError::Database(e) })?
+        {
+            deleting.push(found);
+        }
+    }
 
     if deleting.is_empty() {
         return Ok(Json(json!({ "deleted": 0 })));
     }
 
-    let deleted = sqlx::query(
-        "UPDATE core.users SET is_active = FALSE, deleted_at = NOW() WHERE id = ANY($1)",
-    )
-    .bind(&deleting)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "bulk_delete_users: écriture"); AppError::Database(e) })?
-    .rows_affected();
+    let backend = tx.backend();
+    let now = chrono::Utc::now();
+    let mut binds: Vec<DbValue> = vec![now.into()];
+    let sql = format!(
+        "UPDATE core.users SET is_active = FALSE, deleted_at = $1 WHERE id IN ({})",
+        backend.in_list(2, deleting.len())
+    );
+    for uid in &deleting {
+        binds.push((*uid).into());
+    }
+    let deleted = tx
+        .execute(&sql, binds)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "bulk_delete_users: écriture"); AppError::Database(e) })?;
 
     ensure_superadmin_remains(&mut tx).await?;
 
@@ -1150,18 +1332,28 @@ pub async fn bulk_require_password_change(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let ids = bulk_ids(&dto.user_ids)?;
     let mut tx = audit.begin(&state.db).await?;
-    let previous = bulk_load_and_authorise(&mut tx, &ctx, &ids, keys::USER_PASSWORD).await?;
+    let previous = bulk_load_and_authorise(&state.db, &mut tx, &ctx, &ids, keys::USER_PASSWORD).await?;
 
     // `password_hash` is not mapped onto `User`, so its presence is asked of the
-    // database — as is the flag, to avoid re-arming what is already armed.
-    let rows: Vec<(Uuid, bool, bool)> = sqlx::query_as(
-        "SELECT id, password_hash IS NOT NULL, must_change_password
-           FROM core.users WHERE id = ANY($1) ORDER BY id",
-    )
-    .bind(&ids)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "bulk_require_password_change: lecture"); AppError::Database(e) })?;
+    // database — as is the flag, to avoid re-arming what is already armed. One
+    // probe per id, in the already-sorted order.
+    let mut rows: Vec<(Uuid, bool, bool)> = Vec::new();
+    for uid in &ids {
+        if let Some(row) = tx
+            .fetch_optional_row(
+                "SELECT id, (password_hash IS NOT NULL) AS has_password, must_change_password \
+                   FROM core.users WHERE id = $1",
+                params![*uid],
+            )
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "bulk_require_password_change: lecture"); AppError::Database(e) })?
+        {
+            let rid: Uuid = row.try_get("id").map_err(AppError::Database)?;
+            let has_password: bool = row.try_get("has_password").map_err(AppError::Database)?;
+            let already: bool = row.try_get("must_change_password").map_err(AppError::Database)?;
+            rows.push((rid, has_password, already));
+        }
+    }
 
     let skipped = rows.iter().filter(|(_, has_password, _)| !has_password).count();
     let arming: Vec<Uuid> = rows
@@ -1174,12 +1366,19 @@ pub async fn bulk_require_password_change(
         return Ok(Json(json!({ "armed": 0, "skipped_no_password": skipped })));
     }
 
-    let armed = sqlx::query("UPDATE core.users SET must_change_password = TRUE WHERE id = ANY($1)")
-        .bind(&arming)
-        .execute(&mut *tx)
+    let backend = tx.backend();
+    let mut binds: Vec<DbValue> = Vec::new();
+    let sql = format!(
+        "UPDATE core.users SET must_change_password = TRUE WHERE id IN ({})",
+        backend.in_list(1, arming.len())
+    );
+    for uid in &arming {
+        binds.push((*uid).into());
+    }
+    let armed = tx
+        .execute(&sql, binds)
         .await
-        .map_err(|e| { tracing::error!(error = %e, "bulk_require_password_change: écriture"); AppError::Database(e) })?
-        .rows_affected();
+        .map_err(|e| { tracing::error!(error = %e, "bulk_require_password_change: écriture"); AppError::Database(e) })?;
 
     let before = previous
         .iter()
@@ -1216,29 +1415,36 @@ pub async fn delete_user(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut tx = audit.begin(&state.db).await?;
 
-    let previous = sqlx::query_as::<_, User>(
-        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "delete_user: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
+    let previous = tx
+        .fetch_optional_row(
+            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE FOR UPDATE",
+            params![id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_user: lecture"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
+    let previous = user_from_row(&previous).map_err(AppError::Database)?;
 
     ctx.require_for_unit(keys::USERS_DELETE, previous.org_unit_id)?;
-    ensure_can_act_on_user(&mut tx, &ctx, id).await?;
+    ensure_can_act_on_user(&state.db, &ctx, id).await?;
 
     // `deleted_at` is what arms the automatic purge, and it is stamped *here* —
     // never by a suspension. The two produce the same `is_active = FALSE`, and a
     // purge keyed on that flag would destroy accounts somebody merely put on
     // hold. See `migrations/000109`.
-    let user = sqlx::query_as::<_, User>(
-        "UPDATE core.users SET is_active = FALSE, deleted_at = NOW() WHERE id = $1 RETURNING *",
+    let now = chrono::Utc::now();
+    let raw = kubuno_db::returning::update_returning_row(
+        &mut tx,
+        "UPDATE core.users SET is_active = FALSE, deleted_at = $1 WHERE id = $2",
+        params![now, id],
+        "*",
+        &kubuno_db::returning::reselect_by_id("core.users", "*"),
+        params![id],
     )
-    .bind(id)
-    .fetch_one(&mut *tx)
     .await
-    .map_err(|e| { tracing::error!(error = %e, "delete_user: désactivation"); AppError::Database(e) })?;
+    .map_err(|e| { tracing::error!(error = %e, "delete_user: désactivation"); AppError::Database(e) })?
+    .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
+    let user = user_from_row(&raw).map_err(AppError::Database)?;
 
     // `core.superadmin_ids()` counts ACTIVE accounts only, so deactivating the
     // last super-administrator is caught here like any other removal.
@@ -1301,18 +1507,18 @@ pub async fn purge_user(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut tx = audit.begin(&state.db).await?;
 
-    let victim = sqlx::query_as::<_, User>("SELECT * FROM core.users WHERE id = $1 FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let victim = tx
+        .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "purge_user: lecture");
             AppError::Database(e)
         })?
         .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
+    let victim = user_from_row(&victim).map_err(AppError::Database)?;
 
     ctx.require_for_unit(keys::USERS_DELETE, victim.org_unit_id)?;
-    ensure_can_act_on_user(&mut tx, &ctx, id).await?;
+    ensure_can_act_on_user(&state.db, &ctx, id).await?;
 
     if victim.is_active {
         return Err(tx
@@ -1357,21 +1563,18 @@ pub async fn purge_user(
     // deleted. Clearing both columns is what the constraint means by "not
     // assigned" — the alert survives, unassigned, which is the right outcome:
     // it was raised by the instance, not by the person who happened to take it.
-    let released = sqlx::query(
-        "UPDATE core.alerts SET assignee_id = NULL, assigned_at = NULL WHERE assignee_id = $1",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %id, "purge_user: libération des alertes");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+    let released = tx
+        .execute(
+            "UPDATE core.alerts SET assignee_id = NULL, assigned_at = NULL WHERE assignee_id = $1",
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %id, "purge_user: libération des alertes");
+            AppError::Database(e)
+        })?;
 
-    sqlx::query("DELETE FROM core.users WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.users WHERE id = $1", params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %id, "purge_user: suppression");
@@ -1416,111 +1619,167 @@ pub async fn admin_stats(
     // not get a count of the accounts they cannot list.
     ctx.require(keys::STATS_READ)?;
 
-    let users_total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.users",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_total"); AppError::Database(e) })?;
+    let backend = state.db.backend();
+    let now = chrono::Utc::now();
 
-    let users_active: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.users WHERE is_active = TRUE",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_active"); AppError::Database(e) })?;
+    let users_total: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!("SELECT {} FROM core.users", backend.count_bigint("*")),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_total"); AppError::Database(e) })?;
 
-    let storage_used: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(used_bytes), 0)::bigint FROM core.users",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: storage_used"); AppError::Database(e) })?;
+    let users_active: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!("SELECT {} FROM core.users WHERE is_active = TRUE", backend.count_bigint("*")),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_active"); AppError::Database(e) })?;
 
-    let modules_active: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.module_instances WHERE status = 'healthy'",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: modules_active"); AppError::Database(e) })?;
+    let storage_used: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!("SELECT {} FROM core.users", backend.sum_bigint("used_bytes")),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: storage_used"); AppError::Database(e) })?;
 
-    // ── Statistiques de sessions ────────────────────────────────────────────
-    let sessions_active: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.refresh_tokens
-         WHERE revoked_at IS NULL AND expires_at > NOW()",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: sessions_active"); AppError::Database(e) })?;
+    let modules_active: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.module_instances WHERE status = 'healthy'",
+                backend.count_bigint("*")
+            ),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: modules_active"); AppError::Database(e) })?;
 
-    // Utilisateurs distincts ayant au moins une session active (= connectés)
-    let users_online: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT user_id)::bigint FROM core.refresh_tokens
-         WHERE revoked_at IS NULL AND expires_at > NOW()",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_online"); AppError::Database(e) })?;
+    // ── Session statistics ──────────────────────────────────────────────────
+    let sessions_active: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.refresh_tokens WHERE revoked_at IS NULL AND expires_at > $1",
+                backend.count_bigint("*")
+            ),
+            params![now],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: sessions_active"); AppError::Database(e) })?;
 
-    // Sessions utilisées dans les dernières 24 h
-    let sessions_24h: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.refresh_tokens
-         WHERE revoked_at IS NULL AND last_used_at > NOW() - INTERVAL '24 hours'",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: sessions_24h"); AppError::Database(e) })?;
+    // Distinct users holding at least one active session (= currently signed in).
+    let users_online: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.refresh_tokens WHERE revoked_at IS NULL AND expires_at > $1",
+                backend.cast("COUNT(DISTINCT user_id)", SqlType::BigInt)
+            ),
+            params![now],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_online"); AppError::Database(e) })?;
 
-    // ── Agrégats enrichis (cartes + graphiques) ─────────────────────────────────
-    let storage_quota_total: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(quota_bytes), 0)::bigint FROM core.users",
-    )
-    .fetch_one(&state.db).await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: storage_quota_total"); AppError::Database(e) })?;
+    // Sessions used in the last 24 hours.
+    let sessions_24h: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.refresh_tokens WHERE revoked_at IS NULL AND last_used_at > $1",
+                backend.count_bigint("*")
+            ),
+            params![now - chrono::Duration::hours(24)],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: sessions_24h"); AppError::Database(e) })?;
 
-    let new_users_7d: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.users WHERE created_at > NOW() - INTERVAL '7 days'",
-    )
-    .fetch_one(&state.db).await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: new_users_7d"); AppError::Database(e) })?;
+    // ── Enriched aggregates (cards + charts) ────────────────────────────────────
+    let storage_quota_total: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!("SELECT {} FROM core.users", backend.sum_bigint("quota_bytes")),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: storage_quota_total"); AppError::Database(e) })?;
 
-    let new_users_30d: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.users WHERE created_at > NOW() - INTERVAL '30 days'",
-    )
-    .fetch_one(&state.db).await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: new_users_30d"); AppError::Database(e) })?;
+    let new_users_7d: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!("SELECT {} FROM core.users WHERE created_at > $1", backend.count_bigint("*")),
+            params![now - chrono::Duration::days(7)],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: new_users_7d"); AppError::Database(e) })?;
 
-    // Répartitions (clé, compte)
-    let users_by_role: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT role, COUNT(*)::bigint FROM core.users GROUP BY role ORDER BY 2 DESC",
-    )
-    .fetch_all(&state.db).await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_by_role"); AppError::Database(e) })?;
+    let new_users_30d: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!("SELECT {} FROM core.users WHERE created_at > $1", backend.count_bigint("*")),
+            params![now - chrono::Duration::days(30)],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: new_users_30d"); AppError::Database(e) })?;
 
-    let sessions_by_device: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(device_type, ''), 'unknown'), COUNT(*)::bigint FROM core.refresh_tokens
-         WHERE revoked_at IS NULL AND expires_at > NOW() GROUP BY 1 ORDER BY 2 DESC",
-    )
-    .fetch_all(&state.db).await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: sessions_by_device"); AppError::Database(e) })?;
+    // Distributions (key, count).
+    let users_by_role: Vec<(String, i64)> = state
+        .db
+        .fetch_all_as::<(String, i64)>(
+            &format!(
+                "SELECT role, {} FROM core.users GROUP BY role ORDER BY 2 DESC",
+                backend.count_bigint("*")
+            ),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: users_by_role"); AppError::Database(e) })?;
 
-    let modules_by_status: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT status, COUNT(*)::bigint FROM core.module_instances GROUP BY status ORDER BY 2 DESC",
-    )
-    .fetch_all(&state.db).await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: modules_by_status"); AppError::Database(e) })?;
+    let sessions_by_device: Vec<(String, i64)> = state
+        .db
+        .fetch_all_as::<(String, i64)>(
+            &format!(
+                "SELECT COALESCE(NULLIF(device_type, ''), 'unknown'), {} FROM core.refresh_tokens \
+                 WHERE revoked_at IS NULL AND expires_at > $1 GROUP BY 1 ORDER BY 2 DESC",
+                backend.count_bigint("*")
+            ),
+            params![now],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: sessions_by_device"); AppError::Database(e) })?;
 
-    // Top utilisateurs par stockage
-    let top_storage: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(display_name, ''), username), used_bytes, quota_bytes
-         FROM core.users ORDER BY used_bytes DESC LIMIT 6",
-    )
-    .fetch_all(&state.db).await
-    .map_err(|e| { tracing::error!(error = %e, "admin_stats: top_storage"); AppError::Database(e) })?;
+    let modules_by_status: Vec<(String, i64)> = state
+        .db
+        .fetch_all_as::<(String, i64)>(
+            &format!(
+                "SELECT status, {} FROM core.module_instances GROUP BY status ORDER BY 2 DESC",
+                backend.count_bigint("*")
+            ),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: modules_by_status"); AppError::Database(e) })?;
 
-    // Séries journalières (zéro-remplies via generate_series)
-    // The two spliced names are `&'static str`, so only a literal written below
-    // can reach the statement; `days` is an integer.
+    // Top users by storage.
+    let top_storage: Vec<(String, i64, i64)> = state
+        .db
+        .fetch_all_as::<(String, i64, i64)>(
+            "SELECT COALESCE(NULLIF(display_name, ''), username), used_bytes, quota_bytes \
+             FROM core.users ORDER BY used_bytes DESC LIMIT 6",
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "admin_stats: top_storage"); AppError::Database(e) })?;
+
+    // Daily series (zero-filled via generate_series). PostgreSQL-only: the two
+    // spliced names are `&'static str`, so only a literal written below can reach
+    // the statement; `days` is an integer.
     let daily = |table: &'static str, date_col: &'static str, days: i64| -> String {
         format!(
             "SELECT to_char(d::date, 'YYYY-MM-DD'), COALESCE(c.cnt, 0)::bigint \
@@ -1532,17 +1791,23 @@ pub async fn admin_stats(
         )
     };
 
-    let signups_daily: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(daily("core.users", "created_at", 14)))
-        .fetch_all(&state.db).await
+    let signups_daily: Vec<(String, i64)> = state
+        .db
+        .fetch_all_as::<(String, i64)>(&daily("core.users", "created_at", 14), params![])
+        .await
         .map_err(|e| { tracing::error!(error = %e, "admin_stats: signups_daily"); AppError::Database(e) })?;
 
-    let logins_daily: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(daily("core.refresh_tokens", "created_at", 14)))
-        .fetch_all(&state.db).await
+    let logins_daily: Vec<(String, i64)> = state
+        .db
+        .fetch_all_as::<(String, i64)>(&daily("core.refresh_tokens", "created_at", 14), params![])
+        .await
         .map_err(|e| { tracing::error!(error = %e, "admin_stats: logins_daily"); AppError::Database(e) })?;
 
-    let events_daily: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(daily("core.event_log", "created_at", 7)))
-        .fetch_all(&state.db).await
-        .unwrap_or_default(); // event_log peut être vide / absente selon l'instance
+    let events_daily: Vec<(String, i64)> = state
+        .db
+        .fetch_all_as::<(String, i64)>(&daily("core.event_log", "created_at", 7), params![])
+        .await
+        .unwrap_or_default(); // event_log may be empty / absent depending on the instance.
 
     let kv = |rows: Vec<(String, i64)>| -> Vec<serde_json::Value> {
         rows.into_iter().map(|(k, v)| json!({ "key": k, "count": v })).collect()
@@ -1581,27 +1846,24 @@ pub async fn list_user_sessions(
     ctx: AdminCtx,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let mut conn = state.db.acquire().await.map_err(|e| {
-        tracing::error!(error = %e, "list_user_sessions: connexion");
-        AppError::Database(e)
-    })?;
-    let unit = user_org_unit(&mut conn, user_id).await?;
+    // The unit-resolving guard reads committed state on the pool now.
+    let unit = user_org_unit(&state.db, user_id).await?;
     ctx.require_for_unit(keys::SESSIONS_READ, unit)?;
-    drop(conn);
 
-    let sessions = sqlx::query_as::<_, crate::models::session::RefreshToken>(
-        r#"SELECT id, user_id, token_hash, device_name, device_type,
-                  host(ip_address)::text as ip_address, user_agent,
-                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
-                  family_id, client_type
-           FROM core.refresh_tokens
-           WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
-           ORDER BY last_used_at DESC"#,
-    )
-    .bind(user_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_user_sessions"); AppError::Database(e) })?;
+    let sessions = state
+        .db
+        .fetch_all_as::<crate::models::session::RefreshToken>(
+            r#"SELECT id, user_id, token_hash, device_name, device_type,
+                      host(ip_address)::text as ip_address, user_agent,
+                      expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                      family_id, client_type
+               FROM core.refresh_tokens
+               WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
+               ORDER BY last_used_at DESC"#,
+            params![user_id, chrono::Utc::now()],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_user_sessions"); AppError::Database(e) })?;
 
     Ok(Json(json!({ "sessions": sessions })))
 }
@@ -1615,36 +1877,36 @@ pub async fn revoke_user_session(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut tx = audit.begin(&state.db).await?;
 
-    let unit = user_org_unit(&mut tx, user_id).await?;
+    let unit = user_org_unit(&state.db, user_id).await?;
     ctx.require_for_unit(keys::SESSIONS_DELETE, unit)?;
-    ensure_can_act_on_user(&mut tx, &ctx, user_id).await?;
+    ensure_can_act_on_user(&state.db, &ctx, user_id).await?;
 
     // `token_hash` is not selected: it is not on the session whitelist and has
     // no business travelling anywhere near the trail.
-    let session: Option<(Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        r#"SELECT device_name, device_type, host(ip_address)::text
-           FROM core.refresh_tokens
-           WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
-           FOR UPDATE"#,
-    )
-    .bind(session_id)
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "revoke_user_session: lecture"); AppError::Database(e) })?;
+    let session = tx
+        .fetch_optional_row(
+            r#"SELECT device_name, device_type, host(ip_address)::text AS ip_address
+               FROM core.refresh_tokens
+               WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+               FOR UPDATE"#,
+            params![session_id, user_id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "revoke_user_session: lecture"); AppError::Database(e) })?;
 
-    let Some((device_name, device_type, ip)) = session else {
+    let Some(session) = session else {
         return Err(AppError::NotFound("Session introuvable".into()));
     };
+    let device_name: Option<String> = session.try_get("device_name").map_err(AppError::Database)?;
+    let device_type: Option<String> = session.try_get("device_type").map_err(AppError::Database)?;
+    let ip: Option<String> = session.try_get("ip_address").map_err(AppError::Database)?;
 
-    sqlx::query(
+    tx.execute(
         "UPDATE core.refresh_tokens
-         SET revoked_at = NOW(), revoke_reason = 'admin'
-         WHERE id = $1 AND user_id = $2",
+         SET revoked_at = $1, revoke_reason = 'admin'
+         WHERE id = $2 AND user_id = $3",
+        params![chrono::Utc::now(), session_id, user_id],
     )
-    .bind(session_id)
-    .bind(user_id)
-    .execute(&mut *tx)
     .await
     .map_err(|e| { tracing::error!(error = %e, "revoke_user_session"); AppError::Database(e) })?;
 
@@ -1679,27 +1941,32 @@ pub async fn revoke_all_user_sessions(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut tx = audit.begin(&state.db).await?;
 
-    let unit = user_org_unit(&mut tx, user_id).await?;
+    let unit = user_org_unit(&state.db, user_id).await?;
     ctx.require_for_unit(keys::SESSIONS_DELETE, unit)?;
-    ensure_can_act_on_user(&mut tx, &ctx, user_id).await?;
+    ensure_can_act_on_user(&state.db, &ctx, user_id).await?;
 
-    let target_user: Option<(String, String)> =
-        sqlx::query_as("SELECT username, email FROM core.users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| { tracing::error!(error = %e, "revoke_all_user_sessions: cible"); AppError::Database(e) })?;
+    let target_user = tx
+        .fetch_optional_row("SELECT username, email FROM core.users WHERE id = $1", params![user_id])
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "revoke_all_user_sessions: cible"); AppError::Database(e) })?;
+    let target_user = match target_user {
+        Some(row) => {
+            let username: String = row.try_get("username").map_err(AppError::Database)?;
+            let email: String = row.try_get("email").map_err(AppError::Database)?;
+            Some((username, email))
+        }
+        None => None,
+    };
 
-    let affected = sqlx::query(
-        "UPDATE core.refresh_tokens
-         SET revoked_at = NOW(), revoke_reason = 'admin'
-         WHERE user_id = $1 AND revoked_at IS NULL",
-    )
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "revoke_all_user_sessions"); AppError::Database(e) })?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE core.refresh_tokens
+             SET revoked_at = $1, revoke_reason = 'admin'
+             WHERE user_id = $2 AND revoked_at IS NULL",
+            params![chrono::Utc::now(), user_id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "revoke_all_user_sessions"); AppError::Database(e) })?;
 
     let label = target_user
         .map(|(username, email)| format!("{username} <{email}>"))

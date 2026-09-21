@@ -8,9 +8,52 @@ use crate::{
 };
 use axum::{extract::State, Json};
 use chrono::Utc;
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use serde_json::{json, Value};
-use sqlx::Row;
 use std::collections::HashMap;
+
+/// One row of the general settings tab.
+#[derive(sqlx::FromRow)]
+struct SettingRow {
+    key:         String,
+    value:       Value,
+    category:    String,
+    label:       Option<String>,
+    description: Option<String>,
+    is_public:   bool,
+}
+
+/// One installed module as the admin console lists it.
+#[derive(sqlx::FromRow)]
+struct AdminModuleRow {
+    id:           String,
+    display_name: String,
+    version:      String,
+    description:  Option<String>,
+    is_enabled:   bool,
+    installed_at: chrono::DateTime<chrono::Utc>,
+    config:       Value,
+}
+
+/// One module and its declared dependencies, for the cascade graph.
+#[derive(sqlx::FromRow)]
+struct DependencyRow {
+    id:           String,
+    // PostgreSQL `TEXT[]` today; read as a JSON array (portable) — the column is
+    // migrated `TEXT[]` → `JSONB` on the schema-consolidation side.
+    #[sqlx(json)]
+    dependencies: Vec<String>,
+}
+
+/// One event-log entry.
+#[derive(sqlx::FromRow)]
+struct EventLogRow {
+    id:            i64,
+    event_type:    String,
+    source_module: Option<String>,
+    payload:       Value,
+    created_at:    chrono::DateTime<chrono::Utc>,
+}
 
 pub async fn get_settings(
     State(state): State<AppState>,
@@ -26,24 +69,25 @@ pub async fn get_settings(
     // of its keys holds an AES-GCM blob, and this route returns raw values. It
     // is owned by `/admin/mail/settings`, which reports the credential as a
     // boolean and is the only writer that encrypts.
-    let rows = sqlx::query(
-        "SELECT key, value, category, label, description, is_public FROM core.settings \
-         WHERE module_id IS NULL AND category <> 'mail' ORDER BY category, key"
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let rows = state
+        .db
+        .fetch_all_as::<SettingRow>(
+            "SELECT key, value, category, label, description, is_public FROM core.settings \
+             WHERE module_id IS NULL AND category <> 'mail' ORDER BY category, key",
+            params![],
+        )
+        .await?;
 
     let settings: Vec<_> = rows
         .into_iter()
         .map(|r| {
-            use sqlx::Row;
             json!({
-                "key": r.get::<String, _>("key"),
-                "value": r.get::<Value, _>("value"),
-                "category": r.get::<String, _>("category"),
-                "label": r.get::<Option<String>, _>("label"),
-                "description": r.get::<Option<String>, _>("description"),
-                "is_public": r.get::<bool, _>("is_public"),
+                "key": r.key,
+                "value": r.value,
+                "category": r.category,
+                "label": r.label,
+                "description": r.description,
+                "is_public": r.is_public,
             })
         })
         .collect();
@@ -119,27 +163,24 @@ pub async fn update_settings(
     let mut entries: Vec<AuditEntry> = Vec::with_capacity(updates.len());
 
     for (key, value) in &updates {
-        let previous: Option<Value> = sqlx::query_scalar(
-            "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
-        )
-        .bind(key)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| { tracing::error!(error = %e, key = %key, "update_settings: lecture"); AppError::Database(e) })?;
+        let previous: Option<Value> = tx
+            .fetch_optional_scalar::<Value>(
+                "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
+                params![key],
+            )
+            .await
+            .map_err(|e| { tracing::error!(error = %e, key = %key, "update_settings: lecture"); AppError::Database(e) })?;
 
         let Some(previous) = previous else {
             return Err(AppError::NotFound(format!("Setting '{key}' inexistant")));
         };
 
-        sqlx::query(
+        tx.execute(
             r#"UPDATE core.settings
-               SET value = $1, updated_at = NOW(), updated_by = $2
-               WHERE key = $3"#,
+               SET value = $1, updated_at = $2, updated_by = $3
+               WHERE key = $4"#,
+            params![value.clone(), Utc::now(), admin_id, key],
         )
-        .bind(value)
-        .bind(admin_id)
-        .bind(key)
-        .execute(&mut *tx)
         .await
         .map_err(|e| { tracing::error!(error = %e, key = %key, "update_settings: écriture"); AppError::Database(e) })?;
 
@@ -182,22 +223,26 @@ pub async fn update_settings(
 /// loaded once per module touched by the request rather than once per key.
 /// Keys owned by the core itself carry no such declaration and pass through.
 async fn validate_module_bounds(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     updates: &HashMap<String, Value>,
 ) -> Result<(), AppError> {
     use crate::handlers::modules::SettingDef;
 
     let keys: Vec<String> = updates.keys().cloned().collect();
-    let owners: Vec<(String, Option<String>)> = sqlx::query_as(
-        "SELECT key, module_id FROM core.settings WHERE key = ANY($1)",
-    )
-    .bind(&keys)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "update_settings: propriétaires des réglages");
-        AppError::Database(e)
-    })?;
+    // `= ANY($1)` over an array is PostgreSQL-only; a portable `IN (...)` list is
+    // built instead, so the number of placeholders follows the key count.
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        "SELECT key, module_id FROM core.settings WHERE key",
+    );
+    qb.push_in(keys.iter().map(String::as_str));
+    let owners: Vec<(String, Option<String>)> = qb
+        .fetch_all_as(db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "update_settings: propriétaires des réglages");
+            AppError::Database(e)
+        })?;
 
     let mut schemas: HashMap<String, Vec<SettingDef>> = HashMap::new();
     for (full_key, module_id) in owners {
@@ -224,17 +269,15 @@ async fn validate_module_bounds(
 pub async fn public_config(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows = sqlx::query("SELECT key, value FROM core.settings WHERE is_public = TRUE")
-        .fetch_all(&state.db)
+    let rows = state
+        .db
+        .fetch_all_as::<(String, Value)>(
+            "SELECT key, value FROM core.settings WHERE is_public = TRUE",
+            params![],
+        )
         .await?;
 
-    let config: HashMap<String, Value> = rows
-        .into_iter()
-        .map(|r| {
-            use sqlx::Row;
-            (r.get::<String, _>("key"), r.get::<Value, _>("value"))
-        })
-        .collect();
+    let config: HashMap<String, Value> = rows.into_iter().collect();
 
     Ok(Json(json!({ "config": config })))
 }
@@ -247,17 +290,18 @@ pub async fn list_admin_modules(
     ctx.require(keys::MODULES_READ)?;
     // Internal infrastructure modules (e.g. stt) are registered for routing but
     // hidden from the admin module list.
-    let modules = sqlx::query(
-        "SELECT id, display_name, version, description, is_enabled, installed_at, config FROM core.modules WHERE is_core_module = FALSE ORDER BY display_name"
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let modules = state
+        .db
+        .fetch_all_as::<AdminModuleRow>(
+            "SELECT id, display_name, version, description, is_enabled, installed_at, config FROM core.modules WHERE is_core_module = FALSE ORDER BY display_name",
+            params![],
+        )
+        .await?;
 
     let data: Vec<_> = modules
         .into_iter()
         .map(|m| {
-            use sqlx::Row;
-            let config: serde_json::Value = m.get("config");
+            let config = m.config;
             let settings_path = config.get("settings_path")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
@@ -268,13 +312,13 @@ pub async fn list_admin_modules(
             // draw a menu.
             let groups = crate::handlers::modules::setting_groups_from_config(Some(&config));
             json!({
-                "id": m.get::<String, _>("id"),
+                "id": m.id,
                 "icon": crate::handlers::modules::module_icon_from_config(Some(&config)),
-                "display_name": m.get::<String, _>("display_name"),
-                "version": m.get::<String, _>("version"),
-                "description": m.get::<Option<String>, _>("description"),
-                "is_enabled": m.get::<bool, _>("is_enabled"),
-                "installed_at": m.get::<chrono::DateTime<chrono::Utc>, _>("installed_at"),
+                "display_name": m.display_name,
+                "version": m.version,
+                "description": m.description,
+                "is_enabled": m.is_enabled,
+                "installed_at": m.installed_at,
                 "settings_path": settings_path,
                 "setting_groups": groups,
             })
@@ -291,28 +335,28 @@ pub async fn get_admin_module(
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     ctx.require(keys::MODULES_READ)?;
-    use sqlx::Row;
-    let row = sqlx::query(
-        "SELECT id, display_name, version, description, is_enabled, installed_at, config FROM core.modules WHERE id = $1"
-    )
-    .bind(&id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("Module '{id}' introuvable")))?;
+    let row = state
+        .db
+        .fetch_optional_as::<AdminModuleRow>(
+            "SELECT id, display_name, version, description, is_enabled, installed_at, config FROM core.modules WHERE id = $1",
+            params![&id],
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Module '{id}' introuvable")))?;
 
-    let config: serde_json::Value = row.get("config");
+    let config = row.config;
     let settings_path = config.get("settings_path")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     let groups = crate::handlers::modules::setting_groups_from_config(Some(&config));
 
     Ok(Json(json!({
-        "id": row.get::<String, _>("id"),
-        "display_name": row.get::<String, _>("display_name"),
-        "version": row.get::<String, _>("version"),
-        "description": row.get::<Option<String>, _>("description"),
-        "is_enabled": row.get::<bool, _>("is_enabled"),
-        "installed_at": row.get::<chrono::DateTime<chrono::Utc>, _>("installed_at"),
+        "id": row.id,
+        "display_name": row.display_name,
+        "version": row.version,
+        "description": row.description,
+        "is_enabled": row.is_enabled,
+        "installed_at": row.installed_at,
         "settings_path": settings_path,
         "setting_groups": groups,
         "icon": crate::handlers::modules::module_icon_from_config(Some(&config)),
@@ -338,24 +382,29 @@ pub async fn toggle_module(
     // back anyway.
     let mut tx = audit.begin(&state.db).await?;
 
-    let previous: Option<(String, String, bool)> = sqlx::query_as(
-        "SELECT display_name, version, is_enabled FROM core.modules WHERE id = $1 FOR UPDATE",
-    )
-    .bind(&id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, module_id = %id, "toggle_module: lecture"); AppError::Database(e) })?;
+    // `DbTx` cannot decode a struct or tuple, so the locked row is read column by
+    // column. FOR UPDATE has no portable SQLite spelling — see the port notes.
+    let previous = tx
+        .fetch_optional_row(
+            "SELECT display_name, version, is_enabled FROM core.modules WHERE id = $1 FOR UPDATE",
+            params![&id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, module_id = %id, "toggle_module: lecture"); AppError::Database(e) })?;
 
-    let Some((display_name, version, was_enabled)) = previous else {
+    let Some(row) = previous else {
         return Err(AppError::NotFound(format!("Module '{id}' introuvable")));
     };
+    let display_name: String = row.try_get("display_name").map_err(AppError::Database)?;
+    let version: String = row.try_get("version").map_err(AppError::Database)?;
+    let was_enabled: bool = row.try_get("is_enabled").map_err(AppError::Database)?;
 
-    sqlx::query("UPDATE core.modules SET is_enabled = $1 WHERE id = $2")
-        .bind(enabled)
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| { tracing::error!(error = %e, module_id = %id, "toggle_module: écriture"); AppError::Database(e) })?;
+    tx.execute(
+        "UPDATE core.modules SET is_enabled = $1 WHERE id = $2",
+        params![enabled, &id],
+    )
+    .await
+    .map_err(|e| { tracing::error!(error = %e, module_id = %id, "toggle_module: écriture"); AppError::Database(e) })?;
 
     let module_snap = |is_enabled: bool| {
         redact::snapshot(
@@ -378,59 +427,70 @@ pub async fn toggle_module(
     let mut also_disabled: Vec<String> = Vec::new();
 
     if !enabled {
-        // Désactivation en cascade : trouver tous les modules qui dépendent de celui-ci.
+        // Cascade disable: find every module that depends on this one.
         let dependents = find_all_dependents(&state.db, &id).await?;
 
-        // Désactiver tous les dépendants en DB.
+        // Disable every dependent in the database.
         for dep_id in &dependents {
-            sqlx::query("UPDATE core.modules SET is_enabled = FALSE WHERE id = $1")
-                .bind(dep_id).execute(&state.db).await?;
-            sqlx::query("UPDATE core.module_instances SET status = 'stopped' WHERE module_id = $1")
-                .bind(dep_id).execute(&state.db).await?;
+            state.db.execute("UPDATE core.modules SET is_enabled = FALSE WHERE id = $1", params![dep_id]).await?;
+            state.db.execute("UPDATE core.module_instances SET status = 'stopped' WHERE module_id = $1", params![dep_id]).await?;
             state.modules.write().await.unregister(dep_id);
             state.events.publish(crate::events::AppEvent::ModuleUnregistered { module_id: dep_id.clone() });
         }
         also_disabled = dependents;
 
-        // Désactiver le module principal.
+        // Disable the module itself.
         state.modules.write().await.unregister(&id);
-        sqlx::query("UPDATE core.module_instances SET status = 'stopped' WHERE module_id = $1")
-            .bind(&id).execute(&state.db).await?;
+        state.db.execute("UPDATE core.module_instances SET status = 'stopped' WHERE module_id = $1", params![&id]).await?;
         state.events.publish(crate::events::AppEvent::ModuleUnregistered { module_id: id });
     } else {
-        // Activation : restaurer l'instance depuis la DB sans attendre le prochain heartbeat.
-        let row = sqlx::query(
-            "SELECT base_url, routes, sidebar_items, subscribed_events, registered_at \
-             FROM core.module_instances WHERE module_id = $1 \
-             ORDER BY registered_at DESC LIMIT 1"
-        )
-        .bind(&id)
-        .fetch_optional(&state.db)
-        .await?;
+        // Enable: restore the instance from the database without waiting for the
+        // next heartbeat. `DbTx` is not involved here, so the row is read on the
+        // pool with `fetch_optional_row` and mapped by hand — `subscribed_events`
+        // is a PostgreSQL `TEXT[]` column (see the port notes).
+        let row = state
+            .db
+            .fetch_optional_row(
+                "SELECT base_url, routes, sidebar_items, subscribed_events, registered_at \
+                 FROM core.module_instances WHERE module_id = $1 \
+                 ORDER BY registered_at DESC LIMIT 1",
+                params![&id],
+            )
+            .await?;
 
         if let Some(row) = row {
-            let base_url: String = row.get("base_url");
+            let base_url: String = row.try_get("base_url").map_err(AppError::Database)?;
+            let routes: Value = row.try_get("routes").map_err(AppError::Database)?;
+            let sidebar_items: Value = row.try_get("sidebar_items").map_err(AppError::Database)?;
             let instance = ActiveInstance {
                 module_id:         id.clone(),
                 base_url:          base_url.clone(),
-                routes:            serde_json::from_value(row.get("routes")).unwrap_or_default(),
-                sidebar_items:     serde_json::from_value(row.get("sidebar_items")).unwrap_or_default(),
-                subscribed_events: row.get("subscribed_events"),
-                registered_at:     row.get("registered_at"),
+                routes:            serde_json::from_value(routes).unwrap_or_default(),
+                sidebar_items:     serde_json::from_value(sidebar_items).unwrap_or_default(),
+                subscribed_events: {
+                    // `subscribed_events` is a PostgreSQL `TEXT[]` read as a JSON
+                    // array (portable); migrated `TEXT[]` → `JSONB` schema-side.
+                    let raw: Value = row.try_get("subscribed_events").map_err(AppError::Database)?;
+                    serde_json::from_value(raw).unwrap_or_default()
+                },
+                registered_at:     row.try_get("registered_at").map_err(AppError::Database)?,
                 last_heartbeat:    Utc::now(),
             };
-            sqlx::query(
-                "UPDATE core.module_instances SET status = 'healthy', last_heartbeat = NOW() \
-                 WHERE module_id = $1"
-            )
-            .bind(&id).execute(&state.db).await?;
+            state
+                .db
+                .execute(
+                    "UPDATE core.module_instances SET status = 'healthy', last_heartbeat = $1 \
+                     WHERE module_id = $2",
+                    params![Utc::now(), &id],
+                )
+                .await?;
             state.modules.write().await.register(instance);
             state.events.publish(crate::events::AppEvent::ModuleRegistered {
                 module_id: id,
                 base_url,
             });
         }
-        // Pas d'instance connue : le module se ré-enregistrera lui-même au prochain heartbeat.
+        // No known instance: the module re-registers itself at the next heartbeat.
     }
 
     Ok(Json(json!({
@@ -441,19 +501,21 @@ pub async fn toggle_module(
 
 /// Retourne tous les modules qui dépendent directement ou indirectement de `module_id`.
 /// Utilise une recherche BFS dans le graphe de dépendances.
-async fn find_all_dependents(db: &sqlx::PgPool, module_id: &str) -> Result<Vec<String>, AppError> {
-    // Charger toutes les dépendances en une seule requête pour éviter N+1.
-    let rows = sqlx::query("SELECT id, dependencies FROM core.modules WHERE is_enabled = TRUE")
-        .fetch_all(db)
+async fn find_all_dependents(db: &DbPool, module_id: &str) -> Result<Vec<String>, AppError> {
+    // Load every dependency list in a single query to avoid N+1. Note that
+    // `dependencies` is a PostgreSQL `TEXT[]` column (see the port notes).
+    let rows = db
+        .fetch_all_as::<DependencyRow>(
+            "SELECT id, dependencies FROM core.modules WHERE is_enabled = TRUE",
+            params![],
+        )
         .await?;
 
-    // Construire le graphe inversé : dep_id → [modules qui en dépendent]
+    // Build the reverse graph: dep_id → [modules that depend on it].
     let mut reverse: HashMap<String, Vec<String>> = HashMap::new();
-    for row in &rows {
-        let id: String = row.get("id");
-        let deps: Vec<String> = row.get("dependencies");
-        for dep in deps {
-            reverse.entry(dep).or_default().push(id.clone());
+    for row in rows {
+        for dep in row.dependencies {
+            reverse.entry(dep).or_default().push(row.id.clone());
         }
     }
 
@@ -487,29 +549,29 @@ pub async fn list_event_log(
     let offset: i64 = q.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0);
     let event_type = q.get("event_type").map(|s| s.as_str());
 
-    let rows = sqlx::query(
-        r#"SELECT id, event_type, source_module, payload, created_at
-           FROM core.event_log
-           WHERE ($1::text IS NULL OR event_type = $1)
-           ORDER BY created_at DESC
-           LIMIT $2 OFFSET $3"#,
-    )
-    .bind(event_type)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.db)
-    .await?;
+    // The optional `event_type` filter is applied with a builder rather than the
+    // PostgreSQL `($1::text IS NULL OR ...)` trick, which both reused a
+    // placeholder and cast with `::text`.
+    let mut qb = DbQueryBuilder::new(
+        state.db.backend(),
+        "SELECT id, event_type, source_module, payload, created_at FROM core.event_log",
+    );
+    if let Some(et) = event_type {
+        qb.push(" WHERE event_type = ").push_bind(et);
+    }
+    qb.push_order_by("created_at DESC");
+    qb.push_limit_offset(limit, offset);
+    let rows: Vec<EventLogRow> = qb.fetch_all_as(&state.db).await?;
 
     let data: Vec<_> = rows
         .into_iter()
         .map(|r| {
-            use sqlx::Row;
             json!({
-                "id": r.get::<i64, _>("id"),
-                "event_type": r.get::<String, _>("event_type"),
-                "source_module": r.get::<Option<String>, _>("source_module"),
-                "payload": r.get::<serde_json::Value, _>("payload"),
-                "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
+                "id": r.id,
+                "event_type": r.event_type,
+                "source_module": r.source_module,
+                "payload": r.payload,
+                "created_at": r.created_at,
             })
         })
         .collect();

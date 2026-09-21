@@ -118,15 +118,12 @@ pub struct AdminAudit {
 impl AdminAudit {
     /// Opens the audited transaction. See [`super::AuditTx`]: it cannot be
     /// committed without an entry.
-    pub async fn begin<'a>(
-        &self,
-        db: &'a sqlx::PgPool,
-    ) -> Result<super::AuditTx<'a>, AppError> {
+    pub async fn begin(&self, db: &kubuno_db::DbPool) -> Result<super::AuditTx, AppError> {
         self.ctx.begin(db).await
     }
 
     /// Records a standalone entry (refusal, failure, detached work).
-    pub async fn record(&self, db: &sqlx::PgPool, entry: AuditEntry) -> Option<i64> {
+    pub async fn record(&self, db: &kubuno_db::DbPool, entry: AuditEntry) -> Option<i64> {
         self.ctx.record(db, entry).await
     }
 }

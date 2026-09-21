@@ -4,8 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use chrono::Utc;
+use kubuno_db::dialect::Assign;
+use kubuno_db::{params, DbPool};
 use serde::Serialize;
-use sqlx::PgPool;
 
 use crate::{config::Settings, errors::AppError};
 
@@ -33,14 +35,12 @@ pub struct InstallReport {
 ///
 /// En cas d'erreur de base, on répond `true` : mieux vaut refuser une
 /// installation qu'on ne sait pas justifier que l'accepter faute d'information.
-async fn was_verified_before(db: &PgPool, id: &str) -> bool {
-    match sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM core.module_integrity WHERE module_id = $1",
-    )
-    .bind(id)
-    .fetch_one(db)
-    .await
-    {
+async fn was_verified_before(db: &DbPool, id: &str) -> bool {
+    let sql = format!(
+        "SELECT {} FROM core.module_integrity WHERE module_id = $1",
+        db.backend().count_bigint("*")
+    );
+    match db.fetch_scalar::<i64>(&sql, params![id]).await {
         Ok(n) => n > 0,
         Err(e) => {
             tracing::error!(module_id = %id, error = %e, "Lecture de l'historique d'intégrité impossible");
@@ -50,13 +50,13 @@ async fn was_verified_before(db: &PgPool, id: &str) -> bool {
 }
 
 /// Retient qu'une empreinte a bien été vérifiée pour ce module.
-async fn was_signed_before(db: &PgPool, id: &str) -> bool {
-    match sqlx::query_scalar::<_, bool>(
-        "SELECT signed FROM core.module_integrity WHERE module_id = $1",
-    )
-    .bind(id)
-    .fetch_optional(db)
-    .await
+async fn was_signed_before(db: &DbPool, id: &str) -> bool {
+    match db
+        .fetch_optional_scalar::<bool>(
+            "SELECT signed FROM core.module_integrity WHERE module_id = $1",
+            params![id],
+        )
+        .await
     {
         Ok(v) => v.unwrap_or(false),
         Err(e) => {
@@ -67,18 +67,26 @@ async fn was_signed_before(db: &PgPool, id: &str) -> bool {
     }
 }
 
-async fn remember_verified(db: &PgPool, id: &str, sha256: &str, signed: bool) {
-    if let Err(e) = sqlx::query(
-        "INSERT INTO core.module_integrity (module_id, last_sha256, signed) VALUES ($1, $2, $3) \
-         ON CONFLICT (module_id) DO UPDATE SET last_sha256 = EXCLUDED.last_sha256, \
-             signed = core.module_integrity.signed OR EXCLUDED.signed, last_seen_at = NOW()",
-    )
-    .bind(id)
-    .bind(sha256)
-    .bind(signed)
-    .execute(db)
-    .await
-    {
+async fn remember_verified(db: &DbPool, id: &str, sha256: &str, signed: bool) {
+    // `last_seen_at` is bound from Rust and carried through the update branch
+    // (`= excluded.last_seen_at`) rather than written with `NOW()` in SQL, so
+    // the same statement runs on every engine. `signed` stays sticky: once true
+    // it never reverts.
+    let now = Utc::now();
+    let sql = format!(
+        "INSERT INTO core.module_integrity (module_id, last_sha256, signed, last_seen_at) \
+         VALUES ($1, $2, $3, $4){}",
+        db.backend().upsert(
+            "core.module_integrity",
+            &["module_id"],
+            &[
+                Assign::Incoming("last_sha256"),
+                Assign::Expr { col: "signed", expr: "{cur} OR {new}" },
+                Assign::Incoming("last_seen_at"),
+            ],
+        )
+    );
+    if let Err(e) = db.execute(&sql, params![id, sha256, signed, now]).await {
         tracing::error!(module_id = %id, error = %e, "Enregistrement de l'empreinte vérifiée impossible");
     }
 }
@@ -102,7 +110,7 @@ struct Materialized {
 
 /// Télécharge, vérifie (SHA-256), extrait et relocalise un module dans le store.
 /// Ne le démarre pas. Applique la garde de confiance (officiel + dépôt kubuno).
-async fn materialize(settings: &Settings, db: &PgPool, id: &str) -> Result<Materialized, AppError> {
+async fn materialize(settings: &Settings, db: &DbPool, id: &str) -> Result<Materialized, AppError> {
     validate_id(id)?;
     let http = client()?;
 
@@ -390,7 +398,7 @@ fn align_store_ownership(_install_dir: &Path, _dest_mod: &Path) {}
 /// profondeur. Chaque module traverse la même garde de confiance (via `materialize`).
 fn install_node<'a>(
     settings: Arc<Settings>,
-    db: PgPool,
+    db: DbPool,
     id: &'a str,
     visited: &'a mut std::collections::HashSet<String>,
     depth: usize,
@@ -437,7 +445,7 @@ fn install_node<'a>(
 }
 
 /// Installe (ou met à jour) un module depuis la marketplace, avec ses dépendances.
-pub async fn install(settings: Arc<Settings>, db: PgPool, id: &str) -> Result<InstallReport, AppError> {
+pub async fn install(settings: Arc<Settings>, db: DbPool, id: &str) -> Result<InstallReport, AppError> {
     validate_id(id)?;
     let mut visited = std::collections::HashSet::new();
     visited.insert(id.to_string());
@@ -453,7 +461,7 @@ pub fn is_store_installed(settings: &Settings, id: &str) -> bool {
 /// Désinstalle un module installé depuis la marketplace : arrête le process, retire
 /// les fichiers du store et purge la DB. N'agit QUE sur les modules du store (les
 /// paquets système restent intacts).
-pub async fn uninstall(settings: Arc<Settings>, db: PgPool, id: &str) -> Result<(), AppError> {
+pub async fn uninstall(settings: Arc<Settings>, db: DbPool, id: &str) -> Result<(), AppError> {
     validate_id(id)?;
     let store_dir = PathBuf::from(&settings.server.modules_install_dir).join(id);
     if !store_dir.is_dir() {
@@ -473,11 +481,13 @@ pub async fn uninstall(settings: Arc<Settings>, db: PgPool, id: &str) -> Result<
         .map_err(|e| AppError::Internal(anyhow::anyhow!("suppression {}: {e}", store_dir.display())))?;
 
     // 3) Purge DB (instances + réglages semés + métadonnées).
-    let _ = sqlx::query("DELETE FROM core.module_instances WHERE module_id = $1").bind(id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM core.settings WHERE module_id = $1").bind(id).execute(&db).await;
-    sqlx::query("DELETE FROM core.modules WHERE id = $1")
-        .bind(id)
-        .execute(&db)
+    let _ = db
+        .execute("DELETE FROM core.module_instances WHERE module_id = $1", params![id])
+        .await;
+    let _ = db
+        .execute("DELETE FROM core.settings WHERE module_id = $1", params![id])
+        .await;
+    db.execute("DELETE FROM core.modules WHERE id = $1", params![id])
         .await
         .map_err(|e| { tracing::error!(module_id = %id, error = %e, "uninstall: purge core.modules"); e })?;
 

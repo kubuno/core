@@ -5,7 +5,8 @@
 //! none of them has to decide which one.
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgConnection, PgPool, Row};
+use kubuno_db::dialect::Assign;
+use kubuno_db::{params, DbPool, DbTx};
 use uuid::Uuid;
 
 use super::{SupportKey, Trust};
@@ -42,16 +43,17 @@ pub struct StoredContract {
     pub key_id: Option<String>,
 }
 
-pub async fn identity(db: &PgPool) -> Result<InstanceIdentity, AppError> {
-    let row = sqlx::query(
-        "SELECT instance_id, installed_at FROM core.instance_identity WHERE only_row = TRUE",
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "support: lecture de l'identité de l'instance");
-        AppError::Database(e)
-    })?;
+pub async fn identity(db: &DbPool) -> Result<InstanceIdentity, AppError> {
+    let row = db
+        .fetch_optional_row(
+            "SELECT instance_id, installed_at FROM core.instance_identity WHERE only_row = TRUE",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "support: lecture de l'identité de l'instance");
+            AppError::Database(e)
+        })?;
 
     // The row is seeded by the migration that creates the table, so its absence
     // means a schema that was tampered with rather than a first run. Reported as
@@ -69,18 +71,19 @@ pub async fn identity(db: &PgPool) -> Result<InstanceIdentity, AppError> {
 }
 
 /// The registered contract, or `None` — the normal state of an instance.
-pub async fn contract(db: &PgPool) -> Result<Option<StoredContract>, AppError> {
-    let row = sqlx::query(
-        "SELECT verified, key_id, subject, plan, perimeter, contact,
-                issued_at, expires_at, registered_at
-           FROM core.support_contract WHERE only_row = TRUE",
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "support: lecture du contrat");
-        AppError::Database(e)
-    })?;
+pub async fn contract(db: &DbPool) -> Result<Option<StoredContract>, AppError> {
+    let row = db
+        .fetch_optional_row(
+            "SELECT verified, key_id, subject, plan, perimeter, contact,
+                    issued_at, expires_at, registered_at
+               FROM core.support_contract WHERE only_row = TRUE",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "support: lecture du contrat");
+            AppError::Database(e)
+        })?;
 
     let Some(row) = row else { return Ok(None) };
     Ok(Some(StoredContract {
@@ -105,16 +108,17 @@ pub async fn contract(db: &PgPool) -> Result<Option<StoredContract>, AppError> {
 /// Returns `Ok(None)` when there is no contract. A key that no longer parses at
 /// all is reported as declarative rather than as an error: the page must keep
 /// working, and the stored claims are still what the operator registered.
-pub async fn recheck(db: &PgPool, instance_id: &Uuid) -> Result<Option<Trust>, AppError> {
-    let stored: Option<String> = sqlx::query_scalar(
-        "SELECT key_text FROM core.support_contract WHERE only_row = TRUE",
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "support: relecture de la clé");
-        AppError::Database(e)
-    })?;
+pub async fn recheck(db: &DbPool, instance_id: &Uuid) -> Result<Option<Trust>, AppError> {
+    let stored: Option<String> = db
+        .fetch_optional_scalar::<String>(
+            "SELECT key_text FROM core.support_contract WHERE only_row = TRUE",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "support: relecture de la clé");
+            AppError::Database(e)
+        })?;
 
     let Some(key_text) = stored else { return Ok(None) };
     // Never logged, never returned: only its verdict leaves this function.
@@ -130,40 +134,55 @@ pub async fn recheck(db: &PgPool, instance_id: &Uuid) -> Result<Option<Trust>, A
 /// audited transaction: the contract and the trail entry land in the same
 /// `COMMIT`, or neither does.
 pub async fn register(
-    conn: &mut PgConnection,
+    conn: &mut DbTx,
     key_text: &str,
     key: &SupportKey,
     actor: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO core.support_contract
-             (only_row, key_text, verified, key_id, subject, plan, perimeter, contact,
-              issued_at, expires_at, registered_at, registered_by)
-         VALUES (TRUE, $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), $10)
-         ON CONFLICT (only_row) DO UPDATE SET
-             key_text      = EXCLUDED.key_text,
-             verified      = EXCLUDED.verified,
-             key_id        = EXCLUDED.key_id,
-             subject       = EXCLUDED.subject,
-             plan          = EXCLUDED.plan,
-             perimeter     = EXCLUDED.perimeter,
-             contact       = EXCLUDED.contact,
-             issued_at     = EXCLUDED.issued_at,
-             expires_at    = EXCLUDED.expires_at,
-             registered_at = NOW(),
-             registered_by = EXCLUDED.registered_by",
+    // `NOW()` becomes a bound timestamp; the `ON CONFLICT` clause is spelled per
+    // engine by `dialect::upsert` (`registered_at` folds to the incoming value,
+    // which is the same `now`).
+    let backend = conn.backend();
+    let now = Utc::now();
+    let clause = backend.upsert(
+        "core.support_contract",
+        &["only_row"],
+        &[
+            Assign::Incoming("key_text"),
+            Assign::Incoming("verified"),
+            Assign::Incoming("key_id"),
+            Assign::Incoming("subject"),
+            Assign::Incoming("plan"),
+            Assign::Incoming("perimeter"),
+            Assign::Incoming("contact"),
+            Assign::Incoming("issued_at"),
+            Assign::Incoming("expires_at"),
+            Assign::Incoming("registered_at"),
+            Assign::Incoming("registered_by"),
+        ],
+    );
+    let sql = format!(
+        "INSERT INTO core.support_contract \
+             (only_row, key_text, verified, key_id, subject, plan, perimeter, contact, \
+              issued_at, expires_at, registered_at, registered_by) \
+         VALUES (TRUE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11){clause}"
+    );
+    conn.execute(
+        &sql,
+        params![
+            key_text,
+            key.is_verified(),
+            key.key_id(),
+            key.claims.sub.trim(),
+            key.claims.plan.as_deref().map(str::trim),
+            key.claims.perimeter.as_deref().map(str::trim),
+            key.claims.contact.as_deref().map(str::trim),
+            key.issued_at(),
+            key.expires_at(),
+            now,
+            actor
+        ],
     )
-    .bind(key_text)
-    .bind(key.is_verified())
-    .bind(key.key_id())
-    .bind(key.claims.sub.trim())
-    .bind(key.claims.plan.as_deref().map(str::trim))
-    .bind(key.claims.perimeter.as_deref().map(str::trim))
-    .bind(key.claims.contact.as_deref().map(str::trim))
-    .bind(key.issued_at())
-    .bind(key.expires_at())
-    .bind(actor)
-    .execute(conn)
     .await
     .map_err(|e| {
         // The key never appears in the message: an error that echoed the input
@@ -176,13 +195,13 @@ pub async fn register(
 
 /// Removes the contract. `false` when there was none — the caller turns that
 /// into a 404 rather than an audited no-op.
-pub async fn remove(conn: &mut PgConnection) -> Result<bool, AppError> {
-    let result = sqlx::query("DELETE FROM core.support_contract WHERE only_row = TRUE")
-        .execute(conn)
+pub async fn remove(conn: &mut DbTx) -> Result<bool, AppError> {
+    let affected = conn
+        .execute("DELETE FROM core.support_contract WHERE only_row = TRUE", params![])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "support: retrait du contrat");
             AppError::Database(e)
         })?;
-    Ok(result.rows_affected() > 0)
+    Ok(affected > 0)
 }

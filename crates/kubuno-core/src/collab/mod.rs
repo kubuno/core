@@ -36,6 +36,9 @@ use yrs::{
     Doc, ReadTxn, StateVector, Transact, Update,
 };
 
+use kubuno_db::dialect::Assign;
+use kubuno_db::{new_id, params, DbPool, DbQueryBuilder};
+
 use crate::{auth::jwt::JwtService, errors::AppError, state::AppState};
 
 /// Au-delà de ce nombre d'updates en journal, on consolide (GC) la room.
@@ -91,24 +94,25 @@ pub struct CollabStore;
 
 impl CollabStore {
     /// État Yjs d'une room : snapshot consolidé puis updates incrémentaux.
-    pub async fn load(db: &sqlx::PgPool, room: &str) -> Result<Vec<Vec<u8>>, sqlx::Error> {
+    pub async fn load(db: &DbPool, room: &str) -> Result<Vec<Vec<u8>>, sqlx::Error> {
         let mut parts: Vec<Vec<u8>> = Vec::new();
-        let snap: Option<(Vec<u8>,)> =
-            sqlx::query_as("SELECT snapshot FROM core.collab_snapshots WHERE room = $1")
-                .bind(room)
-                .fetch_optional(db)
-                .await?;
+        let snap: Option<(Vec<u8>,)> = db
+            .fetch_optional_as::<(Vec<u8>,)>(
+                "SELECT snapshot FROM core.collab_snapshots WHERE room = $1",
+                params![room],
+            )
+            .await?;
         if let Some((s,)) = snap {
             if !s.is_empty() {
                 parts.push(s);
             }
         }
-        let updates: Vec<(Vec<u8>,)> = sqlx::query_as(
-            "SELECT update_data FROM core.collab_updates WHERE room = $1 ORDER BY created_at ASC",
-        )
-        .bind(room)
-        .fetch_all(db)
-        .await?;
+        let updates: Vec<(Vec<u8>,)> = db
+            .fetch_all_as::<(Vec<u8>,)>(
+                "SELECT update_data FROM core.collab_updates WHERE room = $1 ORDER BY created_at ASC",
+                params![room],
+            )
+            .await?;
         parts.extend(updates.into_iter().map(|(d,)| d));
         Ok(parts)
     }
@@ -116,28 +120,35 @@ impl CollabStore {
     /// Persiste un update incrémental ; déclenche une consolidation en arrière-plan
     /// au-delà du seuil (nombre OU taille cumulée du journal). La sauvegarde reste
     /// rapide : le travail CPU de fusion n'est jamais sur le chemin chaud.
-    pub async fn save(db: &sqlx::PgPool, room: &str, data: &[u8], origin: Uuid) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO core.collab_updates (room, update_data, origin) VALUES ($1, $2, $3)")
-            .bind(room)
-            .bind(data)
-            .bind(origin)
-            .execute(db)
-            .await?;
-        let (count, bytes): (i64, i64) = sqlx::query_as(
-            "SELECT COUNT(*), COALESCE(SUM(octet_length(update_data)), 0)::bigint \
-             FROM core.collab_updates WHERE room = $1",
+    pub async fn save(db: &DbPool, room: &str, data: &[u8], origin: Uuid) -> Result<(), sqlx::Error> {
+        // The id is generated in Rust (no DB-side UUID default on MySQL/SQLite).
+        db.execute(
+            "INSERT INTO core.collab_updates (id, room, update_data, origin) VALUES ($1, $2, $3, $4)",
+            params![new_id(), room, data, origin],
         )
-        .bind(room)
-        .fetch_one(db)
         .await?;
+        // NOTE (multi-DBMS): `octet_length()` is PostgreSQL/MySQL only (SQLite
+        // spells it `length()` on a BLOB); kept verbatim and flagged. COUNT/SUM go
+        // through the backend so they decode as i64 on every engine.
+        let backend = db.backend();
+        let (count, bytes): (i64, i64) = db
+            .fetch_one_as::<(i64, i64)>(
+                &format!(
+                    "SELECT {}, {} FROM core.collab_updates WHERE room = $1",
+                    backend.count_bigint("*"),
+                    backend.sum_bigint("octet_length(update_data)"),
+                ),
+                params![room],
+            )
+            .await?;
         if count >= CONSOLIDATE_THRESHOLD || bytes >= CONSOLIDATE_BYTES {
             Self::spawn_consolidate(db.clone(), room.to_string());
         }
         Ok(())
     }
 
-    /// Lance une consolidation en arrière-plan, au plus une par room à la fois.
-    fn spawn_consolidate(db: sqlx::PgPool, room: String) {
+    /// Launches a background consolidation, at most one per room at a time.
+    fn spawn_consolidate(db: DbPool, room: String) {
         tokio::spawn(async move {
             {
                 let mut set = consolidating().lock().await;
@@ -159,22 +170,23 @@ impl CollabStore {
     ///
     /// `force = true` recompacte même sans nouvel update — utilisé pour migrer les
     /// anciens snapshots concaténés (qui n'ont pas de journal en attente).
-    pub async fn consolidate(db: &sqlx::PgPool, room: &str, force: bool) -> Result<(), sqlx::Error> {
-        let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
-            "SELECT id, update_data FROM core.collab_updates WHERE room = $1 ORDER BY created_at ASC",
-        )
-        .bind(room)
-        .fetch_all(db)
-        .await?;
+    pub async fn consolidate(db: &DbPool, room: &str, force: bool) -> Result<(), sqlx::Error> {
+        let rows: Vec<(Uuid, Vec<u8>)> = db
+            .fetch_all_as::<(Uuid, Vec<u8>)>(
+                "SELECT id, update_data FROM core.collab_updates WHERE room = $1 ORDER BY created_at ASC",
+                params![room],
+            )
+            .await?;
         if rows.is_empty() && !force {
             return Ok(());
         }
 
-        let snap: Option<(Vec<u8>,)> =
-            sqlx::query_as("SELECT snapshot FROM core.collab_snapshots WHERE room = $1")
-                .bind(room)
-                .fetch_optional(db)
-                .await?;
+        let snap: Option<(Vec<u8>,)> = db
+            .fetch_optional_as::<(Vec<u8>,)>(
+                "SELECT snapshot FROM core.collab_snapshots WHERE room = $1",
+                params![room],
+            )
+            .await?;
         let snap_bytes = snap.map(|(s,)| s);
         let had_snapshot = snap_bytes.is_some();
         let prev_len = snap_bytes.as_ref().map(Vec::len).unwrap_or(0);
@@ -192,21 +204,27 @@ impl CollabStore {
             return Ok(());
         }
 
+        let backend = db.backend();
         let mut tx = db.begin().await?;
-        sqlx::query(
-            "INSERT INTO core.collab_snapshots (room, snapshot, updated_at) VALUES ($1, $2, NOW())
-             ON CONFLICT (room) DO UPDATE SET snapshot = EXCLUDED.snapshot, updated_at = NOW()",
-        )
-        .bind(room)
-        .bind(&merged)
-        .execute(&mut *tx)
-        .await?;
+        // `NOW()` bound from Rust; the upsert clause goes through the backend.
+        let now = chrono::Utc::now();
+        let conflict = backend.upsert(
+            "core.collab_snapshots",
+            &["room"],
+            &[Assign::Incoming("snapshot"), Assign::Incoming("updated_at")],
+        );
+        let snapshot_sql = format!(
+            "INSERT INTO core.collab_snapshots (room, snapshot, updated_at) VALUES ($1, $2, $3){conflict}"
+        );
+        tx.execute(&snapshot_sql, params![room, merged.clone(), now]).await?;
         if !ids.is_empty() {
-            sqlx::query("DELETE FROM core.collab_updates WHERE room = $1 AND id = ANY($2)")
-                .bind(room)
-                .bind(&ids)
-                .execute(&mut *tx)
-                .await?;
+            // `= ANY($2)` over an array becomes a portable `IN (...)` list.
+            let mut qb =
+                DbQueryBuilder::new(backend, "DELETE FROM core.collab_updates WHERE room = ");
+            qb.push_bind(room);
+            qb.push(" AND id");
+            qb.push_in(ids.iter().copied());
+            qb.tx_execute(&mut tx).await?;
         }
         tx.commit().await?;
 
@@ -227,13 +245,14 @@ impl CollabStore {
 /// existants pour éliminer le bloat hérité de l'ancienne concaténation (dumps
 /// d'état redondants, contenus supprimés jamais ramassés). Séquentiel — un seul
 /// `Y.Doc` en mémoire à la fois — et idempotent (réexécutable sans dommage).
-pub async fn recompact_all(db: sqlx::PgPool) {
-    let rooms: Vec<(String,)> = match sqlx::query_as(
-        "SELECT room FROM core.collab_snapshots \
+pub async fn recompact_all(db: DbPool) {
+    let rooms: Vec<(String,)> = match db
+        .fetch_all_as::<(String,)>(
+            "SELECT room FROM core.collab_snapshots \
          UNION SELECT DISTINCT room FROM core.collab_updates",
-    )
-    .fetch_all(&db)
-    .await
+            params![],
+        )
+        .await
     {
         Ok(r) => r,
         Err(e) => {

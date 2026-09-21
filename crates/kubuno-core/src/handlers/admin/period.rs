@@ -16,6 +16,7 @@
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
+use kubuno_db::{params, DbPool};
 use serde::Serialize;
 
 use crate::errors::AppError;
@@ -396,7 +397,7 @@ impl Counted {
 /// would be a lie over a sampled gauge, which is why the storage panel reads its
 /// samples itself and leaves its gaps as gaps.
 pub async fn series(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     what: &Counted,
     win: &Window,
     label: &str,
@@ -422,13 +423,16 @@ pub async fn series(
     // Safe: every fragment spliced above is a `&'static str` — the bucket's own
     // step/unit and `Counted`'s table, time column and filter, all written in
     // source. The window bounds and the zone travel as bind parameters.
-    let rows: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
-        .bind(win.axis_from)
-        .bind(win.axis_to)
-        .bind(win.tz.name())
-        .bind(win.from)
-        .bind(win.to)
-        .fetch_all(db)
+    //
+    // NOTE (engine portability): this statement is PostgreSQL-only —
+    // `generate_series`, `date_trunc(... AT TIME ZONE ...)`, `to_char` and the
+    // `::timestamp/::text/::bigint` casts have no portable spelling. It reads
+    // correctly on PostgreSQL; MySQL/SQLite support is a separate follow-up.
+    let rows: Vec<(String, i64)> = db
+        .fetch_all_as::<(String, i64)>(
+            &sql,
+            params![win.axis_from.and_utc(), win.axis_to.and_utc(), win.tz.name(), win.from, win.to],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, panel = %label, "tableau de bord : série");
@@ -444,7 +448,7 @@ pub async fn series(
 /// The window's total and the total of the window of equal length before it —
 /// read in ONE statement, so the two can never come from different instants.
 pub async fn totals(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     what: &Counted,
     win: &Window,
     label: &str,
@@ -465,11 +469,15 @@ pub async fn totals(
 
     // Safe: `Counted`'s table, time column, filter and aggregate are all
     // `&'static str` written in source; the three instants are bound.
-    let row: (i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe(sql))
-        .bind(win.previous_from)
-        .bind(win.from)
-        .bind(win.to)
-        .fetch_one(db)
+    //
+    // NOTE (engine portability): the `FILTER (WHERE ...)` aggregate clause is
+    // PostgreSQL/SQLite syntax and is not supported by MySQL — flagged for the
+    // engine-agnostic follow-up.
+    let row: (i64, i64) = db
+        .fetch_one_as::<(i64, i64)>(
+            &sql,
+            params![win.previous_from, win.from, win.to],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, panel = %label, "tableau de bord : totaux");
@@ -502,7 +510,7 @@ pub const fn slice_limit(full: bool, panel_limit: i64) -> i64 {
 /// A NULL grouping value becomes the explicit key `unknown`: "we do not know" is
 /// a state the console names, never one it hides by dropping the row.
 pub async fn breakdown(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     what: &Counted,
     win: &Window,
     // Spliced into the SQL text: `&'static str` so the compiler refuses
@@ -524,10 +532,11 @@ pub async fn breakdown(
 
     // Safe: the grouping expression and `Counted`'s fragments are all
     // `&'static str`, and `limit` is an integer. The bounds are bound.
-    let rows: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
-        .bind(win.from)
-        .bind(win.to)
-        .fetch_all(db)
+    //
+    // NOTE (engine portability): the `(expr)::text` and `::bigint` casts are
+    // PostgreSQL spellings — flagged for the engine-agnostic follow-up.
+    let rows: Vec<(String, i64)> = db
+        .fetch_all_as::<(String, i64)>(&sql, params![win.from, win.to])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, panel = %label, "tableau de bord : répartition");

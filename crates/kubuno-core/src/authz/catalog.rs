@@ -19,8 +19,9 @@
 //! flagged `is_orphan`, and the console can show it greyed out with its history
 //! intact. Reinstalling the module clears the flag.
 
+use kubuno_db::dialect::Assign;
+use kubuno_db::{params, DbPool, DbTx};
 use serde::{Deserialize, Serialize};
-use sqlx::PgConnection;
 
 use super::model::{parse_key, CORE_NAMESPACE};
 use crate::errors::AppError;
@@ -78,10 +79,11 @@ pub fn qualify(module_id: &str, relative_key: &str) -> Result<String, AppError> 
 /// (with a loud log) rather than failing the whole registration is deliberate:
 /// a typo in one privilege must not keep a module offline.
 pub async fn register_module_privileges(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     module_id: &str,
     defs: &[PrivilegeDef],
 ) -> Result<(), AppError> {
+    let backend = tx.backend();
     for def in defs {
         let full = match qualify(module_id, &def.key) {
             Ok(k) => k,
@@ -103,27 +105,39 @@ pub async fn register_module_privileges(
             }
         };
 
-        sqlx::query(
+        let sql = format!(
             r#"INSERT INTO core.privileges
                    (key, namespace, domain, verb, label, description, is_ou_scopable, is_orphan)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)
-               ON CONFLICT (key) DO UPDATE SET
-                   label          = EXCLUDED.label,
-                   description    = EXCLUDED.description,
-                   is_ou_scopable = EXCLUDED.is_ou_scopable,
-                   is_orphan      = FALSE"#,
+               VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE){}"#,
+            backend.upsert(
+                "core.privileges",
+                &["key"],
+                &[
+                    Assign::Incoming("label"),
+                    Assign::Incoming("description"),
+                    Assign::Incoming("is_ou_scopable"),
+                    Assign::Expr {
+                        col: "is_orphan",
+                        expr: "FALSE",
+                    },
+                ],
+            )
+        );
+        tx.execute(
+            &sql,
+            params![
+                &full,
+                parsed.namespace,
+                parsed.domain,
+                parsed.verb,
+                &def.label,
+                def.description.as_deref(),
+                def.ou_scopable,
+            ],
         )
-        .bind(&full)
-        .bind(parsed.namespace)
-        .bind(parsed.domain)
-        .bind(parsed.verb)
-        .bind(&def.label)
-        .bind(def.description.as_deref())
-        .bind(def.ou_scopable)
-        .execute(&mut *conn)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, key = %full, "authz: enregistrement d'un privilège de module");
+            tracing::error!(error = %e, key = %full, "authz: registering a module privilege");
             AppError::Database(e)
         })?;
     }
@@ -134,20 +148,20 @@ pub async fn register_module_privileges(
 /// and clears the flag on those whose module came back.
 ///
 /// Cheap enough to run at startup and after an uninstall; never deletes a row.
-pub async fn refresh_orphans(db: &sqlx::PgPool) -> Result<u64, AppError> {
-    let affected = sqlx::query(
-        r#"UPDATE core.privileges p
+pub async fn refresh_orphans(db: &DbPool) -> Result<u64, AppError> {
+    let affected = db
+        .execute(
+            r#"UPDATE core.privileges p
               SET is_orphan = NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = p.namespace)
             WHERE p.namespace <> 'core'
               AND p.is_orphan <> NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = p.namespace)"#,
-    )
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "authz: mise à jour des privilèges orphelins");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "authz: updating orphan privileges");
+            AppError::Database(e)
+        })?;
 
     if affected > 0 {
         tracing::info!(count = affected, "Privilèges orphelins réévalués");

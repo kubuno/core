@@ -12,6 +12,7 @@ use crate::{
     state::AppState,
 };
 use axum::{extract::State, http::HeaderMap, response::Response, Json};
+use kubuno_db::params;
 use serde::Deserialize;
 
 use super::tokens::issue_full_tokens;
@@ -60,13 +61,14 @@ pub async fn totp_verify(
     let claims = JwtService::validate_totp_session(&state.settings.auth.jwt_secret, &dto.totp_session)
         .map_err(|_| AppError::Unauthorized)?;
 
-    let user = sqlx::query_as::<_, crate::models::user::User>(
-        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-    )
-    .bind(claims.sub)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+    let user = state
+        .db
+        .fetch_optional_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+            params![claims.sub],
+        )
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
     let encrypted = user
         .totp_secret

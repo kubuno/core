@@ -20,6 +20,8 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use chrono::Utc;
+use kubuno_db::{new_id, params, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -143,28 +145,33 @@ pub async fn list_directories(
     ctx: AdminCtx,
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::AUTH_PROVIDERS_READ)?;
-    let rows = sqlx::query_as::<_, LdapDirectory>(
-        "SELECT * FROM core.ldap_directories ORDER BY position, display_name",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "list_directories");
-        AppError::Database(e)
-    })?;
+    let rows = state
+        .db
+        .fetch_all_as::<LdapDirectory>(
+            "SELECT * FROM core.ldap_directories ORDER BY position, display_name",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "list_directories");
+            AppError::Database(e)
+        })?;
 
     // How many accounts each directory governs, so the console can say what a
     // deletion would deactivate before the operator clicks it.
-    let counts: Vec<(Uuid, i64)> = sqlx::query_as(
-        "SELECT ldap_directory_id, COUNT(*) FROM core.users
+    let counts_sql = format!(
+        "SELECT ldap_directory_id, {} FROM core.users \
           WHERE ldap_directory_id IS NOT NULL GROUP BY ldap_directory_id",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "list_directories: comptage");
-        AppError::Database(e)
-    })?;
+        state.db.backend().count_bigint("*"),
+    );
+    let counts: Vec<(Uuid, i64)> = state
+        .db
+        .fetch_all_as::<(Uuid, i64)>(&counts_sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "list_directories: count");
+            AppError::Database(e)
+        })?;
 
     let directories: Vec<Value> = rows
         .into_iter()
@@ -224,49 +231,85 @@ pub async fn create_directory(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query_as::<_, LdapDirectory>(
+    // Every stored value is settled here in Rust, so the inserted row can be
+    // reconstructed without a `RETURNING *` (which MySQL lacks): the primary key
+    // is generated locally and the timestamps are bound rather than defaulted.
+    let id = new_id();
+    let now = Utc::now();
+    let display_name = dto.display_name.trim().to_string();
+    let host = dto.host.trim().to_string();
+    let port = clamp_port(dto.port.unwrap_or(security.default_port() as i32));
+    let security_s = security.as_str().to_string();
+    let ca_certificate = dto.ca_certificate.trim().to_string();
+    let connect_timeout_s = dto.connect_timeout_s.unwrap_or(10).clamp(1, 120);
+    let bind_dn = dto.bind_dn.trim().to_string();
+    let base_dn = dto.base_dn.trim().to_string();
+    let user_filter_s = user_filter.trim().to_string();
+    let user_scope =
+        crate::directory::model::Scope::parse(dto.user_scope.as_deref().unwrap_or("subtree"))
+            .as_str()
+            .to_string();
+    let attr_username = dto.attr_username.as_deref().unwrap_or("uid").trim().to_string();
+    let attr_email = dto.attr_email.as_deref().unwrap_or("mail").trim().to_string();
+    let attr_display_name = dto.attr_display_name.as_deref().unwrap_or("cn").trim().to_string();
+    let attr_unique_id = dto.attr_unique_id.as_deref().unwrap_or("entryUUID").trim().to_string();
+    let attr_member_of = dto.attr_member_of.as_deref().unwrap_or("").trim().to_string();
+    let group_base_dn = dto.group_base_dn.as_deref().unwrap_or("").trim().to_string();
+    let group_filter_s = group_filter.trim().to_string();
+    let attr_group_name = dto.attr_group_name.as_deref().unwrap_or("cn").trim().to_string();
+    let attr_group_member = dto.attr_group_member.as_deref().unwrap_or("member").trim().to_string();
+    let sync_interval_min = dto.sync_interval_min.unwrap_or(60).clamp(5, 10_080);
+    let on_missing =
+        crate::directory::OnMissing::parse(dto.on_missing.as_deref().unwrap_or("disable"))
+            .as_str()
+            .to_string();
+
+    tx.execute(
         r#"INSERT INTO core.ldap_directories
-               (slug, display_name, enabled, host, port, security, verify_certificate,
+               (id, slug, display_name, enabled, host, port, security, verify_certificate,
                 ca_certificate, connect_timeout_s, bind_dn, bind_password_enc, base_dn,
                 user_filter, user_scope, attr_username, attr_email, attr_display_name,
                 attr_unique_id, attr_member_of, sync_groups, group_base_dn, group_filter,
                 attr_group_name, attr_group_member, sync_enabled, sync_interval_min,
-                on_missing, allow_signup, position, default_org_unit_id)
+                on_missing, allow_signup, position, default_org_unit_id, created_at, updated_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-                   $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
-           RETURNING *"#,
+                   $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)"#,
+        params![
+            id,
+            &slug,
+            &display_name,
+            dto.enabled,
+            &host,
+            port,
+            &security_s,
+            dto.verify_certificate,
+            &ca_certificate,
+            connect_timeout_s,
+            &bind_dn,
+            &password_enc,
+            &base_dn,
+            &user_filter_s,
+            &user_scope,
+            &attr_username,
+            &attr_email,
+            &attr_display_name,
+            &attr_unique_id,
+            &attr_member_of,
+            dto.sync_groups,
+            &group_base_dn,
+            &group_filter_s,
+            &attr_group_name,
+            &attr_group_member,
+            dto.sync_enabled,
+            sync_interval_min,
+            &on_missing,
+            dto.allow_signup,
+            dto.position,
+            dto.default_org_unit_id,
+            now,
+            now,
+        ],
     )
-    .bind(&slug)
-    .bind(dto.display_name.trim())
-    .bind(dto.enabled)
-    .bind(dto.host.trim())
-    .bind(clamp_port(dto.port.unwrap_or(security.default_port() as i32)))
-    .bind(security.as_str())
-    .bind(dto.verify_certificate)
-    .bind(dto.ca_certificate.trim())
-    .bind(dto.connect_timeout_s.unwrap_or(10).clamp(1, 120))
-    .bind(dto.bind_dn.trim())
-    .bind(&password_enc)
-    .bind(dto.base_dn.trim())
-    .bind(user_filter.trim())
-    .bind(crate::directory::model::Scope::parse(dto.user_scope.as_deref().unwrap_or("subtree")).as_str())
-    .bind(dto.attr_username.as_deref().unwrap_or("uid").trim())
-    .bind(dto.attr_email.as_deref().unwrap_or("mail").trim())
-    .bind(dto.attr_display_name.as_deref().unwrap_or("cn").trim())
-    .bind(dto.attr_unique_id.as_deref().unwrap_or("entryUUID").trim())
-    .bind(dto.attr_member_of.as_deref().unwrap_or("").trim())
-    .bind(dto.sync_groups)
-    .bind(dto.group_base_dn.as_deref().unwrap_or("").trim())
-    .bind(group_filter.trim())
-    .bind(dto.attr_group_name.as_deref().unwrap_or("cn").trim())
-    .bind(dto.attr_group_member.as_deref().unwrap_or("member").trim())
-    .bind(dto.sync_enabled)
-    .bind(dto.sync_interval_min.unwrap_or(60).clamp(5, 10_080))
-    .bind(crate::directory::OnMissing::parse(dto.on_missing.as_deref().unwrap_or("disable")).as_str())
-    .bind(dto.allow_signup)
-    .bind(dto.position)
-    .bind(dto.default_org_unit_id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db) if db.is_unique_violation() => {
@@ -277,6 +320,46 @@ pub async fn create_directory(
             AppError::Database(e)
         }
     })?;
+
+    // Reconstruct the freshly inserted row from the values just bound.
+    let row = LdapDirectory {
+        id,
+        slug: slug.clone(),
+        display_name,
+        enabled: dto.enabled,
+        host,
+        port,
+        security: security_s,
+        verify_certificate: dto.verify_certificate,
+        ca_certificate,
+        connect_timeout_s,
+        bind_dn,
+        bind_password_enc: password_enc,
+        base_dn,
+        user_filter: user_filter_s,
+        user_scope,
+        attr_username,
+        attr_email,
+        attr_display_name,
+        attr_unique_id,
+        attr_member_of,
+        sync_groups: dto.sync_groups,
+        group_base_dn,
+        group_filter: group_filter_s,
+        attr_group_name,
+        attr_group_member,
+        sync_enabled: dto.sync_enabled,
+        sync_interval_min,
+        on_missing,
+        allow_signup: dto.allow_signup,
+        last_sync_at: None,
+        last_sync_status: None,
+        last_sync_detail: None,
+        default_org_unit_id: dto.default_org_unit_id,
+        position: dto.position,
+        created_at: now,
+        updated_at: now,
+    };
 
     // The view already drops the encrypted password, and the audit whitelist
     // drops it again: the credential has no path into the trail.
@@ -339,93 +422,230 @@ pub async fn update_directory(
         None => None,
     };
 
+    // Read the existing row up front (the struct cannot be read back inside the
+    // transaction: DbTx has no typed-row read). The subsequent write locks it.
+    let previous = state
+        .db
+        .fetch_optional_as::<LdapDirectory>(
+            "SELECT * FROM core.ldap_directories WHERE id = $1",
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "update_directory: read");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Annuaire introuvable".into()))?;
+
     let mut tx = audit.begin(&state.db).await?;
 
-    let previous = sqlx::query_as::<_, LdapDirectory>(
-        "SELECT * FROM core.ldap_directories WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "update_directory: lecture");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Annuaire introuvable".into()))?;
+    // The `COALESCE(new, existing)` merge PostgreSQL performed in SQL is done here
+    // in Rust, so the updated row can be reconstructed without a `RETURNING *`.
+    let now = Utc::now();
+    let display_name = dto
+        .display_name
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.display_name.clone());
+    let enabled = dto.enabled.unwrap_or(previous.enabled);
+    let host = dto
+        .host
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.host.clone());
+    let port = dto.port.map(clamp_port).unwrap_or(previous.port);
+    let security = dto
+        .security
+        .as_deref()
+        .map(|s| crate::directory::Security::parse(s).as_str().to_string())
+        .unwrap_or_else(|| previous.security.clone());
+    let verify_certificate = dto.verify_certificate.unwrap_or(previous.verify_certificate);
+    let ca_certificate = dto
+        .ca_certificate
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.ca_certificate.clone());
+    let connect_timeout_s = dto
+        .connect_timeout_s
+        .map(|v| v.clamp(1, 120))
+        .unwrap_or(previous.connect_timeout_s);
+    let bind_dn = dto
+        .bind_dn
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.bind_dn.clone());
+    let bind_password_enc = password_enc
+        .clone()
+        .unwrap_or_else(|| previous.bind_password_enc.clone());
+    let base_dn = dto
+        .base_dn
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.base_dn.clone());
+    let user_filter = dto
+        .user_filter
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.user_filter.clone());
+    let user_scope = dto
+        .user_scope
+        .as_deref()
+        .map(|s| crate::directory::model::Scope::parse(s).as_str().to_string())
+        .unwrap_or_else(|| previous.user_scope.clone());
+    let attr_username = dto
+        .attr_username
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.attr_username.clone());
+    let attr_email = dto
+        .attr_email
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.attr_email.clone());
+    let attr_display_name = dto
+        .attr_display_name
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.attr_display_name.clone());
+    let attr_unique_id = dto
+        .attr_unique_id
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.attr_unique_id.clone());
+    let attr_member_of = dto
+        .attr_member_of
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.attr_member_of.clone());
+    let sync_groups = dto.sync_groups.unwrap_or(previous.sync_groups);
+    let group_base_dn = dto
+        .group_base_dn
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.group_base_dn.clone());
+    let group_filter = dto
+        .group_filter
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.group_filter.clone());
+    let attr_group_name = dto
+        .attr_group_name
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.attr_group_name.clone());
+    let attr_group_member = dto
+        .attr_group_member
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| previous.attr_group_member.clone());
+    let sync_enabled = dto.sync_enabled.unwrap_or(previous.sync_enabled);
+    let sync_interval_min = dto
+        .sync_interval_min
+        .map(|v| v.clamp(5, 10_080))
+        .unwrap_or(previous.sync_interval_min);
+    let on_missing = dto
+        .on_missing
+        .as_deref()
+        .map(|s| crate::directory::OnMissing::parse(s).as_str().to_string())
+        .unwrap_or_else(|| previous.on_missing.clone());
+    let allow_signup = dto.allow_signup.unwrap_or(previous.allow_signup);
+    let position = dto.position.unwrap_or(previous.position);
+    let default_org_unit_id = if dto.clear_default_org_unit {
+        None
+    } else {
+        dto.default_org_unit_id.or(previous.default_org_unit_id)
+    };
 
-    let row = sqlx::query_as::<_, LdapDirectory>(
+    tx.execute(
         r#"UPDATE core.ldap_directories SET
-               display_name       = COALESCE($2,  display_name),
-               enabled            = COALESCE($3,  enabled),
-               host               = COALESCE($4,  host),
-               port               = COALESCE($5,  port),
-               security           = COALESCE($6,  security),
-               verify_certificate = COALESCE($7,  verify_certificate),
-               ca_certificate     = COALESCE($8,  ca_certificate),
-               connect_timeout_s  = COALESCE($9,  connect_timeout_s),
-               bind_dn            = COALESCE($10, bind_dn),
-               bind_password_enc  = COALESCE($11, bind_password_enc),
-               base_dn            = COALESCE($12, base_dn),
-               user_filter        = COALESCE($13, user_filter),
-               user_scope         = COALESCE($14, user_scope),
-               attr_username      = COALESCE($15, attr_username),
-               attr_email         = COALESCE($16, attr_email),
-               attr_display_name  = COALESCE($17, attr_display_name),
-               attr_unique_id     = COALESCE($18, attr_unique_id),
-               attr_member_of     = COALESCE($19, attr_member_of),
-               sync_groups        = COALESCE($20, sync_groups),
-               group_base_dn      = COALESCE($21, group_base_dn),
-               group_filter       = COALESCE($22, group_filter),
-               attr_group_name    = COALESCE($23, attr_group_name),
-               attr_group_member  = COALESCE($24, attr_group_member),
-               sync_enabled       = COALESCE($25, sync_enabled),
-               sync_interval_min  = COALESCE($26, sync_interval_min),
-               on_missing         = COALESCE($27, on_missing),
-               allow_signup       = COALESCE($28, allow_signup),
-               position           = COALESCE($29, position),
-               default_org_unit_id = CASE WHEN $31 THEN NULL
-                                          ELSE COALESCE($30, default_org_unit_id) END
-           WHERE id = $1
-           RETURNING *"#,
+               display_name = $2, enabled = $3, host = $4, port = $5, security = $6,
+               verify_certificate = $7, ca_certificate = $8, connect_timeout_s = $9,
+               bind_dn = $10, bind_password_enc = $11, base_dn = $12, user_filter = $13,
+               user_scope = $14, attr_username = $15, attr_email = $16, attr_display_name = $17,
+               attr_unique_id = $18, attr_member_of = $19, sync_groups = $20, group_base_dn = $21,
+               group_filter = $22, attr_group_name = $23, attr_group_member = $24,
+               sync_enabled = $25, sync_interval_min = $26, on_missing = $27, allow_signup = $28,
+               position = $29, default_org_unit_id = $30, updated_at = $31
+           WHERE id = $1"#,
+        params![
+            id,
+            &display_name,
+            enabled,
+            &host,
+            port,
+            &security,
+            verify_certificate,
+            &ca_certificate,
+            connect_timeout_s,
+            &bind_dn,
+            &bind_password_enc,
+            &base_dn,
+            &user_filter,
+            &user_scope,
+            &attr_username,
+            &attr_email,
+            &attr_display_name,
+            &attr_unique_id,
+            &attr_member_of,
+            sync_groups,
+            &group_base_dn,
+            &group_filter,
+            &attr_group_name,
+            &attr_group_member,
+            sync_enabled,
+            sync_interval_min,
+            &on_missing,
+            allow_signup,
+            position,
+            default_org_unit_id,
+            now,
+        ],
     )
-    .bind(id)
-    .bind(dto.display_name.as_deref().map(str::trim))
-    .bind(dto.enabled)
-    .bind(dto.host.as_deref().map(str::trim))
-    .bind(dto.port.map(clamp_port))
-    .bind(dto.security.as_deref().map(|s| crate::directory::Security::parse(s).as_str()))
-    .bind(dto.verify_certificate)
-    .bind(dto.ca_certificate.as_deref().map(str::trim))
-    .bind(dto.connect_timeout_s.map(|v| v.clamp(1, 120)))
-    .bind(dto.bind_dn.as_deref().map(str::trim))
-    .bind(password_enc.as_deref())
-    .bind(dto.base_dn.as_deref().map(str::trim))
-    .bind(dto.user_filter.as_deref().map(str::trim))
-    .bind(dto.user_scope.as_deref().map(|s| crate::directory::model::Scope::parse(s).as_str()))
-    .bind(dto.attr_username.as_deref().map(str::trim))
-    .bind(dto.attr_email.as_deref().map(str::trim))
-    .bind(dto.attr_display_name.as_deref().map(str::trim))
-    .bind(dto.attr_unique_id.as_deref().map(str::trim))
-    .bind(dto.attr_member_of.as_deref().map(str::trim))
-    .bind(dto.sync_groups)
-    .bind(dto.group_base_dn.as_deref().map(str::trim))
-    .bind(dto.group_filter.as_deref().map(str::trim))
-    .bind(dto.attr_group_name.as_deref().map(str::trim))
-    .bind(dto.attr_group_member.as_deref().map(str::trim))
-    .bind(dto.sync_enabled)
-    .bind(dto.sync_interval_min.map(|v| v.clamp(5, 10_080)))
-    .bind(dto.on_missing.as_deref().map(|s| crate::directory::OnMissing::parse(s).as_str()))
-    .bind(dto.allow_signup)
-    .bind(dto.position)
-    .bind(dto.default_org_unit_id)
-    .bind(dto.clear_default_org_unit)
-    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "update_directory: écriture");
+        tracing::error!(error = %e, "update_directory: write");
         AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Annuaire introuvable".into()))?;
+    })?;
+
+    // Reconstruct the updated row from the merged values just written.
+    let row = LdapDirectory {
+        id: previous.id,
+        slug: previous.slug.clone(),
+        display_name,
+        enabled,
+        host,
+        port,
+        security,
+        verify_certificate,
+        ca_certificate,
+        connect_timeout_s,
+        bind_dn,
+        bind_password_enc,
+        base_dn,
+        user_filter,
+        user_scope,
+        attr_username,
+        attr_email,
+        attr_display_name,
+        attr_unique_id,
+        attr_member_of,
+        sync_groups,
+        group_base_dn,
+        group_filter,
+        attr_group_name,
+        attr_group_member,
+        sync_enabled,
+        sync_interval_min,
+        on_missing,
+        allow_signup,
+        last_sync_at: previous.last_sync_at,
+        last_sync_status: previous.last_sync_status.clone(),
+        last_sync_detail: previous.last_sync_detail.clone(),
+        default_org_unit_id,
+        position,
+        created_at: previous.created_at,
+        updated_at: now,
+    };
 
     let view = AdminLdapDirectory::from(row.clone());
     let mut entry = AuditEntry::new("core.directory.update")
@@ -469,47 +689,49 @@ pub async fn delete_directory(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::AUTH_PROVIDERS_MANAGE)?;
-    let mut tx = audit.begin(&state.db).await?;
 
-    let previous = sqlx::query_as::<_, LdapDirectory>(
-        "SELECT * FROM core.ldap_directories WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "delete_directory: lecture");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Annuaire introuvable".into()))?;
-
-    let deactivated = sqlx::query(
-        "UPDATE core.users SET is_active = FALSE
-          WHERE ldap_directory_id = $1 AND password_hash IS NULL AND oauth_provider IS NULL",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "delete_directory: désactivation des comptes gouvernés");
-        AppError::Database(e)
-    })?
-    .rows_affected();
-
-    // Imported groups lose their link but keep their members: a group somebody
-    // built a share on must not evaporate because a directory was detached.
-    sqlx::query("UPDATE core.user_group_members SET source = 'manual' WHERE group_id IN (SELECT id FROM core.user_groups WHERE ldap_directory_id = $1)")
-        .bind(id)
-        .execute(&mut *tx)
+    // The struct cannot be read back inside the transaction (DbTx has no typed
+    // read); the directory is read up front and the writes lock it.
+    let previous = state
+        .db
+        .fetch_optional_as::<LdapDirectory>(
+            "SELECT * FROM core.ldap_directories WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "delete_directory: adhésions importées");
+            tracing::error!(error = %e, "delete_directory: read");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Annuaire introuvable".into()))?;
+
+    let mut tx = audit.begin(&state.db).await?;
+
+    let deactivated = tx
+        .execute(
+            "UPDATE core.users SET is_active = FALSE
+              WHERE ldap_directory_id = $1 AND password_hash IS NULL AND oauth_provider IS NULL",
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "delete_directory: deactivating governed accounts");
             AppError::Database(e)
         })?;
 
-    sqlx::query("DELETE FROM core.ldap_directories WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    // Imported groups lose their link but keep their members: a group somebody
+    // built a share on must not evaporate because a directory was detached.
+    tx.execute(
+        "UPDATE core.user_group_members SET source = 'manual' WHERE group_id IN (SELECT id FROM core.user_groups WHERE ldap_directory_id = $1)",
+        params![id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "delete_directory: imported memberships");
+        AppError::Database(e)
+    })?;
+
+    tx.execute("DELETE FROM core.ldap_directories WHERE id = $1", params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "delete_directory");
@@ -678,23 +900,22 @@ pub async fn govern_accounts(
         return Err(AppError::Validation("Aucun compte désigné".into()));
     }
 
-    let mut tx = audit.begin(&state.db).await?;
+    let backend = state.db.backend();
 
     // Candidates: governed by this directory, still holding a local password.
-    let candidates: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, username, role FROM core.users
-          WHERE ldap_directory_id = $1
-            AND password_hash IS NOT NULL
-            AND ($2::bool OR id = ANY($3))
-          FOR UPDATE",
-    )
-    .bind(id)
-    .bind(dto.all)
-    .bind(&dto.user_ids)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "govern_accounts: lecture des candidats");
+    // Read on the pool because `= ANY(array)` (a PostgreSQL-only construct) is
+    // replaced by a variadic `IN (...)` a query builder emits, and DbTx offers no
+    // multi-row read. The `FOR UPDATE` lock is therefore given up here; the
+    // decisive guard and the write below still run together in the transaction.
+    let mut qb = DbQueryBuilder::new(backend, "SELECT id, username, role FROM core.users");
+    qb.push(" WHERE ldap_directory_id = ").push_bind(id);
+    qb.push(" AND password_hash IS NOT NULL AND (")
+        .push_bind(dto.all)
+        .push(" OR id")
+        .push_in(dto.user_ids.clone())
+        .push(")");
+    let candidates: Vec<(Uuid, String, String)> = qb.fetch_all_as(&state.db).await.map_err(|e| {
+        tracing::error!(error = %e, "govern_accounts: reading candidates");
         AppError::Database(e)
     })?;
 
@@ -706,20 +927,25 @@ pub async fn govern_accounts(
 
     let ids: Vec<Uuid> = candidates.iter().map(|(id, _, _)| *id).collect();
 
+    let mut tx = audit.begin(&state.db).await?;
+
     // How many active administrators would still hold a local password
     // afterwards. Zero is refused, whatever was asked.
-    let remaining_local_admins: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM core.users
-          WHERE role = 'admin' AND is_active = TRUE AND password_hash IS NOT NULL
-            AND NOT (id = ANY($1))",
-    )
-    .bind(&ids)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "govern_accounts: comptage des administrateurs locaux");
-        AppError::Database(e)
-    })?;
+    let count_sql = format!(
+        "SELECT {} FROM core.users \
+          WHERE role = 'admin' AND is_active = TRUE AND password_hash IS NOT NULL AND NOT (id",
+        backend.count_bigint("*"),
+    );
+    let mut qb = DbQueryBuilder::new(backend, count_sql);
+    qb.push_in(ids.clone()).push(")");
+    let remaining_local_admins: i64 = qb
+        .tx_fetch_optional_scalar::<i64>(&mut tx)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "govern_accounts: counting local administrators");
+            AppError::Database(e)
+        })?
+        .unwrap_or(0);
 
     if remaining_local_admins <= 0 {
         return Err(AppError::Validation(
@@ -729,17 +955,15 @@ pub async fn govern_accounts(
         ));
     }
 
-    let affected = sqlx::query(
-        "UPDATE core.users SET password_hash = NULL, must_change_password = FALSE WHERE id = ANY($1)",
-    )
-    .bind(&ids)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "govern_accounts: effacement des mots de passe locaux");
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        "UPDATE core.users SET password_hash = NULL, must_change_password = FALSE WHERE id",
+    );
+    qb.push_in(ids.clone());
+    let affected = qb.tx_execute(&mut tx).await.map_err(|e| {
+        tracing::error!(error = %e, "govern_accounts: clearing local passwords");
         AppError::Database(e)
-    })?
-    .rows_affected();
+    })?;
 
     let names: Vec<String> = candidates.iter().map(|(_, n, _)| n.clone()).collect();
     tx.commit(

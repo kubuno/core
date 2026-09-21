@@ -15,6 +15,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use kubuno_db::{params, Backend};
 use serde_json::json;
 
 use super::tokens::{refresh_cookie, RefreshRequest};
@@ -27,28 +28,37 @@ pub(super) struct SessionInventory {
     auth_strength: Option<String>,
 }
 
+/// One row of the inventory carried across a rotation.
+#[derive(sqlx::FromRow)]
+struct InventoryRow {
+    device_id: Option<uuid::Uuid>,
+    country: Option<String>,
+    auth_strength: Option<String>,
+}
+
 /// Reads it back. Best-effort: a rotation must never fail because the inventory
 /// could not be consulted — the session is what keeps the user signed in, the
 /// inventory is what tells an operator about it.
 pub(super) async fn session_inventory(state: &AppState, session_id: uuid::Uuid) -> SessionInventory {
-    let row: Option<(Option<uuid::Uuid>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT device_id, country, auth_strength FROM core.refresh_tokens WHERE id = $1",
-    )
-    .bind(session_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "refresh: lecture de l'appareil de la session");
-        e
-    })
-    .ok()
-    .flatten();
+    let row = state
+        .db
+        .fetch_optional_as::<InventoryRow>(
+            "SELECT device_id, country, auth_strength FROM core.refresh_tokens WHERE id = $1",
+            params![session_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "refresh: reading the session's device");
+            e
+        })
+        .ok()
+        .flatten();
 
     match row {
-        Some((device_id, country, auth_strength)) => SessionInventory {
-            device_id,
-            country,
-            auth_strength,
+        Some(r) => SessionInventory {
+            device_id: r.device_id,
+            country: r.country,
+            auth_strength: r.auth_strength,
         },
         None => SessionInventory::default(),
     }
@@ -64,17 +74,19 @@ pub(super) async fn device_is_blocked(state: &AppState, device_id: Option<uuid::
     let Some(device_id) = device_id else {
         return false;
     };
-    let approval: Option<String> =
-        sqlx::query_scalar("SELECT approval FROM core.devices WHERE id = $1")
-            .bind(device_id)
-            .fetch_optional(&state.db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, device_id = %device_id, "refresh: lecture de l'approbation de l'appareil");
-                e
-            })
-            .ok()
-            .flatten();
+    let approval: Option<String> = state
+        .db
+        .fetch_optional_scalar::<String>(
+            "SELECT approval FROM core.devices WHERE id = $1",
+            params![device_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, device_id = %device_id, "refresh: reading the device approval");
+            e
+        })
+        .ok()
+        .flatten();
 
     if approval.as_deref() != Some(crate::devices::Approval::Blocked.as_str()) {
         return false;
@@ -90,33 +102,37 @@ async fn try_rotation_grace(
     state: &AppState,
     rt: &crate::models::session::RefreshToken,
 ) -> Result<Option<Response>, AppError> {
-    let rotated_to: Option<uuid::Uuid> =
-        sqlx::query_scalar("SELECT rotated_to FROM core.refresh_tokens WHERE id = $1")
-            .bind(rt.id)
-            .fetch_one(&state.db)
-            .await?;
+    let rotated_to: Option<uuid::Uuid> = state
+        .db
+        .fetch_scalar::<Option<uuid::Uuid>>(
+            "SELECT rotated_to FROM core.refresh_tokens WHERE id = $1",
+            params![rt.id],
+        )
+        .await?;
     let Some(succ_id) = rotated_to else { return Ok(None) };
 
     // Successor must be alive and virgin (last_used_at untouched since creation):
     // if it ever served, the old-token presentation is genuine reuse.
-    let succ: Option<(chrono::DateTime<Utc>,)> = sqlx::query_as(
-        "SELECT expires_at FROM core.refresh_tokens
-         WHERE id = $1 AND revoked_at IS NULL AND last_used_at = created_at",
-    )
-    .bind(succ_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let succ: Option<chrono::DateTime<Utc>> = state
+        .db
+        .fetch_optional_scalar::<chrono::DateTime<Utc>>(
+            "SELECT expires_at FROM core.refresh_tokens
+             WHERE id = $1 AND revoked_at IS NULL AND last_used_at = created_at",
+            params![succ_id],
+        )
+        .await?;
     if succ.is_none() {
         return Ok(None);
     }
 
-    let user = sqlx::query_as::<_, crate::models::user::User>(
-        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-    )
-    .bind(rt.user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+    let user = state
+        .db
+        .fetch_optional_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+            params![rt.user_id],
+        )
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
     let ttls = crate::config::runtime::security_ttls(&state.db, &state.settings).await;
     let (new_raw, new_hash) = JwtService::generate_refresh_token();
@@ -125,46 +141,54 @@ async fn try_rotation_grace(
 
     let inventory = session_inventory(state, rt.id).await;
 
+    // NOTE (migration consolidation): the `::inet` cast is PostgreSQL-only and is
+    // spliced in only there, where `ip_address` is an INET column.
+    let inet_cast = if state.db.backend() == Backend::Postgres { "::inet" } else { "" };
     let mut tx = state.db.begin().await?;
-    sqlx::query(
-        "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'rotation_grace_superseded' WHERE id = $1",
+    tx.execute(
+        "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'rotation_grace_superseded' WHERE id = $2",
+        params![Utc::now(), succ_id],
     )
-    .bind(succ_id)
-    .execute(&mut *tx)
     .await?;
-    let new_id: uuid::Uuid = sqlx::query_scalar(
-        r#"INSERT INTO core.refresh_tokens
-           (user_id, token_hash, device_name, device_type, ip_address, user_agent,
-            expires_at, family_id, client_type, device_id, country, auth_strength)
-           VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9, $10, $11, $12)
-           RETURNING id"#,
+    // The id is minted in Rust instead of relying on RETURNING (unsupported on
+    // MySQL). Rotation issues a NEW row for the SAME device: losing the inventory
+    // link here would empty the inventory of every native client after its first
+    // refresh.
+    let new_id = kubuno_db::new_id();
+    tx.execute(
+        &format!(
+            r#"INSERT INTO core.refresh_tokens
+               (id, user_id, token_hash, device_name, device_type, ip_address, user_agent,
+                expires_at, family_id, client_type, device_id, country, auth_strength)
+               VALUES ($1, $2, $3, $4, $5, $6{inet_cast}, $7, $8, $9, $10, $11, $12, $13)"#
+        ),
+        params![
+            new_id,
+            rt.user_id,
+            &new_hash,
+            rt.device_name.as_deref(),
+            rt.device_type.as_deref(),
+            rt.ip_address.as_deref(),
+            rt.user_agent.as_deref(),
+            new_expires,
+            family,
+            rt.client_type.as_deref().unwrap_or("native"),
+            inventory.device_id,
+            inventory.country.as_deref(),
+            inventory.auth_strength.as_deref()
+        ],
     )
-    .bind(rt.user_id)
-    .bind(&new_hash)
-    .bind(rt.device_name.as_deref())
-    .bind(rt.device_type.as_deref())
-    .bind(rt.ip_address.as_deref())
-    .bind(rt.user_agent.as_deref())
-    .bind(new_expires)
-    .bind(family)
-    .bind(rt.client_type.as_deref().unwrap_or("native"))
-    // Rotation issues a NEW row for the SAME device: losing the link here would
-    // empty the inventory of every native client after its first refresh.
-    .bind(inventory.device_id)
-    .bind(inventory.country.as_deref())
-    .bind(inventory.auth_strength.as_deref())
-    .fetch_one(&mut *tx)
     .await?;
     // Repoint (revoked_at unchanged → the grace window stays anchored at the
     // ORIGINAL rotation, a crash-loop cannot extend it indefinitely).
-    sqlx::query("UPDATE core.refresh_tokens SET rotated_to = $2 WHERE id = $1")
-        .bind(rt.id)
-        .bind(new_id)
-        .execute(&mut *tx)
-        .await?;
+    tx.execute(
+        "UPDATE core.refresh_tokens SET rotated_to = $1 WHERE id = $2",
+        params![new_id, rt.id],
+    )
+    .await?;
     tx.commit().await?;
 
-    tracing::info!(user_id = %rt.user_id, family_id = %family, "Grâce de rotation servie (successeur vierge remplacé)");
+    tracing::info!(user_id = %rt.user_id, family_id = %family, "Rotation grace served (virgin successor replaced)");
 
     let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);
     let access_token = jwt.generate_access_token(&user)?;
@@ -194,7 +218,7 @@ pub async fn refresh(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Response, AppError> {
-    // Source du refresh : corps JSON (natif) en priorité, sinon cookie (web).
+    // Refresh source: JSON body (native) first, otherwise cookie (web).
     let body_token: Option<String> = if body.is_empty() {
         None
     } else {
@@ -209,38 +233,50 @@ pub async fn refresh(
 
     let refresh_hash = token::hash_token(&refresh_raw);
 
-    // On récupère le token SANS filtrer sur revoked_at afin de détecter la
-    // réutilisation d'un token déjà tourné (signe de vol).
-    let rt = sqlx::query_as::<_, crate::models::session::RefreshToken>(
-        r#"SELECT id, user_id, token_hash, device_name, device_type,
-                  host(ip_address)::text as ip_address, user_agent,
-                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
-                  family_id, client_type
-           FROM core.refresh_tokens
-           WHERE token_hash = $1"#,
-    )
-    .bind(&refresh_hash)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+    // We fetch the token WITHOUT filtering on revoked_at, to detect the reuse of
+    // an already-rotated token (a sign of theft).
+    //
+    // NOTE (migration consolidation): PostgreSQL's `host(...)::text` extracts the
+    // textual address from the INET column; on the other engines `ip_address` is
+    // already text, so the bare column is selected.
+    let backend = state.db.backend();
+    let ip_expr = if backend == Backend::Postgres {
+        "host(ip_address)::text"
+    } else {
+        "ip_address"
+    };
+    let rt = state
+        .db
+        .fetch_optional_as::<crate::models::session::RefreshToken>(
+            &format!(
+                r#"SELECT id, user_id, token_hash, device_name, device_type,
+                      {ip_expr} as ip_address, user_agent,
+                      expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                      family_id, client_type
+               FROM core.refresh_tokens
+               WHERE token_hash = $1"#
+            ),
+            params![&refresh_hash],
+        )
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
-    // Détection de réutilisation : un token déjà « rotated » qu'on représente
-    // ⇒ on révoque toute la famille de l'appareil (le voleur ET l'utilisateur
-    // légitime devront se reconnecter).
+    // Reuse detection: an already-rotated token presented again ⇒ we revoke the
+    // whole device family (the thief AND the legitimate user must sign in again).
     //
-    // GRÂCE DE ROTATION : un client natif tué/crashé ENTRE la rotation serveur et
-    // sa persistance du nouveau token rejoue l'ancien au redémarrage — ce n'est
-    // pas un vol. Si le successeur n'a JAMAIS servi, `try_rotation_grace` le
-    // remplace par un token frais au lieu de révoquer la famille ; un successeur
-    // déjà utilisé y renvoie None → on retombe sur la révocation ci-dessous.
+    // ROTATION GRACE: a native client killed/crashed BETWEEN the server rotation
+    // and its persistence of the new token replays the old one on restart — this
+    // is not theft. If the successor has NEVER served, `try_rotation_grace`
+    // replaces it with a fresh token instead of revoking the family; an already
+    // used successor returns None → we fall back to the revocation below.
     //
-    // FENÊTRE : le successeur VIERGE prouve à lui seul le cas crash (un voleur
-    // ayant intercepté la rotation présenterait le successeur, pas l'ancien
-    // token), donc la fenêtre est large (24 h) — une boucle de dev qui tue/relance
-    // l'app bien au-delà de 60 s reste soignée. Elle reste ancrée sur le
-    // `revoked_at` D'ORIGINE (la grâce ne le déplace pas), donc une crash-loop ne
-    // peut pas l'étendre indéfiniment ; et le cas « successeur déjà utilisé »
-    // garde la révocation immédiate (via le None de `try_rotation_grace`).
+    // WINDOW: a VIRGIN successor alone proves the crash case (a thief who
+    // intercepted the rotation would present the successor, not the old token),
+    // so the window is wide (24 h) — a dev loop that kills/restarts the app well
+    // beyond 60 s stays clean. It remains anchored on the ORIGINAL `revoked_at`
+    // (grace does not move it), so a crash-loop cannot extend it indefinitely;
+    // and the "successor already used" case keeps the immediate revocation (via
+    // the None from `try_rotation_grace`).
     if let Some(revoked_at) = rt.revoked_at {
         if rt.revoke_reason.as_deref() == Some("rotated") {
             const ROTATION_GRACE_SECS: i64 = 24 * 60 * 60;
@@ -252,14 +288,15 @@ pub async fn refresh(
                 }
             }
             let family = rt.family_id.unwrap_or(rt.id);
-            sqlx::query(
-                "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'reuse_detected'
-                 WHERE family_id = $1 AND revoked_at IS NULL",
-            )
-            .bind(family)
-            .execute(&state.db)
-            .await?;
-            tracing::warn!(user_id = %rt.user_id, family_id = %family, "Réutilisation de refresh token détectée — famille révoquée");
+            state
+                .db
+                .execute(
+                    "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'reuse_detected'
+                     WHERE family_id = $2 AND revoked_at IS NULL",
+                    params![Utc::now(), family],
+                )
+                .await?;
+            tracing::warn!(user_id = %rt.user_id, family_id = %family, "Refresh token reuse detected — family revoked");
         }
         return Err(AppError::Unauthorized);
     }
@@ -268,42 +305,47 @@ pub async fn refresh(
         return Err(AppError::Unauthorized);
     }
 
-    let user = sqlx::query_as::<_, crate::models::user::User>(
-        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-    )
-    .bind(rt.user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+    let user = state
+        .db
+        .fetch_optional_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+            params![rt.user_id],
+        )
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
-    // Appareil bloqué : la session ne se renouvelle plus et se ferme.
+    // Blocked device: the session no longer renews and closes.
     let inventory = session_inventory(&state, rt.id).await;
     if device_is_blocked(&state, inventory.device_id).await {
-        sqlx::query(
-            "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'device_blocked'
-             WHERE id = $1 AND revoked_at IS NULL",
-        )
-        .bind(rt.id)
-        .execute(&state.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "refresh: fermeture d'une session d'appareil bloqué");
-            AppError::Database(e)
-        })?;
-        tracing::warn!(user_id = %rt.user_id, "Renouvellement refusé : appareil bloqué");
+        state
+            .db
+            .execute(
+                "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'device_blocked'
+                 WHERE id = $2 AND revoked_at IS NULL",
+                params![Utc::now(), rt.id],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "refresh: closing a blocked-device session");
+                AppError::Database(e)
+            })?;
+        tracing::warn!(user_id = %rt.user_id, "Renewal refused: device blocked");
         return Err(AppError::Unauthorized);
     }
 
     let ttls = crate::config::runtime::security_ttls(&state.db, &state.settings).await;
 
-    // Déconnexion par INACTIVITÉ : si le refresh token n'a pas servi depuis plus
-    // que `idle_timeout`, on le révoque → l'utilisateur doit se reconnecter.
+    // INACTIVITY sign-out: if the refresh token has not served for longer than
+    // `idle_timeout`, we revoke it → the user must sign in again.
     if let Some(idle) = ttls.idle_timeout {
         let idle_chrono = chrono::Duration::from_std(idle).unwrap_or_else(|_| chrono::Duration::days(3650));
         if Utc::now() - rt.last_used_at > idle_chrono {
-            sqlx::query("UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'idle_timeout' WHERE id = $1")
-                .bind(rt.id)
-                .execute(&state.db)
+            state
+                .db
+                .execute(
+                    "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'idle_timeout' WHERE id = $2",
+                    params![Utc::now(), rt.id],
+                )
                 .await?;
             return Err(AppError::Unauthorized);
         }
@@ -312,44 +354,50 @@ pub async fn refresh(
     let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);
     let access_token = jwt.generate_access_token(&user)?;
 
-    // Client natif : ROTATION. On révoque l'ancien refresh et on en émet un
-    // nouveau dans la même famille, transmis en JSON.
+    // Native client: ROTATION. We revoke the old refresh and issue a new one in
+    // the same family, transmitted in JSON.
     if is_native {
         let (new_raw, new_hash) = JwtService::generate_refresh_token();
         let new_expires = Utc::now() + ttls.refresh_ttl;
         let family = rt.family_id.unwrap_or(rt.id);
 
+        // NOTE (migration consolidation): the `::inet` cast is PostgreSQL-only.
+        let inet_cast = if backend == Backend::Postgres { "::inet" } else { "" };
         let mut tx = state.db.begin().await?;
-        let new_id: uuid::Uuid = sqlx::query_scalar(
-            r#"INSERT INTO core.refresh_tokens
-               (user_id, token_hash, device_name, device_type, ip_address, user_agent,
-                expires_at, family_id, client_type, device_id, country, auth_strength)
-               VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9, $10, $11, $12)
-               RETURNING id"#,
+        // The id is minted in Rust in place of RETURNING. Same device, new row:
+        // the inventory link is carried across the rotation, otherwise every
+        // native client would vanish from it on its first refresh.
+        let new_id = kubuno_db::new_id();
+        tx.execute(
+            &format!(
+                r#"INSERT INTO core.refresh_tokens
+                   (id, user_id, token_hash, device_name, device_type, ip_address, user_agent,
+                    expires_at, family_id, client_type, device_id, country, auth_strength)
+                   VALUES ($1, $2, $3, $4, $5, $6{inet_cast}, $7, $8, $9, $10, $11, $12, $13)"#
+            ),
+            params![
+                new_id,
+                rt.user_id,
+                &new_hash,
+                rt.device_name.as_deref(),
+                rt.device_type.as_deref(),
+                rt.ip_address.as_deref(),
+                rt.user_agent.as_deref(),
+                new_expires,
+                family,
+                rt.client_type.as_deref().unwrap_or("native"),
+                inventory.device_id,
+                inventory.country.as_deref(),
+                inventory.auth_strength.as_deref()
+            ],
         )
-        .bind(rt.user_id)
-        .bind(&new_hash)
-        .bind(rt.device_name.as_deref())
-        .bind(rt.device_type.as_deref())
-        .bind(rt.ip_address.as_deref())
-        .bind(rt.user_agent.as_deref())
-        .bind(new_expires)
-        .bind(family)
-        .bind(rt.client_type.as_deref().unwrap_or("native"))
-        // Same device, new row: the inventory link is carried across the
-        // rotation, otherwise every native client would vanish from it on its
-        // first refresh.
-        .bind(inventory.device_id)
-        .bind(inventory.country.as_deref())
-        .bind(inventory.auth_strength.as_deref())
-        .fetch_one(&mut *tx)
         .await?;
         // rotated_to feeds the rotation grace (crash between rotation and persistence).
-        sqlx::query("UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'rotated', rotated_to = $2 WHERE id = $1")
-            .bind(rt.id)
-            .bind(new_id)
-            .execute(&mut *tx)
-            .await?;
+        tx.execute(
+            "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'rotated', rotated_to = $2 WHERE id = $3",
+            params![Utc::now(), new_id, rt.id],
+        )
+        .await?;
         tx.commit().await?;
 
         return Ok(Json(NativeTokenResponse {
@@ -361,22 +409,28 @@ pub async fn refresh(
         .into_response());
     }
 
-    // Web : pas de rotation, on met juste à jour l'activité et on renvoie un
-    // nouveau access token (le refresh reste en cookie).
-    sqlx::query("UPDATE core.refresh_tokens SET last_used_at = NOW() WHERE id = $1")
-        .bind(rt.id)
-        .execute(&state.db)
+    // Web: no rotation, we just update activity and return a new access token
+    // (the refresh stays in the cookie).
+    state
+        .db
+        .execute(
+            "UPDATE core.refresh_tokens SET last_used_at = $1 WHERE id = $2",
+            params![Utc::now(), rt.id],
+        )
         .await?;
 
     // "Last seen" must mean last seen, not last signed in: a browser open for a
     // fortnight would otherwise look abandoned in the inventory.
     if let Some(device_id) = inventory.device_id {
-        if let Err(e) = sqlx::query("UPDATE core.devices SET last_seen_at = NOW() WHERE id = $1")
-            .bind(device_id)
-            .execute(&state.db)
+        if let Err(e) = state
+            .db
+            .execute(
+                "UPDATE core.devices SET last_seen_at = $1 WHERE id = $2",
+                params![Utc::now(), device_id],
+            )
             .await
         {
-            tracing::error!(error = %e, device_id = %device_id, "refresh: mise à jour de l'activité de l'appareil");
+            tracing::error!(error = %e, device_id = %device_id, "refresh: updating device activity");
         }
     }
 

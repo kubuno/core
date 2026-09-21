@@ -9,8 +9,8 @@
 
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
+use kubuno_db::{params, Backend, DbPool, DbQueryBuilder};
 use serde::Deserialize;
-use sqlx::{PgPool, Row};
 
 use super::model::AuditRow;
 use crate::errors::AppError;
@@ -76,6 +76,10 @@ pub struct AuditQuery {
 // A macro rather than a `const` so call sites splice it with `concat!` and hand
 // the driver one `&'static str` literal: no part of this query text exists
 // before compile time, and every filter below travels as a bind parameter.
+//
+// NOTE: `host(ip_address)::text` is PostgreSQL-only (`inet` type + `host()`
+// function + `::` cast). The `ip_address` column is `inet` on PostgreSQL and
+// plain text elsewhere; on another engine this would select the column directly.
 macro_rules! select_columns {
     () => {
         r#"
@@ -88,32 +92,6 @@ macro_rules! select_columns {
     };
 }
 
-fn map_row(r: &sqlx::postgres::PgRow) -> AuditRow {
-    AuditRow {
-        id: r.get("id"),
-        occurred_at: r.get("occurred_at"),
-        actor_id: r.get("actor_id"),
-        actor_label: r.get("actor_label"),
-        actor_role: r.get("actor_role"),
-        actor_origin: r.get("actor_origin"),
-        actor_token_id: r.get("actor_token_id"),
-        ip_address: r.get("ip_address"),
-        user_agent: r.get("user_agent"),
-        action: r.get("action"),
-        module_id: r.get("module_id"),
-        target_type: r.get("target_type"),
-        target_id: r.get("target_id"),
-        target_label: r.get("target_label"),
-        before: r.get("before"),
-        after: r.get("after"),
-        outcome: r.get("outcome"),
-        detail: r.get("detail"),
-        reversible: r.get("reversible"),
-        reverts_entry_id: r.get("reverts_entry_id"),
-        reverted_by_entry_id: r.get("reverted_by_entry_id"),
-    }
-}
-
 /// One page plus the cursor to the next one (`None` when the end is reached).
 pub struct Page {
     pub rows: Vec<AuditRow>,
@@ -121,50 +99,85 @@ pub struct Page {
 }
 
 /// Fetches one page. `limit` is clamped to [`MAX_LIMIT`].
-pub async fn list(db: &PgPool, q: &AuditQuery) -> Result<Page, AppError> {
+pub async fn list(db: &DbPool, q: &AuditQuery) -> Result<Page, AppError> {
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let cursor = q.cursor.as_deref().and_then(Cursor::decode);
 
-    let sql = concat!(
-        "SELECT ",
-        select_columns!(),
-        r#"
-           FROM core.admin_audit
-           WHERE ($1::uuid  IS NULL OR actor_id = $1)
-             AND ($2::text  IS NULL OR action = $2 OR action LIKE $2 || '.%')
-             AND ($3::text  IS NULL OR target_type = $3)
-             AND ($4::text  IS NULL OR outcome = $4)
-             AND ($5::timestamptz IS NULL OR occurred_at >= $5)
-             AND ($6::timestamptz IS NULL OR occurred_at <= $6)
-             AND ($7::text  IS NULL OR actor_label ILIKE '%' || $7 || '%'
-                                    OR target_label ILIKE '%' || $7 || '%'
-                                    OR action ILIKE '%' || $7 || '%')
-             AND ($8::timestamptz IS NULL OR (occurred_at, id) < ($8, $9))
-           ORDER BY occurred_at DESC, id DESC
-           LIMIT $10"#
+    // The former fixed statement with `$n::type IS NULL OR …` guards becomes a
+    // builder that only appends the filters the caller supplied. Free-text search
+    // uses `dialect::ilike`, inlined so the builder can number each bind; the
+    // keyset comparison `(occurred_at, id) < (…)` is expanded to its portable form.
+    let backend = db.backend();
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        concat!("SELECT ", select_columns!(), " FROM core.admin_audit"),
     );
-
+    qb.push(" WHERE 1 = 1");
+    if let Some(actor) = q.actor_id {
+        qb.push(" AND actor_id = ").push_bind(actor);
+    }
+    if let Some(action) = q.action.as_deref().filter(|s| !s.is_empty()) {
+        // Exact action, or a prefix match `action.*`.
+        qb.push(" AND (action = ")
+            .push_bind(action)
+            .push(" OR action LIKE ")
+            .push_bind(format!("{action}.%"))
+            .push(")");
+    }
+    if let Some(tt) = q.target_type.as_deref().filter(|s| !s.is_empty()) {
+        qb.push(" AND target_type = ").push_bind(tt);
+    }
+    if let Some(outcome) = q.outcome.as_deref().filter(|s| !s.is_empty()) {
+        qb.push(" AND outcome = ").push_bind(outcome);
+    }
+    if let Some(from) = q.from {
+        qb.push(" AND occurred_at >= ").push_bind(from);
+    }
+    if let Some(to) = q.to {
+        qb.push(" AND occurred_at <= ").push_bind(to);
+    }
+    if let Some(text) = q.q.as_deref().filter(|s| !s.is_empty()) {
+        let pat = format!("%{text}%");
+        qb.push(" AND (");
+        for (i, col) in ["actor_label", "target_label", "action"].iter().enumerate() {
+            if i > 0 {
+                qb.push(" OR ");
+            }
+            match backend {
+                Backend::Postgres => {
+                    qb.push(*col).push(" ILIKE ").push_bind(pat.clone());
+                }
+                _ => {
+                    qb.push("LOWER(")
+                        .push(*col)
+                        .push(") LIKE LOWER(")
+                        .push_bind(pat.clone())
+                        .push(")");
+                }
+            }
+        }
+        qb.push(")");
+    }
+    if let Some(c) = cursor {
+        qb.push(" AND (occurred_at < ")
+            .push_bind(c.occurred_at)
+            .push(" OR (occurred_at = ")
+            .push_bind(c.occurred_at)
+            .push(" AND id < ")
+            .push_bind(c.id)
+            .push("))");
+    }
+    qb.push_order_by("occurred_at DESC, id DESC");
     // One extra row tells us whether a next page exists without a COUNT.
-    let rows = sqlx::query(sql)
-        .bind(q.actor_id)
-        .bind(q.action.as_deref().filter(|s| !s.is_empty()))
-        .bind(q.target_type.as_deref().filter(|s| !s.is_empty()))
-        .bind(q.outcome.as_deref().filter(|s| !s.is_empty()))
-        .bind(q.from)
-        .bind(q.to)
-        .bind(q.q.as_deref().filter(|s| !s.is_empty()))
-        .bind(cursor.map(|c| c.occurred_at))
-        .bind(cursor.map(|c| c.id).unwrap_or_default())
-        .bind(limit + 1)
-        .fetch_all(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "audit: lecture de la page");
-            AppError::Database(e)
-        })?;
+    qb.push(" LIMIT ").push_bind(limit + 1);
+
+    let rows: Vec<AuditRow> = qb.fetch_all_as::<AuditRow>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "audit: lecture de la page");
+        AppError::Database(e)
+    })?;
 
     let has_more = rows.len() as i64 > limit;
-    let mut mapped: Vec<AuditRow> = rows.iter().take(limit as usize).map(map_row).collect();
+    let mut mapped: Vec<AuditRow> = rows.into_iter().take(limit as usize).collect();
 
     let next_cursor = if has_more {
         mapped.last().map(|r| {
@@ -180,18 +193,15 @@ pub async fn list(db: &PgPool, q: &AuditQuery) -> Result<Page, AppError> {
 }
 
 /// Fetches a single entry.
-pub async fn get(db: &PgPool, id: i64) -> Result<AuditRow, AppError> {
+pub async fn get(db: &DbPool, id: i64) -> Result<AuditRow, AppError> {
     let sql = concat!("SELECT ", select_columns!(), " FROM core.admin_audit WHERE id = $1");
-    let row = sqlx::query(sql)
-        .bind(id)
-        .fetch_optional(db)
+    db.fetch_optional_as::<AuditRow>(sql, params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, entry_id = id, "audit: lecture de l'entrée");
             AppError::Database(e)
         })?
-        .ok_or_else(|| AppError::NotFound(format!("Entrée d'audit {id}")))?;
-    Ok(map_row(&row))
+        .ok_or_else(|| AppError::NotFound(format!("Entrée d'audit {id}")))
 }
 
 /// Escapes one CSV field (RFC 4180) and neutralises spreadsheet formula

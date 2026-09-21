@@ -21,8 +21,8 @@
 //! immediate refusal.
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use kubuno_db::{params, DbPool};
 use serde::Serialize;
-use sqlx::PgPool;
 
 use crate::{errors::AppError, models::user::User};
 
@@ -63,16 +63,17 @@ fn as_i64(v: &serde_json::Value) -> Option<i64> {
 ///
 /// Any read failure falls back to "not required": a database hiccup must never
 /// be the thing that shuts an operator out of their administration console.
-pub async fn policy(db: &PgPool) -> Admin2faPolicy {
+pub async fn policy(db: &DbPool) -> Admin2faPolicy {
     let mut out = Admin2faPolicy::default();
 
-    let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT key, value FROM core.settings
+    let rows = db
+        .fetch_all_as::<(String, serde_json::Value)>(
+            "SELECT key, value FROM core.settings
           WHERE key IN ('security.admin_2fa_required', 'security.admin_2fa_grace_days')",
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+            params![],
+        )
+        .await
+        .unwrap_or_default();
 
     for (key, value) in rows {
         match key.as_str() {
@@ -92,7 +93,7 @@ pub async fn policy(db: &PgPool) -> Admin2faPolicy {
 
 /// Arms the account's deadline if it has none yet, and returns it.
 async fn arm_deadline(
-    db: &PgPool,
+    db: &DbPool,
     user: &User,
     grace_days: i64,
 ) -> Result<DateTime<Utc>, AppError> {
@@ -103,47 +104,50 @@ async fn arm_deadline(
     let deadline = Utc::now() + ChronoDuration::days(grace_days);
 
     // `IS NULL` in the WHERE clause makes two concurrent requests agree on one
-    // deadline instead of the second silently pushing the first one back.
-    let stored: Option<DateTime<Utc>> = sqlx::query_scalar(
-        "UPDATE core.users SET admin_2fa_grace_until = $2
-          WHERE id = $1 AND admin_2fa_grace_until IS NULL
-      RETURNING admin_2fa_grace_until",
-    )
-    .bind(user.id)
-    .bind(deadline)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user.id, "admin_2fa: armement du délai de grâce");
-        AppError::Database(e)
-    })?;
+    // deadline instead of the second silently pushing the first one back. The
+    // guarded UPDATE reports one affected row to the winner (who set exactly
+    // `deadline`); the loser re-reads what the winner wrote (no RETURNING, so
+    // this stays portable to engines without it).
+    let affected = db
+        .execute(
+            "UPDATE core.users SET admin_2fa_grace_until = $2
+          WHERE id = $1 AND admin_2fa_grace_until IS NULL",
+            params![user.id, deadline],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user.id, "admin_2fa: arming the grace window");
+            AppError::Database(e)
+        })?;
 
-    match stored {
-        Some(d) => Ok(d),
+    if affected >= 1 {
+        Ok(deadline)
+    } else {
         // Lost the race: read back whatever the winner wrote.
-        None => {
-            let d: Option<DateTime<Utc>> =
-                sqlx::query_scalar("SELECT admin_2fa_grace_until FROM core.users WHERE id = $1")
-                    .bind(user.id)
-                    .fetch_one(db)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(error = %e, user_id = %user.id, "admin_2fa: relecture du délai");
-                        AppError::Database(e)
-                    })?;
-            Ok(d.unwrap_or(deadline))
-        }
+        let d: Option<DateTime<Utc>> = db
+            .fetch_scalar::<Option<DateTime<Utc>>>(
+                "SELECT admin_2fa_grace_until FROM core.users WHERE id = $1",
+                params![user.id],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, user_id = %user.id, "admin_2fa: re-reading the deadline");
+                AppError::Database(e)
+            })?;
+        Ok(d.unwrap_or(deadline))
     }
 }
 
 /// Clears the stamp — called when an account enrols a second factor.
-pub async fn clear_deadline(db: &PgPool, user_id: uuid::Uuid) {
-    if let Err(e) = sqlx::query("UPDATE core.users SET admin_2fa_grace_until = NULL WHERE id = $1")
-        .bind(user_id)
-        .execute(db)
+pub async fn clear_deadline(db: &DbPool, user_id: uuid::Uuid) {
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.users SET admin_2fa_grace_until = NULL WHERE id = $1",
+            params![user_id],
+        )
         .await
     {
-        tracing::error!(error = %e, user_id = %user_id, "admin_2fa: effacement du délai de grâce");
+        tracing::error!(error = %e, user_id = %user_id, "admin_2fa: clearing the grace window");
     }
 }
 
@@ -152,7 +156,7 @@ pub async fn clear_deadline(db: &PgPool, user_id: uuid::Uuid) {
 /// Returns [`AppError::TwoFactorRequired`], whose message says what to do — a
 /// bare "accès refusé" in front of an administrator who changed nothing is the
 /// kind of dead end that ends in a database edit.
-pub async fn enforce(db: &PgPool, user: &User) -> Result<(), AppError> {
+pub async fn enforce(db: &DbPool, user: &User) -> Result<(), AppError> {
     let policy = policy(db).await;
 
     if !policy.required {
@@ -183,7 +187,7 @@ pub async fn enforce(db: &PgPool, user: &User) -> Result<(), AppError> {
 }
 
 /// Read-only view for the interface. Never arms anything.
-pub async fn status(db: &PgPool, user: &User) -> Admin2faStatus {
+pub async fn status(db: &DbPool, user: &User) -> Admin2faStatus {
     let policy = policy(db).await;
     let satisfied = user.totp_enabled;
     let grace_until = user.admin_2fa_grace_until;

@@ -53,9 +53,9 @@
 //! They obey the instance value, which is the only sensible answer and needs no
 //! special case anywhere.
 
+use kubuno_db::{params, DbPool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -221,13 +221,13 @@ impl MethodSet {
 
 /// Methods accepted for one account, resolved through the full chain
 /// (account → its groups → its unit and every ancestor → instance → factory).
-pub async fn for_user<'e, E: PgExecutor<'e>>(db: E, user_id: Uuid) -> MethodSet {
+pub async fn for_user(db: &DbPool, user_id: Uuid) -> MethodSet {
     resolve(db, &SettingScope::user(user_id)).await
 }
 
 /// Methods accepted at a scope. Used for the account-less case (somebody the
 /// instance has never seen) with [`SettingScope::INSTANCE`].
-pub async fn resolve<'e, E: PgExecutor<'e>>(db: E, scope: &SettingScope) -> MethodSet {
+pub async fn resolve(db: &DbPool, scope: &SettingScope) -> MethodSet {
     match chain::resolve_for(db, KEY_METHODS, scope).await {
         Ok(r) => MethodSet::parse(r.value.as_ref()),
         Err(_) => {
@@ -238,7 +238,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(db: E, scope: &SettingScope) -> Meth
 }
 
 /// Is the administrative local-password fallback active at this scope?
-pub async fn admin_fallback<'e, E: PgExecutor<'e>>(db: E, scope: &SettingScope) -> bool {
+pub async fn admin_fallback(db: &DbPool, scope: &SettingScope) -> bool {
     match chain::resolve_for(db, KEY_ADMIN_FALLBACK, scope).await {
         Ok(r) => r.value.as_ref().and_then(Value::as_bool).unwrap_or(true),
         Err(_) => true,
@@ -258,21 +258,22 @@ pub fn local_allowed(methods: MethodSet, fallback: bool, role: &str, has_hash: b
 /// This is what the sign-in page is drawn from, and it is deliberately a
 /// property of the configuration alone: it does not depend on any account, so
 /// nothing about it can be used to probe for one.
-pub async fn active_anywhere(db: &PgPool) -> MethodSet {
+pub async fn active_anywhere(db: &DbPool) -> MethodSet {
     // The instance value, plus every scope that overrides it. A method offered
     // to one unit has to be offered on the page, or that unit cannot sign in.
     let mut set = resolve(db, &SettingScope::INSTANCE).await;
 
-    let overrides: Vec<Value> = sqlx::query_scalar(
-        "SELECT value FROM core.setting_values WHERE key = $1",
-    )
-    .bind(KEY_METHODS)
-    .fetch_all(db)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "auth: lecture des méthodes par portée");
-        Vec::new()
-    });
+    let overrides: Vec<Value> = db
+        .fetch_all_as::<ValueRow>(
+            "SELECT value FROM core.setting_values WHERE key = $1",
+            params![KEY_METHODS],
+        )
+        .await
+        .map(|rows| rows.into_iter().map(|r| r.value).collect())
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "auth: reading the per-scope methods");
+            Vec::new()
+        });
     for value in &overrides {
         set = set.union(MethodSet::parse(Some(value)));
     }
@@ -281,27 +282,35 @@ pub async fn active_anywhere(db: &PgPool) -> MethodSet {
     // directory, or an identity-provider row that is disabled, is an invitation
     // to an error the person cannot diagnose.
     if set.directory {
-        let usable: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM core.ldap_directories
+        let usable: bool = db
+            .fetch_scalar::<bool>(
+                "SELECT EXISTS(SELECT 1 FROM core.ldap_directories
                             WHERE enabled = TRUE AND host <> '' AND base_dn <> '')",
-        )
-        .fetch_one(db)
-        .await
-        .unwrap_or(false);
+                params![],
+            )
+            .await
+            .unwrap_or(false);
         let master = crate::directory::config::login_enabled(db).await;
         set.directory = usable && master;
     }
     if set.sso {
-        let any: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM core.oauth_providers WHERE enabled = TRUE)",
-        )
-        .fetch_one(db)
-        .await
-        .unwrap_or(false);
+        let any: bool = db
+            .fetch_scalar::<bool>(
+                "SELECT EXISTS(SELECT 1 FROM core.oauth_providers WHERE enabled = TRUE)",
+                params![],
+            )
+            .await
+            .unwrap_or(false);
         set.sso = any;
     }
 
     set
+}
+
+/// A single JSON `value` column, wrapped so `DbPool` can fetch a list of them.
+#[derive(sqlx::FromRow)]
+struct ValueRow {
+    value: Value,
 }
 
 // ── The anti-lockout guard ───────────────────────────────────────────────────
@@ -348,11 +357,13 @@ pub struct StrandedAdmin {
 /// alone would leave exactly the population the delegation model exists for
 /// unprotected — and they are the ones confined to one unit, which is the unit a
 /// per-unit policy can close.
-pub async fn ensure_no_administrator_is_stranded(
-    conn: &mut sqlx::PgConnection,
-) -> Result<(), AppError> {
-    let admins: Vec<AdminRow> = sqlx::query_as(
-        r#"SELECT u.id, u.username, o.name, u.role,
+pub async fn ensure_no_administrator_is_stranded(db: &DbPool) -> Result<(), AppError> {
+    // `NOW()` is bound from Rust so the comparison is engine-agnostic; the two
+    // occurrences take one placeholder each.
+    let now = chrono::Utc::now();
+    let admins: Vec<AdminRow> = db
+        .fetch_all_as::<AdminRow>(
+            r#"SELECT u.id, u.username, o.name, u.role,
                       (u.password_hash IS NOT NULL) AS has_hash,
                       u.ldap_directory_id, u.oauth_provider
                  FROM core.users u
@@ -361,16 +372,16 @@ pub async fn ensure_no_administrator_is_stranded(
                   AND (u.role = 'admin'
                     OR EXISTS (SELECT 1 FROM core.role_assignments a
                                 WHERE a.subject_user_id = u.id
-                                  AND (a.expires_at IS NULL OR a.expires_at > NOW()))
+                                  AND (a.expires_at IS NULL OR a.expires_at > $1))
                     OR EXISTS (SELECT 1 FROM core.role_assignments a
                                  JOIN core.user_group_members m ON m.group_id = a.subject_group_id
                                 WHERE m.user_id = u.id
-                                  AND (a.expires_at IS NULL OR a.expires_at > NOW())))"#,
+                                  AND (a.expires_at IS NULL OR a.expires_at > $2)))"#,
+            params![now, now],
         )
-        .fetch_all(&mut *conn)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "auth: lecture des administrateurs actifs");
+            tracing::error!(error = %e, "auth: reading the active administrators");
             AppError::Database(e)
         })?;
 
@@ -384,8 +395,8 @@ pub async fn ensure_no_administrator_is_stranded(
 
     for (id, username, unit, role, has_hash, ldap_dir, oauth) in admins {
         let scope = SettingScope::user(id);
-        let methods = resolve(&mut *conn, &scope).await;
-        let fallback = admin_fallback(&mut *conn, &scope).await;
+        let methods = resolve(db, &scope).await;
+        let fallback = admin_fallback(db, &scope).await;
         let role = role.unwrap_or_default();
 
         if local_allowed(methods, fallback, &role, has_hash) {
@@ -397,14 +408,14 @@ pub async fn ensure_no_administrator_is_stranded(
         // pointing them at nothing.
         if methods.directory {
             if let Some(dir_id) = ldap_dir {
-                let usable: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM core.ldap_directories
+                let usable: bool = db
+                    .fetch_scalar::<bool>(
+                        "SELECT EXISTS(SELECT 1 FROM core.ldap_directories
                                     WHERE id = $1 AND enabled = TRUE AND host <> '' AND base_dn <> '')",
-                )
-                .bind(dir_id)
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap_or(false);
+                        params![dir_id],
+                    )
+                    .await
+                    .unwrap_or(false);
                 if usable {
                     continue;
                 }
@@ -413,13 +424,13 @@ pub async fn ensure_no_administrator_is_stranded(
 
         if methods.sso {
             if let Some(slug) = oauth.as_deref() {
-                let usable: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM core.oauth_providers WHERE slug = $1 AND enabled = TRUE)",
-                )
-                .bind(slug)
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap_or(false);
+                let usable: bool = db
+                    .fetch_scalar::<bool>(
+                        "SELECT EXISTS(SELECT 1 FROM core.oauth_providers WHERE slug = $1 AND enabled = TRUE)",
+                        params![slug],
+                    )
+                    .await
+                    .unwrap_or(false);
                 if usable {
                     continue;
                 }

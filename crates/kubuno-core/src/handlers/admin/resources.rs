@@ -49,9 +49,10 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::dialect::{Assign, SqlType};
+use kubuno_db::{new_id, params, Backend, DbPool, DbQueryBuilder, DbTx};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{PgConnection, Row as _};
 use uuid::Uuid;
 
 use crate::{
@@ -61,6 +62,47 @@ use crate::{
     errors::AppError,
     state::AppState,
 };
+
+// ── Portable list aggregation ────────────────────────────────────────────────
+//
+// PostgreSQL composed the floor list and a resource's feature lists with a
+// native array (`ARRAY(SELECT …)`), decoded as `Vec<String>`. Native arrays
+// exist on no other engine, and a `Vec<String>` column only decodes on
+// PostgreSQL — so the lists travel as a JSON array instead, aggregated with the
+// engine's own JSON function and read back through `#[sqlx(json)] Vec<String>`.
+//
+// FLAG (multi-engine): the MySQL/SQLite spellings below are written from the
+// PostgreSQL original and have not been exercised against those engines yet.
+
+/// A scalar subquery producing a JSON array of the single column the inner
+/// `SELECT` exposes as `v` (e.g. `SELECT f.name AS v FROM … ORDER BY …`).
+fn json_text_subquery(backend: Backend, inner_aliased_v: &str) -> String {
+    match backend {
+        Backend::Postgres => {
+            format!("COALESCE((SELECT jsonb_agg(t.v) FROM ({inner_aliased_v}) t), '[]'::jsonb)")
+        }
+        Backend::MySql => {
+            format!("COALESCE((SELECT JSON_ARRAYAGG(t.v) FROM ({inner_aliased_v}) t), CAST('[]' AS JSON))")
+        }
+        Backend::Sqlite => {
+            format!("COALESCE((SELECT json_group_array(t.v) FROM ({inner_aliased_v}) t), json('[]'))")
+        }
+    }
+}
+
+/// Turns a JSON array value (as read from a `#[sqlx(json)]` column) into a list
+/// of strings, ignoring anything that is not a string.
+fn json_array_to_strings(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 // ── Limits ───────────────────────────────────────────────────────────────────
 //
@@ -183,93 +225,99 @@ fn generated_name(
 /// rows that would have matched are gone — deleting a feature cascades its links
 /// away, so the resources to refresh have to be collected before the delete and
 /// passed in here.
-async fn refresh_names(db: &mut PgConnection, ids: &[Uuid]) -> Result<(), AppError> {
+async fn refresh_names(db: &mut DbTx, ids: &[Uuid]) -> Result<(), AppError> {
     if ids.is_empty() {
         return Ok(());
     }
 
-    let rows = sqlx::query(
-        r#"
-        SELECT r.id,
-               b.building_key,
-               r.floor_name,
-               r.floor_section,
-               r.name,
-               r.capacity,
-               r.resource_type,
-               COALESCE(ARRAY(
-                   SELECT f.name
-                     FROM core.resource_feature_links l
-                     JOIN core.resource_features f ON f.id = l.feature_id
-                    WHERE l.resource_id = r.id
-                    ORDER BY LOWER(f.name)
-               ), '{}') AS features
-          FROM core.resources r
-          JOIN core.buildings b ON b.id = r.building_id
-         WHERE r.id = ANY($1)
-        "#,
-    )
-    .bind(ids)
-    .fetch_all(&mut *db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "ressources: lecture avant recalcul des noms");
-        AppError::Database(e)
-    })?;
+    // A transaction has no multi-row read, so each resource is read on its own
+    // (the caller passes at most a building's worth of ids). The feature list
+    // travels as a JSON array — the portable replacement for the old native one.
+    let features = json_text_subquery(
+        db.backend(),
+        "SELECT f.name AS v \
+           FROM core.resource_feature_links l \
+           JOIN core.resource_features f ON f.id = l.feature_id \
+          WHERE l.resource_id = r.id \
+          ORDER BY LOWER(f.name)",
+    );
+    let sql = format!(
+        "SELECT b.building_key, r.floor_name, r.floor_section, r.name, r.capacity, \
+                r.resource_type, {features} AS features \
+           FROM core.resources r \
+           JOIN core.buildings b ON b.id = r.building_id \
+          WHERE r.id = $1"
+    );
 
-    for r in &rows {
+    for &rid in ids {
+        let Some(row) = db.fetch_optional_row(&sql, params![rid]).await.map_err(|e| {
+            tracing::error!(error = %e, "ressources: lecture avant recalcul des noms");
+            AppError::Database(e)
+        })?
+        else {
+            continue;
+        };
+        let building_key: String = row.try_get("building_key")?;
+        let floor_name: String = row.try_get("floor_name")?;
+        let floor_section: Option<String> = row.try_get("floor_section")?;
+        let name_col: String = row.try_get("name")?;
+        let capacity: i32 = row.try_get("capacity")?;
+        let resource_type: Option<String> = row.try_get("resource_type")?;
+        let features_json: Value = row.try_get("features")?;
+        let features = json_array_to_strings(&features_json);
+
         let name = generated_name(
-            r.get::<String, _>("building_key").as_str(),
-            r.get::<String, _>("floor_name").as_str(),
-            r.get::<Option<String>, _>("floor_section").as_deref(),
-            r.get::<String, _>("name").as_str(),
-            r.get::<i32, _>("capacity"),
-            r.get::<Option<String>, _>("resource_type").as_deref(),
-            &r.get::<Vec<String>, _>("features"),
+            building_key.as_str(),
+            floor_name.as_str(),
+            floor_section.as_deref(),
+            name_col.as_str(),
+            capacity,
+            resource_type.as_deref(),
+            &features,
         );
-        sqlx::query("UPDATE core.resources SET generated_name = $1 WHERE id = $2")
-            .bind(&name)
-            .bind(r.get::<Uuid, _>("id"))
-            .execute(&mut *db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "ressources: écriture du nom généré");
-                AppError::Database(e)
-            })?;
+        db.execute(
+            "UPDATE core.resources SET generated_name = $1 WHERE id = $2",
+            params![&name, rid],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "ressources: écriture du nom généré");
+            AppError::Database(e)
+        })?;
     }
     Ok(())
 }
 
 /// Ids of every resource in a building — what a change to the building's key or
 /// to one of its floors invalidates.
-async fn resources_of_building(
-    db: &mut PgConnection,
-    building_id: Uuid,
-) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar("SELECT id FROM core.resources WHERE building_id = $1")
-        .bind(building_id)
-        .fetch_all(&mut *db)
+async fn resources_of_building(db: &DbPool, building_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let rows = db
+        .fetch_all_as::<(Uuid,)>(
+            "SELECT id FROM core.resources WHERE building_id = $1",
+            params![building_id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "ressources: inventaire d'un bâtiment");
             AppError::Database(e)
-        })
+        })?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 /// Ids of every resource carrying a feature — what renaming or removing that
 /// feature invalidates.
-async fn resources_with_feature(
-    db: &mut PgConnection,
-    feature_id: Uuid,
-) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar("SELECT resource_id FROM core.resource_feature_links WHERE feature_id = $1")
-        .bind(feature_id)
-        .fetch_all(&mut *db)
+async fn resources_with_feature(db: &DbPool, feature_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let rows = db
+        .fetch_all_as::<(Uuid,)>(
+            "SELECT resource_id FROM core.resource_feature_links WHERE feature_id = $1",
+            params![feature_id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "ressources: porteurs d'une fonctionnalité");
             AppError::Database(e)
-        })
+        })?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 /// Turns the constraint violations this schema can produce into the sentence the
@@ -449,87 +497,106 @@ fn validate_building(dto: &BuildingDto) -> Result<CleanBuilding, AppError> {
 /// than a limitation to work around — following a rename without an identity
 /// would mean guessing, and guessing wrong would move rooms between floors
 /// without saying so. Reordering and adding are unaffected.
-async fn write_floors(
-    db: &mut PgConnection,
-    building_id: Uuid,
-    floors: &[String],
-) -> Result<(), AppError> {
+async fn write_floors(db: &mut DbTx, building_id: Uuid, floors: &[String]) -> Result<(), AppError> {
+    let upsert = db.backend().upsert(
+        "core.building_floors",
+        &["building_id", "name"],
+        &[Assign::Incoming("position")],
+    );
+    let insert_sql = format!(
+        "INSERT INTO core.building_floors (building_id, name, position) VALUES ($1, $2, $3){upsert}"
+    );
     for (rank, name) in floors.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO core.building_floors (building_id, name, position)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (building_id, name) DO UPDATE SET position = EXCLUDED.position",
-        )
-        .bind(building_id)
-        .bind(name)
         // Written negative-then-fixed would be simpler, but the unique index on
         // (building_id, position) is checked per statement, so a straight
         // renumbering can collide with a rank not yet moved. Ranks are therefore
         // parked above the existing ones first, and compacted below.
-        .bind(rank as i16 + MAX_FLOORS as i16)
-        .execute(&mut *db)
+        db.execute(
+            &insert_sql,
+            params![building_id, name, rank as i16 + MAX_FLOORS as i16],
+        )
         .await
         .map_err(|e| write_error(e, "write_floors"))?;
     }
 
-    sqlx::query("DELETE FROM core.building_floors WHERE building_id = $1 AND name <> ALL($2)")
-        .bind(building_id)
-        .bind(floors)
-        .execute(&mut *db)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("resources_floor_in_building") {
-                AppError::Validation(
-                    "Un étage retiré porte encore des ressources. Déplacez-les ou supprimez-les d'abord.".into(),
-                )
-            } else {
-                tracing::error!(error = %e, "bâtiments: retrait d'étages");
-                AppError::Database(e)
-            }
-        })?;
+    // Remove the floors no longer wanted (the old `name <> ALL($2)`): `push_in`
+    // emits the placeholder list, the preceding `NOT` makes it a `NOT IN (...)`.
+    let mut qb = DbQueryBuilder::new(db.backend(), "DELETE FROM core.building_floors");
+    qb.push(" WHERE building_id = ").push_bind(building_id);
+    qb.push(" AND name NOT").push_in(floors.iter().cloned());
+    if let Err(e) = qb.tx_execute(db).await {
+        return Err(if e.to_string().contains("resources_floor_in_building") {
+            AppError::Validation(
+                "Un étage retiré porte encore des ressources. Déplacez-les ou supprimez-les d'abord.".into(),
+            )
+        } else {
+            tracing::error!(error = %e, "bâtiments: retrait d'étages");
+            AppError::Database(e)
+        });
+    }
 
-    sqlx::query(
+    db.execute(
         "UPDATE core.building_floors SET position = position - $2 WHERE building_id = $1",
+        params![building_id, MAX_FLOORS as i16],
     )
-    .bind(building_id)
-    .bind(MAX_FLOORS as i16)
-    .execute(&mut *db)
     .await
     .map_err(|e| write_error(e, "compact_floors"))?;
 
     Ok(())
 }
 
-fn building_json(r: &sqlx::postgres::PgRow) -> Value {
+/// A building row as every listing reads it.
+#[derive(sqlx::FromRow)]
+struct BuildingRow {
+    id:             Uuid,
+    building_key:   String,
+    name:           Option<String>,
+    address:        String,
+    description:    Option<String>,
+    latitude:       Option<f64>,
+    longitude:      Option<f64>,
+    #[sqlx(json)]
+    floors:         Vec<String>,
+    resource_count: i64,
+}
+
+fn building_json(r: &BuildingRow) -> Value {
     json!({
-        "id":            r.get::<Uuid, _>("id"),
-        "building_key":  r.get::<String, _>("building_key"),
-        "name":          r.get::<Option<String>, _>("name"),
-        "address":       r.get::<String, _>("address"),
-        "description":   r.get::<Option<String>, _>("description"),
-        "latitude":      r.get::<Option<f64>, _>("latitude"),
-        "longitude":     r.get::<Option<f64>, _>("longitude"),
-        "floors":        r.get::<Vec<String>, _>("floors"),
-        "resource_count": r.get::<i64, _>("resource_count"),
+        "id":            r.id,
+        "building_key":  r.building_key,
+        "name":          r.name,
+        "address":       r.address,
+        "description":   r.description,
+        "latitude":      r.latitude,
+        "longitude":     r.longitude,
+        "floors":        r.floors,
+        "resource_count": r.resource_count,
     })
 }
 
-/// The one query every building listing uses. `$1` is an optional id filter, so
-/// the read after a write returns exactly the same shape as the list.
-const BUILDINGS_SELECT: &str = r#"
-    SELECT b.id, b.building_key, b.name, b.address, b.description,
-           b.latitude::float8  AS latitude,
-           b.longitude::float8 AS longitude,
-           COALESCE(ARRAY(
-               SELECT f.name FROM core.building_floors f
-                WHERE f.building_id = b.id ORDER BY f.position
-           ), '{}') AS floors,
-           (SELECT COUNT(*) FROM core.resources r WHERE r.building_id = b.id)::bigint
-               AS resource_count
-      FROM core.buildings b
-     WHERE ($1::uuid IS NULL OR b.id = $1)
-     ORDER BY LOWER(b.building_key)
-"#;
+/// The one query every building listing uses. `$1`/`$2` carry the same optional
+/// id filter (bound twice — a placeholder is never reused), so the read after a
+/// write returns exactly the same shape as the list.
+fn buildings_select(backend: Backend) -> String {
+    let floors = json_text_subquery(
+        backend,
+        "SELECT f.name AS v FROM core.building_floors f \
+          WHERE f.building_id = b.id ORDER BY f.position",
+    );
+    let count = backend.count_bigint("*");
+    let lat = backend.cast("b.latitude", SqlType::Double);
+    let lon = backend.cast("b.longitude", SqlType::Double);
+    let filter = backend.cast("$1", SqlType::Uuid);
+    format!(
+        "SELECT b.id, b.building_key, b.name, b.address, b.description, \
+                {lat} AS latitude, {lon} AS longitude, \
+                {floors} AS floors, \
+                (SELECT {count} FROM core.resources r WHERE r.building_id = b.id) AS resource_count \
+           FROM core.buildings b \
+          WHERE ({filter} IS NULL OR b.id = $2) \
+          ORDER BY LOWER(b.building_key)"
+    )
+}
 
 /// `GET /admin/buildings`
 pub async fn list_buildings(
@@ -539,9 +606,12 @@ pub async fn list_buildings(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::RESOURCES_READ)?;
 
-    let rows = sqlx::query(BUILDINGS_SELECT)
-        .bind(Option::<Uuid>::None)
-        .fetch_all(&state.db)
+    let rows = state
+        .db
+        .fetch_all_as::<BuildingRow>(
+            &buildings_select(state.db.backend()),
+            params![Option::<Uuid>::None, Option::<Uuid>::None],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "bâtiments: liste");
@@ -570,26 +640,28 @@ pub async fn create_building(
     // labelled with the key that was attempted.
     let refuse = || AuditEntry::new("core.buildings.create").target_kind(target::BUILDING, &b.key);
 
-    let inserted = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO core.buildings
-             (building_key, name, address, description, latitude, longitude, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id",
-    )
-    .bind(&b.key)
-    .bind(&b.name)
-    .bind(&b.address)
-    .bind(&b.description)
-    .bind(b.latitude)
-    .bind(b.longitude)
-    .bind(audit.admin.id)
-    .fetch_one(&mut *tx)
-    .await;
-
-    let id = match inserted {
-        Ok(id) => id,
-        Err(e) => return Err(tx.abort(&state.db, refuse(), write_error(e, "create_building")).await),
-    };
+    // The primary key is generated in Rust (no `RETURNING`, which MySQL lacks).
+    let id = new_id();
+    if let Err(e) = tx
+        .execute(
+            "INSERT INTO core.buildings
+                 (id, building_key, name, address, description, latitude, longitude, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            params![
+                id,
+                b.key.clone(),
+                b.name.clone(),
+                b.address.clone(),
+                b.description.clone(),
+                b.latitude,
+                b.longitude,
+                audit.admin.id,
+            ],
+        )
+        .await
+    {
+        return Err(tx.abort(&state.db, refuse(), write_error(e, "create_building")).await);
+    }
 
     if let Err(e) = write_floors(&mut tx, id, &b.floors).await {
         return Err(tx.abort(&state.db, refuse(), e).await);
@@ -629,9 +701,14 @@ pub async fn update_building(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let before = sqlx::query(BUILDINGS_SELECT)
-        .bind(Some(id))
-        .fetch_optional(&mut *tx)
+    // The pre-change snapshot is the committed state, read on the pool: nothing
+    // in this transaction has written yet.
+    let before = state
+        .db
+        .fetch_optional_as::<BuildingRow>(
+            &buildings_select(state.db.backend()),
+            params![Some(id), Some(id)],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "bâtiments: lecture avant modification");
@@ -642,21 +719,23 @@ pub async fn update_building(
     let before_json = building_json(&before);
     let refuse = || AuditEntry::new("core.buildings.update").target(target::BUILDING, id, b.key.clone());
 
-    let updated = sqlx::query(
-        "UPDATE core.buildings
-            SET building_key = $1, name = $2, address = $3, description = $4,
-                latitude = $5, longitude = $6
-          WHERE id = $7",
-    )
-    .bind(&b.key)
-    .bind(&b.name)
-    .bind(&b.address)
-    .bind(&b.description)
-    .bind(b.latitude)
-    .bind(b.longitude)
-    .bind(id)
-    .execute(&mut *tx)
-    .await;
+    let updated = tx
+        .execute(
+            "UPDATE core.buildings
+                SET building_key = $1, name = $2, address = $3, description = $4,
+                    latitude = $5, longitude = $6
+              WHERE id = $7",
+            params![
+                b.key.clone(),
+                b.name.clone(),
+                b.address.clone(),
+                b.description.clone(),
+                b.latitude,
+                b.longitude,
+                id,
+            ],
+        )
+        .await;
 
     if let Err(e) = updated {
         return Err(tx.abort(&state.db, refuse(), write_error(e, "update_building")).await);
@@ -671,7 +750,7 @@ pub async fn update_building(
     // for what looks like it changed: comparing the old and new field values to
     // decide would be a second place where the format's dependencies are listed,
     // and the day one is added there it would be forgotten here.
-    let affected = match resources_of_building(&mut tx, id).await {
+    let affected = match resources_of_building(&state.db, id).await {
         Ok(v) => v,
         Err(e) => return Err(tx.abort(&state.db, refuse(), e).await),
     };
@@ -710,9 +789,12 @@ pub async fn delete_building(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query(BUILDINGS_SELECT)
-        .bind(Some(id))
-        .fetch_optional(&mut *tx)
+    let row = state
+        .db
+        .fetch_optional_as::<BuildingRow>(
+            &buildings_select(state.db.backend()),
+            params![Some(id), Some(id)],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "bâtiments: lecture avant suppression");
@@ -720,8 +802,8 @@ pub async fn delete_building(
         })?
         .ok_or_else(|| AppError::NotFound("Bâtiment introuvable".into()))?;
 
-    let key: String = row.get("building_key");
-    let count: i64 = row.get("resource_count");
+    let key: String = row.building_key.clone();
+    let count: i64 = row.resource_count;
     let refuse = || AuditEntry::new("core.buildings.delete").target(target::BUILDING, id, key.clone());
 
     if count > 0 {
@@ -736,9 +818,8 @@ pub async fn delete_building(
             .await);
     }
 
-    if let Err(e) = sqlx::query("DELETE FROM core.buildings WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    if let Err(e) = tx
+        .execute("DELETE FROM core.buildings WHERE id = $1", params![id])
         .await
     {
         return Err(tx.abort(&state.db, refuse(), write_error(e, "delete_building")).await);
@@ -778,6 +859,15 @@ fn validate_feature(dto: &FeatureDto) -> Result<(String, Option<String>), AppErr
     Ok((name, description))
 }
 
+/// A feature row with its usage count.
+#[derive(sqlx::FromRow)]
+struct FeatureRow {
+    id:             Uuid,
+    name:           String,
+    description:    Option<String>,
+    resource_count: i64,
+}
+
 /// `GET /admin/resource-features`
 pub async fn list_features(
     State(state): State<AppState>,
@@ -786,28 +876,31 @@ pub async fn list_features(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::RESOURCES_READ)?;
 
-    let rows = sqlx::query(
-        r#"SELECT f.id, f.name, f.description,
-                  (SELECT COUNT(*) FROM core.resource_feature_links l
-                    WHERE l.feature_id = f.id)::bigint AS resource_count
-             FROM core.resource_features f
-            ORDER BY LOWER(f.name)"#,
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "fonctionnalités: liste");
-        AppError::Database(e)
-    })?;
+    let count = state.db.backend().count_bigint("*");
+    let sql = format!(
+        "SELECT f.id, f.name, f.description, \
+                (SELECT {count} FROM core.resource_feature_links l \
+                  WHERE l.feature_id = f.id) AS resource_count \
+           FROM core.resource_features f \
+          ORDER BY LOWER(f.name)"
+    );
+    let rows = state
+        .db
+        .fetch_all_as::<FeatureRow>(&sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "fonctionnalités: liste");
+            AppError::Database(e)
+        })?;
 
     let features: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
-                "id":             r.get::<Uuid, _>("id"),
-                "name":           r.get::<String, _>("name"),
-                "description":    r.get::<Option<String>, _>("description"),
-                "resource_count": r.get::<i64, _>("resource_count"),
+                "id":             r.id,
+                "name":           r.name,
+                "description":    r.description,
+                "resource_count": r.resource_count,
             })
         })
         .collect();
@@ -829,20 +922,18 @@ pub async fn create_feature(
     let refuse =
         || AuditEntry::new("core.resource_features.create").target_kind(target::RESOURCE_FEATURE, &name);
 
-    let inserted = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO core.resource_features (name, description, created_by)
-         VALUES ($1, $2, $3) RETURNING id",
-    )
-    .bind(&name)
-    .bind(&description)
-    .bind(audit.admin.id)
-    .fetch_one(&mut *tx)
-    .await;
-
-    let id = match inserted {
-        Ok(id) => id,
-        Err(e) => return Err(tx.abort(&state.db, refuse(), write_error(e, "create_feature")).await),
-    };
+    // The primary key is generated in Rust (no `RETURNING`, which MySQL lacks).
+    let id = new_id();
+    if let Err(e) = tx
+        .execute(
+            "INSERT INTO core.resource_features (id, name, description, created_by)
+             VALUES ($1, $2, $3, $4)",
+            params![id, &name, description.clone(), audit.admin.id],
+        )
+        .await
+    {
+        return Err(tx.abort(&state.db, refuse(), write_error(e, "create_feature")).await);
+    }
 
     tx.commit(
         AuditEntry::new("core.resource_features.create")
@@ -872,9 +963,11 @@ pub async fn update_feature(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let before = sqlx::query("SELECT name, description FROM core.resource_features WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let before = tx
+        .fetch_optional_row(
+            "SELECT name, description FROM core.resource_features WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "fonctionnalités: lecture avant modification");
@@ -883,25 +976,23 @@ pub async fn update_feature(
         .ok_or_else(|| AppError::NotFound("Fonctionnalité introuvable".into()))?;
 
     let before_json = json!({
-        "name":        before.get::<String, _>("name"),
-        "description": before.get::<Option<String>, _>("description"),
+        "name":        before.try_get::<String>("name")?,
+        "description": before.try_get::<Option<String>>("description")?,
     });
     let refuse =
         || AuditEntry::new("core.resource_features.update").target(target::RESOURCE_FEATURE, id, name.clone());
 
-    if let Err(e) = sqlx::query(
-        "UPDATE core.resource_features SET name = $1, description = $2 WHERE id = $3",
-    )
-    .bind(&name)
-    .bind(&description)
-    .bind(id)
-    .execute(&mut *tx)
-    .await
+    if let Err(e) = tx
+        .execute(
+            "UPDATE core.resource_features SET name = $1, description = $2 WHERE id = $3",
+            params![&name, description.clone(), id],
+        )
+        .await
     {
         return Err(tx.abort(&state.db, refuse(), write_error(e, "update_feature")).await);
     }
 
-    let affected = match resources_with_feature(&mut tx, id).await {
+    let affected = match resources_with_feature(&state.db, id).await {
         Ok(v) => v,
         Err(e) => return Err(tx.abort(&state.db, refuse(), e).await),
     };
@@ -937,9 +1028,11 @@ pub async fn delete_feature(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query("SELECT name, description FROM core.resource_features WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let row = tx
+        .fetch_optional_row(
+            "SELECT name, description FROM core.resource_features WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "fonctionnalités: lecture avant suppression");
@@ -947,18 +1040,19 @@ pub async fn delete_feature(
         })?
         .ok_or_else(|| AppError::NotFound("Fonctionnalité introuvable".into()))?;
 
-    let name: String = row.get("name");
+    let name: String = row.try_get("name")?;
+    let description: Option<String> = row.try_get("description")?;
     let refuse =
         || AuditEntry::new("core.resource_features.delete").target(target::RESOURCE_FEATURE, id, name.clone());
 
-    let affected = match resources_with_feature(&mut tx, id).await {
+    // Collected before the delete cascades the links away.
+    let affected = match resources_with_feature(&state.db, id).await {
         Ok(v) => v,
         Err(e) => return Err(tx.abort(&state.db, refuse(), e).await),
     };
 
-    if let Err(e) = sqlx::query("DELETE FROM core.resource_features WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    if let Err(e) = tx
+        .execute("DELETE FROM core.resource_features WHERE id = $1", params![id])
         .await
     {
         return Err(tx.abort(&state.db, refuse(), write_error(e, "delete_feature")).await);
@@ -973,7 +1067,7 @@ pub async fn delete_feature(
             .target(target::RESOURCE_FEATURE, id, name.clone())
             .before(json!({
                 "id": id, "name": name,
-                "description": row.get::<Option<String>, _>("description"),
+                "description": description,
             }))
             .after(json!({ "renamed_resources": affected.len() })),
     )
@@ -1104,7 +1198,7 @@ fn validate_resource(dto: &ResourceDto) -> Result<CleanResource, AppError> {
 /// swallowing them: a list sent twice is a client bug, and silently collapsing
 /// it hides the day the form starts double-submitting.
 async fn write_features(
-    db: &mut PgConnection,
+    db: &mut DbTx,
     resource_id: Uuid,
     feature_ids: &[Uuid],
 ) -> Result<(), AppError> {
@@ -1115,22 +1209,21 @@ async fn write_features(
         ));
     }
 
-    sqlx::query("DELETE FROM core.resource_feature_links WHERE resource_id = $1")
-        .bind(resource_id)
-        .execute(&mut *db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "ressources: purge des fonctionnalités");
-            AppError::Database(e)
-        })?;
+    db.execute(
+        "DELETE FROM core.resource_feature_links WHERE resource_id = $1",
+        params![resource_id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "ressources: purge des fonctionnalités");
+        AppError::Database(e)
+    })?;
 
     for fid in feature_ids {
-        sqlx::query(
+        db.execute(
             "INSERT INTO core.resource_feature_links (resource_id, feature_id) VALUES ($1, $2)",
+            params![resource_id, fid],
         )
-        .bind(resource_id)
-        .bind(fid)
-        .execute(&mut *db)
         .await
         .map_err(|e| {
             if e.to_string().contains("foreign key") {
@@ -1150,66 +1243,132 @@ pub struct ResourceQuery {
     pub building_id: Option<Uuid>,
 }
 
-/// One shape for the console, the internal endpoint and the read-after-write, so
+/// A resource row with its building and feature lists — one shape for the
+/// console, the internal endpoint and the read-after-write.
+#[derive(sqlx::FromRow)]
+struct ResourceRow {
+    id:                 Uuid,
+    name:               String,
+    generated_name:     String,
+    category:           String,
+    resource_type:      Option<String>,
+    floor_name:         String,
+    floor_section:      Option<String>,
+    capacity:           i32,
+    user_description:   Option<String>,
+    description:        Option<String>,
+    release_exempt:     bool,
+    building_id:        Uuid,
+    building_key:       String,
+    building_name:      Option<String>,
+    building_address:   String,
+    building_latitude:  Option<f64>,
+    building_longitude: Option<f64>,
+    #[sqlx(json)]
+    feature_ids:        Vec<String>,
+    #[sqlx(json)]
+    feature_names:      Vec<String>,
+}
+
+/// Reads a [`ResourceRow`] from a hand-mapped row — the shape a transaction's
+/// read-after-write returns, where only single-row reads are available.
+fn resource_row_from_dbrow(r: &kubuno_db::DbRow) -> Result<ResourceRow, sqlx::Error> {
+    Ok(ResourceRow {
+        id:                 r.try_get("id")?,
+        name:               r.try_get("name")?,
+        generated_name:     r.try_get("generated_name")?,
+        category:           r.try_get("category")?,
+        resource_type:      r.try_get("resource_type")?,
+        floor_name:         r.try_get("floor_name")?,
+        floor_section:      r.try_get("floor_section")?,
+        capacity:           r.try_get("capacity")?,
+        user_description:   r.try_get("user_description")?,
+        description:        r.try_get("description")?,
+        release_exempt:     r.try_get("release_exempt")?,
+        building_id:        r.try_get("building_id")?,
+        building_key:       r.try_get("building_key")?,
+        building_name:      r.try_get("building_name")?,
+        building_address:   r.try_get("building_address")?,
+        building_latitude:  r.try_get("building_latitude")?,
+        building_longitude: r.try_get("building_longitude")?,
+        feature_ids:        json_array_to_strings(&r.try_get::<Value>("feature_ids")?),
+        feature_names:      json_array_to_strings(&r.try_get::<Value>("feature_names")?),
+    })
+}
+
+/// One query for the console, the internal endpoint and the read-after-write, so
 /// that a field added for one of them cannot be missing from the others.
-const RESOURCES_SELECT: &str = r#"
-    SELECT r.id, r.name, r.generated_name, r.category, r.resource_type,
-           r.floor_name, r.floor_section, r.capacity,
-           r.user_description, r.description, r.release_exempt,
-           r.building_id, b.building_key, b.name AS building_name,
-           b.address AS building_address,
-           b.latitude::float8  AS building_latitude,
-           b.longitude::float8 AS building_longitude,
-           COALESCE(ARRAY(
-               SELECT f.id::text FROM core.resource_feature_links l
-                 JOIN core.resource_features f ON f.id = l.feature_id
-                WHERE l.resource_id = r.id ORDER BY LOWER(f.name)
-           ), '{}') AS feature_ids,
-           COALESCE(ARRAY(
-               SELECT f.name FROM core.resource_feature_links l
-                 JOIN core.resource_features f ON f.id = l.feature_id
-                WHERE l.resource_id = r.id ORDER BY LOWER(f.name)
-           ), '{}') AS feature_names
-      FROM core.resources r
-      JOIN core.buildings b ON b.id = r.building_id
-     WHERE ($1::uuid IS NULL OR r.id = $1)
-       AND ($2::uuid IS NULL OR r.building_id = $2)
-     ORDER BY LOWER(r.generated_name)
-"#;
+/// `$1`/`$2` carry the id filter and `$3`/`$4` the building filter (each bound
+/// twice — a placeholder is never reused).
+fn resources_select(backend: Backend) -> String {
+    let ids = json_text_subquery(
+        backend,
+        &format!(
+            "SELECT {} AS v FROM core.resource_feature_links l \
+               JOIN core.resource_features f ON f.id = l.feature_id \
+              WHERE l.resource_id = r.id ORDER BY LOWER(f.name)",
+            backend.cast("f.id", SqlType::Text),
+        ),
+    );
+    let names = json_text_subquery(
+        backend,
+        "SELECT f.name AS v FROM core.resource_feature_links l \
+           JOIN core.resource_features f ON f.id = l.feature_id \
+          WHERE l.resource_id = r.id ORDER BY LOWER(f.name)",
+    );
+    let lat = backend.cast("b.latitude", SqlType::Double);
+    let lon = backend.cast("b.longitude", SqlType::Double);
+    let id_filter = backend.cast("$1", SqlType::Uuid);
+    let bld_filter = backend.cast("$3", SqlType::Uuid);
+    format!(
+        "SELECT r.id, r.name, r.generated_name, r.category, r.resource_type, \
+                r.floor_name, r.floor_section, r.capacity, \
+                r.user_description, r.description, r.release_exempt, \
+                r.building_id, b.building_key, b.name AS building_name, \
+                b.address AS building_address, \
+                {lat} AS building_latitude, {lon} AS building_longitude, \
+                {ids} AS feature_ids, \
+                {names} AS feature_names \
+           FROM core.resources r \
+           JOIN core.buildings b ON b.id = r.building_id \
+          WHERE ({id_filter} IS NULL OR r.id = $2) \
+            AND ({bld_filter} IS NULL OR r.building_id = $4) \
+          ORDER BY LOWER(r.generated_name)"
+    )
+}
 
 /// The building a resource sits in, as both surfaces publish it.
 ///
 /// One definition rather than two, and used by the console as well as by the
 /// internal catalogue: "which building is this room in" must not have two
-/// answers with different fields, and a column renamed in `RESOURCES_SELECT`
-/// has to break in one place instead of silently in the one nobody looks at.
-fn building_of(r: &sqlx::postgres::PgRow) -> Value {
+/// answers with different fields.
+fn building_of(r: &ResourceRow) -> Value {
     json!({
-        "id":        r.get::<Uuid, _>("building_id"),
-        "key":       r.get::<String, _>("building_key"),
-        "name":      r.get::<Option<String>, _>("building_name"),
-        "address":   r.get::<String, _>("building_address"),
-        "latitude":  r.get::<Option<f64>, _>("building_latitude"),
-        "longitude": r.get::<Option<f64>, _>("building_longitude"),
+        "id":        r.building_id,
+        "key":       r.building_key,
+        "name":      r.building_name,
+        "address":   r.building_address,
+        "latitude":  r.building_latitude,
+        "longitude": r.building_longitude,
     })
 }
 
-fn resource_json(r: &sqlx::postgres::PgRow) -> Value {
+fn resource_json(r: &ResourceRow) -> Value {
     json!({
-        "id":               r.get::<Uuid, _>("id"),
-        "name":             r.get::<String, _>("name"),
-        "generated_name":   r.get::<String, _>("generated_name"),
-        "category":         r.get::<String, _>("category"),
-        "resource_type":    r.get::<Option<String>, _>("resource_type"),
-        "floor_name":       r.get::<String, _>("floor_name"),
-        "floor_section":    r.get::<Option<String>, _>("floor_section"),
-        "capacity":         r.get::<i32, _>("capacity"),
-        "user_description": r.get::<Option<String>, _>("user_description"),
-        "description":      r.get::<Option<String>, _>("description"),
-        "release_exempt":   r.get::<bool, _>("release_exempt"),
+        "id":               r.id,
+        "name":             r.name,
+        "generated_name":   r.generated_name,
+        "category":         r.category,
+        "resource_type":    r.resource_type,
+        "floor_name":       r.floor_name,
+        "floor_section":    r.floor_section,
+        "capacity":         r.capacity,
+        "user_description": r.user_description,
+        "description":      r.description,
+        "release_exempt":   r.release_exempt,
         "building":         building_of(r),
-        "feature_ids":      r.get::<Vec<String>, _>("feature_ids"),
-        "feature_names":    r.get::<Vec<String>, _>("feature_names"),
+        "feature_ids":      r.feature_ids,
+        "feature_names":    r.feature_names,
     })
 }
 
@@ -1222,10 +1381,12 @@ pub async fn list_resources(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::RESOURCES_READ)?;
 
-    let rows = sqlx::query(RESOURCES_SELECT)
-        .bind(Option::<Uuid>::None)
-        .bind(q.building_id)
-        .fetch_all(&state.db)
+    let rows = state
+        .db
+        .fetch_all_as::<ResourceRow>(
+            &resources_select(state.db.backend()),
+            params![Option::<Uuid>::None, Option::<Uuid>::None, q.building_id, q.building_id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "ressources: liste");
@@ -1256,36 +1417,39 @@ pub async fn create_resource(
     let mut tx = audit.begin(&state.db).await?;
     let refuse = || AuditEntry::new("core.resources.create").target_kind(target::RESOURCE, &r.name);
 
-    // Inserted with a placeholder the column's NOT NULL accepts, then rewritten
-    // by `refresh_names` in the same transaction: composing it here would mean a
-    // second implementation of the format, and two implementations of a derived
-    // value diverge on the first change to either.
-    let inserted = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO core.resources
-             (name, building_id, category, resource_type, floor_name, floor_section,
-              capacity, user_description, description, generated_name, created_by,
-              release_exempt)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $1, $10, $11)
-         RETURNING id",
-    )
-    .bind(&r.name)
-    .bind(dto.building_id)
-    .bind(&r.category)
-    .bind(&r.resource_type)
-    .bind(&r.floor)
-    .bind(&r.section)
-    .bind(r.capacity)
-    .bind(&r.user_description)
-    .bind(&r.description)
-    .bind(audit.admin.id)
-    .bind(dto.release_exempt)
-    .fetch_one(&mut *tx)
-    .await;
-
-    let id = match inserted {
-        Ok(id) => id,
-        Err(e) => return Err(tx.abort(&state.db, refuse(), write_error(e, "create_resource")).await),
-    };
+    // Inserted with a placeholder the column's NOT NULL accepts (the name, bound
+    // again for `generated_name`), then rewritten by `refresh_names` in the same
+    // transaction: composing it here would mean a second implementation of the
+    // format, and two implementations of a derived value diverge on the first
+    // change to either. The primary key is generated in Rust (no `RETURNING`).
+    let id = new_id();
+    if let Err(e) = tx
+        .execute(
+            "INSERT INTO core.resources
+                 (id, name, building_id, category, resource_type, floor_name, floor_section,
+                  capacity, user_description, description, generated_name, created_by,
+                  release_exempt)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+            params![
+                id,
+                r.name.clone(),
+                dto.building_id,
+                r.category.clone(),
+                r.resource_type.clone(),
+                r.floor.clone(),
+                r.section.clone(),
+                r.capacity,
+                r.user_description.clone(),
+                r.description.clone(),
+                r.name.clone(),
+                audit.admin.id,
+                dto.release_exempt,
+            ],
+        )
+        .await
+    {
+        return Err(tx.abort(&state.db, refuse(), write_error(e, "create_resource")).await);
+    }
 
     if let Err(e) = write_features(&mut tx, id, &dto.feature_ids).await {
         return Err(tx.abort(&state.db, refuse(), e).await);
@@ -1294,20 +1458,31 @@ pub async fn create_resource(
         return Err(tx.abort(&state.db, refuse(), e).await);
     }
 
-    let after = match sqlx::query(RESOURCES_SELECT)
-        .bind(Some(id))
-        .bind(Option::<Uuid>::None)
-        .fetch_one(&mut *tx)
+    // Read back inside the transaction — it must see the just-written row.
+    let sel = resources_select(tx.backend());
+    let after = match tx
+        .fetch_optional_row(
+            &sel,
+            params![Some(id), Some(id), Option::<Uuid>::None, Option::<Uuid>::None],
+        )
         .await
     {
-        Ok(row) => row,
+        Ok(Some(row)) => match resource_row_from_dbrow(&row) {
+            Ok(rr) => rr,
+            Err(e) => return Err(tx.abort(&state.db, refuse(), AppError::Database(e)).await),
+        },
+        Ok(None) => {
+            return Err(tx
+                .abort(&state.db, refuse(), AppError::Database(sqlx::Error::RowNotFound))
+                .await)
+        }
         Err(e) => {
             tracing::error!(error = %e, "ressources: relecture après création");
             return Err(tx.abort(&state.db, refuse(), AppError::Database(e)).await);
         }
     };
     let after_json = resource_json(&after);
-    let generated: String = after.get("generated_name");
+    let generated: String = after.generated_name.clone();
 
     tx.commit(
         AuditEntry::new("core.resources.create")
@@ -1339,10 +1514,13 @@ pub async fn update_resource(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let before = sqlx::query(RESOURCES_SELECT)
-        .bind(Some(id))
-        .bind(Option::<Uuid>::None)
-        .fetch_optional(&mut *tx)
+    // Pre-change snapshot: the committed state, read on the pool (no write yet).
+    let before = state
+        .db
+        .fetch_optional_as::<ResourceRow>(
+            &resources_select(state.db.backend()),
+            params![Some(id), Some(id), Option::<Uuid>::None, Option::<Uuid>::None],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "ressources: lecture avant modification");
@@ -1355,30 +1533,32 @@ pub async fn update_resource(
         AuditEntry::new("core.resources.update").target(
             target::RESOURCE,
             id,
-            before.get::<String, _>("generated_name"),
+            before.generated_name.clone(),
         )
     };
 
-    if let Err(e) = sqlx::query(
-        "UPDATE core.resources
-            SET name = $1, building_id = $2, category = $3, resource_type = $4,
-                floor_name = $5, floor_section = $6, capacity = $7,
-                user_description = $8, description = $9, release_exempt = $11
-          WHERE id = $10",
-    )
-    .bind(&r.name)
-    .bind(dto.building_id)
-    .bind(&r.category)
-    .bind(&r.resource_type)
-    .bind(&r.floor)
-    .bind(&r.section)
-    .bind(r.capacity)
-    .bind(&r.user_description)
-    .bind(&r.description)
-    .bind(id)
-    .bind(dto.release_exempt)
-    .execute(&mut *tx)
-    .await
+    if let Err(e) = tx
+        .execute(
+            "UPDATE core.resources
+                SET name = $1, building_id = $2, category = $3, resource_type = $4,
+                    floor_name = $5, floor_section = $6, capacity = $7,
+                    user_description = $8, description = $9, release_exempt = $11
+              WHERE id = $10",
+            params![
+                r.name.clone(),
+                dto.building_id,
+                r.category.clone(),
+                r.resource_type.clone(),
+                r.floor.clone(),
+                r.section.clone(),
+                r.capacity,
+                r.user_description.clone(),
+                r.description.clone(),
+                id,
+                dto.release_exempt,
+            ],
+        )
+        .await
     {
         return Err(tx.abort(&state.db, refuse(), write_error(e, "update_resource")).await);
     }
@@ -1390,19 +1570,30 @@ pub async fn update_resource(
         return Err(tx.abort(&state.db, refuse(), e).await);
     }
 
-    let after = match sqlx::query(RESOURCES_SELECT)
-        .bind(Some(id))
-        .bind(Option::<Uuid>::None)
-        .fetch_one(&mut *tx)
+    // Read back inside the transaction — it must see the just-written changes.
+    let sel = resources_select(tx.backend());
+    let after = match tx
+        .fetch_optional_row(
+            &sel,
+            params![Some(id), Some(id), Option::<Uuid>::None, Option::<Uuid>::None],
+        )
         .await
     {
-        Ok(row) => row,
+        Ok(Some(row)) => match resource_row_from_dbrow(&row) {
+            Ok(rr) => rr,
+            Err(e) => return Err(tx.abort(&state.db, refuse(), AppError::Database(e)).await),
+        },
+        Ok(None) => {
+            return Err(tx
+                .abort(&state.db, refuse(), AppError::Database(sqlx::Error::RowNotFound))
+                .await)
+        }
         Err(e) => {
             tracing::error!(error = %e, "ressources: relecture après modification");
             return Err(tx.abort(&state.db, refuse(), AppError::Database(e)).await);
         }
     };
-    let generated: String = after.get("generated_name");
+    let generated: String = after.generated_name.clone();
 
     tx.commit(
         AuditEntry::new("core.resources.update")
@@ -1427,10 +1618,12 @@ pub async fn delete_resource(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query(RESOURCES_SELECT)
-        .bind(Some(id))
-        .bind(Option::<Uuid>::None)
-        .fetch_optional(&mut *tx)
+    let row = state
+        .db
+        .fetch_optional_as::<ResourceRow>(
+            &resources_select(state.db.backend()),
+            params![Some(id), Some(id), Option::<Uuid>::None, Option::<Uuid>::None],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "ressources: lecture avant suppression");
@@ -1438,13 +1631,12 @@ pub async fn delete_resource(
         })?
         .ok_or_else(|| AppError::NotFound("Ressource introuvable".into()))?;
 
-    let generated: String = row.get("generated_name");
+    let generated: String = row.generated_name.clone();
     let refuse =
         || AuditEntry::new("core.resources.delete").target(target::RESOURCE, id, generated.clone());
 
-    if let Err(e) = sqlx::query("DELETE FROM core.resources WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    if let Err(e) = tx
+        .execute("DELETE FROM core.resources WHERE id = $1", params![id])
         .await
     {
         return Err(tx.abort(&state.db, refuse(), write_error(e, "delete_resource")).await);
@@ -1462,6 +1654,19 @@ pub async fn delete_resource(
 
 // ── Overview ─────────────────────────────────────────────────────────────────
 
+/// The inventory counters the overview reports.
+#[derive(sqlx::FromRow)]
+struct ResourceOverview {
+    buildings:       i64,
+    resources:       i64,
+    features:        i64,
+    rooms:           i64,
+    room_seats:      i64,
+    empty_buildings: i64,
+    undescribed:     i64,
+    unused_features: i64,
+}
+
 /// `GET /admin/resources/overview`
 ///
 /// The counters, and the three things that are wrong.
@@ -1478,43 +1683,41 @@ pub async fn overview(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::RESOURCES_READ)?;
 
-    let row = sqlx::query(
-        r#"
-        SELECT (SELECT COUNT(*) FROM core.buildings)::bigint          AS buildings,
-               (SELECT COUNT(*) FROM core.resources)::bigint          AS resources,
-               (SELECT COUNT(*) FROM core.resource_features)::bigint  AS features,
-               (SELECT COUNT(*) FROM core.resources
-                 WHERE category = 'meeting_room')::bigint             AS rooms,
-               (SELECT COALESCE(SUM(capacity), 0) FROM core.resources
-                 WHERE category = 'meeting_room')::bigint             AS room_seats,
-               (SELECT COUNT(*) FROM core.buildings b
-                 WHERE NOT EXISTS (SELECT 1 FROM core.resources r
-                                    WHERE r.building_id = b.id))::bigint
-                                                                      AS empty_buildings,
-               (SELECT COUNT(*) FROM core.resources
-                 WHERE user_description IS NULL)::bigint              AS undescribed,
-               (SELECT COUNT(*) FROM core.resource_features f
-                 WHERE NOT EXISTS (SELECT 1 FROM core.resource_feature_links l
-                                    WHERE l.feature_id = f.id))::bigint
-                                                                      AS unused_features
-        "#,
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "ressources: aperçu");
-        AppError::Database(e)
-    })?;
+    let backend = state.db.backend();
+    let c = backend.count_bigint("*");
+    let seats = backend.sum_bigint("capacity");
+    let sql = format!(
+        "SELECT (SELECT {c} FROM core.buildings)          AS buildings, \
+                (SELECT {c} FROM core.resources)          AS resources, \
+                (SELECT {c} FROM core.resource_features)  AS features, \
+                (SELECT {c} FROM core.resources WHERE category = 'meeting_room') AS rooms, \
+                (SELECT {seats} FROM core.resources WHERE category = 'meeting_room') AS room_seats, \
+                (SELECT {c} FROM core.buildings b \
+                  WHERE NOT EXISTS (SELECT 1 FROM core.resources r WHERE r.building_id = b.id)) \
+                                                          AS empty_buildings, \
+                (SELECT {c} FROM core.resources WHERE user_description IS NULL) AS undescribed, \
+                (SELECT {c} FROM core.resource_features f \
+                  WHERE NOT EXISTS (SELECT 1 FROM core.resource_feature_links l WHERE l.feature_id = f.id)) \
+                                                          AS unused_features"
+    );
+    let row = state
+        .db
+        .fetch_one_as::<ResourceOverview>(&sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "ressources: aperçu");
+            AppError::Database(e)
+        })?;
 
     Ok(Json(json!({
-        "buildings":       row.get::<i64, _>("buildings"),
-        "resources":       row.get::<i64, _>("resources"),
-        "features":        row.get::<i64, _>("features"),
-        "rooms":           row.get::<i64, _>("rooms"),
-        "room_seats":      row.get::<i64, _>("room_seats"),
-        "empty_buildings": row.get::<i64, _>("empty_buildings"),
-        "undescribed":     row.get::<i64, _>("undescribed"),
-        "unused_features": row.get::<i64, _>("unused_features"),
+        "buildings":       row.buildings,
+        "resources":       row.resources,
+        "features":        row.features,
+        "rooms":           row.rooms,
+        "room_seats":      row.room_seats,
+        "empty_buildings": row.empty_buildings,
+        "undescribed":     row.undescribed,
+        "unused_features": row.unused_features,
     })))
 }
 
@@ -1557,14 +1760,18 @@ pub async fn room_stats(
 
     const MODULE: &str = "calendar";
 
-    let base_url: Option<String> = sqlx::query_scalar(
-        "SELECT base_url FROM core.module_instances
-          WHERE module_id = $1 ORDER BY registered_at DESC LIMIT 1",
-    )
-    .bind(MODULE)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "room_stats: adresse du module"); AppError::Database(e) })?;
+    let base_url: Option<String> = state
+        .db
+        .fetch_optional_scalar::<String>(
+            "SELECT base_url FROM core.module_instances
+              WHERE module_id = $1 ORDER BY registered_at DESC LIMIT 1",
+            params![MODULE],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "room_stats: adresse du module");
+            AppError::Database(e)
+        })?;
 
     let Some(base_url) = base_url else {
         return Ok(Json(json!({ "available": false, "reason": "module_absent" })));
@@ -1637,10 +1844,12 @@ pub async fn internal_list_resources(
     _internal: InternalRequest,
     Query(q): Query<ResourceQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let rows = sqlx::query(RESOURCES_SELECT)
-        .bind(Option::<Uuid>::None)
-        .bind(q.building_id)
-        .fetch_all(&state.db)
+    let rows = state
+        .db
+        .fetch_all_as::<ResourceRow>(
+            &resources_select(state.db.backend()),
+            params![Option::<Uuid>::None, Option::<Uuid>::None, q.building_id, q.building_id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "ressources: catalogue interne");
@@ -1651,21 +1860,21 @@ pub async fn internal_list_resources(
         .iter()
         .map(|r| {
             json!({
-                "id":               r.get::<Uuid, _>("id"),
+                "id":               r.id,
                 // What a module should display: the composed name is the one
                 // people recognise, and the one the console shows.
-                "generated_name":   r.get::<String, _>("generated_name"),
-                "name":             r.get::<String, _>("name"),
-                "category":         r.get::<String, _>("category"),
-                "resource_type":    r.get::<Option<String>, _>("resource_type"),
-                "capacity":         r.get::<i32, _>("capacity"),
-                "floor_name":       r.get::<String, _>("floor_name"),
-                "floor_section":    r.get::<Option<String>, _>("floor_section"),
-                "user_description": r.get::<Option<String>, _>("user_description"),
-                "features":         r.get::<Vec<String>, _>("feature_names"),
+                "generated_name":   r.generated_name,
+                "name":             r.name,
+                "category":         r.category,
+                "resource_type":    r.resource_type,
+                "capacity":         r.capacity,
+                "floor_name":       r.floor_name,
+                "floor_section":    r.floor_section,
+                "user_description": r.user_description,
+                "features":         r.feature_names,
                 // Published because a module CANNOT honour a rule it cannot see:
                 // the room is given back by the calendar, not by the directory.
-                "release_exempt":   r.get::<bool, _>("release_exempt"),
+                "release_exempt":   r.release_exempt,
                 "building":         building_of(r),
             })
         })

@@ -21,6 +21,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::{dialect::Assign, new_id, params};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -74,21 +75,21 @@ pub async fn list(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, AppError> {
     let limit = q.limit.unwrap_or(MAX_ITEMS).clamp(1, 100);
-    let items = sqlx::query_as::<_, ClipboardItem>(
-        r#"SELECT id, module, kind, title, preview, payload, href, pinned, created_at, updated_at
-             FROM core.clipboard_items
-            WHERE owner_id = $1
-            ORDER BY pinned DESC, created_at DESC
-            LIMIT $2"#,
-    )
-    .bind(user.id)
-    .bind(limit)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!("clipboard: lecture de l'historique échouée: {e}");
-        e
-    })?;
+    let items = state
+        .db
+        .fetch_all_as::<ClipboardItem>(
+            r#"SELECT id, module, kind, title, preview, payload, href, pinned, created_at, updated_at
+                 FROM core.clipboard_items
+                WHERE owner_id = $1
+                ORDER BY pinned DESC, created_at DESC
+                LIMIT $2"#,
+            params![user.id, limit],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("clipboard: lecture de l'historique échouée: {e}");
+            e
+        })?;
 
     Ok(Json(json!({ "items": items })))
 }
@@ -121,29 +122,45 @@ pub async fn push(
 
     let mut tx = state.db.begin().await?;
 
-    let item = sqlx::query_as::<_, ClipboardItem>(
-        r#"INSERT INTO core.clipboard_items
-                  (owner_id, module, kind, title, preview, payload, href, pinned, fingerprint)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, FALSE), $9)
-           ON CONFLICT (owner_id, fingerprint) DO UPDATE
-              SET created_at = NOW(),
-                  title      = EXCLUDED.title,
-                  preview    = EXCLUDED.preview,
-                  href       = EXCLUDED.href,
-                  module     = EXCLUDED.module,
-                  kind       = EXCLUDED.kind
-        RETURNING id, module, kind, title, preview, payload, href, pinned, created_at, updated_at"#,
+    // No RETURNING inside a tx (a DbTx cannot read a struct): the row is written
+    // here and read back by its dedup key once the transaction commits. The id is
+    // generated in Rust; on conflict the stored id is kept, so the reselect keys
+    // on (owner_id, fingerprint) rather than that generated id.
+    let backend = tx.backend();
+    let clause = backend.upsert(
+        "core.clipboard_items",
+        &["owner_id", "fingerprint"],
+        &[
+            Assign::Incoming("created_at"),
+            Assign::Incoming("title"),
+            Assign::Incoming("preview"),
+            Assign::Incoming("href"),
+            Assign::Incoming("module"),
+            Assign::Incoming("kind"),
+        ],
+    );
+    let insert_sql = format!(
+        "INSERT INTO core.clipboard_items \
+              (id, owner_id, module, kind, title, preview, payload, href, pinned, fingerprint, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, FALSE), $10, $11){clause}"
+    );
+    let now = chrono::Utc::now();
+    tx.execute(
+        &insert_sql,
+        params![
+            new_id(),
+            user.id,
+            dto.module,
+            dto.kind,
+            dto.title,
+            preview,
+            dto.payload,
+            dto.href,
+            dto.pinned,
+            fp.clone(),
+            now
+        ],
     )
-    .bind(user.id)
-    .bind(&dto.module)
-    .bind(&dto.kind)
-    .bind(&dto.title)
-    .bind(&preview)
-    .bind(&dto.payload)
-    .bind(&dto.href)
-    .bind(dto.pinned)
-    .bind(&fp)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("clipboard: enregistrement d'un élément échoué: {e}");
@@ -151,18 +168,18 @@ pub async fn push(
     })?;
 
     // Trim: keep the newest MAX_ITEMS unpinned entries of this user.
-    sqlx::query(
+    // `owner_id` is matched in both the outer and the inner query; the value is
+    // bound twice because a positional placeholder is never reused across engines.
+    tx.execute(
         r#"DELETE FROM core.clipboard_items
             WHERE owner_id = $1 AND pinned = FALSE
               AND id NOT IN (
                     SELECT id FROM core.clipboard_items
-                     WHERE owner_id = $1 AND pinned = FALSE
+                     WHERE owner_id = $2 AND pinned = FALSE
                      ORDER BY created_at DESC
-                     LIMIT $2)"#,
+                     LIMIT $3)"#,
+        params![user.id, user.id, MAX_ITEMS],
     )
-    .bind(user.id)
-    .bind(MAX_ITEMS)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("clipboard: purge de l'historique échouée: {e}");
@@ -170,6 +187,20 @@ pub async fn push(
     })?;
 
     tx.commit().await?;
+
+    let item = state
+        .db
+        .fetch_one_as::<ClipboardItem>(
+            r#"SELECT id, module, kind, title, preview, payload, href, pinned, created_at, updated_at
+                 FROM core.clipboard_items
+                WHERE owner_id = $1 AND fingerprint = $2"#,
+            params![user.id, fp],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("clipboard: relecture d'un élément échouée: {e}");
+            e
+        })?;
     Ok(Json(json!({ "item": item })))
 }
 
@@ -185,22 +216,36 @@ pub async fn update(
         return Err(AppError::Validation("Rien à modifier".into()));
     };
 
-    let item = sqlx::query_as::<_, ClipboardItem>(
-        r#"UPDATE core.clipboard_items SET pinned = $3
-            WHERE id = $1 AND owner_id = $2
-        RETURNING id, module, kind, title, preview, payload, href, pinned, created_at, updated_at"#,
-    )
-    .bind(id)
-    .bind(user.id)
-    .bind(pinned)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!("clipboard: épinglage de {id} échoué: {e}");
-        e
-    })?
-    // Someone else's item and a missing one are the same 404: no existence leak.
-    .ok_or_else(|| AppError::NotFound("Élément introuvable".into()))?;
+    // No RETURNING on the update (MySQL has none): flip the pin on the identity
+    // guard, and only reselect the row when this call actually matched one — a
+    // missing row and someone else's are the same 404, no existence leak.
+    let affected = state
+        .db
+        .execute(
+            "UPDATE core.clipboard_items SET pinned = $1 WHERE id = $2 AND owner_id = $3",
+            params![pinned, id, user.id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("clipboard: épinglage de {id} échoué: {e}");
+            e
+        })?;
+    if affected == 0 {
+        return Err(AppError::NotFound("Élément introuvable".into()));
+    }
+
+    let item = state
+        .db
+        .fetch_one_as::<ClipboardItem>(
+            r#"SELECT id, module, kind, title, preview, payload, href, pinned, created_at, updated_at
+                 FROM core.clipboard_items WHERE id = $1 AND owner_id = $2"#,
+            params![id, user.id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("clipboard: relecture de {id} échouée: {e}");
+            e
+        })?;
 
     Ok(Json(json!({ "item": item })))
 }
@@ -211,16 +256,18 @@ pub async fn delete(
     AuthUser(user): AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    let done = sqlx::query("DELETE FROM core.clipboard_items WHERE id = $1 AND owner_id = $2")
-        .bind(id)
-        .bind(user.id)
-        .execute(&state.db)
+    let done = state
+        .db
+        .execute(
+            "DELETE FROM core.clipboard_items WHERE id = $1 AND owner_id = $2",
+            params![id, user.id],
+        )
         .await
         .map_err(|e| {
             tracing::error!("clipboard: suppression de {id} échouée: {e}");
             e
         })?;
-    if done.rows_affected() == 0 {
+    if done == 0 {
         return Err(AppError::NotFound("Élément introuvable".into()));
     }
     Ok(Json(json!({ "ok": true })))
@@ -231,13 +278,16 @@ pub async fn clear(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    let done = sqlx::query("DELETE FROM core.clipboard_items WHERE owner_id = $1 AND pinned = FALSE")
-        .bind(user.id)
-        .execute(&state.db)
+    let done = state
+        .db
+        .execute(
+            "DELETE FROM core.clipboard_items WHERE owner_id = $1 AND pinned = FALSE",
+            params![user.id],
+        )
         .await
         .map_err(|e| {
             tracing::error!("clipboard: vidage de l'historique échoué: {e}");
             e
         })?;
-    Ok(Json(json!({ "deleted": done.rows_affected() })))
+    Ok(Json(json!({ "deleted": done })))
 }

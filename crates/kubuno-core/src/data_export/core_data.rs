@@ -32,8 +32,8 @@
 //! [`crate::audit::query::csv_line`], the same writer the console's own export
 //! button uses, so the two can never disagree about what a line looks like.
 
+use kubuno_db::{params, DbPool};
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -53,13 +53,12 @@ const INSTANCE_AUDIT_LIMIT: i64 = 100_000;
 /// everywhere or one failing extract ends up silently empty in an archive.
 // `sql` is `&'static str`: every caller below passes a literal written here, so
 // no query text can be assembled at run time and the driver takes it as-is.
-async fn json_rows(db: &PgPool, sql: &'static str, bind: Option<Uuid>) -> Result<Value, AppError> {
-    let query = sqlx::query_scalar::<_, Value>(sql);
-    let query = match bind {
-        Some(id) => query.bind(id),
-        None => query,
+async fn json_rows(db: &DbPool, sql: &'static str, bind: Option<Uuid>) -> Result<Value, AppError> {
+    let params = match bind {
+        Some(id) => params![id],
+        None => params![],
     };
-    query.fetch_one(db).await.map_err(|e| {
+    db.fetch_scalar::<Value>(sql, params).await.map_err(|e| {
         tracing::error!(error = %e, "export: extraction des données du core impossible");
         AppError::Database(e)
     })
@@ -73,7 +72,7 @@ async fn json_rows(db: &PgPool, sql: &'static str, bind: Option<Uuid>) -> Result
 /// signs in, which is part of an honest answer to "what do you hold about me",
 /// and neither is a credential — the identifier is issued by the provider and
 /// grants nothing on its own.
-pub async fn account_profile(db: &PgPool, user_id: Uuid) -> Result<Value, AppError> {
+pub async fn account_profile(db: &DbPool, user_id: Uuid) -> Result<Value, AppError> {
     let profile = json_rows(
         db,
         "SELECT COALESCE(row_to_json(t), 'null'::json) FROM ( \
@@ -135,7 +134,7 @@ pub async fn account_profile(db: &PgPool, user_id: Uuid) -> Result<Value, AppErr
 /// it would hand over a working session — and it is simply not in the column
 /// list. What is here is what a person can act on: which device, from where,
 /// when, and whether it is still open.
-pub async fn account_devices(db: &PgPool, user_id: Uuid) -> Result<Value, AppError> {
+pub async fn account_devices(db: &DbPool, user_id: Uuid) -> Result<Value, AppError> {
     json_rows(
         db,
         "SELECT COALESCE(json_agg(t ORDER BY t.created_at DESC), '[]'::json) FROM ( \
@@ -156,7 +155,7 @@ pub async fn account_devices(db: &PgPool, user_id: Uuid) -> Result<Value, AppErr
 /// account a file about another account's actions would make the portability
 /// answer a disclosure. Entries where they are the target are covered by the
 /// instance-level trail, which only an operator receives.
-pub async fn account_audit_csv(db: &PgPool, user_id: Uuid) -> Result<String, AppError> {
+pub async fn account_audit_csv(db: &DbPool, user_id: Uuid) -> Result<String, AppError> {
     let page = crate::audit::query::list(
         db,
         &crate::audit::query::AuditQuery {
@@ -181,7 +180,7 @@ pub async fn account_audit_csv(db: &PgPool, user_id: Uuid) -> Result<String, App
 /// `deleted_at` is carried rather than filtered on: an account pending erasure
 /// is still an account the instance holds data about, and an export that
 /// silently omitted it would answer the wrong question.
-pub async fn instance_accounts(db: &PgPool) -> Result<Value, AppError> {
+pub async fn instance_accounts(db: &DbPool) -> Result<Value, AppError> {
     json_rows(
         db,
         "SELECT COALESCE(json_agg(t ORDER BY t.username), '[]'::json) FROM ( \
@@ -199,7 +198,7 @@ pub async fn instance_accounts(db: &PgPool) -> Result<Value, AppError> {
 }
 
 /// Groups and their membership.
-pub async fn instance_groups(db: &PgPool) -> Result<Value, AppError> {
+pub async fn instance_groups(db: &DbPool) -> Result<Value, AppError> {
     json_rows(
         db,
         "SELECT COALESCE(json_agg(t ORDER BY t.name), '[]'::json) FROM ( \
@@ -219,7 +218,7 @@ pub async fn instance_groups(db: &PgPool) -> Result<Value, AppError> {
 }
 
 /// The organisational tree, flat, each unit carrying its parent.
-pub async fn instance_org_units(db: &PgPool) -> Result<Value, AppError> {
+pub async fn instance_org_units(db: &DbPool) -> Result<Value, AppError> {
     json_rows(
         db,
         "SELECT COALESCE(json_agg(t ORDER BY t.name), '[]'::json) FROM ( \
@@ -247,7 +246,7 @@ pub async fn instance_org_units(db: &PgPool) -> Result<Value, AppError> {
 ///     OAuth client secrets) are stored **encrypted**, so what this would
 ///     otherwise export is ciphertext — and ciphertext in an archive is a
 ///     credential waiting for the day the key leaks.
-pub async fn instance_settings(db: &PgPool) -> Result<Value, AppError> {
+pub async fn instance_settings(db: &DbPool) -> Result<Value, AppError> {
     json_rows(
         db,
         "SELECT COALESCE(json_agg(t ORDER BY t.key), '[]'::json) FROM ( \
@@ -268,7 +267,7 @@ pub async fn instance_settings(db: &PgPool) -> Result<Value, AppError> {
 }
 
 /// The whole administrative audit trail, as CSV.
-pub async fn instance_audit_csv(db: &PgPool) -> Result<String, AppError> {
+pub async fn instance_audit_csv(db: &DbPool) -> Result<String, AppError> {
     let mut out = String::from(crate::audit::query::CSV_HEADER);
     let mut cursor: Option<String> = None;
     let mut written: i64 = 0;

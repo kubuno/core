@@ -13,7 +13,7 @@
 
 use crate::audit::model::{AuditContext, AuditEntry};
 use crate::errors::AppError;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 
 /// Lowest retention an administrator may configure.
 pub const MIN_RETENTION_DAYS: i64 = 90;
@@ -53,14 +53,15 @@ pub fn validate_retention(value: &serde_json::Value) -> Result<i64, AppError> {
 /// Reads the configured window, falling back to the default and applying the
 /// floor defensively (a row edited straight in the database still cannot shrink
 /// the effective window).
-pub async fn configured_days(db: &PgPool) -> i64 {
-    let raw: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1")
-            .bind(RETENTION_SETTING_KEY)
-            .fetch_optional(db)
-            .await
-            .unwrap_or(None)
-            .flatten();
+pub async fn configured_days(db: &DbPool) -> i64 {
+    let raw: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<Option<serde_json::Value>>(
+            "SELECT value FROM core.settings WHERE key = $1",
+            params![RETENTION_SETTING_KEY],
+        )
+        .await
+        .unwrap_or(None)
+        .flatten();
 
     let days = raw.and_then(|v| v.as_i64()).unwrap_or(DEFAULT_RETENTION_DAYS);
     clamp_retention(days)
@@ -72,12 +73,14 @@ pub async fn configured_days(db: &PgPool) -> i64 {
 ///
 /// **Not scheduled here.** The daily cadence is owned by the job runner: see
 /// [`crate::jobs::builtin::PURGE_ADMIN_AUDIT`].
-pub async fn purge_expired(db: &PgPool) -> Result<u64, AppError> {
+pub async fn purge_expired(db: &DbPool) -> Result<u64, AppError> {
     let days = configured_days(db).await;
 
-    let deleted: i64 = sqlx::query_scalar("SELECT core.purge_admin_audit($1)")
-        .bind(days as i32)
-        .fetch_one(db)
+    // NOTE: `core.purge_admin_audit` is a PostgreSQL stored function (defined by
+    // a migration) that deletes past the append-only trigger. It has no portable
+    // equivalent; on another engine the purge would need an engine-specific path.
+    let deleted: i64 = db
+        .fetch_scalar::<i64>("SELECT core.purge_admin_audit($1)", params![days as i32])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "audit: purge de rétention impossible");

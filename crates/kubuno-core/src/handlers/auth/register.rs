@@ -4,8 +4,15 @@ use crate::{
     crypto::password, errors::AppError, models::user::CreateUserDto, state::AppState,
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use serde_json::json;
+use kubuno_db::{params, Backend};
+use serde_json::{json, Value};
 use validator::Validate;
+
+/// A single `id` column, wrapped so `DbPool` can fetch a list of them.
+#[derive(sqlx::FromRow)]
+struct GroupIdRow {
+    id: uuid::Uuid,
+}
 
 #[utoipa::path(
     post,
@@ -25,13 +32,16 @@ pub async fn register(
     dto.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
-    // Vérifier si inscription ouverte
-    let open: bool = sqlx::query_scalar(
-        "SELECT (value::text = 'true') FROM core.settings WHERE key = 'auth.registration_open'",
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .unwrap_or(true);
+    // Check whether registration is open.
+    let open: bool = state
+        .db
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE key = 'auth.registration_open'",
+            params![],
+        )
+        .await?
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     if !open {
         return Err(AppError::Forbidden);
@@ -64,14 +74,14 @@ pub async fn register(
         }
     }
 
-    // Vérifier unicité email + username (même message pour éviter l'énumération)
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM core.users WHERE email = $1 OR username = $2)",
-    )
-    .bind(&dto.email)
-    .bind(&dto.username)
-    .fetch_one(&state.db)
-    .await?;
+    // Check email + username uniqueness (same message to avoid enumeration).
+    let exists: bool = state
+        .db
+        .fetch_scalar::<bool>(
+            "SELECT EXISTS(SELECT 1 FROM core.users WHERE email = $1 OR username = $2)",
+            params![&dto.email, &dto.username],
+        )
+        .await?;
 
     if exists {
         return Err(AppError::Conflict("Email ou nom d'utilisateur déjà utilisé".into()));
@@ -108,48 +118,78 @@ pub async fn register(
     let hash = password::hash_password(&dto.password)
         .map_err(AppError::Internal)?;
 
-    let user = sqlx::query_as::<_, crate::models::user::User>(
-        r#"INSERT INTO core.users
-               (email, username, password_hash, display_name, quota_bytes, org_unit_id,
+    // The id and `password_changed_at` timestamp are generated in Rust: no
+    // engine-specific `DEFAULT`/`RETURNING`, and the row is reselected below.
+    let user_id = kubuno_db::new_id();
+    let now = chrono::Utc::now();
+    state
+        .db
+        .execute(
+            r#"INSERT INTO core.users
+               (id, email, username, password_hash, display_name, quota_bytes, org_unit_id,
                 password_changed_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())
-           RETURNING *"#,
-    )
-    .bind(&dto.email)
-    .bind(&dto.username)
-    .bind(&hash)
-    .bind(dto.display_name.as_deref())
-    .bind(quota)
-    .bind(root_unit)
-    .fetch_one(&state.db)
-    .await?;
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+            params![
+                user_id,
+                &dto.email,
+                &dto.username,
+                &hash,
+                dto.display_name.as_deref(),
+                quota,
+                root_unit,
+                now,
+            ],
+        )
+        .await?;
+
+    let user = state
+        .db
+        .fetch_one_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1",
+            params![user_id],
+        )
+        .await?;
 
     // The first password enters the history like every later one. Without it,
     // "no reuse" would let somebody change their password once and immediately
     // change it back to the one they signed up with.
-    let mut conn = state.db.acquire().await.map_err(|e| {
-        tracing::error!(error = %e, "register: connexion pour l'historique de mot de passe");
+    let mut tx = state.db.begin().await.map_err(|e| {
+        tracing::error!(error = %e, "register: transaction for the password history");
         AppError::Database(e)
     })?;
-    crate::settings::password_policy::remember(&mut conn, user.id, &hash, policy.history_depth)
+    crate::settings::password_policy::remember(&mut tx, user.id, &hash, policy.history_depth)
         .await?;
+    tx.commit().await.map_err(|e| {
+        tracing::error!(error = %e, "register: committing the password history");
+        AppError::Database(e)
+    })?;
 
-    // Ajouter l'utilisateur aux groupes par défaut
-    let default_groups: Vec<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT id FROM core.user_groups WHERE is_default = TRUE",
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-
-    for group_id in default_groups {
-        let _ = sqlx::query(
-            "INSERT INTO core.user_group_members (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    // Add the user to the default groups.
+    let default_groups: Vec<uuid::Uuid> = state
+        .db
+        .fetch_all_as::<GroupIdRow>(
+            "SELECT id FROM core.user_groups WHERE is_default = TRUE",
+            params![],
         )
-        .bind(group_id)
-        .bind(user.id)
-        .execute(&state.db)
-        .await;
+        .await
+        .map(|rows| rows.into_iter().map(|r| r.id).collect())
+        .unwrap_or_default();
+
+    // `ON CONFLICT DO NOTHING` with no target list has no portable target, so it
+    // is spliced as (prefix, suffix): MySQL uses `INSERT IGNORE`, the others a
+    // trailing `ON CONFLICT DO NOTHING`.
+    let (ignore, on_conflict) = match state.db.backend() {
+        Backend::MySql => ("IGNORE ", ""),
+        _ => ("", " ON CONFLICT DO NOTHING"),
+    };
+    let insert_member = format!(
+        "INSERT {ignore}INTO core.user_group_members (group_id, user_id) VALUES ($1, $2){on_conflict}"
+    );
+    for group_id in default_groups {
+        let _ = state
+            .db
+            .execute(&insert_member, params![group_id, user.id])
+            .await;
     }
 
     state.events.publish(crate::events::AppEvent::UserCreated {

@@ -50,7 +50,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::config::Settings;
 use crate::errors::AppError;
@@ -126,7 +126,7 @@ fn store(checks: &[Check], generated_at: DateTime<Utc>) {
 /// which request last refreshed it — two reloads, two answers, and a page
 /// nobody believes any more.
 pub async fn evaluate(
-    db: &PgPool,
+    db: &DbPool,
     settings: &Settings,
     probe: RequestProbe,
     force: bool,

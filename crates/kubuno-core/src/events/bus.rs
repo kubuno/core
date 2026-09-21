@@ -30,8 +30,8 @@
 
 use std::sync::Arc;
 
+use kubuno_db::{params, DbPool};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -122,7 +122,7 @@ impl EventBus {
         self.sender.subscribe()
     }
 
-    pub async fn publish_and_log(&self, event: AppEvent, db: &PgPool) {
+    pub async fn publish_and_log(&self, event: AppEvent, db: &DbPool) {
         self.publish_and_log_with(event, EventMeta::default(), db).await
     }
 
@@ -130,7 +130,7 @@ impl EventBus {
     ///
     /// The log write is best-effort: an unavailable database must not silence
     /// the bus, which several features depend on for correctness.
-    pub async fn publish_and_log_with(&self, event: AppEvent, meta: EventMeta, db: &PgPool) {
+    pub async fn publish_and_log_with(&self, event: AppEvent, meta: EventMeta, db: &DbPool) {
         log_event(db, &event, &meta).await;
         self.publish_with(event, meta);
     }
@@ -145,25 +145,27 @@ impl EventBus {
 ///
 /// Best-effort: an unavailable database must not silence the bus, which several
 /// features depend on for correctness.
-pub async fn log_event(db: &PgPool, event: &AppEvent, meta: &EventMeta) {
+pub async fn log_event(db: &DbPool, event: &AppEvent, meta: &EventMeta) {
     let event_type = event_type_name(event);
     let source_module = source_module_of(event, meta);
     let payload = serde_json::to_value(event).unwrap_or_default();
     let depth = i16::try_from(meta.depth).unwrap_or(i16::MAX);
 
-    if let Err(e) = sqlx::query(
-        "INSERT INTO core.event_log (event_type, source_module, payload, depth, cause_rule_id)
+    if let Err(e) = db
+        .execute(
+            "INSERT INTO core.event_log (event_type, source_module, payload, depth, cause_rule_id)
          VALUES ($1, $2, $3, $4, $5)",
-    )
-    .bind(&event_type)
-    .bind(source_module.as_deref())
-    .bind(payload)
-    .bind(depth)
-    .bind(meta.cause_rule_id)
-    .execute(db)
-    .await
+            params![
+                &event_type,
+                source_module.as_deref(),
+                payload,
+                depth,
+                meta.cause_rule_id
+            ],
+        )
+        .await
     {
-        tracing::error!(error = %e, event_type = %event_type, "Échec log event en DB");
+        tracing::error!(error = %e, event_type = %event_type, "Failed to log event to the database");
     }
 }
 

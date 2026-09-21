@@ -18,15 +18,15 @@
 //! [`AuditContext::record`] for events that have no mutation to ride along with
 //! (a refusal, a failed sign-in, a background install), and nothing else.
 
+use kubuno_db::{params, Backend, DbPool, DbTx};
 use serde_json::Value;
-use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 
 use super::model::{AuditContext, AuditEntry, Outcome};
 use crate::errors::AppError;
 
-/// Inserts one entry on the given executor and returns its id.
+/// Inserts one entry on the given transaction and returns its id.
 async fn insert(
-    conn: &mut PgConnection,
+    conn: &mut DbTx,
     ctx: &AuditContext,
     entry: &AuditEntry,
 ) -> Result<i64, sqlx::Error> {
@@ -48,17 +48,22 @@ async fn insert(
     // xact lock, released at commit — both call sites run inside a transaction.
     let (prev_hash, row_hash): (Option<Vec<u8>>, Option<Vec<u8>>) = match chain::audit_key() {
         Some(key) => {
-            sqlx::query("SELECT pg_advisory_xact_lock($1)")
-                .bind(chain::CHAIN_LOCK)
-                .execute(&mut *conn)
-                .await?;
-            let prev: Vec<u8> = sqlx::query_scalar::<_, Vec<u8>>(
-                "SELECT row_hash FROM core.admin_audit \
-                 WHERE row_hash IS NOT NULL ORDER BY id DESC LIMIT 1",
-            )
-            .fetch_optional(&mut *conn)
-            .await?
-            .unwrap_or_else(|| chain::GENESIS.to_vec());
+            // PostgreSQL advisory locks have no portable equivalent: SQLite
+            // serialises writers within a transaction already, so the guarantee
+            // holds there for free, and on MySQL the chain append is not yet
+            // serialised (see the module note on engine support).
+            if conn.backend() == Backend::Postgres {
+                conn.execute("SELECT pg_advisory_xact_lock($1)", params![chain::CHAIN_LOCK])
+                    .await?;
+            }
+            let prev: Vec<u8> = conn
+                .fetch_optional_scalar::<Vec<u8>>(
+                    "SELECT row_hash FROM core.admin_audit \
+                     WHERE row_hash IS NOT NULL ORDER BY id DESC LIMIT 1",
+                    params![],
+                )
+                .await?
+                .unwrap_or_else(|| chain::GENESIS.to_vec());
             let fields = chain::canonical_of_write(ctx, entry, occurred_at, ip_owned.as_deref());
             let hash = chain::row_hash(key, &chain::canonical(&fields), &prev);
             (Some(prev), Some(hash))
@@ -66,48 +71,55 @@ async fn insert(
         None => (None, None),
     };
 
-    let id: i64 = sqlx::query_scalar(
-        r#"INSERT INTO core.admin_audit
-               (actor_id, actor_label, actor_role, actor_origin, actor_token_id,
-                ip_address, user_agent,
-                action, module_id, target_type, target_id, target_label,
-                before, after, outcome, detail, reversible, reverts_entry_id,
-                occurred_at, prev_hash, row_hash)
-           VALUES ($1, $2, $3, $4, $5, $6::inet, $7, $8, $9, $10, $11, $12,
-                   $13, $14, $15, $16, $17, $18, $19, $20, $21)
-           RETURNING id"#,
-    )
-    .bind(ctx.actor.id)
-    .bind(&ctx.actor.label)
-    .bind(ctx.actor.role.as_deref())
-    .bind(ctx.actor.origin.as_str())
-    .bind(ctx.actor.token_id)
-    .bind(ip_owned.as_deref())
-    .bind(ctx.user_agent.as_deref())
-    .bind(&entry.action)
-    .bind(entry.module_id.as_deref())
-    .bind(entry.target.kind.as_deref())
-    .bind(entry.target.id.as_deref())
-    .bind(entry.target.label.as_deref())
-    .bind(entry.before.as_ref())
-    .bind(entry.after.as_ref())
-    .bind(entry.outcome.as_str())
-    .bind(entry.detail.as_deref())
-    .bind(entry.reversible)
-    .bind(entry.reverts_entry_id)
-    .bind(occurred_at)
-    .bind(prev_hash)
-    .bind(row_hash)
-    .fetch_one(&mut *conn)
-    .await?;
+    // `core.admin_audit.id` is a BIGSERIAL: the engine assigns it, so it is read
+    // back with `RETURNING` (PostgreSQL and SQLite have it). MySQL has neither
+    // `RETURNING` nor a by-key reselect for an auto-increment, and is not
+    // supported for the audit chain — this is a known, flagged limitation.
+    let id: i64 = conn
+        .fetch_optional_scalar::<i64>(
+            r#"INSERT INTO core.admin_audit
+                   (actor_id, actor_label, actor_role, actor_origin, actor_token_id,
+                    ip_address, user_agent,
+                    action, module_id, target_type, target_id, target_label,
+                    before, after, outcome, detail, reversible, reverts_entry_id,
+                    occurred_at, prev_hash, row_hash)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                       $13, $14, $15, $16, $17, $18, $19, $20, $21)
+               RETURNING id"#,
+            params![
+                ctx.actor.id,
+                &ctx.actor.label,
+                ctx.actor.role.as_deref(),
+                ctx.actor.origin.as_str(),
+                ctx.actor.token_id,
+                ip_owned.as_deref(),
+                ctx.user_agent.as_deref(),
+                &entry.action,
+                entry.module_id.as_deref(),
+                entry.target.kind.as_deref(),
+                entry.target.id.as_deref(),
+                entry.target.label.as_deref(),
+                entry.before.clone(),
+                entry.after.clone(),
+                entry.outcome.as_str(),
+                entry.detail.as_deref(),
+                entry.reversible,
+                entry.reverts_entry_id,
+                occurred_at,
+                prev_hash,
+                row_hash
+            ],
+        )
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
 
     // Close the undo loop: the undone entry points back at the one that undid it.
     if let Some(undone) = entry.reverts_entry_id {
-        sqlx::query("UPDATE core.admin_audit SET reverted_by_entry_id = $1 WHERE id = $2")
-            .bind(id)
-            .bind(undone)
-            .execute(&mut *conn)
-            .await?;
+        conn.execute(
+            "UPDATE core.admin_audit SET reverted_by_entry_id = $1 WHERE id = $2",
+            params![id, undone],
+        )
+        .await?;
     }
 
     Ok(id)
@@ -116,7 +128,7 @@ async fn insert(
 impl AuditContext {
     /// Opens a transaction that can only be committed together with its audit
     /// entry. This is the path every administrative mutation should take.
-    pub async fn begin<'a>(&self, db: &'a PgPool) -> Result<AuditTx<'a>, AppError> {
+    pub async fn begin(&self, db: &DbPool) -> Result<AuditTx, AppError> {
         let tx = db.begin().await.map_err(|e| {
             tracing::error!(error = %e, "audit: ouverture de la transaction auditée");
             AppError::Database(e)
@@ -136,7 +148,7 @@ impl AuditContext {
     ///
     /// Best-effort by design: an audit failure must not turn a refusal into a
     /// 500. The error is logged loudly instead.
-    pub async fn record(&self, db: &PgPool, entry: AuditEntry) -> Option<i64> {
+    pub async fn record(&self, db: &DbPool, entry: AuditEntry) -> Option<i64> {
         // A transaction, not a bare connection: the hash chain takes an
         // xact-scoped advisory lock, which only serialises appenders when it is
         // held for the duration of the read-tip-then-insert, i.e. inside a tx.
@@ -187,7 +199,7 @@ impl AuditContext {
 ///   are deliberately left out.
 ///
 /// Best-effort: a publication failure never turns an audited refusal into a 500.
-async fn publish_fact(db: &PgPool, ctx: &AuditContext, entry: &AuditEntry) {
+async fn publish_fact(db: &DbPool, ctx: &AuditContext, entry: &AuditEntry) {
     use crate::events::{AppEvent, EventMeta};
 
     let target_id = entry.target.id.as_deref();
@@ -235,15 +247,15 @@ async fn publish_fact(db: &PgPool, ctx: &AuditContext, entry: &AuditEntry) {
 
 /// A database transaction that carries its audit entry to the commit.
 ///
-/// Deref-s to the underlying connection so existing query code is unchanged:
-/// `sqlx::query(..).execute(&mut *tx)`.
-pub struct AuditTx<'a> {
-    tx: Transaction<'a, Postgres>,
+/// Deref-s to the underlying transaction so existing query code is unchanged:
+/// `store::fn(&mut *tx)` / `(&mut *tx).execute(sql, params)`.
+pub struct AuditTx {
+    tx: DbTx,
     ctx: AuditContext,
     extra: Vec<AuditEntry>,
 }
 
-impl AuditTx<'_> {
+impl AuditTx {
     /// The request-scoped actor, for handlers that need to compare it with the
     /// target (self-demotion guards, for instance).
     pub fn context(&self) -> &AuditContext {
@@ -284,7 +296,7 @@ impl AuditTx<'_> {
 
     /// Abandons the mutation and records why, on a separate connection so the
     /// entry survives the rollback. Returns the original error for `?`.
-    pub async fn abort(self, db: &PgPool, entry: AuditEntry, error: AppError) -> AppError {
+    pub async fn abort(self, db: &DbPool, entry: AuditEntry, error: AppError) -> AppError {
         let ctx = self.ctx.clone();
         drop(self.tx); // explicit rollback
         let outcome = match error {
@@ -301,14 +313,14 @@ impl AuditTx<'_> {
     }
 }
 
-impl std::ops::Deref for AuditTx<'_> {
-    type Target = PgConnection;
+impl std::ops::Deref for AuditTx {
+    type Target = DbTx;
     fn deref(&self) -> &Self::Target {
         &self.tx
     }
 }
 
-impl std::ops::DerefMut for AuditTx<'_> {
+impl std::ops::DerefMut for AuditTx {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.tx
     }

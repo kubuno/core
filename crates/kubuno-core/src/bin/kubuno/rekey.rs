@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use kubuno_core::config::Settings;
 use kubuno_core::crypto::{datakey, encryption};
 use kubuno_core::database::pool::create_pool;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use kubuno_db::{params, DbPool, DbTx};
 
 use crate::display::{confirm_yes_no, info, ok, section, warn};
 
@@ -27,6 +27,14 @@ struct Store {
     select: &'static str,
     /// Rewrite, taking the new ciphertext then the identifier.
     update: &'static str,
+}
+
+/// One encrypted value read back from a store's `select`, whose columns are
+/// aliased `id` and `blob`.
+#[derive(sqlx::FromRow)]
+struct EncRow {
+    id: String,
+    blob: String,
 }
 
 const STORES: &[Store] = &[
@@ -149,7 +157,7 @@ pub async fn cmd_security_rekey(force: bool, check: bool, config: Option<&str>) 
     let mut tx = pool.begin().await.context("Ouverture de la transaction")?;
     let mut rewritten = 0i64;
     for store in STORES {
-        rewritten += rekey_store(&mut tx, store, &new_root).await?;
+        rewritten += rekey_store(&pool, &mut tx, store, &new_root).await?;
     }
     tx.commit().await.context("Validation de la transaction")?;
     ok(&format!("{rewritten} valeur(s) re-chiffrée(s)."));
@@ -173,65 +181,63 @@ pub async fn cmd_security_rekey(force: bool, check: bool, config: Option<&str>) 
 }
 
 /// Counts what each store holds, for the summary shown before confirming.
-async fn survey(pool: &PgPool) -> Result<Vec<(&'static str, i64)>> {
+async fn survey(pool: &DbPool) -> Result<Vec<(&'static str, i64)>> {
+    let backend = pool.backend();
     let mut out = Vec::new();
     for store in STORES {
-        let sql = format!("SELECT count(*) FROM ({}) s", store.select);
+        // `count(*)` is cast to a portable bigint so every engine decodes as i64.
+        let sql = format!("SELECT {} FROM ({}) s", backend.count_bigint("*"), store.select);
         // A store whose table does not exist yet (migrations behind) counts as empty
         // rather than aborting the whole command.
-        // Safe: `store.select` is a `&'static str` field of the private `STORES`
-        // const array above — every one of them is a literal in this file.
-        let n: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
-            .fetch_one(pool)
-            .await
-            .unwrap_or(0);
+        let n: i64 = pool.fetch_scalar::<i64>(&sql, params![]).await.unwrap_or(0);
         out.push((store.label, n));
     }
     Ok(out)
 }
 
 /// Decrypts every value of one store without writing anything.
-async fn verify_store(pool: &PgPool, store: &Store) -> Result<usize> {
+async fn verify_store(pool: &DbPool, store: &Store) -> Result<usize> {
     let key = datakey::key(store.domain, "");
-    let rows = match sqlx::query(store.select).fetch_all(pool).await {
+    let rows = match pool.fetch_all_as::<EncRow>(store.select, params![]).await {
         Ok(rows) => rows,
         Err(_) => return Ok(0), // absent table: nothing to read, not a failure
     };
     let mut n = 0;
     for row in rows {
-        let id: String = row.try_get("id").context("Lecture de l'identifiant")?;
-        let blob: String = row.try_get("blob").context("Lecture du chiffré")?;
-        encryption::decrypt(&key, &blob)
-            .map_err(|e| anyhow::anyhow!("{id} illisible ({e})"))?;
+        encryption::decrypt(&key, &row.blob)
+            .map_err(|e| anyhow::anyhow!("{} illisible ({e})", row.id))?;
         n += 1;
     }
     Ok(n)
 }
 
-/// Re-encrypts one store inside the caller's transaction.
+/// Re-encrypts one store. The rows are read through the pool (a transaction
+/// cannot fetch more than one row at a time), and every rewrite is applied on
+/// the caller's transaction, so the writes still commit all-or-nothing. The
+/// service is stopped for the duration, so nothing writes between the read and
+/// the rewrite.
 async fn rekey_store(
-    tx: &mut Transaction<'_, Postgres>,
+    pool: &DbPool,
+    tx: &mut DbTx,
     store: &Store,
     new_root: &str,
 ) -> Result<i64> {
     let old_key = datakey::key(store.domain, "");
     let new_key = datakey::derive(store.domain, new_root);
 
-    let rows = match sqlx::query(store.select).fetch_all(&mut **tx).await {
+    let rows = match pool.fetch_all_as::<EncRow>(store.select, params![]).await {
         Ok(rows) => rows,
         Err(e) => {
             // Same tolerance as the survey: an absent table is not a failure.
-            tracing::warn!(magasin = store.label, erreur = %e, "Magasin ignoré");
+            tracing::warn!(store = store.label, error = %e, "Store skipped");
             return Ok(0);
         }
     };
 
     let mut n = 0i64;
     for row in rows {
-        let id: String = row.try_get("id").context("Lecture de l'identifiant")?;
-        let blob: String = row.try_get("blob").context("Lecture du chiffré")?;
-
-        let plain = encryption::decrypt(&old_key, &blob).map_err(|e| {
+        let id = row.id;
+        let plain = encryption::decrypt(&old_key, &row.blob).map_err(|e| {
             anyhow::anyhow!(
                 "{} ({id}) : déchiffrement impossible avec la clé actuelle — \
                  la valeur a-t-elle été chiffrée avec une autre clé ? ({e})",
@@ -241,10 +247,7 @@ async fn rekey_store(
         let sealed = encryption::encrypt(&new_key, &plain)
             .map_err(|e| anyhow::anyhow!("{} ({id}) : re-chiffrement impossible ({e})", store.label))?;
 
-        sqlx::query(store.update)
-            .bind(&sealed)
-            .bind(&id)
-            .execute(&mut **tx)
+        tx.execute(store.update, params![&sealed, &id])
             .await
             .with_context(|| format!("Écriture de {} ({id})", store.label))?;
         n += 1;

@@ -3,14 +3,16 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::PgPool;
+use chrono::Utc;
+use kubuno_db::dialect::SqlType;
+use kubuno_db::{params, DbPool};
 use tokio::sync::broadcast::error::RecvError;
 use uuid::Uuid;
 
 use crate::events::EventBus;
 use crate::push::{mapping, unifiedpush::UnifiedPush, PushNotification, PushProvider};
 
-pub async fn push_worker(bus: Arc<EventBus>, db: PgPool) {
+pub async fn push_worker(bus: Arc<EventBus>, db: DbPool) {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -39,7 +41,7 @@ pub async fn push_worker(bus: Arc<EventBus>, db: PgPool) {
 
 async fn deliver(
     client: &reqwest::Client,
-    db: &PgPool,
+    db: &DbPool,
     unifiedpush: &UnifiedPush,
     notif: &PushNotification,
 ) {
@@ -48,12 +50,12 @@ async fn deliver(
             continue;
         }
 
-        let devices = match sqlx::query_as::<_, (Uuid, String, String)>(
-            "SELECT id, provider, device_token FROM core.push_devices WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_all(db)
-        .await
+        let devices = match db
+            .fetch_all_as::<(Uuid, String, String)>(
+                "SELECT id, provider, device_token FROM core.push_devices WHERE user_id = $1",
+                params![user_id],
+            )
+            .await
         {
             Ok(d) => d,
             Err(e) => {
@@ -74,18 +76,22 @@ async fn deliver(
 
             match result {
                 Ok(true) => {
-                    let _ = sqlx::query("UPDATE core.push_devices SET last_seen_at = NOW() WHERE id = $1")
-                        .bind(device_id)
-                        .execute(db)
+                    let _ = db
+                        .execute(
+                            "UPDATE core.push_devices SET last_seen_at = $1 WHERE id = $2",
+                            params![Utc::now(), device_id],
+                        )
                         .await;
                 }
                 Ok(false) => {
-                    // Endpoint disparu (404/410) → purge du device.
-                    let _ = sqlx::query("DELETE FROM core.push_devices WHERE id = $1")
-                        .bind(device_id)
-                        .execute(db)
+                    // Endpoint gone (404/410) → purge the device.
+                    let _ = db
+                        .execute(
+                            "DELETE FROM core.push_devices WHERE id = $1",
+                            params![device_id],
+                        )
                         .await;
-                    tracing::info!(%device_id, "Device push purgé (endpoint disparu)");
+                    tracing::info!(%device_id, "Push device purged (endpoint gone)");
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, %device_id, "Envoi push échoué");
@@ -96,21 +102,22 @@ async fn deliver(
 }
 
 /// Push enabled unless an opt-out row matches. The most specific row wins.
-async fn preference_enabled(db: &PgPool, user_id: Uuid, module: &str, event_type: &str) -> bool {
-    sqlx::query_scalar::<_, bool>(
+async fn preference_enabled(db: &DbPool, user_id: Uuid, module: &str, event_type: &str) -> bool {
+    let backend = db.backend();
+    // Boolean-to-int cast in the ORDER BY specificity score, made portable.
+    let module_specificity = backend.cast("module_id <> '*'", SqlType::Int);
+    let event_specificity = backend.cast("event_type <> '*'", SqlType::Int);
+    let sql = format!(
         r#"SELECT enabled FROM core.push_preferences
            WHERE user_id = $1
              AND module_id IN ($2, '*')
              AND event_type IN ($3, '*')
-           ORDER BY ((module_id <> '*')::int + (event_type <> '*')::int) DESC
-           LIMIT 1"#,
-    )
-    .bind(user_id)
-    .bind(module)
-    .bind(event_type)
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(true)
+           ORDER BY ({module_specificity} + {event_specificity}) DESC
+           LIMIT 1"#
+    );
+    db.fetch_optional_scalar::<bool>(&sql, params![user_id, module, event_type])
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(true)
 }

@@ -14,6 +14,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use kubuno_db::{params, Backend};
 use serde::Deserialize;
 
 /// Émet le couple access_token / refresh_token après authentification complète.
@@ -106,28 +107,37 @@ pub(super) async fn issue_full_tokens(
         return Err(AppError::Forbidden);
     }
 
-    sqlx::query(
-        r#"INSERT INTO core.refresh_tokens
-           (user_id, token_hash, device_name, device_type, ip_address, user_agent,
-            expires_at, family_id, client_type, device_id, country, auth_strength)
-           VALUES ($1, $2, $3, $4, $5::inet, $6, $7, $8, $9, $10, $11, $12)"#,
-    )
-    .bind(user.id)
-    .bind(&refresh_hash)
+    // NOTE (migration consolidation): the `::inet` cast is PostgreSQL-only; it is
+    // spliced in only for Postgres, where `ip_address` is an INET column. On the
+    // other engines the column is text and the bound string goes in unchanged.
+    let inet_cast = if state.db.backend() == Backend::Postgres { "::inet" } else { "" };
     // A device name the client supplied is a hint, not an identity: the
     // inventory's own label is what the console shows.
-    .bind(device_name)
-    .bind(device_type)
-    .bind(ip)
-    .bind(ua)
-    .bind(expires_at)
-    .bind(family_id)
-    .bind(stored_client_type)
-    .bind(touched.device_id)
-    .bind(country.as_deref())
-    .bind(auth_strength.as_str())
-    .execute(&state.db)
-    .await?;
+    state
+        .db
+        .execute(
+            &format!(
+                r#"INSERT INTO core.refresh_tokens
+               (user_id, token_hash, device_name, device_type, ip_address, user_agent,
+                expires_at, family_id, client_type, device_id, country, auth_strength)
+               VALUES ($1, $2, $3, $4, $5{inet_cast}, $6, $7, $8, $9, $10, $11, $12)"#
+            ),
+            params![
+                user.id,
+                &refresh_hash,
+                device_name,
+                device_type,
+                ip,
+                ua,
+                expires_at,
+                family_id,
+                stored_client_type,
+                touched.device_id,
+                country.as_deref(),
+                auth_strength.as_str()
+            ],
+        )
+        .await?;
 
     correlate::record_event(
         &state.db,
@@ -144,9 +154,12 @@ pub(super) async fn issue_full_tokens(
     // Limiter le nombre de sessions simultanées (révoque les plus anciennes)
     crate::config::runtime::enforce_max_sessions(&state.db, user.id, ttls.max_sessions).await;
 
-    sqlx::query("UPDATE core.users SET last_login_at = NOW() WHERE id = $1")
-        .bind(user.id)
-        .execute(&state.db)
+    state
+        .db
+        .execute(
+            "UPDATE core.users SET last_login_at = $1 WHERE id = $2",
+            params![Utc::now(), user.id],
+        )
         .await?;
 
     // Native/desktop: refresh token in the JSON body, no cookie.
@@ -172,14 +185,14 @@ pub(super) async fn issue_full_tokens(
     if let Some(previous_raw) = read_slot_cookie(headers, slot) {
         if previous_raw != refresh_raw {
             let previous_hash = crate::crypto::token::hash_token(&previous_raw);
-            if let Err(e) = sqlx::query(
-                "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'relogin'
-                 WHERE token_hash = $1 AND user_id = $2 AND revoked_at IS NULL",
-            )
-            .bind(&previous_hash)
-            .bind(user.id)
-            .execute(&state.db)
-            .await
+            if let Err(e) = state
+                .db
+                .execute(
+                    "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'relogin'
+                     WHERE token_hash = $2 AND user_id = $3 AND revoked_at IS NULL",
+                    params![Utc::now(), &previous_hash, user.id],
+                )
+                .await
             {
                 tracing::error!(error = %e, "login: révocation de l'ancienne session du slot");
             }
@@ -278,6 +291,15 @@ pub(super) fn clear_slot_cookie(slot: u8) -> String {
 /// (re-connecting an account row from the panel), else the slot already holding
 /// a LIVE session of the same user (signing in twice must not duplicate the
 /// account), else the first slot that is empty or holds a dead session.
+/// One candidate slot's stored session, read back so liveness can be judged in
+/// Rust rather than in an engine-specific boolean SQL expression.
+#[derive(sqlx::FromRow)]
+struct SlotRow {
+    user_id: uuid::Uuid,
+    revoked_at: Option<chrono::DateTime<Utc>>,
+    expires_at: chrono::DateTime<Utc>,
+}
+
 async fn resolve_account_slot(
     state: &AppState,
     headers: &HeaderMap,
@@ -300,25 +322,36 @@ async fn resolve_account_slot(
             }
             Some(raw) => {
                 let hash = crate::crypto::token::hash_token(&raw);
-                let row: Option<(uuid::Uuid, bool)> = sqlx::query_as(
-                    "SELECT user_id, (revoked_at IS NULL AND expires_at > NOW())
-                     FROM core.refresh_tokens WHERE token_hash = $1",
-                )
-                .bind(&hash)
-                .fetch_optional(&state.db)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "login: résolution du slot de compte");
-                    AppError::Database(e)
-                })?;
+                // Liveness is computed in Rust (`expires_at > NOW()`) so no
+                // engine-specific boolean expression is decoded.
+                let row = state
+                    .db
+                    .fetch_optional_as::<SlotRow>(
+                        "SELECT user_id, revoked_at, expires_at
+                         FROM core.refresh_tokens WHERE token_hash = $1",
+                        params![&hash],
+                    )
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "login: account slot resolution");
+                        AppError::Database(e)
+                    })?;
                 match row {
-                    // This browser already holds a live session of this very
-                    // account → same slot (the old token gets revoked upstream).
-                    Some((uid, true)) if uid == user_id => return Ok(slot),
-                    // Live session of ANOTHER account → occupied.
-                    Some((_, true)) => {}
-                    // Dead or unknown token → reusable.
-                    _ => {
+                    Some(r) => {
+                        let live = r.revoked_at.is_none() && r.expires_at > Utc::now();
+                        // This browser already holds a live session of this very
+                        // account → same slot (the old token gets revoked upstream).
+                        if live && r.user_id == user_id {
+                            return Ok(slot);
+                        }
+                        // Live session of ANOTHER account → occupied; a dead
+                        // token → reusable.
+                        if !live && first_free.is_none() {
+                            first_free = Some(slot);
+                        }
+                    }
+                    // Unknown token → reusable.
+                    None => {
                         if first_free.is_none() {
                             first_free = Some(slot);
                         }

@@ -25,8 +25,10 @@ use std::sync::{Arc, LazyLock, RwLock};
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
+
+use kubuno_db::dialect::SqlType;
+use kubuno_db::{params, DbPool, DbQueryBuilder, DbRow, DbTx, DbValue};
 
 use crate::errors::AppError;
 
@@ -48,37 +50,96 @@ macro_rules! columns {
     };
 }
 
-fn row_to_detector(r: &sqlx::postgres::PgRow) -> Detector {
-    let kind: String = r.get("kind");
-    let checksum: Option<String> = r.get("checksum");
-    Detector {
-        id: r.get("id"),
-        key: r.get("key"),
-        label: r.get("label"),
-        description: r.get("description"),
-        category: r.get("category"),
-        // A row whose kind the binary does not know reads as a plain pattern
-        // rather than failing the whole load. The CHECK constraint makes this
-        // unreachable today; it stops being unreachable the day a downgrade
-        // meets a newer schema.
-        kind: Kind::parse(&kind).unwrap_or(Kind::Regex),
-        pattern: r.get("pattern"),
-        terms: string_list(&r.get::<Value, _>("terms")),
-        checksum: checksum.as_deref().and_then(Checksum::parse),
-        proximity_terms: string_list(&r.get::<Value, _>("proximity_terms")),
-        proximity_window: r.get("proximity_window"),
-        proximity_required: r.get("proximity_required"),
-        base_confidence: r.get("base_confidence"),
-        checksum_bonus: r.get("checksum_bonus"),
-        proximity_bonus: r.get("proximity_bonus"),
-        min_confidence: r.get("min_confidence"),
-        min_matches: r.get("min_matches"),
-        min_unique_matches: r.get("min_unique_matches"),
-        is_enabled: r.get("is_enabled"),
-        is_builtin: r.get("is_builtin"),
-        created_at: r.get::<DateTime<Utc>, _>("created_at"),
-        updated_at: r.get::<DateTime<Utc>, _>("updated_at"),
+/// The raw shape of a `core.content_detectors` row: the JSON list columns and
+/// the enum-backed text columns are decoded plainly, then parsed into their
+/// strong types.
+#[derive(sqlx::FromRow)]
+struct RawDetectorRow {
+    id: Uuid,
+    key: String,
+    label: String,
+    description: Option<String>,
+    category: String,
+    kind: String,
+    pattern: Option<String>,
+    terms: Value,
+    checksum: Option<String>,
+    proximity_terms: Value,
+    proximity_window: i32,
+    proximity_required: bool,
+    base_confidence: f32,
+    checksum_bonus: f32,
+    proximity_bonus: f32,
+    min_confidence: f32,
+    min_matches: i32,
+    min_unique_matches: i32,
+    is_enabled: bool,
+    is_builtin: bool,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl RawDetectorRow {
+    fn into_detector(self) -> Detector {
+        Detector {
+            id: self.id,
+            key: self.key,
+            label: self.label,
+            description: self.description,
+            category: self.category,
+            // A row whose kind the binary does not know reads as a plain pattern
+            // rather than failing the whole load. The CHECK constraint makes this
+            // unreachable today; it stops being unreachable the day a downgrade
+            // meets a newer schema.
+            kind: Kind::parse(&self.kind).unwrap_or(Kind::Regex),
+            pattern: self.pattern,
+            terms: string_list(&self.terms),
+            checksum: self.checksum.as_deref().and_then(Checksum::parse),
+            proximity_terms: string_list(&self.proximity_terms),
+            proximity_window: self.proximity_window,
+            proximity_required: self.proximity_required,
+            base_confidence: self.base_confidence,
+            checksum_bonus: self.checksum_bonus,
+            proximity_bonus: self.proximity_bonus,
+            min_confidence: self.min_confidence,
+            min_matches: self.min_matches,
+            min_unique_matches: self.min_unique_matches,
+            is_enabled: self.is_enabled,
+            is_builtin: self.is_builtin,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
     }
+}
+
+/// Hand-maps a detector row read inside a transaction (where `fetch_*_as` is not
+/// available) by rebuilding [`RawDetectorRow`] column by column.
+fn detector_from_row(r: &DbRow) -> Result<Detector, sqlx::Error> {
+    Ok(RawDetectorRow {
+        id: r.try_get("id")?,
+        key: r.try_get("key")?,
+        label: r.try_get("label")?,
+        description: r.try_get("description")?,
+        category: r.try_get("category")?,
+        kind: r.try_get("kind")?,
+        pattern: r.try_get("pattern")?,
+        terms: r.try_get("terms")?,
+        checksum: r.try_get("checksum")?,
+        proximity_terms: r.try_get("proximity_terms")?,
+        proximity_window: r.try_get("proximity_window")?,
+        proximity_required: r.try_get("proximity_required")?,
+        base_confidence: r.try_get("base_confidence")?,
+        checksum_bonus: r.try_get("checksum_bonus")?,
+        proximity_bonus: r.try_get("proximity_bonus")?,
+        min_confidence: r.try_get("min_confidence")?,
+        min_matches: r.try_get("min_matches")?,
+        min_unique_matches: r.try_get("min_unique_matches")?,
+        is_enabled: r.try_get("is_enabled")?,
+        is_builtin: r.try_get("is_builtin")?,
+        created_at: r.try_get("created_at")?,
+        updated_at: r.try_get("updated_at")?,
+    }
+    .into_detector())
 }
 
 fn string_list(raw: &Value) -> Vec<String> {
@@ -93,46 +154,59 @@ fn string_list(raw: &Value) -> Vec<String> {
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
-pub async fn list(db: &PgPool) -> Result<Vec<Detector>, AppError> {
+pub async fn list(db: &DbPool) -> Result<Vec<Detector>, AppError> {
     let sql = concat!(
         "SELECT ",
         columns!(),
         " FROM core.content_detectors ORDER BY category, label"
     );
-    let rows = sqlx::query(sql).fetch_all(db).await.map_err(|e| {
-        tracing::error!(error = %e, "detectors: lecture du catalogue");
-        AppError::Database(e)
-    })?;
-    Ok(rows.iter().map(row_to_detector).collect())
+    let rows = db
+        .fetch_all_as::<RawDetectorRow>(sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "detectors: lecture du catalogue");
+            AppError::Database(e)
+        })?;
+    Ok(rows.into_iter().map(RawDetectorRow::into_detector).collect())
 }
 
-pub async fn get(db: &PgPool, id: Uuid) -> Result<Detector, AppError> {
+pub async fn get(db: &DbPool, id: Uuid) -> Result<Detector, AppError> {
     let sql = concat!("SELECT ", columns!(), " FROM core.content_detectors WHERE id = $1");
-    let row = sqlx::query(sql)
-        .bind(id)
-        .fetch_optional(db)
+    db.fetch_optional_as::<RawDetectorRow>(sql, params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "detectors: lecture d'un détecteur");
             AppError::Database(e)
-        })?;
-    row.as_ref()
-        .map(row_to_detector)
+        })?
+        .map(RawDetectorRow::into_detector)
         .ok_or_else(|| AppError::NotFound("détecteur".into()))
 }
 
-pub async fn key_exists(db: &PgPool, key: &str, except: Option<Uuid>) -> Result<bool, AppError> {
-    sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM core.content_detectors WHERE key = $1 AND ($2::uuid IS NULL OR id <> $2))",
-    )
-    .bind(key)
-    .bind(except)
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "detectors: vérification d'unicité de clé");
-        AppError::Database(e)
-    })
+pub async fn key_exists(db: &DbPool, key: &str, except: Option<Uuid>) -> Result<bool, AppError> {
+    // Built dynamically so the "ignore this id" clause is present only when there
+    // is an id to ignore — no `$2::uuid IS NULL` placeholder trick. The probe
+    // selects a constant cast to a single decodable width.
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        format!(
+            "SELECT {} FROM core.content_detectors WHERE key = ",
+            db.backend().cast("1", SqlType::BigInt)
+        ),
+    );
+    qb.push_bind(key);
+    if let Some(except) = except {
+        qb.push(" AND id <> ").push_bind(except);
+    }
+    qb.push(" LIMIT 1");
+    let found = qb
+        .fetch_optional_scalar::<i64>(db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "detectors: vérification d'unicité de clé");
+            AppError::Database(e)
+        })?
+        .is_some();
+    Ok(found)
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────
@@ -160,100 +234,131 @@ pub struct DetectorDraft {
     pub is_enabled: bool,
 }
 
+/// The eighteen draft columns, in the order the INSERT and UPDATE both list them.
+fn draft_values(d: &DetectorDraft) -> Vec<DbValue> {
+    params![
+        &d.key,
+        &d.label,
+        d.description.as_deref(),
+        &d.category,
+        d.kind.as_str(),
+        d.pattern.as_deref(),
+        Value::from(d.terms.clone()),
+        d.checksum.map(|c| c.as_str()),
+        Value::from(d.proximity_terms.clone()),
+        d.proximity_window,
+        d.proximity_required,
+        d.base_confidence,
+        d.checksum_bonus,
+        d.proximity_bonus,
+        d.min_confidence,
+        d.min_matches,
+        d.min_unique_matches,
+        d.is_enabled
+    ]
+}
+
 pub async fn insert(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     draft: &DetectorDraft,
     author: Option<Uuid>,
 ) -> Result<Detector, AppError> {
-    let sql = concat!(
-        r#"INSERT INTO core.content_detectors
-               (key, label, description, category, kind, pattern, terms, checksum,
-                proximity_terms, proximity_window, proximity_required,
-                base_confidence, checksum_bonus, proximity_bonus,
-                min_confidence, min_matches, min_unique_matches,
-                is_enabled, is_builtin, created_by, updated_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,FALSE,$19,$19)
-           RETURNING "#,
-        columns!()
-    );
-    let row = bind_draft(sqlx::query(sql), draft)
-        .bind(author)
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, key = %draft.key, "detectors: création");
-            AppError::Database(e)
-        })?;
-    Ok(row_to_detector(&row))
+    // The UUID primary key is generated in Rust so the write needs no RETURNING
+    // and the row can be re-read by id afterwards.
+    let id = kubuno_db::new_id();
+    let mut values = vec![DbValue::from(id)];
+    values.extend(draft_values(draft));
+    values.push(DbValue::from(author));
+    values.push(DbValue::from(author));
+
+    tx.execute(
+        concat!(
+            r#"INSERT INTO core.content_detectors
+                   (id, key, label, description, category, kind, pattern, terms, checksum,
+                    proximity_terms, proximity_window, proximity_required,
+                    base_confidence, checksum_bonus, proximity_bonus,
+                    min_confidence, min_matches, min_unique_matches,
+                    is_enabled, is_builtin, created_by, updated_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,FALSE,$20,$21)"#
+        ),
+        values,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, key = %draft.key, "detectors: création");
+        AppError::Database(e)
+    })?;
+
+    reselect(tx, id).await
 }
 
 pub async fn update(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     id: Uuid,
     draft: &DetectorDraft,
     author: Option<Uuid>,
 ) -> Result<Detector, AppError> {
-    let sql = concat!(
-        r#"UPDATE core.content_detectors SET
-               key = $1, label = $2, description = $3, category = $4, kind = $5,
-               pattern = $6, terms = $7, checksum = $8,
-               proximity_terms = $9, proximity_window = $10, proximity_required = $11,
-               base_confidence = $12, checksum_bonus = $13, proximity_bonus = $14,
-               min_confidence = $15, min_matches = $16, min_unique_matches = $17,
-               is_enabled = $18, updated_by = $19
-           WHERE id = $20
-           RETURNING "#,
-        columns!()
-    );
-    let row = bind_draft(sqlx::query(sql), draft)
-        .bind(author)
-        .bind(id)
-        .fetch_optional(&mut *conn)
+    let mut values = draft_values(draft);
+    values.push(DbValue::from(author));
+    values.push(DbValue::from(id));
+
+    let affected = tx
+        .execute(
+            r#"UPDATE core.content_detectors SET
+                   key = $1, label = $2, description = $3, category = $4, kind = $5,
+                   pattern = $6, terms = $7, checksum = $8,
+                   proximity_terms = $9, proximity_window = $10, proximity_required = $11,
+                   base_confidence = $12, checksum_bonus = $13, proximity_bonus = $14,
+                   min_confidence = $15, min_matches = $16, min_unique_matches = $17,
+                   is_enabled = $18, updated_by = $19
+               WHERE id = $20"#,
+            values,
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, %id, "detectors: modification");
             AppError::Database(e)
         })?;
-    row.as_ref()
-        .map(row_to_detector)
-        .ok_or_else(|| AppError::NotFound("détecteur".into()))
+    if affected == 0 {
+        return Err(AppError::NotFound("détecteur".into()));
+    }
+    reselect(tx, id).await
+}
+
+/// Reads a detector back inside the write transaction and hand-maps it.
+async fn reselect(tx: &mut DbTx, id: Uuid) -> Result<Detector, AppError> {
+    let row = tx
+        .fetch_optional_row(
+            concat!("SELECT ", columns!(), " FROM core.content_detectors WHERE id = $1"),
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, %id, "detectors: relecture");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("détecteur".into()))?;
+    detector_from_row(&row).map_err(AppError::Database)
 }
 
 /// Deletes a detector. Built-ins are refused by the caller, not here.
-pub async fn delete(conn: &mut PgConnection, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM core.content_detectors WHERE id = $1")
-        .bind(id)
-        .execute(&mut *conn)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, %id, "detectors: suppression");
-            AppError::Database(e)
-        })?;
+pub async fn delete(tx: &mut DbTx, id: Uuid) -> Result<(), AppError> {
+    tx.execute(
+        "DELETE FROM core.content_detectors WHERE id = $1",
+        params![id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "detectors: suppression");
+        AppError::Database(e)
+    })?;
     Ok(())
 }
 
-fn bind_draft<'q>(
-    q: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
-    d: &'q DetectorDraft,
-) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
-    q.bind(&d.key)
-        .bind(&d.label)
-        .bind(d.description.as_deref())
-        .bind(&d.category)
-        .bind(d.kind.as_str())
-        .bind(d.pattern.as_deref())
-        .bind(Value::from(d.terms.clone()))
-        .bind(d.checksum.map(|c| c.as_str()))
-        .bind(Value::from(d.proximity_terms.clone()))
-        .bind(d.proximity_window)
-        .bind(d.proximity_required)
-        .bind(d.base_confidence)
-        .bind(d.checksum_bonus)
-        .bind(d.proximity_bonus)
-        .bind(d.min_confidence)
-        .bind(d.min_matches)
-        .bind(d.min_unique_matches)
-        .bind(d.is_enabled)
+/// A single `name` column, so a one-column read can go through `fetch_all_as`.
+#[derive(sqlx::FromRow)]
+struct NameRow {
+    name: String,
 }
 
 /// Which rules reference this detector, by name.
@@ -262,20 +367,24 @@ fn bind_draft<'q>(
 /// than leaving an operator to find out from a rule that quietly stopped
 /// blocking. The condition tree is JSONB, so the question is a containment test
 /// rather than a foreign key — a detector leaf can sit at any depth.
-pub async fn rules_using(db: &PgPool, key: &str) -> Result<Vec<String>, AppError> {
-    let rows = sqlx::query(
-        r#"SELECT name FROM core.rules
-            WHERE conditions::text LIKE '%' || $1 || '%'
-            ORDER BY name"#,
-    )
-    .bind(key)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "detectors: recherche des règles utilisatrices");
-        AppError::Database(e)
-    })?;
-    Ok(rows.iter().map(|r| r.get::<String, _>("name")).collect())
+pub async fn rules_using(db: &DbPool, key: &str) -> Result<Vec<String>, AppError> {
+    // The `%…%` pattern is built in Rust and bound. `CAST(conditions AS TEXT)`
+    // reads the JSONB tree as text on PostgreSQL; the containment `LIKE` is a
+    // heuristic, not a foreign key.
+    let pattern = format!("%{key}%");
+    let rows = db
+        .fetch_all_as::<NameRow>(
+            r#"SELECT name FROM core.rules
+                WHERE CAST(conditions AS TEXT) LIKE $1
+                ORDER BY name"#,
+            params![pattern],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "detectors: recherche des règles utilisatrices");
+            AppError::Database(e)
+        })?;
+    Ok(rows.into_iter().map(|r| r.name).collect())
 }
 
 // ── The compiled set ─────────────────────────────────────────────────────────
@@ -319,7 +428,7 @@ pub fn snapshot() -> Arc<DetectorSet> {
 
 /// Rebuilds the compiled set from the database. Called at startup and from the
 /// rules reload listener.
-pub async fn reload(db: &PgPool) -> Result<usize, AppError> {
+pub async fn reload(db: &DbPool) -> Result<usize, AppError> {
     let detectors = list(db).await?;
     let mut by_key = HashMap::new();
     let mut skipped = 0usize;
@@ -357,16 +466,14 @@ pub async fn reload(db: &PgPool) -> Result<usize, AppError> {
 /// A string setting, trimmed, with a fallback. `core.settings.value` is JSONB,
 /// so a value written as a bare string and one written as a JSON string both
 /// have to read.
-pub async fn setting_str(db: &PgPool, key: &str, default: &str) -> String {
-    let raw: Option<Value> = sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1")
-        .bind(key)
-        .fetch_optional(db)
+pub async fn setting_str(db: &DbPool, key: &str, default: &str) -> String {
+    let raw: Option<Value> = db
+        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE key = $1", params![key])
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, key = %key, "detectors: lecture d'un réglage");
             None
-        })
-        .flatten();
+        });
 
     raw.as_ref()
         .map(|v| match v {
@@ -377,16 +484,14 @@ pub async fn setting_str(db: &PgPool, key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
-pub async fn setting_bool(db: &PgPool, key: &str, default: bool) -> bool {
-    let raw: Option<Value> = sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1")
-        .bind(key)
-        .fetch_optional(db)
+pub async fn setting_bool(db: &DbPool, key: &str, default: bool) -> bool {
+    let raw: Option<Value> = db
+        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE key = $1", params![key])
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, key = %key, "detectors: lecture d'un réglage");
             None
-        })
-        .flatten();
+        });
     raw.as_ref().and_then(Value::as_bool).unwrap_or(default)
 }
 

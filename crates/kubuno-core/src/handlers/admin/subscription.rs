@@ -23,9 +23,9 @@
 //! than as a 403 that would blank the whole page.
 
 use axum::{extract::State, Json};
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
 
 use crate::{
     audit::{redact, AdminAudit, AuditEntry},
@@ -35,6 +35,26 @@ use crate::{
     state::AppState,
     support::{self, store, Trust},
 };
+
+/// Account totals for the page's header. `active` is computed with a portable
+/// `SUM(CASE ...)` rather than PostgreSQL's `COUNT(*) FILTER (WHERE ...)`.
+#[derive(sqlx::FromRow)]
+struct AccountCounts {
+    total:  i64,
+    active: i64,
+}
+
+/// One installed module and the licence it declares.
+#[derive(sqlx::FromRow)]
+struct ModuleLicenceRow {
+    id:           String,
+    display_name: String,
+    version:      String,
+    license:      Option<String>,
+    homepage_url: Option<String>,
+    is_enabled:   bool,
+    installed_at: chrono::DateTime<chrono::Utc>,
+}
 
 /// Longest key accepted from the form. Well above any plausible contract, and
 /// checked before anything is parsed.
@@ -96,22 +116,25 @@ pub async fn get(
     // governs every other instance-wide aggregate: a delegated operator who may
     // not see the dashboard's totals must not read them off this page either.
     let accounts = if ctx.has(keys::STATS_READ) {
-        // `COUNT` already returns `bigint`; no cast, so the FILTER clause needs
-        // no parenthesising to keep the cast attached to the right expression.
-        let row = sqlx::query(
-            "SELECT COUNT(*) AS total,
-                    COUNT(*) FILTER (WHERE is_active) AS active
-               FROM core.users",
-        )
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "subscription: comptage des comptes");
-            AppError::Database(e)
-        })?;
+        // Both aggregates decode as `i64` on every engine; the active count uses
+        // a portable `SUM(CASE ...)` in place of `COUNT(*) FILTER (WHERE ...)`.
+        let backend = state.db.backend();
+        let sql = format!(
+            "SELECT {total} AS total, {active} AS active FROM core.users",
+            total = backend.count_bigint("*"),
+            active = backend.sum_bigint("CASE WHEN is_active THEN 1 ELSE 0 END"),
+        );
+        let row = state
+            .db
+            .fetch_one_as::<AccountCounts>(&sql, params![])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "subscription: comptage des comptes");
+                AppError::Database(e)
+            })?;
         Some(json!({
-            "total":  row.try_get::<i64, _>("total").map_err(AppError::Database)?,
-            "active": row.try_get::<i64, _>("active").map_err(AppError::Database)?,
+            "total":  row.total,
+            "active": row.active,
         }))
     } else {
         None
@@ -121,31 +144,35 @@ pub async fn get(
     // `core.modules`, which is where the manifest each module ships lands
     // (`modules::manager::sync_to_db`) — never from a list of names in the core.
     let modules = if ctx.has(keys::MODULES_READ) {
-        let rows = sqlx::query(
-            "SELECT id, display_name, version, license, homepage_url, is_enabled, installed_at
-               FROM core.modules
-              WHERE is_core_module = FALSE
-              ORDER BY display_name",
-        )
-        .fetch_all(&state.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "subscription: inventaire des modules");
-            AppError::Database(e)
-        })?;
+        let rows = state
+            .db
+            .fetch_all_as::<ModuleLicenceRow>(
+                "SELECT id, display_name, version, license, homepage_url, is_enabled, installed_at
+                   FROM core.modules
+                  WHERE is_core_module = FALSE
+                  ORDER BY display_name",
+                params![],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "subscription: inventaire des modules");
+                AppError::Database(e)
+            })?;
 
-        let mut items = Vec::with_capacity(rows.len());
-        for row in &rows {
-            items.push(json!({
-                "id":           row.try_get::<String, _>("id").map_err(AppError::Database)?,
-                "display_name": row.try_get::<String, _>("display_name").map_err(AppError::Database)?,
-                "version":      row.try_get::<String, _>("version").map_err(AppError::Database)?,
-                "license":      row.try_get::<Option<String>, _>("license").map_err(AppError::Database)?,
-                "homepage_url": row.try_get::<Option<String>, _>("homepage_url").map_err(AppError::Database)?,
-                "is_enabled":   row.try_get::<bool, _>("is_enabled").map_err(AppError::Database)?,
-                "installed_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("installed_at").map_err(AppError::Database)?,
-            }));
-        }
+        let items: Vec<Value> = rows
+            .into_iter()
+            .map(|row| {
+                json!({
+                    "id":           row.id,
+                    "display_name": row.display_name,
+                    "version":      row.version,
+                    "license":      row.license,
+                    "homepage_url": row.homepage_url,
+                    "is_enabled":   row.is_enabled,
+                    "installed_at": row.installed_at,
+                })
+            })
+            .collect();
         Some(Value::Array(items))
     } else {
         None

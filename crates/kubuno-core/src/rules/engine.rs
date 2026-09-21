@@ -40,7 +40,7 @@ use std::time::Instant;
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::alerts::{self, catalog as alert_catalog, NewAlert};
@@ -62,7 +62,7 @@ const DEFAULT_MAX_DEPTH: u64 = 3;
 ///
 /// One task, for the whole instance. It never blocks on an action: matching
 /// enqueues a job and moves on.
-pub async fn run(bus: Arc<EventBus>, db: PgPool) {
+pub async fn run(bus: Arc<EventBus>, db: DbPool) {
     let mut rx = bus.subscribe();
     tracing::info!("Moteur de règles à l'écoute du bus d'événements");
 
@@ -99,7 +99,7 @@ pub async fn run(bus: Arc<EventBus>, db: PgPool) {
 }
 
 /// Evaluates one rule against one live event, logging and acting per its mode.
-async fn evaluate_live(db: &PgPool, compiled: &CompiledRule, facts: &Facts) {
+async fn evaluate_live(db: &DbPool, compiled: &CompiledRule, facts: &Facts) {
     let rule = &compiled.rule;
     let started = Instant::now();
 
@@ -142,7 +142,7 @@ impl Verdict {
 /// changes nothing an operator would notice. Acting, logging and alerting are
 /// the caller's business, which is what lets the backtest reuse it verbatim.
 pub async fn decide(
-    db: &PgPool,
+    db: &DbPool,
     rule: &Rule,
     facts: &Facts,
     mode: Mode,
@@ -255,7 +255,7 @@ pub fn in_rollout(rule_id: Uuid, subject_key: &str, percent: i16) -> bool {
 // ── Logging, alerting, acting ────────────────────────────────────────────────
 
 async fn persist_and_react(
-    db: &PgPool,
+    db: &DbPool,
     rule: &Rule,
     facts: &Facts,
     mode: Mode,

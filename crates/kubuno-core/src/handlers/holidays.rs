@@ -22,6 +22,7 @@ use axum::{
     Json,
 };
 use chrono::{Datelike, NaiveDate, Utc};
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -80,10 +81,12 @@ fn parse_categories(raw: Option<&str>) -> Result<Vec<Category>, AppError> {
 
 /// The unit the reader belongs to — what the organisational overlay is applied
 /// for. A reader outside the tree simply gets the instance's answer.
-async fn org_unit_of(db: &sqlx::PgPool, user_id: Uuid) -> Option<Uuid> {
-    match sqlx::query_scalar::<_, Option<Uuid>>("SELECT org_unit_id FROM core.users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(db)
+async fn org_unit_of(db: &DbPool, user_id: Uuid) -> Option<Uuid> {
+    match db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![user_id],
+        )
         .await
     {
         Ok(unit) => unit.flatten(),
@@ -97,7 +100,7 @@ async fn org_unit_of(db: &sqlx::PgPool, user_id: Uuid) -> Option<Uuid> {
 }
 
 /// Is the shipped referential served at all (`intl.holidays_enabled`)?
-async fn builtin_enabled(db: &sqlx::PgPool) -> bool {
+async fn builtin_enabled(db: &DbPool) -> bool {
     crate::settings::instance_value(db, "intl.holidays_enabled")
         .await
         .and_then(|v| v.as_bool())
@@ -212,17 +215,19 @@ pub async fn applicable(
     };
 
     // The names, so a module can label the toggle without a second request.
-    let named = sqlx::query_as::<_, (String, String, Value)>(
-        "SELECT code, name, names FROM core.holiday_calendars \
-          WHERE UPPER(code) = ANY($1) AND enabled",
-    )
-    .bind(&applicable.codes)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: noms des calendriers applicables");
-        AppError::Database(e)
-    })?;
+    let mut qb = DbQueryBuilder::new(
+        state.db.backend(),
+        "SELECT code, name, names FROM core.holiday_calendars WHERE UPPER(code)",
+    );
+    qb.push_in(applicable.codes.clone());
+    qb.push(" AND enabled");
+    let named: Vec<(String, String, Value)> = qb
+        .fetch_all_as::<(String, String, Value)>(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: names of applicable calendars");
+            AppError::Database(e)
+        })?;
 
     let calendars: Vec<Value> = named
         .into_iter()

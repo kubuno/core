@@ -1,8 +1,8 @@
 //! What a token may be granted, and how long it may live.
 
 use chrono::{DateTime, Duration, Utc};
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use serde::Serialize;
-use sqlx::PgPool;
 
 use crate::authz::model::parse_key;
 use crate::errors::AppError;
@@ -78,7 +78,7 @@ pub fn requires_expiry(key: &str) -> bool {
 }
 
 /// Reads the instance ceiling on a token's lifetime, in days.
-pub async fn max_ttl_days(db: &PgPool) -> i64 {
+pub async fn max_ttl_days(db: &DbPool) -> i64 {
     read_i64(db, "security.api_token_max_ttl_days")
         .await
         .filter(|d| *d > 0)
@@ -86,7 +86,7 @@ pub async fn max_ttl_days(db: &PgPool) -> i64 {
 }
 
 /// Reads the grace window granted to tokens issued before scopes existed.
-pub async fn legacy_grace_days(db: &PgPool) -> i64 {
+pub async fn legacy_grace_days(db: &DbPool) -> i64 {
     read_i64(db, "security.api_token_legacy_grace_days")
         .await
         .filter(|d| *d >= 0)
@@ -98,18 +98,19 @@ pub fn grace_deadline(legacy_since: DateTime<Utc>, grace_days: i64) -> DateTime<
     legacy_since + Duration::days(grace_days)
 }
 
-async fn read_i64(db: &PgPool, key: &str) -> Option<i64> {
-    let value: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1")
-            .bind(key)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, setting = %key, "Lecture du réglage de politique des jetons");
-                e
-            })
-            .ok()
-            .flatten();
+async fn read_i64(db: &DbPool, key: &str) -> Option<i64> {
+    let value: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<serde_json::Value>(
+            "SELECT value FROM core.settings WHERE key = $1",
+            params![key],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, setting = %key, "Reading the token-policy setting");
+            e
+        })
+        .ok()
+        .flatten();
     value.and_then(|v| v.as_i64())
 }
 
@@ -125,7 +126,7 @@ async fn read_i64(db: &PgPool, key: &str) -> Option<i64> {
 /// 4. the creator holds every key **at this instant** — a token is a delegation,
 ///    and one cannot delegate what one does not have.
 pub async fn validate_requested(
-    db: &PgPool,
+    db: &DbPool,
     requested: &[String],
     creator: &crate::authz::AdminContext,
 ) -> Result<Vec<String>, AppError> {
@@ -162,14 +163,13 @@ pub async fn validate_requested(
 
     // One round-trip for the whole list, returning the rows that are actually
     // grantable; whatever is missing from the answer is refused below.
-    let rows: Vec<(String, bool)> = sqlx::query_as(
-        "SELECT key, is_token_grantable FROM core.privileges WHERE key = ANY($1)",
-    )
-    .bind(&scopes)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "Validation des portées demandées : lecture du catalogue");
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        "SELECT key, is_token_grantable FROM core.privileges WHERE key",
+    );
+    qb.push_in(scopes.iter().cloned());
+    let rows: Vec<(String, bool)> = qb.fetch_all_as(db).await.map_err(|e| {
+        tracing::error!(error = %e, "Validating requested scopes: reading the catalogue");
         AppError::Database(e)
     })?;
 
@@ -210,7 +210,7 @@ pub async fn validate_requested(
 ///   defect being fixed;
 /// * whatever is asked for is clamped to the instance ceiling.
 pub async fn resolve_expiry(
-    db: &PgPool,
+    db: &DbPool,
     scopes: &[String],
     expires_in_days: Option<u32>,
 ) -> Result<Option<DateTime<Utc>>, AppError> {
@@ -239,21 +239,22 @@ pub async fn resolve_expiry(
 /// Lists the scopes `creator` may put on a token: grantable, not forbidden, and
 /// actually held.
 pub async fn grantable_for(
-    db: &PgPool,
+    db: &DbPool,
     creator: &crate::authz::AdminContext,
 ) -> Result<Vec<GrantableScope>, AppError> {
-    let rows: Vec<(String, String, String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT key, namespace, domain, verb, label, description
+    let rows: Vec<(String, String, String, String, String, Option<String>)> = db
+        .fetch_all_as::<(String, String, String, String, String, Option<String>)>(
+            "SELECT key, namespace, domain, verb, label, description
            FROM core.privileges
           WHERE is_token_grantable AND NOT is_orphan
           ORDER BY namespace, domain, verb",
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "Lecture des portées offrables");
-        AppError::Database(e)
-    })?;
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Reading the grantable scopes");
+            AppError::Database(e)
+        })?;
 
     Ok(rows
         .into_iter()

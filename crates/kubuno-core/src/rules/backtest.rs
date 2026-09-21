@@ -33,9 +33,10 @@
 
 use chrono::{DateTime, Datelike, Duration, Utc};
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use uuid::Uuid;
+
+use kubuno_db::{params, DbPool};
 
 use crate::errors::AppError;
 
@@ -59,8 +60,18 @@ const MAX_LOGGED_MATCHES: usize = 500;
 /// Rows read from `core.event_log` per batch.
 const BATCH: i64 = 2_000;
 
+/// One replayed row of `core.event_log`.
+#[derive(sqlx::FromRow)]
+struct EventLogRow {
+    id: i64,
+    source_module: Option<String>,
+    payload: Value,
+    depth: i16,
+    created_at: DateTime<Utc>,
+}
+
 /// Runs the backtest and stores its report.
-pub async fn run(db: &PgPool, backtest_id: Uuid) -> Result<(), AppError> {
+pub async fn run(db: &DbPool, backtest_id: Uuid) -> Result<(), AppError> {
     let bt = store::get_backtest(db, backtest_id).await?;
     let rule = store::get_rule(db, bt.rule_id).await?;
     store::mark_backtest_running(db, backtest_id).await?;
@@ -85,7 +96,7 @@ pub async fn run(db: &PgPool, backtest_id: Uuid) -> Result<(), AppError> {
 
 /// The replay itself.
 async fn execute(
-    db: &PgPool,
+    db: &DbPool,
     rule: &Rule,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
@@ -94,15 +105,16 @@ async fn execute(
     // than in Rust is what makes a 30-day replay affordable — and it is only
     // possible because `event_type` now stores the real type (see the defect
     // fixed in `crate::events::bus`).
-    let event_type: Option<String> =
-        sqlx::query_scalar("SELECT event_type FROM core.rule_triggers WHERE key = $1")
-            .bind(&rule.trigger_key)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "rules: lecture du type d'événement du déclencheur");
-                AppError::Database(e)
-            })?;
+    let event_type: Option<String> = db
+        .fetch_optional_scalar::<String>(
+            "SELECT event_type FROM core.rule_triggers WHERE key = $1",
+            params![&rule.trigger_key],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "rules: lecture du type d'événement du déclencheur");
+            AppError::Database(e)
+        })?;
     let Some(event_type) = event_type else {
         return Err(AppError::Validation(
             "Le déclencheur de cette règle n'est plus au catalogue".into(),
@@ -128,48 +140,44 @@ async fn execute(
     let mut cursor: i64 = 0;
 
     loop {
-        let rows = sqlx::query(
-            r#"SELECT id, event_type, source_module, payload, depth, created_at
-                 FROM core.event_log
-                WHERE event_type = $1
-                  AND created_at >= $2 AND created_at < $3
-                  AND id > $4
-                ORDER BY id
-                LIMIT $5"#,
-        )
-        .bind(&event_type)
-        .bind(from)
-        .bind(to)
-        .bind(cursor)
-        .bind(BATCH)
-        .fetch_all(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "rules: lecture du journal d'événements pour le rejeu");
-            AppError::Database(e)
-        })?;
+        let rows = db
+            .fetch_all_as::<EventLogRow>(
+                r#"SELECT id, source_module, payload, depth, created_at
+                     FROM core.event_log
+                    WHERE event_type = $1
+                      AND created_at >= $2 AND created_at < $3
+                      AND id > $4
+                    ORDER BY id
+                    LIMIT $5"#,
+                params![&event_type, from, to, cursor, BATCH],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "rules: lecture du journal d'événements pour le rejeu");
+                AppError::Database(e)
+            })?;
 
         if rows.is_empty() {
             break;
         }
 
+        let batch_len = rows.len() as i64;
         for row in &rows {
-            cursor = row.get("id");
+            cursor = row.id;
             scanned += 1;
             if scanned > cap {
                 truncated = true;
                 break;
             }
 
-            let source_module: Option<String> = row.get("source_module");
-            let payload: Value = row.get("payload");
-            let depth: i16 = row.get("depth");
-            let created_at: DateTime<Utc> = row.get("created_at");
+            let payload = &row.payload;
+            let depth: i16 = row.depth;
+            let created_at: DateTime<Utc> = row.created_at;
 
             let f = facts::facts_of_logged(
                 &event_type,
-                source_module.as_deref(),
-                &payload,
+                row.source_module.as_deref(),
+                payload,
                 u16::try_from(depth).unwrap_or(0),
             );
 
@@ -201,13 +209,13 @@ async fn execute(
                             if let std::collections::hash_map::Entry::Vacant(e) =
                                 unit_names.entry(u)
                             {
-                                let name: Option<String> = sqlx::query_scalar(
-                                    "SELECT name FROM core.org_units WHERE id = $1",
-                                )
-                                .bind(u)
-                                .fetch_optional(db)
-                                .await
-                                .unwrap_or(None);
+                                let name: Option<String> = db
+                                    .fetch_optional_scalar::<String>(
+                                        "SELECT name FROM core.org_units WHERE id = $1",
+                                        params![u],
+                                    )
+                                    .await
+                                    .unwrap_or(None);
                                 e.insert(name.unwrap_or_else(|| u.to_string()));
                             }
                             unit_names.get(&u).cloned().unwrap_or_else(|| u.to_string())
@@ -240,7 +248,7 @@ async fn execute(
             }
         }
 
-        if truncated || (rows.len() as i64) < BATCH {
+        if truncated || batch_len < BATCH {
             break;
         }
     }
@@ -285,16 +293,20 @@ async fn execute(
 }
 
 async fn resolve_unit(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     cache: &mut HashMap<Uuid, Option<Uuid>>,
 ) -> Result<Option<Uuid>, AppError> {
     if let Some(hit) = cache.get(&user_id) {
         return Ok(*hit);
     }
-    let unit: Option<Uuid> = sqlx::query_scalar("SELECT org_unit_id FROM core.users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(db)
+    // The scalar is decoded as `Option<Uuid>`: the column is nullable, so a row
+    // with no unit is a present-but-null value, not a missing row.
+    let unit: Option<Uuid> = db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![user_id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "rules: lecture de l'unité d'un compte pour le rejeu");

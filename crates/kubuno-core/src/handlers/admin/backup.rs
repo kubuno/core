@@ -28,6 +28,7 @@
 
 use axum::{extract::State, Json};
 use chrono::Utc;
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -197,16 +198,17 @@ pub async fn declare_restore_test(
         json!(Utc::now().to_rfc3339())
     };
 
-    let previous: Option<Value> = sqlx::query_scalar(
-        "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
-    )
-    .bind(policy::KEY_LAST_RESTORE_TEST)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "backup: lecture de la déclaration de restauration");
-        AppError::Database(e)
-    })?;
+    let previous: Option<Value> = state
+        .db
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
+            params![policy::KEY_LAST_RESTORE_TEST],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "backup: lecture de la déclaration de restauration");
+            AppError::Database(e)
+        })?;
 
     if previous.is_none() {
         return Err(AppError::NotFound(format!(
@@ -219,13 +221,10 @@ pub async fn declare_restore_test(
     // Written through `core.settings.value`, whose trigger (migration 000060)
     // mirrors it into the instance scope — the same path every other legacy
     // writer takes, so there is exactly one source of truth.
-    sqlx::query(
-        "UPDATE core.settings SET value = $1, updated_at = NOW(), updated_by = $2 WHERE key = $3",
+    tx.execute(
+        "UPDATE core.settings SET value = $1, updated_at = $2, updated_by = $3 WHERE key = $4",
+        params![value.clone(), Utc::now(), audit.admin.id, policy::KEY_LAST_RESTORE_TEST],
     )
-    .bind(&value)
-    .bind(audit.admin.id)
-    .bind(policy::KEY_LAST_RESTORE_TEST)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "backup: écriture de la déclaration de restauration");

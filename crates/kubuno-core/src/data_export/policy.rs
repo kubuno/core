@@ -16,7 +16,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 pub const KEY_DESTINATION: &str = "data_export.destination";
 pub const KEY_HOLD_HOURS: &str = "data_export.hold_hours";
@@ -141,7 +141,7 @@ impl Policy {
 
 /// Reads the policy in force at instance level. Never fails, for the same reason
 /// [`crate::backup::policy::load`] never fails.
-pub async fn load(db: &PgPool) -> Policy {
+pub async fn load(db: &DbPool) -> Policy {
     let d = Policy::default();
 
     let destination = crate::settings::instance_value(db, KEY_DESTINATION)
@@ -271,7 +271,7 @@ impl SelfPolicy {
 }
 
 /// Reads the self-service policy. Never fails, like [`load`].
-pub async fn load_self(db: &PgPool) -> SelfPolicy {
+pub async fn load_self(db: &DbPool) -> SelfPolicy {
     let d = SelfPolicy::default();
 
     let hold_hours = crate::settings::instance_value(db, KEY_SELF_HOLD_HOURS)
@@ -324,7 +324,7 @@ pub async fn load_self(db: &PgPool) -> SelfPolicy {
 /// is a feature that disappears from somebody's account page during a database
 /// hiccup, and the archive at the end of this path contains nothing the caller
 /// cannot already read in the interface.
-pub async fn self_service_enabled(db: &PgPool, user_id: uuid::Uuid) -> bool {
+pub async fn self_service_enabled(db: &DbPool, user_id: uuid::Uuid) -> bool {
     let scope = crate::settings::SettingScope::user(user_id);
     match crate::settings::chain::resolve_for(db, KEY_SELF_SERVICE, &scope).await {
         Ok(resolution) => resolution

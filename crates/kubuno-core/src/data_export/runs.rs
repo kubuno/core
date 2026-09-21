@@ -20,8 +20,8 @@
 //! composed from the failing step rather than from an input.
 
 use chrono::{DateTime, Utc};
+use kubuno_db::{new_id, params, DbPool};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -38,13 +38,15 @@ pub const STALE_RUN_HOURS: i64 = 24;
 // ── Wire types ───────────────────────────────────────────────────────────────
 
 /// One row of the history, as the API serves it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ExportRun {
     pub id: Uuid,
     pub scope: String,
     /// `admin` (requested from the console) or `self` (an account asking for its
     /// own data). Migration `000122`.
     pub origin: String,
+    // List columns travel as JSON so they decode identically on every engine.
+    #[sqlx(json)]
     pub services: Vec<String>,
     pub with_instance: bool,
     pub requested_by: Option<Uuid>,
@@ -79,38 +81,6 @@ pub struct ExportRun {
 }
 
 impl ExportRun {
-    fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        Ok(Self {
-            id: row.try_get("id")?,
-            scope: row.try_get("scope")?,
-            origin: row.try_get("origin")?,
-            services: row.try_get("services")?,
-            with_instance: row.try_get("with_instance")?,
-            requested_by: row.try_get("requested_by")?,
-            actor_label: row.try_get("actor_label")?,
-            status: row.try_get("status")?,
-            requested_at: row.try_get("requested_at")?,
-            started_at: row.try_get("started_at")?,
-            finished_at: row.try_get("finished_at")?,
-            duration_ms: row.try_get("duration_ms")?,
-            available_at: row.try_get("available_at")?,
-            expires_at: row.try_get("expires_at")?,
-            subjects_total: row.try_get("subjects_total")?,
-            subjects_done: row.try_get("subjects_done")?,
-            file_name: row.try_get("file_name")?,
-            destination: row.try_get("destination")?,
-            size_bytes: row.try_get("size_bytes")?,
-            entries_count: row.try_get("entries_count")?,
-            error: row.try_get("error")?,
-            file_deleted: row.try_get("file_deleted")?,
-            deleted_at: row.try_get("deleted_at")?,
-            download_count: row.try_get("download_count")?,
-            last_downloaded_at: row.try_get("last_downloaded_at")?,
-            download_limit: row.try_get("download_limit")?,
-            max_file_mb: row.try_get("max_file_mb")?,
-        })
-    }
-
     /// Downloads still allowed, or `None` when there is no ceiling.
     ///
     /// Saturated at zero: a counter that ran past its ceiling (a limit lowered
@@ -137,7 +107,7 @@ impl ExportRun {
 }
 
 /// One account inside one export.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ExportSubject {
     pub id: Uuid,
     pub user_id: Option<Uuid>,
@@ -145,25 +115,12 @@ pub struct ExportSubject {
     pub folder: String,
     pub status: String,
     pub size_bytes: Option<i64>,
+    // List columns travel as JSON so they decode identically on every engine.
+    #[sqlx(json)]
     pub services_ok: Vec<String>,
+    #[sqlx(json)]
     pub services_ko: Vec<String>,
     pub error: Option<String>,
-}
-
-impl ExportSubject {
-    fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        Ok(Self {
-            id: row.try_get("id")?,
-            user_id: row.try_get("user_id")?,
-            user_label: row.try_get("user_label")?,
-            folder: row.try_get("folder")?,
-            status: row.try_get("status")?,
-            size_bytes: row.try_get("size_bytes")?,
-            services_ok: row.try_get("services_ok")?,
-            services_ko: row.try_get("services_ko")?,
-            error: row.try_get("error")?,
-        })
-    }
 }
 
 /// What the console — or an account asking for its own data — asked for,
@@ -212,32 +169,37 @@ fn truncate(message: &str) -> String {
 /// export half an organisation and report success. The whole point of the
 /// subjects table is that it says who is in the archive, and a partial answer
 /// there is worse than none.
-pub async fn create(db: &PgPool, new: &NewExport) -> Result<Uuid, AppError> {
+pub async fn create(db: &DbPool, new: &NewExport) -> Result<Uuid, AppError> {
     let mut tx = db.begin().await.map_err(|e| {
         tracing::error!(error = %e, "export: ouverture de transaction impossible");
         AppError::Database(e)
     })?;
 
-    let id: Uuid = sqlx::query_scalar(
+    // The key is generated in Rust and bound explicitly rather than read back
+    // through RETURNING, which not every engine offers.
+    let id = new_id();
+    tx.execute(
         "INSERT INTO core.data_export_runs \
-             (scope, origin, services, with_instance, requested_by, actor_label, \
+             (id, scope, origin, services, with_instance, requested_by, actor_label, \
               available_at, expires_at, destination, subjects_total, \
               download_limit, max_file_mb) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+        params![
+            id,
+            &new.scope,
+            new.origin,
+            new.services.clone(),
+            new.with_instance,
+            new.requested_by,
+            &new.actor_label,
+            new.available_at,
+            new.expires_at,
+            &new.destination,
+            new.subjects.len() as i32,
+            new.download_limit,
+            new.max_file_mb
+        ],
     )
-    .bind(&new.scope)
-    .bind(new.origin)
-    .bind(&new.services)
-    .bind(new.with_instance)
-    .bind(new.requested_by)
-    .bind(&new.actor_label)
-    .bind(new.available_at)
-    .bind(new.expires_at)
-    .bind(&new.destination)
-    .bind(new.subjects.len() as i32)
-    .bind(new.download_limit)
-    .bind(new.max_file_mb)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         // The unique index `uq_core_data_export_self_active` lands here when two
@@ -255,15 +217,12 @@ pub async fn create(db: &PgPool, new: &NewExport) -> Result<Uuid, AppError> {
     })?;
 
     for (user_id, label, folder) in &new.subjects {
-        sqlx::query(
-            "INSERT INTO core.data_export_subjects (export_id, user_id, user_label, folder) \
-             VALUES ($1, $2, $3, $4)",
+        let subject_id = new_id();
+        tx.execute(
+            "INSERT INTO core.data_export_subjects (id, export_id, user_id, user_label, folder) \
+             VALUES ($1, $2, $3, $4, $5)",
+            params![subject_id, id, user_id, label, folder],
         )
-        .bind(id)
-        .bind(user_id)
-        .bind(label)
-        .bind(folder)
-        .execute(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, export_id = %id, "export: inscription d'un compte impossible");
@@ -309,27 +268,20 @@ macro_rules! active_sql {
     };
 }
 
-pub async fn get(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
-    let row = sqlx::query(concat!(
-        "SELECT ",
-        run_columns!(),
-        " FROM core.data_export_runs WHERE id = $1"
-    ))
-    .bind(id)
-    .fetch_optional(db)
+pub async fn get(db: &DbPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
+    db.fetch_optional_as::<ExportRun>(
+        concat!(
+            "SELECT ",
+            run_columns!(),
+            " FROM core.data_export_runs WHERE id = $1"
+        ),
+        params![id],
+    )
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %id, "export: lecture d'une exécution impossible");
         AppError::Database(e)
-    })?;
-
-    row.as_ref()
-        .map(ExportRun::from_row)
-        .transpose()
-        .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage d'une exécution impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// One **administrative** run, or `None`.
@@ -340,27 +292,20 @@ pub async fn get(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
 /// — held by the read-only administrator out of the box — must therefore not be
 /// a way to fetch one. Whoever needs somebody else's data asks for it with
 /// `core.data_export.execute`, which tells every administrator and waits.
-pub async fn get_admin(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
-    let row = sqlx::query(concat!(
-        "SELECT ",
-        run_columns!(),
-        " FROM core.data_export_runs WHERE id = $1 AND origin = 'admin'"
-    ))
-    .bind(id)
-    .fetch_optional(db)
+pub async fn get_admin(db: &DbPool, id: Uuid) -> Result<Option<ExportRun>, AppError> {
+    db.fetch_optional_as::<ExportRun>(
+        concat!(
+            "SELECT ",
+            run_columns!(),
+            " FROM core.data_export_runs WHERE id = $1 AND origin = 'admin'"
+        ),
+        params![id],
+    )
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %id, "export: lecture d'une exécution impossible");
         AppError::Database(e)
-    })?;
-
-    row.as_ref()
-        .map(ExportRun::from_row)
-        .transpose()
-        .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage d'une exécution impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// One run **owned by** `user_id`, or `None`.
@@ -371,28 +316,20 @@ pub async fn get_admin(db: &PgPool, id: Uuid) -> Result<Option<ExportRun>, AppEr
 /// else. `origin` is part of the predicate too — an administrator's archive
 /// covering several accounts is not "one's own data" even when the requester
 /// happens to be its author.
-pub async fn get_own(db: &PgPool, id: Uuid, user_id: Uuid) -> Result<Option<ExportRun>, AppError> {
-    let row = sqlx::query(concat!(
-        "SELECT ",
-        run_columns!(),
-        " FROM core.data_export_runs WHERE id = $1 AND requested_by = $2 AND origin = 'self'"
-    ))
-    .bind(id)
-    .bind(user_id)
-    .fetch_optional(db)
+pub async fn get_own(db: &DbPool, id: Uuid, user_id: Uuid) -> Result<Option<ExportRun>, AppError> {
+    db.fetch_optional_as::<ExportRun>(
+        concat!(
+            "SELECT ",
+            run_columns!(),
+            " FROM core.data_export_runs WHERE id = $1 AND requested_by = $2 AND origin = 'self'"
+        ),
+        params![id, user_id],
+    )
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %id, "export: lecture d'une demande personnelle impossible");
         AppError::Database(e)
-    })?;
-
-    row.as_ref()
-        .map(ExportRun::from_row)
-        .transpose()
-        .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage d'une demande personnelle impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// The most recent **administrative** runs, newest first.
@@ -401,28 +338,21 @@ pub async fn get_own(db: &PgPool, id: Uuid, user_id: Uuid) -> Result<Option<Expo
 /// them, plus a practical one: on an instance where everybody exercises their
 /// portability right, they would be the entire history and the operator would
 /// stop reading it.
-pub async fn list(db: &PgPool, limit: i64) -> Result<Vec<ExportRun>, AppError> {
+pub async fn list(db: &DbPool, limit: i64) -> Result<Vec<ExportRun>, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(concat!(
-        "SELECT ",
-        run_columns!(),
-        " FROM core.data_export_runs WHERE origin = 'admin' ORDER BY requested_at DESC LIMIT $1"
-    ))
-    .bind(limit)
-    .fetch_all(db)
+    db.fetch_all_as::<ExportRun>(
+        concat!(
+            "SELECT ",
+            run_columns!(),
+            " FROM core.data_export_runs WHERE origin = 'admin' ORDER BY requested_at DESC LIMIT $1"
+        ),
+        params![limit],
+    )
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "export: lecture de l'historique impossible");
         AppError::Database(e)
-    })?;
-
-    rows.iter()
-        .map(ExportRun::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage de l'historique impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// The **administrative** run currently pending or under way, if any.
@@ -437,7 +367,7 @@ pub async fn list(db: &PgPool, limit: i64) -> Result<Vec<ExportRun>, AppError> {
 /// account is small, and letting one person's portability request block the
 /// console — or the console block everybody's portability — would make each
 /// feature the other's outage.
-pub async fn active_admin(db: &PgPool) -> Result<Option<ExportRun>, AppError> {
+pub async fn active_admin(db: &DbPool) -> Result<Option<ExportRun>, AppError> {
     active_where(db, active_sql!("origin = 'admin'"), None).await
 }
 
@@ -446,114 +376,80 @@ pub async fn active_admin(db: &PgPool) -> Result<Option<ExportRun>, AppError> {
 /// The readable half of `uq_core_data_export_self_active`: the index makes two
 /// concurrent requests impossible, this makes the refusal a sentence instead of
 /// a constraint violation.
-pub async fn active_for_user(db: &PgPool, user_id: Uuid) -> Result<Option<ExportRun>, AppError> {
+pub async fn active_for_user(db: &DbPool, user_id: Uuid) -> Result<Option<ExportRun>, AppError> {
     active_where(db, active_sql!("origin = 'self' AND requested_by = $1"), Some(user_id)).await
 }
 
 /// Shared body of the two lookups above. The statement arrives as a literal
 /// assembled by [`active_sql`]; nothing here is built at run time.
 async fn active_where(
-    db: &PgPool,
+    db: &DbPool,
     sql: &'static str,
     bind: Option<Uuid>,
 ) -> Result<Option<ExportRun>, AppError> {
-    let query = sqlx::query(sql);
-    let query = match bind {
-        Some(id) => query.bind(id),
-        None => query,
+    let params = match bind {
+        Some(id) => params![id],
+        None => params![],
     };
 
-    let row = query.fetch_optional(db).await.map_err(|e| {
-        tracing::error!(error = %e, "export: lecture de l'exécution en cours impossible");
-        AppError::Database(e)
-    })?;
-
-    row.as_ref()
-        .map(ExportRun::from_row)
-        .transpose()
+    db.fetch_optional_as::<ExportRun>(sql, params)
+        .await
         .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage de l'exécution en cours impossible");
+            tracing::error!(error = %e, "export: lecture de l'exécution en cours impossible");
             AppError::Database(e)
         })
 }
 
 /// One account's own requests, newest first.
-pub async fn list_own(db: &PgPool, user_id: Uuid, limit: i64) -> Result<Vec<ExportRun>, AppError> {
-    let rows = sqlx::query(concat!(
-        "SELECT ",
-        run_columns!(),
-        " FROM core.data_export_runs \
+pub async fn list_own(db: &DbPool, user_id: Uuid, limit: i64) -> Result<Vec<ExportRun>, AppError> {
+    db.fetch_all_as::<ExportRun>(
+        concat!(
+            "SELECT ",
+            run_columns!(),
+            " FROM core.data_export_runs \
           WHERE origin = 'self' AND requested_by = $1 \
           ORDER BY requested_at DESC LIMIT $2"
-    ))
-    .bind(user_id)
-    .bind(limit.clamp(1, 50))
-    .fetch_all(db)
+        ),
+        params![user_id, limit.clamp(1, 50)],
+    )
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "export: lecture de l'historique personnel impossible");
         AppError::Database(e)
-    })?;
-
-    rows.iter()
-        .map(ExportRun::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage de l'historique personnel impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// Every account of a run, in a stable order.
-pub async fn subjects(db: &PgPool, export_id: Uuid) -> Result<Vec<ExportSubject>, AppError> {
-    let rows = sqlx::query(
+pub async fn subjects(db: &DbPool, export_id: Uuid) -> Result<Vec<ExportSubject>, AppError> {
+    db.fetch_all_as::<ExportSubject>(
         "SELECT id, user_id, user_label, folder, status, size_bytes, services_ok, services_ko, error \
            FROM core.data_export_subjects WHERE export_id = $1 ORDER BY folder",
+        params![export_id],
     )
-    .bind(export_id)
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %export_id, "export: lecture des comptes impossible");
         AppError::Database(e)
-    })?;
-
-    rows.iter()
-        .map(ExportSubject::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage des comptes impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// The next accounts still to process, oldest first.
 pub async fn pending_subjects(
-    db: &PgPool,
+    db: &DbPool,
     export_id: Uuid,
     limit: i64,
 ) -> Result<Vec<ExportSubject>, AppError> {
-    let rows = sqlx::query(
+    db.fetch_all_as::<ExportSubject>(
         "SELECT id, user_id, user_label, folder, status, size_bytes, services_ok, services_ko, error \
            FROM core.data_export_subjects \
           WHERE export_id = $1 AND status = 'pending' ORDER BY folder LIMIT $2",
+        params![export_id, limit.clamp(1, 100)],
     )
-    .bind(export_id)
-    .bind(limit.clamp(1, 100))
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %export_id, "export: lecture des comptes restants impossible");
         AppError::Database(e)
-    })?;
-
-    rows.iter()
-        .map(ExportSubject::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, "export: décodage des comptes restants impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 // ── Transitions ──────────────────────────────────────────────────────────────
@@ -561,25 +457,25 @@ pub async fn pending_subjects(
 /// Moves a `pending` run to `running`. Returns `false` when somebody else got
 /// there first, or when the run was cancelled in between — which is how a
 /// cancellation during the hold actually stops the work.
-pub async fn start(db: &PgPool, id: Uuid) -> Result<bool, AppError> {
-    let done = sqlx::query(
-        "UPDATE core.data_export_runs SET status = 'running', started_at = COALESCE(started_at, NOW()) \
+pub async fn start(db: &DbPool, id: Uuid) -> Result<bool, AppError> {
+    let affected = db
+        .execute(
+            "UPDATE core.data_export_runs SET status = 'running', started_at = COALESCE(started_at, $2) \
           WHERE id = $1 AND status = 'pending'",
-    )
-    .bind(id)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, export_id = %id, "export: démarrage impossible");
-        AppError::Database(e)
-    })?;
-    Ok(done.rows_affected() == 1)
+            params![id, Utc::now()],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, export_id = %id, "export: démarrage impossible");
+            AppError::Database(e)
+        })?;
+    Ok(affected == 1)
 }
 
 /// Closes one account, and moves the run's counter in the same statement pair.
 #[allow(clippy::too_many_arguments)]
 pub async fn finish_subject(
-    db: &PgPool,
+    db: &DbPool,
     export_id: Uuid,
     subject_id: Uuid,
     status: &str,
@@ -593,19 +489,21 @@ pub async fn finish_subject(
         AppError::Database(e)
     })?;
 
-    sqlx::query(
+    tx.execute(
         "UPDATE core.data_export_subjects \
             SET status = $2, size_bytes = $3, services_ok = $4, services_ko = $5, \
-                error = $6, finished_at = NOW() \
+                error = $6, finished_at = $7 \
           WHERE id = $1",
+        params![
+            subject_id,
+            status,
+            size_bytes.min(i64::MAX as u64) as i64,
+            services_ok.to_vec(),
+            services_ko.to_vec(),
+            error.map(truncate),
+            Utc::now()
+        ],
     )
-    .bind(subject_id)
-    .bind(status)
-    .bind(size_bytes.min(i64::MAX as u64) as i64)
-    .bind(services_ok)
-    .bind(services_ko)
-    .bind(error.map(truncate))
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, subject_id = %subject_id, "export: clôture d'un compte impossible");
@@ -615,14 +513,13 @@ pub async fn finish_subject(
     // Recounted from the subjects rather than incremented: an increment is
     // wrong the first time a job is retried after a crash, and the progress
     // figure is what an operator uses to decide whether to wait or to cancel.
-    sqlx::query(
+    tx.execute(
         "UPDATE core.data_export_runs r \
             SET subjects_done = (SELECT COUNT(*) FROM core.data_export_subjects s \
                                   WHERE s.export_id = r.id AND s.status <> 'pending') \
           WHERE r.id = $1",
+        params![export_id],
     )
-    .bind(export_id)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %export_id, "export: mise à jour de l'avancement impossible");
@@ -639,25 +536,27 @@ pub async fn finish_subject(
 /// Closes a run as ready. The archive exists; the hold decides when it can be
 /// fetched.
 pub async fn succeed(
-    db: &PgPool,
+    db: &DbPool,
     id: Uuid,
     file_name: &str,
     size_bytes: u64,
     entries: usize,
     duration_ms: i64,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    db.execute(
         "UPDATE core.data_export_runs \
-            SET status = 'ready', finished_at = NOW(), duration_ms = $2, \
+            SET status = 'ready', finished_at = $6, duration_ms = $2, \
                 file_name = $3, size_bytes = $4, entries_count = $5, error = NULL \
           WHERE id = $1 AND status = 'running'",
+        params![
+            id,
+            duration_ms.max(0),
+            file_name,
+            size_bytes.min(i64::MAX as u64) as i64,
+            entries.min(i32::MAX as usize) as i32,
+            Utc::now()
+        ],
     )
-    .bind(id)
-    .bind(duration_ms.max(0))
-    .bind(file_name)
-    .bind(size_bytes.min(i64::MAX as u64) as i64)
-    .bind(entries.min(i32::MAX as usize) as i32)
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %id, "export: clôture d'une exécution réussie impossible");
@@ -667,16 +566,13 @@ pub async fn succeed(
 }
 
 /// Closes a run as failed.
-pub async fn fail(db: &PgPool, id: Uuid, error: &str, duration_ms: i64) -> Result<(), AppError> {
-    sqlx::query(
+pub async fn fail(db: &DbPool, id: Uuid, error: &str, duration_ms: i64) -> Result<(), AppError> {
+    db.execute(
         "UPDATE core.data_export_runs \
-            SET status = 'failed', finished_at = NOW(), duration_ms = $2, error = $3 \
+            SET status = 'failed', finished_at = $4, duration_ms = $2, error = $3 \
           WHERE id = $1 AND status IN ('pending', 'running')",
+        params![id, duration_ms.max(0), truncate(error), Utc::now()],
     )
-    .bind(id)
-    .bind(duration_ms.max(0))
-    .bind(truncate(error))
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %id, "export: clôture d'une exécution en échec impossible");
@@ -688,22 +584,22 @@ pub async fn fail(db: &PgPool, id: Uuid, error: &str, duration_ms: i64) -> Resul
 /// Cancels a run that has not finished. Returns `false` when it was already
 /// closed — a cancellation that arrives one second late must say so rather than
 /// pretend to have stopped something.
-pub async fn cancel(db: &PgPool, id: Uuid, reason: &str) -> Result<bool, AppError> {
-    let done = sqlx::query(
-        "UPDATE core.data_export_runs \
-            SET status = 'cancelled', finished_at = NOW(), error = $2, \
-                file_deleted = TRUE, deleted_at = NOW() \
+pub async fn cancel(db: &DbPool, id: Uuid, reason: &str) -> Result<bool, AppError> {
+    let now = Utc::now();
+    let affected = db
+        .execute(
+            "UPDATE core.data_export_runs \
+            SET status = 'cancelled', finished_at = $3, error = $2, \
+                file_deleted = TRUE, deleted_at = $4 \
           WHERE id = $1 AND status IN ('pending', 'running')",
-    )
-    .bind(id)
-    .bind(truncate(reason))
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, export_id = %id, "export: annulation impossible");
-        AppError::Database(e)
-    })?;
-    Ok(done.rows_affected() == 1)
+            params![id, truncate(reason), now, now],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, export_id = %id, "export: annulation impossible");
+            AppError::Database(e)
+        })?;
+    Ok(affected == 1)
 }
 
 /// Records that the archive of a finished run is gone, and why.
@@ -711,16 +607,14 @@ pub async fn cancel(db: &PgPool, id: Uuid, reason: &str) -> Result<bool, AppErro
 /// `status` moves to `expired` when the retention pass removed it, and stays
 /// `ready` when an operator did: "it aged out" and "somebody deleted it" are
 /// different facts and the history has to keep both.
-pub async fn mark_file_deleted(db: &PgPool, id: Uuid, expired: bool) -> Result<(), AppError> {
-    sqlx::query(
+pub async fn mark_file_deleted(db: &DbPool, id: Uuid, expired: bool) -> Result<(), AppError> {
+    db.execute(
         "UPDATE core.data_export_runs \
-            SET file_deleted = TRUE, deleted_at = NOW(), \
+            SET file_deleted = TRUE, deleted_at = $3, \
                 status = CASE WHEN $2 AND status = 'ready' THEN 'expired' ELSE status END \
           WHERE id = $1",
+        params![id, expired, Utc::now()],
     )
-    .bind(id)
-    .bind(expired)
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, export_id = %id, "export: marquage de suppression impossible");
@@ -733,17 +627,16 @@ pub async fn mark_file_deleted(db: &PgPool, id: Uuid, expired: bool) -> Result<(
 /// written must never prevent the archive from being served — the operator has
 /// the right to it, and the audit entry is written on the other side of this
 /// call whatever happens here.
-pub async fn record_download(db: &PgPool, id: Uuid, by: Uuid) {
-    if let Err(e) = sqlx::query(
-        "UPDATE core.data_export_runs \
-            SET download_count = download_count + 1, last_downloaded_at = NOW(), \
+pub async fn record_download(db: &DbPool, id: Uuid, by: Uuid) {
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.data_export_runs \
+            SET download_count = download_count + 1, last_downloaded_at = $3, \
                 last_downloaded_by = $2 \
           WHERE id = $1",
-    )
-    .bind(id)
-    .bind(by)
-    .execute(db)
-    .await
+            params![id, by, Utc::now()],
+        )
+        .await
     {
         tracing::error!(error = %e, export_id = %id, "export: compteur de téléchargement non écrit");
     }
@@ -762,43 +655,97 @@ pub async fn record_download(db: &PgPool, id: Uuid, by: Uuid) {
 /// pressing the button at the same moment is the ordinary case, not the exotic
 /// one.
 pub async fn claim_download(
-    db: &PgPool,
+    db: &DbPool,
     id: Uuid,
     by: Uuid,
 ) -> Result<Option<i32>, AppError> {
-    let left: Option<i32> = sqlx::query_scalar(
-        "UPDATE core.data_export_runs \
-            SET download_count = download_count + 1, last_downloaded_at = NOW(), \
-                last_downloaded_by = $2 \
-          WHERE id = $1 \
-            AND (download_limit IS NULL OR download_count < download_limit) \
-        RETURNING GREATEST(COALESCE(download_limit, 2147483647) - download_count, 0)",
-    )
-    .bind(id)
-    .bind(by)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
+    // Expressed as a transaction rather than an `UPDATE ... RETURNING`, which
+    // MySQL lacks: the guarded update claims the slot, and the remainder is
+    // recomputed in Rust from the row it just wrote (avoiding `GREATEST`, which
+    // SQLite does not have). A guard that matched updates exactly one row.
+    let mut tx = db.begin().await.map_err(|e| {
         tracing::error!(error = %e, export_id = %id, "export: décompte de téléchargement impossible");
         AppError::Database(e)
     })?;
+
+    let affected = tx
+        .execute(
+            "UPDATE core.data_export_runs \
+            SET download_count = download_count + 1, last_downloaded_at = $3, \
+                last_downloaded_by = $2 \
+          WHERE id = $1 \
+            AND (download_limit IS NULL OR download_count < download_limit)",
+            params![id, by, Utc::now()],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, export_id = %id, "export: décompte de téléchargement impossible");
+            AppError::Database(e)
+        })?;
+
+    if affected == 0 {
+        // The ceiling was already reached (or the row is gone): nothing written.
+        tx.rollback().await.ok();
+        return Ok(None);
+    }
+
+    let row = tx
+        .fetch_optional_row(
+            "SELECT download_limit, download_count FROM core.data_export_runs WHERE id = $1",
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, export_id = %id, "export: décompte de téléchargement impossible");
+            AppError::Database(e)
+        })?;
+
+    tx.commit().await.map_err(|e| {
+        tracing::error!(error = %e, export_id = %id, "export: décompte de téléchargement impossible");
+        AppError::Database(e)
+    })?;
+
+    let left = match row {
+        Some(r) => {
+            let limit: Option<i32> = r.try_get("download_limit").map_err(|e| {
+                tracing::error!(error = %e, export_id = %id, "export: décompte de téléchargement impossible");
+                AppError::Database(e)
+            })?;
+            let count: i32 = r.try_get("download_count").map_err(|e| {
+                tracing::error!(error = %e, export_id = %id, "export: décompte de téléchargement impossible");
+                AppError::Database(e)
+            })?;
+            Some((limit.unwrap_or(i32::MAX) - count).max(0))
+        }
+        None => None,
+    };
     Ok(left)
 }
 
 /// Runs whose archive is past its date and still on the disk.
-pub async fn expired_files(db: &PgPool) -> Result<Vec<(Uuid, String, String)>, AppError> {
-    let rows: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, destination, file_name FROM core.data_export_runs \
-          WHERE status = 'ready' AND file_deleted = FALSE AND expires_at <= NOW() \
+pub async fn expired_files(db: &DbPool) -> Result<Vec<(Uuid, String, String)>, AppError> {
+    #[derive(sqlx::FromRow)]
+    struct ExpiredFile {
+        id: Uuid,
+        destination: String,
+        file_name: String,
+    }
+    let rows = db
+        .fetch_all_as::<ExpiredFile>(
+            "SELECT id, destination, file_name FROM core.data_export_runs \
+          WHERE status = 'ready' AND file_deleted = FALSE AND expires_at <= $1 \
             AND destination IS NOT NULL AND file_name IS NOT NULL",
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "export: lecture des archives expirées impossible");
-        AppError::Database(e)
-    })?;
-    Ok(rows)
+            params![Utc::now()],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "export: lecture des archives expirées impossible");
+            AppError::Database(e)
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.id, r.destination, r.file_name))
+        .collect())
 }
 
 /// Closes rows left `running` by a process that died mid-export.
@@ -806,23 +753,27 @@ pub async fn expired_files(db: &PgPool) -> Result<Vec<(Uuid, String, String)>, A
 /// The equivalent of [`crate::backup::runs::close_stalled`]: without it, the
 /// console would report an export in progress for a process that stopped last
 /// month, and the "one at a time" guard would refuse every new request for ever.
-pub async fn close_stalled(db: &PgPool) -> Result<u64, AppError> {
-    let rows = sqlx::query(
-        "UPDATE core.data_export_runs \
-            SET status = 'failed', finished_at = NOW(), \
-                file_deleted = TRUE, deleted_at = NOW(), \
+pub async fn close_stalled(db: &DbPool) -> Result<u64, AppError> {
+    // "N hours ago" is computed in Rust and bound, rather than with `make_interval`
+    // (a PostgreSQL function) inside the statement.
+    let now = Utc::now();
+    let cutoff = now - chrono::Duration::hours(STALE_RUN_HOURS);
+    let affected = db
+        .execute(
+            "UPDATE core.data_export_runs \
+            SET status = 'failed', finished_at = $1, \
+                file_deleted = TRUE, deleted_at = $2, \
                 error = 'Export interrompu (processus arrêté en cours d''exécution)' \
           WHERE status IN ('pending', 'running') \
-            AND requested_at < NOW() - make_interval(hours => $1::int)",
-    )
-    .bind(STALE_RUN_HOURS as i32)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "export: reprise des exécutions interrompues impossible");
-        AppError::Database(e)
-    })?;
-    Ok(rows.rows_affected())
+            AND requested_at < $3",
+            params![now, now, cutoff],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "export: reprise des exécutions interrompues impossible");
+            AppError::Database(e)
+        })?;
+    Ok(affected)
 }
 
 #[cfg(test)]

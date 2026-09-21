@@ -30,7 +30,7 @@
 //! is the one outcome this control cannot afford.
 
 use serde_json::json;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::alerts::{self, model::Severity, NewAlert};
@@ -49,7 +49,7 @@ pub const EXPORT_STARTED: &str = "security.data_export_started";
 /// The audit entry is written on the caller's side, in the same transaction as
 /// the request, and is the record that cannot be lost.
 pub async fn announce(
-    db: &PgPool,
+    db: &DbPool,
     export_id: Uuid,
     actor_id: Uuid,
     actor_label: &str,

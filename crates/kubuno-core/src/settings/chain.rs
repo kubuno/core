@@ -6,17 +6,16 @@
 //! above has locked the key. Keeping the policy here rather than in SQL is what
 //! makes it unit-testable without a database.
 
+use kubuno_db::{params, DbPool};
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::postgres::PgRow;
-use sqlx::{PgExecutor, Row};
 use uuid::Uuid;
 
 use super::scope::{ScopeKind, SettingScope};
 use crate::errors::AppError;
 
 /// One level of the chain that actually carries a value.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ChainLevel {
     pub scope_type: String,
     pub scope_id: Option<Uuid>,
@@ -32,19 +31,6 @@ pub struct ChainLevel {
 }
 
 impl ChainLevel {
-    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(Self {
-            scope_type: row.try_get("scope_type")?,
-            scope_id: row.try_get("scope_id")?,
-            scope_name: row.try_get("scope_name")?,
-            specificity: row.try_get("specificity")?,
-            value: row.try_get("value")?,
-            locked: row.try_get("locked")?,
-            updated_at: row.try_get("updated_at")?,
-            updated_by: row.try_get("updated_by")?,
-        })
-    }
-
     /// True when this level *is* the target scope — the row an admin would
     /// delete to go back to inheriting.
     fn is_own(&self, scope: &SettingScope) -> bool {
@@ -194,37 +180,29 @@ fn own_specificity(chain: &[ChainLevel], scope: &SettingScope) -> i32 {
 }
 
 /// Reads the chain of `key` as seen from `scope`.
-pub async fn load_chain<'e, E: PgExecutor<'e>>(
-    db: E,
+///
+/// `core.setting_chain` is a PostgreSQL set-returning function; the equivalent
+/// on the other engines is provided by the schema layer (separate migration).
+pub async fn load_chain(
+    db: &DbPool,
     key: &str,
     scope: &SettingScope,
 ) -> Result<Vec<ChainLevel>, AppError> {
-    let rows = sqlx::query(
+    db.fetch_all_as::<ChainLevel>(
         "SELECT scope_type, scope_id, scope_name, specificity, value, locked, updated_at, updated_by \
          FROM core.setting_chain($1, $2, $3)",
+        params![key, scope.kind.as_str(), scope.chain_id()],
     )
-    .bind(key)
-    .bind(scope.kind.as_str())
-    .bind(scope.chain_id())
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, key = %key, "setting_chain: lecture de la chaîne impossible");
         AppError::Database(e)
-    })?;
-
-    rows.iter()
-        .map(ChainLevel::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, key = %key, "setting_chain: décodage impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// Reads and resolves in one call.
-pub async fn resolve_for<'e, E: PgExecutor<'e>>(
-    db: E,
+pub async fn resolve_for(
+    db: &DbPool,
     key: &str,
     scope: &SettingScope,
 ) -> Result<Resolution, AppError> {

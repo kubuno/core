@@ -1,49 +1,64 @@
 //! User provisioning for OAuth / OIDC sign-ins: lookup, local-account linking,
 //! account creation and username uniqueness.
 
+use kubuno_db::dialect::SqlType;
+use kubuno_db::{new_id, params, DbPool};
+
 use crate::errors::AppError;
 
 /// Find a user by (provider, sub), or link a local account sharing the verified
 /// email. Returns `None` if neither matches (caller decides whether to create).
 pub(super) async fn find_oauth_user(
-    db:       &sqlx::PgPool,
+    db:       &DbPool,
     provider: &str,
     sub:      &str,
     email:    &str,
 ) -> Result<Option<crate::models::user::User>, AppError> {
     // 1. By (provider, oauth_id)
-    if let Some(user) = sqlx::query_as::<_, crate::models::user::User>(
-        "SELECT * FROM core.users WHERE oauth_provider = $1 AND oauth_id = $2 AND is_active = TRUE",
-    )
-    .bind(provider)
-    .bind(sub)
-    .fetch_optional(db)
-    .await?
+    if let Some(user) = db
+        .fetch_optional_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE oauth_provider = $1 AND oauth_id = $2 AND is_active = TRUE",
+            params![provider, sub],
+        )
+        .await?
     {
         return Ok(Some(user));
     }
 
-    // 2. Link a pre-existing local account with the same email.
-    if let Some(user) = sqlx::query_as::<_, crate::models::user::User>(
-        "UPDATE core.users SET oauth_provider = $1, oauth_id = $2, email_verified = TRUE
-         WHERE email = $3 AND is_active = TRUE
-         RETURNING *",
-    )
-    .bind(provider)
-    .bind(sub)
-    .bind(email)
-    .fetch_optional(db)
-    .await?
-    {
-        tracing::info!(user_id = %user.id, provider = %provider, "Compte local lié au SSO");
+    // 2. Link a pre-existing local account with the same email. MySQL has no
+    // UPDATE ... RETURNING, so the link is done in a transaction — find the row,
+    // stamp it, then read it back by id.
+    let mut tx = db.begin().await?;
+    let uid: Option<uuid::Uuid> = tx
+        .fetch_optional_scalar(
+            "SELECT id FROM core.users WHERE email = $1 AND is_active = TRUE",
+            params![email],
+        )
+        .await?;
+    if let Some(uid) = uid {
+        tx.execute(
+            "UPDATE core.users SET oauth_provider = $1, oauth_id = $2, email_verified = TRUE
+             WHERE id = $3",
+            params![provider, sub, uid],
+        )
+        .await?;
+        tx.commit().await?;
+        let user = db
+            .fetch_one_as::<crate::models::user::User>(
+                "SELECT * FROM core.users WHERE id = $1",
+                params![uid],
+            )
+            .await?;
+        tracing::info!(user_id = %user.id, provider = %provider, "Local account linked to SSO");
         return Ok(Some(user));
     }
+    tx.rollback().await?;
 
     Ok(None)
 }
 
 pub(super) async fn create_oauth_user(
-    db:                 &sqlx::PgPool,
+    db:                 &DbPool,
     provider:           &str,
     sub:                &str,
     email:              &str,
@@ -69,24 +84,25 @@ pub(super) async fn create_oauth_user(
     // the unit it is created in.
     let quota = crate::models::user::default_quota_for(db, root_unit).await;
 
-    let user = sqlx::query_as::<_, crate::models::user::User>(
+    // The id is minted here instead of relying on a DEFAULT / RETURNING, so the
+    // row can be read back on the three engines.
+    let id = new_id();
+    db.execute(
         r#"INSERT INTO core.users
-               (email, username, display_name, oauth_provider, oauth_id, email_verified,
+               (id, email, username, display_name, oauth_provider, oauth_id, email_verified,
                 quota_bytes, org_unit_id)
-           VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7)
-           RETURNING *"#,
+           VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8)"#,
+        params![id, email, &username, display_name, provider, sub, quota, root_unit],
     )
-    .bind(email)
-    .bind(&username)
-    .bind(display_name)
-    .bind(provider)
-    .bind(sub)
-    .bind(quota)
-    .bind(root_unit)
-    .fetch_one(db)
     .await?;
+    let user = db
+        .fetch_one_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1",
+            params![id],
+        )
+        .await?;
 
-    tracing::info!(user_id = %user.id, username = %username, provider = %provider, "Nouveau compte créé via SSO");
+    tracing::info!(user_id = %user.id, username = %username, provider = %provider, "New account created via SSO");
     Ok(user)
 }
 
@@ -101,12 +117,20 @@ pub(super) async fn create_oauth_user(
 /// Best-effort: a group that cannot be created must not cost somebody their
 /// session. The failure is logged and the sign-in continues.
 pub(super) async fn apply_claimed_groups(
-    db:       &sqlx::PgPool,
+    db:       &DbPool,
     provider: &str,
     user_id:  uuid::Uuid,
     claimed:  &[String],
 ) {
+    let backend = db.backend();
     let mut ids: Vec<uuid::Uuid> = Vec::new();
+
+    // Existence probe rendered the portable way: `SELECT 1 ... LIMIT 1` decoded
+    // as a nullable bigint, present ⇔ the row exists.
+    let name_taken_sql = format!(
+        "SELECT {} FROM core.user_groups WHERE name = $1 LIMIT 1",
+        backend.cast("1", SqlType::BigInt)
+    );
 
     for name in claimed {
         // A claim value can be anything the provider felt like sending —
@@ -127,18 +151,17 @@ pub(super) async fn apply_claimed_groups(
         // and drop whoever signed in into the seeded administrators group — a
         // privilege escalation with a one-line claim. A group this provider does
         // not already own is created fresh, under a name that is free.
-        let existing = sqlx::query_scalar::<_, uuid::Uuid>(
-            "SELECT id FROM core.user_groups WHERE oauth_provider_slug = $1 AND name = $2",
-        )
-        .bind(provider)
-        .bind(&name)
-        .fetch_optional(db)
-        .await;
+        let existing = db
+            .fetch_optional_scalar::<uuid::Uuid>(
+                "SELECT id FROM core.user_groups WHERE oauth_provider_slug = $1 AND name = $2",
+                params![provider, &name],
+            )
+            .await;
 
         let existing = match existing {
             Ok(v) => v,
             Err(e) => {
-                tracing::error!(error = %e, group = %name, "SSO : recherche du groupe revendiqué");
+                tracing::error!(error = %e, group = %name, "SSO: lookup of claimed group");
                 continue;
             }
         };
@@ -151,12 +174,10 @@ pub(super) async fn apply_claimed_groups(
         // else owns is disambiguated rather than merged into.
         let mut candidate = name.clone();
         for attempt in 0..3 {
-            let taken = sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS(SELECT 1 FROM core.user_groups WHERE name = $1)",
-            )
-            .bind(&candidate)
-            .fetch_one(db)
-            .await;
+            let taken = db
+                .fetch_optional_scalar::<i64>(&name_taken_sql, params![&candidate])
+                .await
+                .map(|row| row.is_some());
             match taken {
                 Ok(false) => break,
                 Ok(true) if attempt == 0 => candidate = format!("{name} ({provider})"),
@@ -167,7 +188,7 @@ pub(super) async fn apply_claimed_groups(
                     )
                 }
                 Err(e) => {
-                    tracing::error!(error = %e, group = %name, "SSO : test d'unicité du nom de groupe");
+                    tracing::error!(error = %e, group = %name, "SSO: group name uniqueness check");
                     candidate.clear();
                     break;
                 }
@@ -177,74 +198,88 @@ pub(super) async fn apply_claimed_groups(
             continue;
         }
 
-        let created = sqlx::query_scalar::<_, uuid::Uuid>(
-            r#"INSERT INTO core.user_groups (name, description, oauth_provider_slug)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (name) DO NOTHING
-               RETURNING id"#,
-        )
-        .bind(&candidate)
-        .bind(format!("Importé du fournisseur SSO « {provider} »"))
-        .bind(provider)
-        .fetch_optional(db)
-        .await;
+        // The id is minted in Rust: an insert that actually landed reports one
+        // row affected and hands us that id; a lost race reports zero and we
+        // re-select the winner's row. This replaces `ON CONFLICT ... RETURNING`,
+        // which MySQL cannot express.
+        let new_gid = new_id();
+        let insert_sql = format!(
+            "INSERT {}INTO core.user_groups (id, name, description, oauth_provider_slug) \
+             VALUES ($1, $2, $3, $4){}",
+            backend.insert_ignore_prefix(),
+            backend.on_conflict_do_nothing(&["name"]),
+        );
+        let created = db
+            .execute(
+                &insert_sql,
+                params![
+                    new_gid,
+                    &candidate,
+                    format!("Importé du fournisseur SSO « {provider} »"),
+                    provider
+                ],
+            )
+            .await;
 
         match created {
-            Ok(Some(id)) => ids.push(id),
+            Ok(1) => ids.push(new_gid),
             // Lost a race with a concurrent sign-in: the other one created it.
-            Ok(None) => {
-                if let Ok(Some(id)) = sqlx::query_scalar::<_, uuid::Uuid>(
-                    "SELECT id FROM core.user_groups WHERE oauth_provider_slug = $1 AND name = $2",
-                )
-                .bind(provider)
-                .bind(&candidate)
-                .fetch_optional(db)
-                .await
+            Ok(_) => {
+                if let Ok(Some(id)) = db
+                    .fetch_optional_scalar::<uuid::Uuid>(
+                        "SELECT id FROM core.user_groups WHERE oauth_provider_slug = $1 AND name = $2",
+                        params![provider, &candidate],
+                    )
+                    .await
                 {
                     ids.push(id);
                 }
             }
             Err(e) => {
-                tracing::error!(error = %e, group = %candidate, "SSO : import du groupe revendiqué");
+                tracing::error!(error = %e, group = %candidate, "SSO: import of claimed group");
             }
         }
     }
 
-    if let Err(e) = sqlx::query(
-        "INSERT INTO core.user_group_members (group_id, user_id, source)
-         SELECT g, $1, 'directory' FROM UNNEST($2::uuid[]) AS g
-         ON CONFLICT (group_id, user_id) DO NOTHING",
-    )
-    .bind(user_id)
-    .bind(&ids)
-    .execute(db)
-    .await
-    {
-        tracing::error!(error = %e, user_id = %user_id, "SSO : adhésions revendiquées");
+    // Claimed memberships, inserted one by one so no PostgreSQL `UNNEST` is
+    // needed. Best-effort: a failed row is logged, the rest continue.
+    let member_insert_sql = format!(
+        "INSERT {}INTO core.user_group_members (group_id, user_id, source) \
+         VALUES ($1, $2, 'directory'){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["group_id", "user_id"]),
+    );
+    for gid in &ids {
+        if let Err(e) = db.execute(&member_insert_sql, params![gid, user_id]).await {
+            tracing::error!(error = %e, user_id = %user_id, "SSO: claimed memberships");
+        }
     }
 
-    // Only what this provider granted, and only for this person.
-    if let Err(e) = sqlx::query(
-        "DELETE FROM core.user_group_members m
-          USING core.user_groups g
-          WHERE m.group_id = g.id
-            AND m.user_id = $1
-            AND m.source = 'directory'
-            AND g.oauth_provider_slug = $2
-            AND NOT (m.group_id = ANY($3))",
-    )
-    .bind(user_id)
-    .bind(provider)
-    .bind(&ids)
-    .execute(db)
-    .await
-    {
-        tracing::error!(error = %e, user_id = %user_id, "SSO : retrait des adhésions non revendiquées");
+    // Only what this provider granted, and only for this person. The DELETE ...
+    // USING form is PostgreSQL-only, so the join becomes a portable subquery;
+    // when nothing is claimed (`ids` empty) every directory membership for this
+    // provider is removed — the `NOT IN` clause is simply omitted, matching the
+    // old `NOT (... = ANY('{}'))` which was true for every row.
+    let mut delete_sql = String::from(
+        "DELETE FROM core.user_group_members \
+         WHERE user_id = $1 AND source = 'directory' \
+         AND group_id IN (SELECT id FROM core.user_groups WHERE oauth_provider_slug = $2)",
+    );
+    let mut delete_binds = params![user_id, provider];
+    if !ids.is_empty() {
+        let list = backend.in_list(3, ids.len());
+        delete_sql.push_str(&format!(" AND group_id NOT IN ({list})"));
+        for id in &ids {
+            delete_binds.push((*id).into());
+        }
+    }
+    if let Err(e) = db.execute(&delete_sql, delete_binds).await {
+        tracing::error!(error = %e, user_id = %user_id, "SSO: removal of unclaimed memberships");
     }
 }
 
-async fn unique_username(db: &sqlx::PgPool, base: &str) -> Result<String, AppError> {
-    // Nettoyer : minuscules, alphanumériques + tirets/underscores uniquement
+async fn unique_username(db: &DbPool, base: &str) -> Result<String, AppError> {
+    // Clean up: lowercase, alphanumerics + dashes/underscores only.
     let base: String = base
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
@@ -252,27 +287,33 @@ async fn unique_username(db: &sqlx::PgPool, base: &str) -> Result<String, AppErr
         .collect();
     let base = if base.is_empty() { "user".to_string() } else { base.to_lowercase() };
 
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM core.users WHERE username = $1)")
-        .bind(&base)
-        .fetch_one(db)
-        .await?;
+    // Existence probe rendered as a nullable bigint (`SELECT 1 ... LIMIT 1`).
+    let probe_sql = format!(
+        "SELECT {} FROM core.users WHERE username = $1 LIMIT 1",
+        db.backend().cast("1", SqlType::BigInt)
+    );
+
+    let exists = db
+        .fetch_optional_scalar::<i64>(&probe_sql, params![&base])
+        .await?
+        .is_some();
 
     if !exists {
         return Ok(base);
     }
 
-    // Ajouter un suffixe numérique
+    // Add a numeric suffix.
     for i in 2u32..=999 {
         let candidate = format!("{base}{i}");
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM core.users WHERE username = $1)")
-            .bind(&candidate)
-            .fetch_one(db)
-            .await?;
+        let exists = db
+            .fetch_optional_scalar::<i64>(&probe_sql, params![&candidate])
+            .await?
+            .is_some();
         if !exists {
             return Ok(candidate);
         }
     }
 
-    // Cas extrêmement rare — suffixe UUID court
+    // Extremely rare case — short UUID suffix.
     Ok(format!("{base}_{}", uuid::Uuid::new_v4().simple().to_string().get(..6).unwrap_or("xxx")))
 }

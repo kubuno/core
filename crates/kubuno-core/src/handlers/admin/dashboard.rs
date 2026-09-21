@@ -62,10 +62,10 @@ use axum::{
     extract::{Query, State},
     Json,
 };
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
+use kubuno_db::{params, DbPool, DbValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::PgPool;
 
 use crate::audit::AdminAudit;
 use crate::authz::{keys, AdminCtx};
@@ -315,7 +315,7 @@ impl Panel {
 /// by the handler rather than here: a panel must not be able to read rows the
 /// privilege check already refused.
 async fn records_of(
-    db: &PgPool,
+    db: &DbPool,
     what: &Counted,
     win: &Window,
     ask: Records,
@@ -336,11 +336,16 @@ async fn records_of(
 
 /// `(key, count)` rows, for a breakdown whose grouping is not a plain column.
 ///
-/// `sql` is always a `&'static str` written in this file; the window bounds, when
-/// there are any, are bound parameters.
-async fn key_counts(db: &PgPool, sql: &'static str, label: &'static str) -> Result<Vec<Slice>, AppError> {
-    let rows: Vec<(String, i64)> = sqlx::query_as(sql)
-        .fetch_all(db)
+/// `sql` is always assembled in this file (engine-neutral aggregates via the
+/// backend helpers); the window bounds, when there are any, are bound parameters.
+async fn key_counts(
+    db: &DbPool,
+    sql: &str,
+    binds: Vec<DbValue>,
+    label: &'static str,
+) -> Result<Vec<Slice>, AppError> {
+    let rows: Vec<(String, i64)> = db
+        .fetch_all_as(sql, binds)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, panel = %label, "dashboard : répartition");
@@ -352,18 +357,12 @@ async fn key_counts(db: &PgPool, sql: &'static str, label: &'static str) -> Resu
 /// The two totals of a day-keyed source, read in ONE statement so the reading
 /// and its comparison can never come from different instants.
 async fn day_keyed_totals(
-    db: &PgPool,
-    sql: &'static str,
-    win: &Window,
+    db: &DbPool,
+    sql: &str,
+    binds: Vec<DbValue>,
     label: &'static str,
 ) -> Result<(i64, i64), AppError> {
-    let (first, last) = win.local_days();
-    let (previous_first, _) = win.previous_local_days();
-    sqlx::query_as(sql)
-        .bind(previous_first)
-        .bind(first)
-        .bind(last)
-        .fetch_one(db)
+    db.fetch_one_as::<(i64, i64)>(sql, binds)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, panel = %label, "dashboard : totaux");
@@ -387,7 +386,7 @@ async fn day_keyed_totals(
 /// whether it may have them. Only the windowed panels can answer it; the
 /// snapshots state their absence through their own constructor.
 async fn compute(
-    db: &PgPool,
+    db: &DbPool,
     id: &'static str,
     win: &Window,
     full: bool,
@@ -395,6 +394,7 @@ async fn compute(
 ) -> Result<Option<Panel>, AppError> {
     let slices = period::slice_limit(full, MAX_SLICES);
     let accounts = period::slice_limit(full, TOP_ACCOUNTS);
+    let backend = db.backend();
 
     let mut panel = match id {
         // ── Accounts ─────────────────────────────────────────────────────────
@@ -422,11 +422,15 @@ async fn compute(
         "account_status" => {
             let states = key_counts(
                 db,
-                "SELECT CASE WHEN deleted_at IS NOT NULL THEN 'pending_deletion' \
-                             WHEN is_active THEN 'active' \
-                             ELSE 'suspended' END, \
-                        COUNT(*)::bigint \
-                   FROM core.users GROUP BY 1 ORDER BY 2 DESC, 1",
+                &format!(
+                    "SELECT CASE WHEN deleted_at IS NOT NULL THEN 'pending_deletion' \
+                                 WHEN is_active THEN 'active' \
+                                 ELSE 'suspended' END, \
+                            {count} \
+                       FROM core.users GROUP BY 1 ORDER BY 2 DESC, 1",
+                    count = backend.count_bigint("*"),
+                ),
+                params![],
                 "account_status",
             )
             .await?;
@@ -439,7 +443,11 @@ async fn compute(
         "user_roles" => {
             let roles = key_counts(
                 db,
-                "SELECT role, COUNT(*)::bigint FROM core.users GROUP BY 1 ORDER BY 2 DESC, 1",
+                &format!(
+                    "SELECT role, {count} FROM core.users GROUP BY 1 ORDER BY 2 DESC, 1",
+                    count = backend.count_bigint("*"),
+                ),
+                params![],
                 "user_roles",
             )
             .await?;
@@ -487,10 +495,14 @@ async fn compute(
         "device_sessions" => {
             let kinds = key_counts(
                 db,
-                "SELECT COALESCE(NULLIF(device_type, ''), 'unknown'), COUNT(*)::bigint \
-                   FROM core.refresh_tokens \
-                  WHERE revoked_at IS NULL AND expires_at > NOW() \
-                  GROUP BY 1 ORDER BY 2 DESC, 1",
+                &format!(
+                    "SELECT COALESCE(NULLIF(device_type, ''), 'unknown'), {count} \
+                       FROM core.refresh_tokens \
+                      WHERE revoked_at IS NULL AND expires_at > $1 \
+                      GROUP BY 1 ORDER BY 2 DESC, 1",
+                    count = backend.count_bigint("*"),
+                ),
+                params![Utc::now()],
                 "device_sessions",
             )
             .await?;
@@ -514,33 +526,43 @@ async fn compute(
         // `(day, module, account)` — see migration 000123 for what it refuses to
         // store and why.
         "app_usage" => {
+            let (first, last) = win.local_days();
+            let (previous_first, _) = win.previous_local_days();
+            // `COUNT(DISTINCT CASE ...)` replaces PostgreSQL's `COUNT(...) FILTER`,
+            // and the split day is bound at two DISTINCT placeholders ($2 and $3)
+            // rather than reused, because the non-PostgreSQL engines consume `?`
+            // positionally.
+            let totals_sql = format!(
+                "SELECT {cur}, {prev} \
+                   FROM core.module_usage_daily \
+                  WHERE day >= $1 AND day <= $4",
+                cur = backend.count_bigint("DISTINCT CASE WHEN day >= $2 THEN user_id END"),
+                prev = backend.count_bigint("DISTINCT CASE WHEN day < $3 THEN user_id END"),
+            );
             let (total, previous) = day_keyed_totals(
                 db,
-                "SELECT COUNT(DISTINCT user_id) FILTER (WHERE day >= $2), \
-                        COUNT(DISTINCT user_id) FILTER (WHERE day <  $2) \
-                   FROM core.module_usage_daily \
-                  WHERE day >= $1 AND day <= $3",
-                win,
+                &totals_sql,
+                params![previous_first, first, first, last],
                 "app_usage",
             )
             .await?;
 
-            let (first, last) = win.local_days();
-            let rows: Vec<(String, i64)> = sqlx::query_as(
-                "SELECT module_id, COUNT(DISTINCT user_id)::bigint \
-                   FROM core.module_usage_daily \
-                  WHERE day >= $1 AND day <= $2 \
-                  GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $3",
-            )
-            .bind(first)
-            .bind(last)
-            .bind(slices)
-            .fetch_all(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, panel = "app_usage", "dashboard : répartition");
-                AppError::Database(e)
-            })?;
+            let rows: Vec<(String, i64)> = db
+                .fetch_all_as(
+                    &format!(
+                        "SELECT module_id, {count} \
+                           FROM core.module_usage_daily \
+                          WHERE day >= $1 AND day <= $2 \
+                          GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $3",
+                        count = backend.count_bigint("DISTINCT user_id"),
+                    ),
+                    params![first, last, slices],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, panel = "app_usage", "dashboard : répartition");
+                    AppError::Database(e)
+                })?;
 
             Panel::events(
                 id,
@@ -569,33 +591,37 @@ async fn compute(
         // and a level has no past unless somebody wrote it down (see
         // `crate::storage::samples`).
         "storage" => {
-            let (used, quota): (i64, i64) = sqlx::query_as(
-                "SELECT COALESCE(SUM(used_bytes), 0)::bigint, \
-                        COALESCE(SUM(quota_bytes), 0)::bigint FROM core.users",
-            )
-            .fetch_one(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, panel = "storage", "dashboard : stockage");
-                AppError::Database(e)
-            })?;
+            let (used, quota): (i64, i64) = db
+                .fetch_one_as::<(i64, i64)>(
+                    &format!(
+                        "SELECT {used}, {quota} FROM core.users",
+                        used = backend.sum_bigint("used_bytes"),
+                        quota = backend.sum_bigint("quota_bytes"),
+                    ),
+                    params![],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, panel = "storage", "dashboard : stockage");
+                    AppError::Database(e)
+                })?;
 
             let (first, _) = win.local_days();
             // The last point measured BEFORE the window opened. `None` when the
             // instance is younger than the window, or was switched off then —
             // and `None` prints no percentage at all rather than a change from
             // an imagined zero.
-            let previous: Option<i64> = sqlx::query_scalar(
-                "SELECT used_bytes FROM core.storage_samples \
-                  WHERE day < $1 ORDER BY day DESC LIMIT 1",
-            )
-            .bind(first)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, panel = "storage", "dashboard : échantillon de stockage");
-                AppError::Database(e)
-            })?;
+            let previous: Option<i64> = db
+                .fetch_optional_scalar::<i64>(
+                    "SELECT used_bytes FROM core.storage_samples \
+                      WHERE day < $1 ORDER BY day DESC LIMIT 1",
+                    params![first],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, panel = "storage", "dashboard : échantillon de stockage");
+                    AppError::Database(e)
+                })?;
 
             Panel {
                 previous_total: previous,
@@ -607,30 +633,34 @@ async fn compute(
         // Which accounts hold it. Named accounts, hence `core.storage.read`
         // rather than the instance-total privilege.
         "top_storage" => {
-            let total: i64 = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(used_bytes), 0)::bigint FROM core.users",
-            )
-            .fetch_one(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, panel = "top_storage", "dashboard : total");
-                AppError::Database(e)
-            })?;
+            let total: i64 = db
+                .fetch_scalar::<i64>(
+                    &format!(
+                        "SELECT {used} FROM core.users",
+                        used = backend.sum_bigint("used_bytes"),
+                    ),
+                    params![],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, panel = "top_storage", "dashboard : total");
+                    AppError::Database(e)
+                })?;
 
-            let rows: Vec<(String, i64, i64)> = sqlx::query_as(
-                "SELECT COALESCE(NULLIF(display_name, ''), username), used_bytes, quota_bytes \
-                   FROM core.users WHERE used_bytes > 0 \
-                  ORDER BY used_bytes DESC, username LIMIT $1",
-            )
             // A report names every holder; a card names six. Both go through the
             // same statement, with the ceiling as its only difference.
-            .bind(accounts)
-            .fetch_all(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, panel = "top_storage", "dashboard : classement");
-                AppError::Database(e)
-            })?;
+            let rows: Vec<(String, i64, i64)> = db
+                .fetch_all_as(
+                    "SELECT COALESCE(NULLIF(display_name, ''), username), used_bytes, quota_bytes \
+                       FROM core.users WHERE used_bytes > 0 \
+                      ORDER BY used_bytes DESC, username LIMIT $1",
+                    params![accounts],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, panel = "top_storage", "dashboard : classement");
+                    AppError::Database(e)
+                })?;
 
             Panel::snapshot(id, Provenance::sum("core.users", "TRUE", "used_bytes"), total)
                 .into_ranking()
@@ -658,8 +688,12 @@ async fn compute(
         "module_status" => {
             let statuses = key_counts(
                 db,
-                "SELECT status, COUNT(*)::bigint FROM core.module_instances \
-                  GROUP BY 1 ORDER BY 2 DESC, 1",
+                &format!(
+                    "SELECT status, {count} FROM core.module_instances \
+                      GROUP BY 1 ORDER BY 2 DESC, 1",
+                    count = backend.count_bigint("*"),
+                ),
+                params![],
                 "module_status",
             )
             .await?;
@@ -699,28 +733,32 @@ async fn compute(
 /// as a quiet quarter when it is a purged one. `usage_since` covers the other
 /// end of the same problem: a counter that started last Tuesday must not make
 /// the applications look abandoned before that.
-async fn retention(db: &PgPool) -> Value {
-    let days: Option<Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'usage.retention_days'")
-            .fetch_optional(db)
-            .await
-            .unwrap_or_else(|e| {
-                // Best-effort: a missing retention note must not cost the
-                // operator the whole page.
-                tracing::error!(error = %e, "dashboard : rétention de la fréquentation");
-                None
-            })
-            .flatten();
+async fn retention(db: &DbPool) -> Value {
+    let days: Option<Value> = db
+        .fetch_optional_scalar::<Option<Value>>(
+            "SELECT value FROM core.settings WHERE key = 'usage.retention_days'",
+            params![],
+        )
+        .await
+        .unwrap_or_else(|e| {
+            // Best-effort: a missing retention note must not cost the
+            // operator the whole page.
+            tracing::error!(error = %e, "dashboard : rétention de la fréquentation");
+            None
+        })
+        .flatten();
 
-    let since: Option<NaiveDate> =
-        sqlx::query_scalar("SELECT MIN(day) FROM core.module_usage_daily")
-            .fetch_optional(db)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!(error = %e, "dashboard : début des compteurs de fréquentation");
-                None
-            })
-            .flatten();
+    let since: Option<NaiveDate> = db
+        .fetch_optional_scalar::<Option<NaiveDate>>(
+            "SELECT MIN(day) FROM core.module_usage_daily",
+            params![],
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "dashboard : début des compteurs de fréquentation");
+            None
+        })
+        .flatten();
 
     json!({
         "module_usage_days":  days.and_then(|v| v.as_i64()).unwrap_or(90),

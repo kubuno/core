@@ -10,8 +10,8 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
+use kubuno_db::{params, DbPool};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::policy;
@@ -54,17 +54,20 @@ impl TokenGrant {
     }
 }
 
-/// What the resolution query returns:
-/// `(id, user_id, expires_at, scopes, is_legacy, legacy_since, owner_is_active)`.
-type TokenRow = (
-    Uuid,
-    Uuid,
-    Option<DateTime<Utc>>,
-    Vec<String>,
-    bool,
-    Option<DateTime<Utc>>,
-    bool,
-);
+/// What the resolution query returns. `scopes` is read as JSON so it decodes on
+/// every engine (`#[sqlx(json)]` requires the column to be JSON — the consolidated
+/// migration replaces the PostgreSQL `TEXT[]` with a JSON column).
+#[derive(sqlx::FromRow)]
+struct TokenRow {
+    id: Uuid,
+    user_id: Uuid,
+    expires_at: Option<DateTime<Utc>>,
+    #[sqlx(json)]
+    scopes: Vec<String>,
+    is_legacy: bool,
+    legacy_since: Option<DateTime<Utc>>,
+    is_active: bool,
+}
 
 /// Resolves a raw token, or explains why it is refused.
 ///
@@ -78,7 +81,7 @@ type TokenRow = (
 /// * **legacy past its grace window** → [`AppError::ApiTokenLegacyExpired`], a
 ///   *distinguishable* code, because the holder can act on it (reissue a scoped
 ///   token) and a bare 401 would send them looking for a network fault.
-pub async fn resolve_grant(db: &PgPool, raw_token: &str) -> Result<TokenGrant, AppError> {
+pub async fn resolve_grant(db: &DbPool, raw_token: &str) -> Result<TokenGrant, AppError> {
     if !raw_token.starts_with(TOKEN_PREFIX) {
         return Err(AppError::Unauthorized);
     }
@@ -86,22 +89,30 @@ pub async fn resolve_grant(db: &PgPool, raw_token: &str) -> Result<TokenGrant, A
 
     // The owner's `is_active` is joined in rather than checked afterwards: two
     // statements is two chances to forget the second one.
-    let row: Option<TokenRow> = sqlx::query_as(
-        r#"SELECT t.id, t.user_id, t.expires_at, t.scopes, t.is_legacy,
+    let row: Option<TokenRow> = db
+        .fetch_optional_as::<TokenRow>(
+            r#"SELECT t.id, t.user_id, t.expires_at, t.scopes, t.is_legacy,
                   t.legacy_since, u.is_active
              FROM core.api_tokens t
              JOIN core.users u ON u.id = t.user_id
             WHERE t.token_hash = $1 AND t.revoked_at IS NULL"#,
-    )
-    .bind(&hash)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "Résolution d'un jeton d'API");
-        AppError::Database(e)
-    })?;
+            params![&hash],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Resolving an API token");
+            AppError::Database(e)
+        })?;
 
-    let Some((token_id, user_id, expires_at, scopes, is_legacy, legacy_since, owner_active)) = row
+    let Some(TokenRow {
+        id: token_id,
+        user_id,
+        expires_at,
+        scopes,
+        is_legacy,
+        legacy_since,
+        is_active: owner_active,
+    }) = row
     else {
         return Err(AppError::Unauthorized);
     };
@@ -150,12 +161,15 @@ pub async fn resolve_grant(db: &PgPool, raw_token: &str) -> Result<TokenGrant, A
     }
 
     // Best-effort: a failure here must not deny an otherwise valid call.
-    if let Err(e) = sqlx::query("UPDATE core.api_tokens SET last_used_at = NOW() WHERE id = $1")
-        .bind(token_id)
-        .execute(db)
+    let now = Utc::now();
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.api_tokens SET last_used_at = $1 WHERE id = $2",
+            params![now, token_id],
+        )
         .await
     {
-        tracing::error!(error = %e, token_id = %token_id, "Mise à jour de last_used_at");
+        tracing::error!(error = %e, token_id = %token_id, "Updating last_used_at");
     }
 
     Ok(TokenGrant { token_id, user_id, scopes, is_legacy, grace_until })
@@ -200,7 +214,7 @@ fn should_audit(token_id: Uuid) -> bool {
 /// The entry names the token by **id** and by the name its owner gave it; the
 /// token itself and its hash never appear.
 pub async fn audit_legacy_use(
-    db: &PgPool,
+    db: &DbPool,
     ctx: &crate::audit::AuditContext,
     grant: &TokenGrant,
     route: &str,

@@ -46,9 +46,9 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::{dialect::SqlType, params, DbPool, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
@@ -58,6 +58,60 @@ use crate::{
     health::disk,
     state::AppState,
 };
+
+/// The five instance-wide account aggregates the overview header opens on.
+#[derive(sqlx::FromRow)]
+struct OverviewAgg {
+    used:          i64,
+    allocated:     i64,
+    accounts:      i64,
+    full_accounts: i64,
+    near_accounts: i64,
+}
+
+/// One organisational unit's storage totals.
+#[derive(sqlx::FromRow)]
+struct UnitUsageRow {
+    unit_id:   Option<Uuid>,
+    unit_name: Option<String>,
+    accounts:  i64,
+    used:      i64,
+    allocated: i64,
+}
+
+/// One daily storage sample.
+#[derive(sqlx::FromRow)]
+struct TrendRow {
+    day:         chrono::NaiveDate,
+    used_bytes:  i64,
+    quota_bytes: i64,
+    accounts:    i32,
+    over_quota:  i32,
+}
+
+/// One unit-level override of the default-quota policy.
+#[derive(sqlx::FromRow)]
+struct QuotaUnitRow {
+    unit_id:    Uuid,
+    unit_name:  String,
+    value:      Value,
+    locked:     bool,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// One account in the top-consumers listing.
+#[derive(sqlx::FromRow)]
+struct ConsumerRow {
+    id:           Uuid,
+    username:     String,
+    email:        String,
+    display_name: Option<String>,
+    is_active:    bool,
+    used_bytes:   i64,
+    quota_bytes:  i64,
+    org_unit_id:  Option<Uuid>,
+    unit_name:    Option<String>,
+}
 
 /// Fill ratio at which an account stops being "fine" and starts being a thing to
 /// look at. Read from the same setting the alert producer uses, so the colour on
@@ -71,7 +125,7 @@ const QUOTA_PERCENT_DEFAULT: i64 = 90;
 /// on; the sampler keeps everything, so widening it later costs nothing.
 const TREND_DAYS: i64 = 90;
 
-async fn quota_percent(db: &sqlx::PgPool) -> i64 {
+async fn quota_percent(db: &DbPool) -> i64 {
     crate::settings::instance_value(db, QUOTA_PERCENT_SETTING)
         .await
         .as_ref()
@@ -94,32 +148,43 @@ pub async fn overview(
 
     let warn_percent = quota_percent(&state.db).await;
 
+    let backend = state.db.backend();
+
     // One pass over the accounts for every scalar the header needs. Splitting it
     // into five COUNT queries would let the numbers disagree with each other
-    // whenever an upload lands between two of them.
-    let row = sqlx::query(
-        r#"SELECT COALESCE(SUM(used_bytes), 0)::bigint                          AS used,
-                  COALESCE(SUM(quota_bytes), 0)::bigint                         AS allocated,
-                  COUNT(*)::bigint                                              AS accounts,
-                  COUNT(*) FILTER (WHERE used_bytes >= quota_bytes)::bigint     AS full_accounts,
-                  COUNT(*) FILTER (WHERE quota_bytes > 0
-                                     AND used_bytes < quota_bytes
-                                     AND used_bytes * 100 >= quota_bytes * $1)::bigint AS near_accounts
-             FROM core.users"#,
-    )
-    .bind(warn_percent)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_overview: agrégats des comptes");
-        AppError::Database(e)
-    })?;
+    // whenever an upload lands between two of them. The conditional counts are
+    // written as `SUM(CASE ...)` rather than PostgreSQL's `COUNT(*) FILTER`, and
+    // every aggregate is width-cast so it decodes as `i64` on all engines.
+    let agg_sql = format!(
+        "SELECT {used} AS used, \
+                {allocated} AS allocated, \
+                {accounts} AS accounts, \
+                {full} AS full_accounts, \
+                {near} AS near_accounts \
+           FROM core.users",
+        used = backend.sum_bigint("used_bytes"),
+        allocated = backend.sum_bigint("quota_bytes"),
+        accounts = backend.count_bigint("*"),
+        full = backend.sum_bigint("CASE WHEN used_bytes >= quota_bytes THEN 1 ELSE 0 END"),
+        near = backend.sum_bigint(
+            "CASE WHEN quota_bytes > 0 AND used_bytes < quota_bytes \
+                   AND used_bytes * 100 >= quota_bytes * $1 THEN 1 ELSE 0 END"
+        ),
+    );
+    let agg = state
+        .db
+        .fetch_one_as::<OverviewAgg>(&agg_sql, params![warn_percent])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_overview: agrégats des comptes");
+            AppError::Database(e)
+        })?;
 
-    let used: i64 = row.try_get("used").unwrap_or(0);
-    let allocated: i64 = row.try_get("allocated").unwrap_or(0);
-    let accounts: i64 = row.try_get("accounts").unwrap_or(0);
-    let full_accounts: i64 = row.try_get("full_accounts").unwrap_or(0);
-    let near_accounts: i64 = row.try_get("near_accounts").unwrap_or(0);
+    let used = agg.used;
+    let allocated = agg.allocated;
+    let accounts = agg.accounts;
+    let full_accounts = agg.full_accounts;
+    let near_accounts = agg.near_accounts;
     let ok_accounts = (accounts - full_accounts - near_accounts).max(0);
 
     // ── Where it sits: the physical volume ──────────────────────────────────
@@ -140,33 +205,38 @@ pub async fn overview(
     // The unit an account is *directly* attached to. Rolling child units up into
     // their parent would double-count the moment the page also shows the parent,
     // and the flat reading is the one that maps onto the per-unit quota policy.
-    let unit_rows = sqlx::query(
-        r#"SELECT u.org_unit_id                              AS unit_id,
-                  o.name                                     AS unit_name,
-                  COUNT(*)::bigint                           AS accounts,
-                  COALESCE(SUM(u.used_bytes), 0)::bigint     AS used,
-                  COALESCE(SUM(u.quota_bytes), 0)::bigint    AS allocated
-             FROM core.users u
-             LEFT JOIN core.org_units o ON o.id = u.org_unit_id
-            GROUP BY u.org_unit_id, o.name
-            ORDER BY used DESC, accounts DESC"#,
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_overview: répartition par unité");
-        AppError::Database(e)
-    })?;
+    let unit_sql = format!(
+        "SELECT u.org_unit_id AS unit_id, \
+                o.name AS unit_name, \
+                {accounts} AS accounts, \
+                {used} AS used, \
+                {allocated} AS allocated \
+           FROM core.users u \
+           LEFT JOIN core.org_units o ON o.id = u.org_unit_id \
+          GROUP BY u.org_unit_id, o.name \
+          ORDER BY used DESC, accounts DESC",
+        accounts = backend.count_bigint("*"),
+        used = backend.sum_bigint("u.used_bytes"),
+        allocated = backend.sum_bigint("u.quota_bytes"),
+    );
+    let unit_rows = state
+        .db
+        .fetch_all_as::<UnitUsageRow>(&unit_sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_overview: répartition par unité");
+            AppError::Database(e)
+        })?;
 
     let by_unit: Vec<Value> = unit_rows
         .iter()
         .map(|r| {
             json!({
-                "unit_id":         r.try_get::<Option<Uuid>, _>("unit_id").ok().flatten(),
-                "unit_name":       r.try_get::<Option<String>, _>("unit_name").ok().flatten(),
-                "accounts":        r.try_get::<i64, _>("accounts").unwrap_or(0),
-                "used_bytes":      r.try_get::<i64, _>("used").unwrap_or(0),
-                "allocated_bytes": r.try_get::<i64, _>("allocated").unwrap_or(0),
+                "unit_id":         r.unit_id,
+                "unit_name":       r.unit_name,
+                "accounts":        r.accounts,
+                "used_bytes":      r.used,
+                "allocated_bytes": r.allocated,
             })
         })
         .collect();
@@ -175,30 +245,34 @@ pub async fn overview(
     // Read as-is, gaps included: a core that was switched off for a week leaves
     // no points for that week, and interpolating them would draw growth nobody
     // measured. The console renders the curve only once two points exist.
-    let trend_rows = sqlx::query(
-        r#"SELECT to_char(day, 'YYYY-MM-DD') AS day,
-                  used_bytes, quota_bytes, accounts, over_quota
-             FROM core.storage_samples
-            WHERE day > CURRENT_DATE - make_interval(days => $1::int)
-            ORDER BY day"#,
-    )
-    .bind(TREND_DAYS as i32)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_overview: série journalière");
-        AppError::Database(e)
-    })?;
+    // The cutoff is computed here and bound, rather than derived in SQL with
+    // PostgreSQL's `make_interval`, and `day` is read as a date and formatted in
+    // Rust rather than with `to_char`.
+    let trend_cutoff = chrono::Utc::now().date_naive() - chrono::Duration::days(TREND_DAYS);
+    let trend_rows = state
+        .db
+        .fetch_all_as::<TrendRow>(
+            r#"SELECT day, used_bytes, quota_bytes, accounts, over_quota
+                 FROM core.storage_samples
+                WHERE day > $1
+                ORDER BY day"#,
+            params![trend_cutoff],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_overview: série journalière");
+            AppError::Database(e)
+        })?;
 
     let trend: Vec<Value> = trend_rows
         .iter()
         .map(|r| {
             json!({
-                "day":             r.try_get::<String, _>("day").unwrap_or_default(),
-                "used_bytes":      r.try_get::<i64, _>("used_bytes").unwrap_or(0),
-                "allocated_bytes": r.try_get::<i64, _>("quota_bytes").unwrap_or(0),
-                "accounts":        r.try_get::<i32, _>("accounts").unwrap_or(0),
-                "over_quota":      r.try_get::<i32, _>("over_quota").unwrap_or(0),
+                "day":             r.day.format("%Y-%m-%d").to_string(),
+                "used_bytes":      r.used_bytes,
+                "allocated_bytes": r.quota_bytes,
+                "accounts":        r.accounts,
+                "over_quota":      r.over_quota,
             })
         })
         .collect();
@@ -277,9 +351,12 @@ pub async fn account_usage(
     // The org-unit confinement that applies to the consumers listing applies
     // here too: an administrator of one unit must not read the sheet of an
     // account in another by guessing its identifier.
-    let unit: Option<Uuid> = sqlx::query_scalar("SELECT org_unit_id FROM core.users WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.db)
+    let unit: Option<Uuid> = state
+        .db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %id, "storage: unité du compte");
@@ -298,7 +375,7 @@ pub async fn account_usage(
 /// the levels that actually *carry* a row are a policy somebody wrote, and a
 /// listing of every unit with its inherited value would bury the three that were
 /// decided among forty that were not.
-async fn default_quota_policy(db: &sqlx::PgPool) -> Result<Value, AppError> {
+async fn default_quota_policy(db: &DbPool) -> Result<Value, AppError> {
     let key = crate::models::user::DEFAULT_QUOTA_SETTING;
 
     let instance = crate::settings::chain::resolve_for(
@@ -308,30 +385,30 @@ async fn default_quota_policy(db: &sqlx::PgPool) -> Result<Value, AppError> {
     )
     .await?;
 
-    let rows = sqlx::query(
-        r#"SELECT v.scope_id AS unit_id, o.name AS unit_name, v.value, v.locked, v.updated_at
-             FROM core.setting_values v
-             JOIN core.org_units o ON o.id = v.scope_id
-            WHERE v.key = $1 AND v.scope_type = 'org_unit'
-            ORDER BY o.name"#,
-    )
-    .bind(key)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_overview: surcharges du quota par défaut");
-        AppError::Database(e)
-    })?;
+    let rows = db
+        .fetch_all_as::<QuotaUnitRow>(
+            r#"SELECT v.scope_id AS unit_id, o.name AS unit_name, v.value, v.locked, v.updated_at
+                 FROM core.setting_values v
+                 JOIN core.org_units o ON o.id = v.scope_id
+                WHERE v.key = $1 AND v.scope_type = 'org_unit'
+                ORDER BY o.name"#,
+            params![key],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_overview: surcharges du quota par défaut");
+            AppError::Database(e)
+        })?;
 
     let units: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
-                "unit_id":   r.try_get::<Uuid, _>("unit_id").ok(),
-                "unit_name": r.try_get::<String, _>("unit_name").unwrap_or_default(),
-                "bytes":     r.try_get::<Value, _>("value").ok().as_ref().and_then(Value::as_i64),
-                "locked":    r.try_get::<bool, _>("locked").unwrap_or(false),
-                "updated_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("updated_at").ok().flatten(),
+                "unit_id":    r.unit_id,
+                "unit_name":  r.unit_name,
+                "bytes":      r.value.as_i64(),
+                "locked":     r.locked,
+                "updated_at": r.updated_at,
             })
         })
         .collect();
@@ -382,58 +459,73 @@ pub async fn consumers(
         Some("full") => "full",
         _ => "all",
     };
-    let order: &'static str = match q.sort.as_deref() {
-        // NULLIF guards the division: an account with no quota has no percentage,
-        // and it sinks rather than sorting as infinity.
-        Some("percent") => "(u.used_bytes::float8 / NULLIF(u.quota_bytes, 0)) DESC NULLS LAST, u.used_bytes DESC",
-        _ => "u.used_bytes DESC",
-    };
 
-    let predicate: &'static str = match filter {
-        "full" => "u.used_bytes >= u.quota_bytes",
-        "near" => "u.quota_bytes > 0 AND u.used_bytes * 100 >= u.quota_bytes * $3",
-        _ => "TRUE",
+    // The `= ANY($n)` array membership, the fixed predicate and the fixed order
+    // are assembled with the builder rather than a raw format string: the unit
+    // list becomes an `IN (...)` and the warning threshold a bound placeholder.
+    let backend = state.db.backend();
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        "SELECT u.id, u.username, u.email, u.display_name, u.is_active, \
+                u.used_bytes, u.quota_bytes, \
+                u.org_unit_id, o.name AS unit_name \
+           FROM core.users u \
+           LEFT JOIN core.org_units o ON o.id = u.org_unit_id \
+          WHERE ",
+    );
+    match scope_units.as_ref() {
+        Some(units) => {
+            qb.push("u.org_unit_id IS NOT NULL AND u.org_unit_id")
+                .push_in(units.iter().copied());
+        }
+        None => {
+            qb.push("1 = 1");
+        }
+    }
+    match filter {
+        "full" => {
+            qb.push(" AND u.used_bytes >= u.quota_bytes");
+        }
+        "near" => {
+            qb.push(" AND u.quota_bytes > 0 AND u.used_bytes * 100 >= u.quota_bytes * ")
+                .push_bind(warn_percent);
+        }
+        _ => {}
+    }
+    // NULLIF guards the division: an account with no quota has no percentage, and
+    // it sinks rather than sorting as infinity. NOTE: `NULLS LAST` has no MySQL
+    // equivalent (flagged); the width cast is written per-engine.
+    let order_sql = match q.sort.as_deref() {
+        Some("percent") => format!(
+            "({} / NULLIF(u.quota_bytes, 0)) DESC NULLS LAST, u.used_bytes DESC",
+            backend.cast("u.used_bytes", SqlType::Double)
+        ),
+        _ => "u.used_bytes DESC".to_string(),
     };
+    qb.push(" ORDER BY ").push(&order_sql);
+    qb.push(" LIMIT ").push_bind(limit);
 
-    // Safe: `predicate` and `order` are `&'static str` chosen by an exhaustive
-    // `match` over literals written here — the query string only ever carries
-    // one of those fixed alternatives, never the caller's text. The unit list,
-    // the limit and the warning threshold are bound parameters.
-    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
-        r#"SELECT u.id, u.username, u.email, u.display_name, u.is_active,
-                  u.used_bytes, u.quota_bytes,
-                  u.org_unit_id, o.name AS unit_name
-             FROM core.users u
-             LEFT JOIN core.org_units o ON o.id = u.org_unit_id
-            WHERE ($1::uuid[] IS NULL
-                   OR (u.org_unit_id IS NOT NULL AND u.org_unit_id = ANY($1)))
-              AND {predicate}
-            ORDER BY {order}
-            LIMIT $2"#
-    )))
-    .bind(scope_units.as_deref())
-    .bind(limit)
-    .bind(warn_percent)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_consumers");
-        AppError::Database(e)
-    })?;
+    let rows = qb
+        .fetch_all_as::<ConsumerRow>(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_consumers");
+            AppError::Database(e)
+        })?;
 
     let consumers: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
-                "id":          r.try_get::<Uuid, _>("id").ok(),
-                "username":    r.try_get::<String, _>("username").unwrap_or_default(),
-                "email":       r.try_get::<String, _>("email").unwrap_or_default(),
-                "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-                "is_active":   r.try_get::<bool, _>("is_active").unwrap_or(true),
-                "used_bytes":  r.try_get::<i64, _>("used_bytes").unwrap_or(0),
-                "quota_bytes": r.try_get::<i64, _>("quota_bytes").unwrap_or(0),
-                "unit_id":     r.try_get::<Option<Uuid>, _>("org_unit_id").ok().flatten(),
-                "unit_name":   r.try_get::<Option<String>, _>("unit_name").ok().flatten(),
+                "id":          r.id,
+                "username":    r.username,
+                "email":       r.email,
+                "display_name": r.display_name,
+                "is_active":   r.is_active,
+                "used_bytes":  r.used_bytes,
+                "quota_bytes": r.quota_bytes,
+                "unit_id":     r.org_unit_id,
+                "unit_name":   r.unit_name,
             })
         })
         .collect();

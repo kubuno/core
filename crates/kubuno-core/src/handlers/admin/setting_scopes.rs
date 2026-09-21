@@ -17,6 +17,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::{params, DbPool};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -100,7 +101,7 @@ fn authorize(ctx: &AdminCtx, scope: &SettingScope, privilege: &str) -> Result<()
 
 /// For a user-scoped write, the target account's unit is what bounds the caller.
 async fn authorize_user_scope(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     ctx: &AdminCtx,
     scope: &SettingScope,
     privilege: &str,
@@ -108,15 +109,16 @@ async fn authorize_user_scope(
     let Some(user_id) = scope.id.filter(|_| scope.kind == ScopeKind::User) else {
         return Ok(());
     };
-    let unit: Option<Option<Uuid>> =
-        sqlx::query_scalar("SELECT org_unit_id FROM core.users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, %user_id, "settings: lecture de l'unité du compte impossible");
-                AppError::Database(e)
-            })?;
+    let unit: Option<Option<Uuid>> = db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, %user_id, "settings: lecture de l'unité du compte impossible");
+            AppError::Database(e)
+        })?;
     let unit = unit.ok_or_else(|| AppError::NotFound("Compte inexistant".into()))?;
     ctx.require_for_unit(privilege, unit)
 }
@@ -338,19 +340,28 @@ pub async fn set_scoped_value(
     validate_password_policy_value(&key, &dto.value)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let out = store::set_value(&mut tx, &key, &scope, &dto.value, Some(audit.admin.id)).await?;
+    let out = store::set_value(&state.db, &mut tx, &key, &scope, &dto.value, Some(audit.admin.id)).await?;
+    tx.commit(audit_entry("core.settings.scope_set", &key, &scope, &out))
+        .await?;
+
     // ── Anti-lockout ─────────────────────────────────────────────────────────
-    // Checked AFTER the write and inside the same transaction, so what is
-    // verified is the policy as it would really resolve — chain, inheritance,
-    // locks and all — rather than a simulation that could drift from the
-    // resolver. An error here drops the transaction: nothing was written.
+    // The resolver reads the whole inheritance chain (several rows), which a
+    // transaction handle cannot do on every engine, so the check runs on the
+    // pool against committed state — hence AFTER the commit. If the change
+    // stranded every administrator, revert it at once (clear the scope's own
+    // override, restoring the broader inherited policy) so the console cannot
+    // lock itself out, then surface the error.
     if key == crate::auth::methods::KEY_METHODS
         || key == crate::auth::methods::KEY_ADMIN_FALLBACK
     {
-        crate::auth::methods::ensure_no_administrator_is_stranded(&mut tx).await?;
+        if let Err(e) = crate::auth::methods::ensure_no_administrator_is_stranded(&state.db).await {
+            if let Ok(mut rtx) = state.db.begin().await {
+                let _ = store::clear_value(&state.db, &mut rtx, &key, &scope, Some(audit.admin.id)).await;
+                let _ = rtx.commit().await;
+            }
+            return Err(e);
+        }
     }
-    tx.commit(audit_entry("core.settings.scope_set", &key, &scope, &out))
-        .await?;
 
     state.events.publish(change_event(&key, &scope, &out, true));
     apply_side_effects(&state, &key, &scope).await;
@@ -375,17 +386,27 @@ pub async fn clear_scoped_value(
     guard_owned_elsewhere(&key)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let out = store::clear_value(&mut tx, &key, &scope, Some(audit.admin.id)).await?;
+    let out = store::clear_value(&state.db, &mut tx, &key, &scope, Some(audit.admin.id)).await?;
+    tx.commit(audit_entry("core.settings.scope_clear", &key, &scope, &out))
+        .await?;
+
     // Reverting to the inherited value can strand somebody just as easily as
     // writing one: the parent may say `["directory"]` where this unit said
-    // `["local"]`. Same guard, same transaction.
+    // `["local"]`. Checked on committed state (see `set_scoped_value`); on a
+    // lockout, restore the previous own value so access is not lost.
     if key == crate::auth::methods::KEY_METHODS
         || key == crate::auth::methods::KEY_ADMIN_FALLBACK
     {
-        crate::auth::methods::ensure_no_administrator_is_stranded(&mut tx).await?;
+        if let Err(e) = crate::auth::methods::ensure_no_administrator_is_stranded(&state.db).await {
+            if let Some(prev) = out.before.value.clone() {
+                if let Ok(mut rtx) = state.db.begin().await {
+                    let _ = store::set_value(&state.db, &mut rtx, &key, &scope, &prev, Some(audit.admin.id)).await;
+                    let _ = rtx.commit().await;
+                }
+            }
+            return Err(e);
+        }
     }
-    tx.commit(audit_entry("core.settings.scope_clear", &key, &scope, &out))
-        .await?;
 
     state.events.publish(change_event(&key, &scope, &out, false));
     apply_side_effects(&state, &key, &scope).await;
@@ -410,7 +431,7 @@ pub async fn set_scoped_lock(
     guard_owned_elsewhere(&key)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let out = store::set_lock(&mut tx, &key, &scope, dto.locked, Some(audit.admin.id)).await?;
+    let out = store::set_lock(&state.db, &mut tx, &key, &scope, dto.locked, Some(audit.admin.id)).await?;
     let action = if dto.locked {
         "core.settings.lock"
     } else {

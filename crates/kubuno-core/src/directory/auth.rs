@@ -46,7 +46,7 @@
 //! answered. The diagnosis lives in the log and in the administration console's
 //! test button, both of which require an operator.
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::auth::methods::MethodSet;
@@ -241,7 +241,7 @@ pub async fn search_then_bind(
 /// already governed by one, so an unknown password is not replayed against every
 /// other directory in the instance.
 pub async fn authenticate(
-    db: &PgPool,
+    db: &DbPool,
     jwt_secret: &str,
     login: &str,
     password: &str,

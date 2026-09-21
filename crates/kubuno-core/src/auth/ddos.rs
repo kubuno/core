@@ -23,6 +23,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use kubuno_db::{params, DbPool};
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -81,18 +82,25 @@ pub fn seed_from_env() {
     }
 }
 
+/// One `(key, value)` settings row.
+#[derive(sqlx::FromRow)]
+struct SettingKv {
+    key: String,
+    value: serde_json::Value,
+}
+
 /// (Re)charge les réglages anti-DDoS depuis `core.settings`. Idempotent : en cas
 /// d'erreur de lecture, les valeurs courantes sont conservées. À appeler au
 /// démarrage puis après chaque mise à jour des réglages `security.ddos_*`.
-pub async fn reload_from_db(db: &sqlx::PgPool) {
-    use sqlx::Row;
-    let rows = sqlx::query(
-        "SELECT key, value FROM core.settings \
+pub async fn reload_from_db(db: &DbPool) {
+    let rows = db
+        .fetch_all_as::<SettingKv>(
+            "SELECT key, value FROM core.settings \
          WHERE key IN ('security.ddos_enabled', 'security.ddos_rate_per_min', 'security.ddos_max_concurrent', \
                        'security.rate_user_per_min')",
-    )
-    .fetch_all(db)
-    .await;
+            params![],
+        )
+        .await;
 
     let rows = match rows {
         Ok(r) => r,
@@ -103,8 +111,8 @@ pub async fn reload_from_db(db: &sqlx::PgPool) {
     };
 
     for r in rows {
-        let key: String = r.get("key");
-        let val: serde_json::Value = r.get("value");
+        let key = r.key;
+        let val = r.value;
         match key.as_str() {
             "security.ddos_enabled" => {
                 if let Some(b) = val.as_bool() {

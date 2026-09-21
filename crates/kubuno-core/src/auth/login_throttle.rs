@@ -33,7 +33,8 @@
 //! either way so the response timing does not change.
 
 use chrono::{DateTime, Duration, Utc};
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 /// Consecutive failures before any delay is imposed.
@@ -69,18 +70,18 @@ fn lock_delay(failed_attempts: i32) -> Option<Duration> {
 /// Fails **open** (returns `false`) on a database error: a transient DB problem
 /// must not lock every account out. The recording side is best-effort for the
 /// same reason.
-pub async fn is_locked(db: &PgPool, user_id: Uuid) -> bool {
-    match sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
-        "SELECT locked_until FROM core.login_throttle WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await
+pub async fn is_locked(db: &DbPool, user_id: Uuid) -> bool {
+    match db
+        .fetch_optional_scalar::<Option<DateTime<Utc>>>(
+            "SELECT locked_until FROM core.login_throttle WHERE user_id = $1",
+            params![user_id],
+        )
+        .await
     {
         Ok(Some(Some(locked_until))) => locked_until > Utc::now(),
         Ok(_) => false,
         Err(e) => {
-            tracing::error!(error = %e, "login_throttle: lecture de l'état échouée");
+            tracing::error!(error = %e, "login_throttle: reading the state failed");
             false
         }
     }
@@ -93,23 +94,23 @@ pub async fn is_locked(db: &PgPool, user_id: Uuid) -> bool {
 ///
 /// Returns `true` when this failure pushed the account into (or deeper into)
 /// backoff — the caller uses it as an audit signal.
-pub async fn record_failure(db: &PgPool, user_id: Uuid) -> bool {
+pub async fn record_failure(db: &DbPool, user_id: Uuid) -> bool {
     let now = Utc::now();
     let window = Duration::hours(WINDOW_HOURS);
 
-    let existing = sqlx::query_as::<_, (i32, Option<DateTime<Utc>>, i32, i16)>(
-        "SELECT failed_attempts, window_started_at, window_count, lockout_count \
+    let existing = db
+        .fetch_optional_as::<(i32, Option<DateTime<Utc>>, i32, i16)>(
+            "SELECT failed_attempts, window_started_at, window_count, lockout_count \
            FROM core.login_throttle WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await;
+            params![user_id],
+        )
+        .await;
 
     let (prev_failed, window_started_at, window_count, prev_lockouts) = match existing {
         Ok(Some(row)) => row,
         Ok(None) => (0, None, 0, 0),
         Err(e) => {
-            tracing::error!(error = %e, "login_throttle: lecture avant échec impossible");
+            tracing::error!(error = %e, "login_throttle: could not read before recording failure");
             return false;
         }
     };
@@ -131,32 +132,46 @@ pub async fn record_failure(db: &PgPool, user_id: Uuid) -> bool {
     let locked_until = delay.map(|d| now + d);
     let lockouts = prev_lockouts + if locked_until.is_some() { 1 } else { 0 };
 
-    let res = sqlx::query(
+    // `updated_at` is bound (`$8`) rather than written as `NOW()`, so the upsert's
+    // update branch reuses the incoming value on every engine.
+    let backend = db.backend();
+    let sql = format!(
         "INSERT INTO core.login_throttle \
             (user_id, failed_attempts, window_started_at, window_count, \
              last_attempt_at, locked_until, lockout_count, updated_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) \
-         ON CONFLICT (user_id) DO UPDATE SET \
-            failed_attempts   = EXCLUDED.failed_attempts, \
-            window_started_at = EXCLUDED.window_started_at, \
-            window_count      = EXCLUDED.window_count, \
-            last_attempt_at   = EXCLUDED.last_attempt_at, \
-            locked_until      = EXCLUDED.locked_until, \
-            lockout_count     = EXCLUDED.lockout_count, \
-            updated_at        = NOW()",
-    )
-    .bind(user_id)
-    .bind(failed)
-    .bind(window_start)
-    .bind(window_n)
-    .bind(now)
-    .bind(locked_until)
-    .bind(lockouts)
-    .execute(db)
-    .await;
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8){}",
+        backend.upsert(
+            "core.login_throttle",
+            &["user_id"],
+            &[
+                Assign::Incoming("failed_attempts"),
+                Assign::Incoming("window_started_at"),
+                Assign::Incoming("window_count"),
+                Assign::Incoming("last_attempt_at"),
+                Assign::Incoming("locked_until"),
+                Assign::Incoming("lockout_count"),
+                Assign::Incoming("updated_at"),
+            ],
+        )
+    );
+    let res = db
+        .execute(
+            &sql,
+            params![
+                user_id,
+                failed,
+                window_start,
+                window_n,
+                now,
+                locked_until,
+                lockouts,
+                now,
+            ],
+        )
+        .await;
 
     if let Err(e) = res {
-        tracing::error!(error = %e, "login_throttle: enregistrement de l'échec impossible");
+        tracing::error!(error = %e, "login_throttle: could not record the failure");
         return false;
     }
     locked_until.is_some()
@@ -164,13 +179,15 @@ pub async fn record_failure(db: &PgPool, user_id: Uuid) -> bool {
 
 /// Clear the throttle for `user_id` after a successful sign-in (NIST: disregard
 /// previous failures once authentication succeeds). Best-effort.
-pub async fn record_success(db: &PgPool, user_id: Uuid) {
-    if let Err(e) = sqlx::query("DELETE FROM core.login_throttle WHERE user_id = $1")
-        .bind(user_id)
-        .execute(db)
+pub async fn record_success(db: &DbPool, user_id: Uuid) {
+    if let Err(e) = db
+        .execute(
+            "DELETE FROM core.login_throttle WHERE user_id = $1",
+            params![user_id],
+        )
         .await
     {
-        tracing::error!(error = %e, "login_throttle: réinitialisation après succès impossible");
+        tracing::error!(error = %e, "login_throttle: could not reset after success");
     }
 }
 

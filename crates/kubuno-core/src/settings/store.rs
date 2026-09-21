@@ -5,8 +5,9 @@
 //! and no level above the target may hold a lock. The second gate is what makes
 //! locking an enforceable rule rather than a hint in the interface.
 
+use kubuno_db::dialect::{Assign, SqlType};
+use kubuno_db::{params, DbPool, DbQueryBuilder, DbTx};
 use serde_json::Value;
-use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::chain::{self, Resolution};
@@ -86,10 +87,7 @@ fn subject_relation(kind: ScopeKind) -> Option<(&'static str, &'static str)> {
 ///
 /// Checked at the entry of every read and every write. Migration `000107`
 /// deletes the rows created before this existed.
-pub async fn ensure_subject_exists<'e, E: sqlx::PgExecutor<'e>>(
-    db: E,
-    scope: &SettingScope,
-) -> Result<(), AppError> {
+pub async fn ensure_subject_exists(db: &DbPool, scope: &SettingScope) -> Result<(), AppError> {
     let Some((table, label)) = subject_relation(scope.kind) else {
         return Ok(());
     };
@@ -105,13 +103,11 @@ pub async fn ensure_subject_exists<'e, E: sqlx::PgExecutor<'e>>(
     // exhaustive `match` over the `ScopeKind` enum. The caller's scope is parsed
     // into that enum before reaching here, so no request text is spliced in; the
     // subject id travels as a bind parameter.
-    let exists: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT EXISTS(SELECT 1 FROM {table} WHERE id = $1)"
-    )))
-    .bind(id)
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
+    let sql = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = $1)");
+    let exists: bool = db
+        .fetch_scalar::<bool>(&sql, params![id])
+        .await
+        .map_err(|e| {
         tracing::error!(
             error = %e,
             scope = %scope.kind.as_str(),
@@ -137,33 +133,47 @@ pub async fn ensure_subject_exists<'e, E: sqlx::PgExecutor<'e>>(
 /// Runs on a connection rather than the pool so the caller can enclose it in the
 /// audited transaction.
 pub async fn set_value(
-    conn: &mut PgConnection,
+    db: &DbPool,
+    tx: &mut DbTx,
     key: &str,
     scope: &SettingScope,
     value: &Value,
     actor: Option<Uuid>,
 ) -> Result<WriteOutcome, AppError> {
-    ensure_subject_exists(&mut *conn, scope).await?;
-    let schema = schema::load(&mut *conn, key).await?;
+    ensure_subject_exists(db, scope).await?;
+    let schema = schema::load(db, key).await?;
     schema.validate(value)?;
 
-    let before = chain::resolve_for(&mut *conn, key, scope).await?;
+    let before = chain::resolve_for(db, key, scope).await?;
     ensure_writable(&before, key, scope)?;
 
     // The lock flag is a property of the level, not of the value: re-setting a
     // value at a level that locks must not silently unlock it.
-    sqlx::query(
-        r#"INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at, updated_by)
-           VALUES ($1, $2, $3, $4, NOW(), $5)
-           ON CONFLICT (key, scope_type, scope_id) DO UPDATE
-               SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by"#,
+    let now = chrono::Utc::now();
+    let upsert = tx.backend().upsert(
+        "core.setting_values",
+        &["key", "scope_type", "scope_id"],
+        &[
+            Assign::Incoming("value"),
+            Assign::Incoming("updated_at"),
+            Assign::Incoming("updated_by"),
+        ],
+    );
+    let sql = format!(
+        "INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at, updated_by) \
+         VALUES ($1, $2, $3, $4, $5, $6){upsert}"
+    );
+    tx.execute(
+        &sql,
+        params![
+            key,
+            scope.kind.as_str(),
+            scope.storage_id(),
+            value.clone(),
+            now,
+            actor
+        ],
     )
-    .bind(key)
-    .bind(scope.kind.as_str())
-    .bind(scope.storage_id())
-    .bind(value)
-    .bind(actor)
-    .execute(&mut *conn)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, key = %key, "settings: écriture de la valeur impossible");
@@ -182,14 +192,15 @@ pub async fn set_value(
 /// again — and keep following its parent afterwards. Deliberately **not** a
 /// write of the inherited value.
 pub async fn clear_value(
-    conn: &mut PgConnection,
+    db: &DbPool,
+    tx: &mut DbTx,
     key: &str,
     scope: &SettingScope,
     _actor: Option<Uuid>,
 ) -> Result<WriteOutcome, AppError> {
-    ensure_subject_exists(&mut *conn, scope).await?;
-    let schema = schema::load(&mut *conn, key).await?;
-    let before = chain::resolve_for(&mut *conn, key, scope).await?;
+    ensure_subject_exists(db, scope).await?;
+    let schema = schema::load(db, key).await?;
+    let before = chain::resolve_for(db, key, scope).await?;
     ensure_writable(&before, key, scope)?;
 
     if !before.has_own_value {
@@ -198,13 +209,10 @@ pub async fn clear_value(
         )));
     }
 
-    sqlx::query(
+    tx.execute(
         "DELETE FROM core.setting_values WHERE key = $1 AND scope_type = $2 AND scope_id = $3",
+        params![key, scope.kind.as_str(), scope.storage_id()],
     )
-    .bind(key)
-    .bind(scope.kind.as_str())
-    .bind(scope.storage_id())
-    .execute(&mut *conn)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, key = %key, "settings: suppression de la valeur impossible");
@@ -225,15 +233,16 @@ pub async fn clear_value(
 /// pin whatever the level happens to inherit today and silently change meaning
 /// when the parent moves.
 pub async fn set_lock(
-    conn: &mut PgConnection,
+    db: &DbPool,
+    tx: &mut DbTx,
     key: &str,
     scope: &SettingScope,
     locked: bool,
     actor: Option<Uuid>,
 ) -> Result<WriteOutcome, AppError> {
-    ensure_subject_exists(&mut *conn, scope).await?;
-    let schema = schema::load(&mut *conn, key).await?;
-    let before = chain::resolve_for(&mut *conn, key, scope).await?;
+    ensure_subject_exists(db, scope).await?;
+    let schema = schema::load(db, key).await?;
+    let before = chain::resolve_for(db, key, scope).await?;
     ensure_writable(&before, key, scope)?;
 
     if locked && !before.has_own_value {
@@ -247,16 +256,21 @@ pub async fn set_lock(
         )));
     }
 
-    sqlx::query(
-        "UPDATE core.setting_values SET locked = $4, updated_at = NOW(), updated_by = $5 \
-         WHERE key = $1 AND scope_type = $2 AND scope_id = $3",
+    // Placeholders reordered to appear strictly increasing in the text (the
+    // engine-agnostic layer numbers them positionally); `NOW()` is bound from Rust.
+    let now = chrono::Utc::now();
+    tx.execute(
+        "UPDATE core.setting_values SET locked = $1, updated_at = $2, updated_by = $3 \
+         WHERE key = $4 AND scope_type = $5 AND scope_id = $6",
+        params![
+            locked,
+            now,
+            actor,
+            key,
+            scope.kind.as_str(),
+            scope.storage_id()
+        ],
     )
-    .bind(key)
-    .bind(scope.kind.as_str())
-    .bind(scope.storage_id())
-    .bind(locked)
-    .bind(actor)
-    .execute(&mut *conn)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, key = %key, "settings: verrouillage impossible");
@@ -290,7 +304,8 @@ pub async fn set_lock(
 /// all would turn "you may not change this one setting" into "your preferences
 /// cannot be saved".
 pub async fn sync_user_preferences(
-    conn: &mut PgConnection,
+    db: &DbPool,
+    tx: &mut DbTx,
     user_id: Uuid,
     patch: &Value,
 ) -> Result<(), AppError> {
@@ -307,14 +322,14 @@ pub async fn sync_user_preferences(
             let key = format!("{module_id}.{sub_key}");
             // Not a declared setting (widget layout and friends): nothing to
             // mirror, and `schema::load` is the cheapest way to find out.
-            let Ok(declared) = schema::load(&mut *conn, &key).await else {
+            let Ok(declared) = schema::load(db, &key).await else {
                 continue;
             };
             if declared.module_id.as_deref() != Some(module_id.as_str()) {
                 continue;
             }
 
-            let resolution = chain::resolve_for(&mut *conn, &key, &scope).await?;
+            let resolution = chain::resolve_for(db, &key, &scope).await?;
             if resolution.locked_above {
                 tracing::info!(
                     %user_id, key = %key,
@@ -327,13 +342,11 @@ pub async fn sync_user_preferences(
             // value" on this route; here that is a deletion, which is what keeps
             // the account following its unit afterwards.
             if value.is_null() {
-                sqlx::query(
+                tx.execute(
                     "DELETE FROM core.setting_values \
                      WHERE key = $1 AND scope_type = 'user' AND scope_id = $2",
+                    params![&key, user_id],
                 )
-                .bind(&key)
-                .bind(user_id)
-                .execute(&mut *conn)
                 .await
                 .map_err(|e| {
                     tracing::error!(error = %e, key = %key, "settings: retrait de la préférence impossible");
@@ -347,21 +360,25 @@ pub async fn sync_user_preferences(
                 continue;
             }
 
-            sqlx::query(
-                r#"INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at, updated_by)
-                   VALUES ($1, 'user', $2, $3, NOW(), $2)
-                   ON CONFLICT (key, scope_type, scope_id) DO UPDATE
-                       SET value = EXCLUDED.value, updated_at = NOW()"#,
-            )
-            .bind(&key)
-            .bind(user_id)
-            .bind(value)
-            .execute(&mut *conn)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, key = %key, "settings: écriture de la préférence impossible");
-                AppError::Database(e)
-            })?;
+            // `user_id` feeds both `scope_id` and `updated_by`; placeholders are
+            // numbered positionally and never reused, so it is bound twice and
+            // `NOW()` is bound from Rust.
+            let now = chrono::Utc::now();
+            let upsert = tx.backend().upsert(
+                "core.setting_values",
+                &["key", "scope_type", "scope_id"],
+                &[Assign::Incoming("value"), Assign::Incoming("updated_at")],
+            );
+            let sql = format!(
+                "INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at, updated_by) \
+                 VALUES ($1, 'user', $2, $3, $4, $5){upsert}"
+            );
+            tx.execute(&sql, params![&key, user_id, value.clone(), now, user_id])
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, key = %key, "settings: écriture de la préférence impossible");
+                    AppError::Database(e)
+                })?;
         }
     }
     Ok(())
@@ -377,20 +394,19 @@ pub struct OverrideRef {
     pub locked: bool,
 }
 
-pub async fn list_overrides<'e, E: sqlx::PgExecutor<'e>>(
-    db: E,
-    key: &str,
-) -> Result<Vec<OverrideRef>, AppError> {
-    let rows: Vec<(String, Uuid, String, bool)> = sqlx::query_as(
-        "SELECT scope_type, scope_id, scope_name, locked FROM core.setting_overrides($1)",
-    )
-    .bind(key)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, key = %key, "settings: lecture des surcharges impossible");
-        AppError::Database(e)
-    })?;
+pub async fn list_overrides(db: &DbPool, key: &str) -> Result<Vec<OverrideRef>, AppError> {
+    // `core.setting_overrides` is a PostgreSQL set-returning function; the other
+    // engines get the equivalent from the schema layer (separate migration).
+    let rows: Vec<(String, Uuid, String, bool)> = db
+        .fetch_all_as::<(String, Uuid, String, bool)>(
+            "SELECT scope_type, scope_id, scope_name, locked FROM core.setting_overrides($1)",
+            params![key],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, key = %key, "settings: lecture des surcharges impossible");
+            AppError::Database(e)
+        })?;
 
     Ok(rows
         .into_iter()
@@ -405,28 +421,39 @@ pub async fn list_overrides<'e, E: sqlx::PgExecutor<'e>>(
 
 /// Every override of every key at once, keyed by setting key. One query instead
 /// of one per row when the console lists a whole category.
-pub async fn overrides_by_key<'e, E: sqlx::PgExecutor<'e>>(
-    db: E,
+pub async fn overrides_by_key(
+    db: &DbPool,
     keys: &[String],
 ) -> Result<std::collections::HashMap<String, Vec<OverrideRef>>, AppError> {
-    let rows: Vec<(String, String, Uuid, String, bool)> = sqlx::query_as(
-        r#"SELECT v.key, v.scope_type::TEXT, v.scope_id,
-                  COALESCE(o.name, g.name, u.display_name, u.username, '?')::TEXT,
-                  v.locked
-             FROM core.setting_values v
-             LEFT JOIN core.org_units   o ON v.scope_type = 'org_unit' AND o.id = v.scope_id
-             LEFT JOIN core.user_groups g ON v.scope_type = 'group'    AND g.id = v.scope_id
-             LEFT JOIN core.users       u ON v.scope_type = 'user'     AND u.id = v.scope_id
-            WHERE v.key = ANY($1) AND v.scope_type <> 'instance'
-            ORDER BY v.key, v.scope_type"#,
-    )
-    .bind(keys)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "settings: lecture groupée des surcharges impossible");
-        AppError::Database(e)
-    })?;
+    // `= ANY($1)` becomes a variadic `IN (...)` list via the query builder, and
+    // the PostgreSQL `::TEXT` casts (over the `scope_type` enum and the COALESCE)
+    // are spelled per engine by `Backend::cast`.
+    let backend = db.backend();
+    let scope_type_text = backend.cast("v.scope_type", SqlType::Text);
+    let name_text = backend.cast(
+        "COALESCE(o.name, g.name, u.display_name, u.username, '?')",
+        SqlType::Text,
+    );
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        format!(
+            "SELECT v.key, {scope_type_text}, v.scope_id, {name_text}, v.locked \
+               FROM core.setting_values v \
+               LEFT JOIN core.org_units   o ON v.scope_type = 'org_unit' AND o.id = v.scope_id \
+               LEFT JOIN core.user_groups g ON v.scope_type = 'group'    AND g.id = v.scope_id \
+               LEFT JOIN core.users       u ON v.scope_type = 'user'     AND u.id = v.scope_id \
+              WHERE v.key"
+        ),
+    );
+    qb.push_in(keys.iter().cloned());
+    qb.push(" AND v.scope_type <> 'instance'");
+    qb.push_order_by("v.key, v.scope_type");
+
+    let rows: Vec<(String, String, Uuid, String, bool)> =
+        qb.fetch_all_as(db).await.map_err(|e| {
+            tracing::error!(error = %e, "settings: lecture groupée des surcharges impossible");
+            AppError::Database(e)
+        })?;
 
     let mut out: std::collections::HashMap<String, Vec<OverrideRef>> =
         std::collections::HashMap::new();

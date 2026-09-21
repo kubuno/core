@@ -40,6 +40,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::{new_id, params, DbPool};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -114,6 +115,19 @@ fn name_conflict(e: sqlx::Error, name: &str) -> AppError {
 /// resolve to (what actually happens when the audience is used). They differ
 /// whenever a member is a group, which is the recommended case — so showing only
 /// the first would hide the one number that says how wide a proposal really is.
+#[derive(sqlx::FromRow)]
+struct AudienceListRow {
+    id:           Uuid,
+    name:         String,
+    description:  Option<String>,
+    is_everyone:  bool,
+    created_at:   chrono::DateTime<chrono::Utc>,
+    updated_at:   chrono::DateTime<chrono::Utc>,
+    member_count: i64,
+    reach:        i64,
+    applied_to:   i64,
+}
+
 pub async fn list_audiences(
     State(state): State<AppState>,
     _admin: AdminUser,
@@ -121,8 +135,13 @@ pub async fn list_audiences(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::AUDIENCES_READ)?;
 
-    let rows = sqlx::query(
-        r#"
+    // NOTE (multi-engine): this read relies on `LEFT JOIN LATERAL`,
+    // `COUNT(DISTINCT …)` and `::bigint` casts, which are PostgreSQL-shaped.
+    // Flagged for the dialect layer; the API surface is ported.
+    let rows = state
+        .db
+        .fetch_all_as::<AudienceListRow>(
+            r#"
         SELECT a.id,
                a.name,
                a.description,
@@ -164,33 +183,63 @@ pub async fn list_audiences(
           ) p ON TRUE
          ORDER BY a.is_everyone DESC, LOWER(a.name)
         "#,
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: liste");
-        AppError::Database(e)
-    })?;
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: list");
+            AppError::Database(e)
+        })?;
 
-    use sqlx::Row as _;
     let audiences: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
-                "id":           r.get::<Uuid, _>("id"),
-                "name":         r.get::<String, _>("name"),
-                "description":  r.get::<Option<String>, _>("description"),
-                "is_everyone":  r.get::<bool, _>("is_everyone"),
-                "member_count": r.get::<i64, _>("member_count"),
-                "reach":        r.get::<i64, _>("reach"),
-                "applied_to":   r.get::<i64, _>("applied_to"),
-                "created_at":   r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
-                "updated_at":   r.get::<chrono::DateTime<chrono::Utc>, _>("updated_at"),
+                "id":           r.id,
+                "name":         r.name,
+                "description":  r.description,
+                "is_everyone":  r.is_everyone,
+                "member_count": r.member_count,
+                "reach":        r.reach,
+                "applied_to":   r.applied_to,
+                "created_at":   r.created_at,
+                "updated_at":   r.updated_at,
             })
         })
         .collect();
 
     Ok(Json(json!({ "audiences": audiences, "max_applied": MAX_APPLIED })))
+}
+
+#[derive(sqlx::FromRow)]
+struct AudienceHeaderRow {
+    id:           Uuid,
+    name:         String,
+    description:  Option<String>,
+    is_everyone:  bool,
+    created_at:   chrono::DateTime<chrono::Utc>,
+    updated_at:   chrono::DateTime<chrono::Utc>,
+    member_count: i64,
+    reach:        i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct MemberRow {
+    member_type: String,
+    member_id:   Uuid,
+    label:       String,
+    email:       Option<String>,
+    group_reach: Option<i64>,
+    is_dangling: bool,
+    added_at:    chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(sqlx::FromRow)]
+struct AudiencePolicyRow {
+    module_id:     String,
+    position:      i16,
+    org_unit_id:   Uuid,
+    org_unit_name: String,
 }
 
 /// `GET /admin/audiences/:id` — one audience and its members, resolved to names.
@@ -213,8 +262,12 @@ pub async fn get_audience(
     // rendered them, so it read "entrée(s), compte(s) atteint(s)" with no
     // numbers at all — the kind of defect that survives because the sentence
     // still looks like a sentence.
-    let audience = sqlx::query(
-        r#"
+    // NOTE (multi-engine): PostgreSQL-shaped (`LEFT JOIN LATERAL`,
+    // `COUNT(DISTINCT …)`, `::bigint`). Flagged; the API surface is ported.
+    let audience = state
+        .db
+        .fetch_optional_as::<AudienceHeaderRow>(
+            r#"
         SELECT a.id,
                a.name,
                a.description,
@@ -249,18 +302,20 @@ pub async fn get_audience(
           ) r ON TRUE
          WHERE a.id = $1
         "#,
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: lecture");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: read");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
 
-    let members = sqlx::query(
-        r#"
+    // NOTE (multi-engine): the `::bigint` cast is PostgreSQL-shaped. Flagged.
+    let member_rows = state
+        .db
+        .fetch_all_as::<MemberRow>(
+            r#"
         SELECT tm.member_type,
                tm.member_id,
                tm.added_at,
@@ -279,72 +334,71 @@ pub async fn get_audience(
          WHERE tm.audience_id = $1
          ORDER BY tm.member_type, label
         "#,
-    )
-    .bind(id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: membres");
-        AppError::Database(e)
-    })?;
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: members");
+            AppError::Database(e)
+        })?;
 
-    use sqlx::Row as _;
-    let members: Vec<Value> = members
+    let members: Vec<Value> = member_rows
         .iter()
         .map(|r| {
             json!({
-                "member_type": r.get::<String, _>("member_type"),
-                "member_id":   r.get::<Uuid, _>("member_id"),
-                "label":       r.get::<String, _>("label"),
-                "email":       r.get::<Option<String>, _>("email"),
-                "group_reach": r.get::<Option<i64>, _>("group_reach"),
+                "member_type": r.member_type,
+                "member_id":   r.member_id,
+                "label":       r.label,
+                "email":       r.email,
+                "group_reach": r.group_reach,
                 // Triggers prune members whose account or group was deleted, so
                 // this should always be false. It is surfaced rather than assumed
                 // because a row the UI cannot name is better shown as broken than
                 // rendered as an empty line nobody can explain or remove.
-                "is_dangling": r.get::<bool, _>("is_dangling"),
-                "added_at":    r.get::<chrono::DateTime<chrono::Utc>, _>("added_at"),
+                "is_dangling": r.is_dangling,
+                "added_at":    r.added_at,
             })
         })
         .collect();
 
-    let policies = sqlx::query(
-        r#"SELECT tp.module_id, tp.position, tp.org_unit_id, ou.name AS org_unit_name
+    let applied_rows = state
+        .db
+        .fetch_all_as::<AudiencePolicyRow>(
+            r#"SELECT tp.module_id, tp.position, tp.org_unit_id, ou.name AS org_unit_name
              FROM core.target_audience_policies tp
              JOIN core.org_units ou ON ou.id = tp.org_unit_id
             WHERE tp.audience_id = $1
             ORDER BY tp.module_id, ou.name"#,
-    )
-    .bind(id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: applications");
-        AppError::Database(e)
-    })?;
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: applications");
+            AppError::Database(e)
+        })?;
 
-    let applied: Vec<Value> = policies
+    let applied: Vec<Value> = applied_rows
         .iter()
         .map(|r| {
             json!({
-                "module_id":     r.get::<String, _>("module_id"),
-                "org_unit_id":   r.get::<Uuid, _>("org_unit_id"),
-                "org_unit_name": r.get::<String, _>("org_unit_name"),
-                "position":      r.get::<i16, _>("position"),
+                "module_id":     r.module_id,
+                "org_unit_id":   r.org_unit_id,
+                "org_unit_name": r.org_unit_name,
+                "position":      r.position,
             })
         })
         .collect();
 
     Ok(Json(json!({
         "audience": {
-            "id":           audience.get::<Uuid, _>("id"),
-            "name":         audience.get::<String, _>("name"),
-            "description":  audience.get::<Option<String>, _>("description"),
-            "is_everyone":  audience.get::<bool, _>("is_everyone"),
-            "member_count": audience.get::<i64, _>("member_count"),
-            "reach":        audience.get::<i64, _>("reach"),
-            "created_at":   audience.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
-            "updated_at":   audience.get::<chrono::DateTime<chrono::Utc>, _>("updated_at"),
+            "id":           audience.id,
+            "name":         audience.name,
+            "description":  audience.description,
+            "is_everyone":  audience.is_everyone,
+            "member_count": audience.member_count,
+            "reach":        audience.reach,
+            "created_at":   audience.created_at,
+            "updated_at":   audience.updated_at,
         },
         "members": members,
         "applied": applied,
@@ -373,20 +427,15 @@ pub async fn create_audience(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query(
-        "INSERT INTO core.target_audiences (name, description, created_by)
-         VALUES ($1, $2, $3)
-         RETURNING id, name, description, is_everyone",
+    // The primary key is generated in Rust (no `RETURNING`, which MySQL lacks).
+    let id = new_id();
+    tx.execute(
+        "INSERT INTO core.target_audiences (id, name, description, created_by)
+         VALUES ($1, $2, $3, $4)",
+        params![id, &name, description, audit.admin.id],
     )
-    .bind(&name)
-    .bind(description)
-    .bind(audit.admin.id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| name_conflict(e, &name))?;
-
-    use sqlx::Row as _;
-    let id: Uuid = row.get("id");
 
     tx.commit(
         AuditEntry::new("core.audiences.create")
@@ -422,29 +471,29 @@ pub async fn update_audience(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let before = sqlx::query("SELECT name, description FROM core.target_audiences WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let before = tx
+        .fetch_optional_row(
+            "SELECT name, description FROM core.target_audiences WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "audiences: lecture avant modification");
+            tracing::error!(error = %e, "audiences: reading before modification");
             AppError::Database(e)
         })?
         .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
 
-    use sqlx::Row as _;
     let before_json = json!({
-        "name":        before.get::<String, _>("name"),
-        "description": before.get::<Option<String>, _>("description"),
+        "name":        before.try_get::<String>("name")?,
+        "description": before.try_get::<Option<String>>("description")?,
     });
 
-    sqlx::query("UPDATE core.target_audiences SET name = $1, description = $2 WHERE id = $3")
-        .bind(&name)
-        .bind(description)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| name_conflict(e, &name))?;
+    tx.execute(
+        "UPDATE core.target_audiences SET name = $1, description = $2 WHERE id = $3",
+        params![&name, description, id],
+    )
+    .await
+    .map_err(|e| name_conflict(e, &name))?;
 
     tx.commit(
         AuditEntry::new("core.audiences.update")
@@ -478,35 +527,33 @@ pub async fn delete_audience(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query(
-        "SELECT a.name, a.is_everyone,
-                (SELECT COUNT(*) FROM core.target_audience_policies p WHERE p.audience_id = a.id) AS applied_to
-           FROM core.target_audiences a WHERE a.id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: lecture avant suppression");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
+    let applied_count = tx.backend().count_bigint("*");
+    let head_sql = format!(
+        "SELECT a.name, a.is_everyone, \
+                (SELECT {applied_count} FROM core.target_audience_policies p WHERE p.audience_id = a.id) AS applied_to \
+           FROM core.target_audiences a WHERE a.id = $1"
+    );
+    let row = tx
+        .fetch_optional_row(&head_sql, params![id])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: reading before deletion");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
 
-    use sqlx::Row as _;
-    let name: String = row.get("name");
-    if row.get::<bool, _>("is_everyone") {
+    let name: String = row.try_get("name")?;
+    if row.try_get::<bool>("is_everyone")? {
         return Err(AppError::Validation(
             "L'audience « toute l'organisation » ne peut pas être supprimée : une instance doit toujours pouvoir proposer au moins une audience.".into(),
         ));
     }
-    let applied_to: i64 = row.get("applied_to");
+    let applied_to: i64 = row.try_get("applied_to")?;
 
-    sqlx::query("DELETE FROM core.target_audiences WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.target_audiences WHERE id = $1", params![id])
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "audiences: suppression");
+            tracing::error!(error = %e, "audiences: deletion");
             AppError::Database(e)
         })?;
 
@@ -554,23 +601,33 @@ pub async fn add_members(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query("SELECT name, is_everyone FROM core.target_audiences WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let row = tx
+        .fetch_optional_row(
+            "SELECT name, is_everyone FROM core.target_audiences WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "audiences: lecture avant ajout de membres");
+            tracing::error!(error = %e, "audiences: reading before adding members");
             AppError::Database(e)
         })?
         .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
 
-    use sqlx::Row as _;
-    if row.get::<bool, _>("is_everyone") {
+    if row.try_get::<bool>("is_everyone")? {
         return Err(AppError::Validation(
             "L'audience « toute l'organisation » n'a pas de membres explicites : elle désigne tous les comptes actifs.".into(),
         ));
     }
-    let name: String = row.get("name");
+    let name: String = row.try_get("name")?;
+
+    // The conflict target (the composite primary key) is spelled once so the
+    // insert stays idempotent on every engine.
+    let member_conflict =
+        tx.backend().on_conflict_do_nothing(&["audience_id", "member_type", "member_id"]);
+    let insert_member_sql = format!(
+        "INSERT INTO core.target_audience_members (audience_id, member_type, member_id, added_by) \
+         VALUES ($1, $2, $3, $4){member_conflict}"
+    );
 
     let mut added = 0u32;
     for m in &dto.members {
@@ -578,15 +635,19 @@ pub async fn add_members(
         // key (it points at one of two tables), so an identifier that matches
         // nothing would insert cleanly and show up as a member nobody can name.
         let exists: bool = match m.member_type.as_str() {
-            "user" => sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM core.users WHERE id = $1)")
-                .bind(m.member_id)
-                .fetch_one(&mut *tx)
-                .await,
+            "user" => {
+                tx.fetch_optional_scalar::<bool>(
+                    "SELECT EXISTS(SELECT 1 FROM core.users WHERE id = $1)",
+                    params![m.member_id],
+                )
+                .await
+            }
             "group" => {
-                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM core.user_groups WHERE id = $1)")
-                    .bind(m.member_id)
-                    .fetch_one(&mut *tx)
-                    .await
+                tx.fetch_optional_scalar::<bool>(
+                    "SELECT EXISTS(SELECT 1 FROM core.user_groups WHERE id = $1)",
+                    params![m.member_id],
+                )
+                .await
             }
             other => {
                 return Err(AppError::Validation(format!(
@@ -595,9 +656,10 @@ pub async fn add_members(
             }
         }
         .map_err(|e| {
-            tracing::error!(error = %e, "audiences: vérification d'un membre");
+            tracing::error!(error = %e, "audiences: verifying a member");
             AppError::Database(e)
-        })?;
+        })?
+        .unwrap_or(false);
 
         if !exists {
             return Err(AppError::Validation(
@@ -605,22 +667,14 @@ pub async fn add_members(
             ));
         }
 
-        let done = sqlx::query(
-            "INSERT INTO core.target_audience_members (audience_id, member_type, member_id, added_by)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(id)
-        .bind(&m.member_type)
-        .bind(m.member_id)
-        .bind(audit.admin.id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "audiences: ajout d'un membre");
-            AppError::Database(e)
-        })?;
-        added += done.rows_affected() as u32;
+        let done = tx
+            .execute(&insert_member_sql, params![id, &m.member_type, m.member_id, audit.admin.id])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "audiences: adding a member");
+                AppError::Database(e)
+            })?;
+        added += done as u32;
     }
 
     tx.commit(
@@ -654,32 +708,32 @@ pub async fn remove_members(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let name: String = sqlx::query_scalar("SELECT name FROM core.target_audiences WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let name: String = tx
+        .fetch_optional_scalar::<String>(
+            "SELECT name FROM core.target_audiences WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "audiences: lecture avant retrait de membres");
+            tracing::error!(error = %e, "audiences: reading before removing members");
             AppError::Database(e)
         })?
         .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
 
     let mut removed = 0u32;
     for m in &dto.members {
-        let done = sqlx::query(
-            "DELETE FROM core.target_audience_members
-              WHERE audience_id = $1 AND member_type = $2 AND member_id = $3",
-        )
-        .bind(id)
-        .bind(&m.member_type)
-        .bind(m.member_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "audiences: retrait d'un membre");
-            AppError::Database(e)
-        })?;
-        removed += done.rows_affected() as u32;
+        let done = tx
+            .execute(
+                "DELETE FROM core.target_audience_members
+                  WHERE audience_id = $1 AND member_type = $2 AND member_id = $3",
+                params![id, &m.member_type, m.member_id],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "audiences: removing a member");
+                AppError::Database(e)
+            })?;
+        removed += done as u32;
     }
 
     tx.commit(
@@ -705,38 +759,45 @@ pub struct PolicyQuery {
     pub module_id: String,
 }
 
+#[derive(sqlx::FromRow)]
+struct PolicyEntryRow {
+    audience_id: Uuid,
+    position:    i16,
+    name:        String,
+    description: Option<String>,
+    is_everyone: bool,
+}
+
 /// Reads the rows written **on one unit exactly**, in display order.
 async fn policy_rows(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     org_unit_id: Uuid,
     module_id: &str,
 ) -> Result<Vec<Value>, AppError> {
-    let rows = sqlx::query(
-        r#"SELECT tp.audience_id, tp.position, a.name, a.description, a.is_everyone
+    let rows = db
+        .fetch_all_as::<PolicyEntryRow>(
+            r#"SELECT tp.audience_id, tp.position, a.name, a.description, a.is_everyone
              FROM core.target_audience_policies tp
              JOIN core.target_audiences a ON a.id = tp.audience_id
             WHERE tp.org_unit_id = $1 AND tp.module_id = $2
             ORDER BY tp.position"#,
-    )
-    .bind(org_unit_id)
-    .bind(module_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: lecture de la politique");
-        AppError::Database(e)
-    })?;
+            params![org_unit_id, module_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: reading the policy");
+            AppError::Database(e)
+        })?;
 
-    use sqlx::Row as _;
     Ok(rows
         .iter()
         .map(|r| {
             json!({
-                "audience_id": r.get::<Uuid, _>("audience_id"),
-                "position":    r.get::<i16, _>("position"),
-                "name":        r.get::<String, _>("name"),
-                "description": r.get::<Option<String>, _>("description"),
-                "is_everyone": r.get::<bool, _>("is_everyone"),
+                "audience_id": r.audience_id,
+                "position":    r.position,
+                "name":        r.name,
+                "description": r.description,
+                "is_everyone": r.is_everyone,
             })
         })
         .collect())
@@ -784,19 +845,22 @@ pub async fn get_policy(
     // instead of hanging the request. Reusing it rather than writing a second
     // recursive CTE is what keeps "nearest wins" meaning the same thing here as
     // it does for settings.
-    let ancestors: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT a.id, a.name
+    // NOTE (multi-engine): `core.org_unit_ancestors(...)` is a PostgreSQL
+    // set-returning function. Flagged for the dialect layer; the API is ported.
+    let ancestors: Vec<(Uuid, String)> = state
+        .db
+        .fetch_all_as::<(Uuid, String)>(
+            "SELECT a.id, a.name
            FROM core.org_unit_ancestors($1) a
-          WHERE a.id <> $1
+          WHERE a.id <> $2
           ORDER BY a.depth",
-    )
-    .bind(q.org_unit_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: remontée des unités parentes");
-        AppError::Database(e)
-    })?;
+            params![q.org_unit_id, q.org_unit_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: walking up parent units");
+            AppError::Database(e)
+        })?;
 
     for (unit_id, unit_name) in ancestors {
         let rows = policy_rows(&state.db, unit_id, &q.module_id).await?;
@@ -862,59 +926,60 @@ pub async fn set_policy(
         ));
     }
 
-    let mut tx = audit.begin(&state.db).await?;
-
-    let unit_name: String = sqlx::query_scalar("SELECT name FROM core.org_units WHERE id = $1")
-        .bind(dto.org_unit_id)
-        .fetch_optional(&mut *tx)
+    // The before-image is read on the pool ahead of the transaction: a `DbTx`
+    // exposes no multi-row fetch, and this list only feeds the audit snapshot.
+    let before: Vec<Uuid> = state
+        .db
+        .fetch_all_as::<(Uuid,)>(
+            "SELECT audience_id FROM core.target_audience_policies
+          WHERE org_unit_id = $1 AND module_id = $2 ORDER BY position",
+            params![dto.org_unit_id, &dto.module_id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "audiences: lecture de l'unité");
+            tracing::error!(error = %e, "audiences: existing policy");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|(id,)| id)
+        .collect();
+
+    let mut tx = audit.begin(&state.db).await?;
+
+    let unit_name: String = tx
+        .fetch_optional_scalar::<String>(
+            "SELECT name FROM core.org_units WHERE id = $1",
+            params![dto.org_unit_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "audiences: reading the unit");
             AppError::Database(e)
         })?
         .ok_or_else(|| AppError::NotFound("Unité organisationnelle introuvable".into()))?;
 
-    let before: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT audience_id FROM core.target_audience_policies
-          WHERE org_unit_id = $1 AND module_id = $2 ORDER BY position",
-    )
-    .bind(dto.org_unit_id)
-    .bind(&dto.module_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "audiences: politique existante");
-        AppError::Database(e)
-    })?;
-
-    sqlx::query(
+    tx.execute(
         "DELETE FROM core.target_audience_policies WHERE org_unit_id = $1 AND module_id = $2",
+        params![dto.org_unit_id, &dto.module_id],
     )
-    .bind(dto.org_unit_id)
-    .bind(&dto.module_id)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "audiences: purge de la politique");
+        tracing::error!(error = %e, "audiences: purging the policy");
         AppError::Database(e)
     })?;
 
     for (rank, audience_id) in dto.audience_ids.iter().enumerate() {
-        sqlx::query(
+        tx.execute(
             "INSERT INTO core.target_audience_policies (org_unit_id, module_id, audience_id, position)
              VALUES ($1, $2, $3, $4)",
+            params![dto.org_unit_id, &dto.module_id, audience_id, rank as i16],
         )
-        .bind(dto.org_unit_id)
-        .bind(&dto.module_id)
-        .bind(audience_id)
-        .bind(rank as i16)
-        .execute(&mut *tx)
         .await
         .map_err(|e| {
             if e.to_string().contains("foreign key") {
                 AppError::Validation("Une des audiences indiquées n'existe pas.".into())
             } else {
-                tracing::error!(error = %e, "audiences: écriture de la politique");
+                tracing::error!(error = %e, "audiences: writing the policy");
                 AppError::Database(e)
             }
         })?;

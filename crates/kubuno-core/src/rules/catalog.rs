@@ -29,8 +29,10 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
+
+use kubuno_db::dialect::{Assign, SqlType};
+use kubuno_db::{params, DbPool, DbQueryBuilder, DbTx};
 
 use crate::errors::AppError;
 
@@ -130,7 +132,7 @@ pub struct ParamDef {
 
 // ── Rows, as the API serves them ─────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct TriggerRow {
     pub key: String,
     pub module_id: String,
@@ -141,7 +143,7 @@ pub struct TriggerRow {
     pub is_orphan: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ActionRow {
     pub key: String,
     pub module_id: String,
@@ -199,23 +201,23 @@ fn refuse_core_namespace(module_id: &str) -> Result<(), AppError> {
 /// rather than failing the whole registration: a typo in one trigger must not
 /// keep a module offline.
 pub async fn register_module(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     module_id: &str,
     triggers: &[TriggerDef],
     actions: &[ActionDef],
 ) -> Result<(), AppError> {
     refuse_core_namespace(module_id)?;
-    upsert(conn, module_id, triggers, actions, true).await
+    upsert(tx, module_id, triggers, actions, true).await
 }
 
 /// Upserts the **core's** own declarations. Same table, same validation, same
 /// forced prefixing — see the module header for why that matters.
 pub async fn register_core(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     triggers: &[TriggerDef],
     actions: &[ActionDef],
 ) -> Result<(), AppError> {
-    upsert(conn, CORE_NAMESPACE, triggers, actions, false).await
+    upsert(tx, CORE_NAMESPACE, triggers, actions, false).await
 }
 
 /// The one implementation both entry points share.
@@ -224,12 +226,13 @@ pub async fn register_core(
 /// the transport rather than of the declarer: a separate process must say where
 /// to reach it, the core need not.
 async fn upsert(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     namespace: &str,
     triggers: &[TriggerDef],
     actions: &[ActionDef],
     endpoint_required: bool,
 ) -> Result<(), AppError> {
+    let backend = tx.backend();
     let mut trigger_keys: Vec<String> = Vec::with_capacity(triggers.len());
     for def in triggers {
         let full = match qualify(namespace, &def.key) {
@@ -247,24 +250,33 @@ async fn upsert(
         }
         let fields = serde_json::to_value(&def.fields).unwrap_or_else(|_| Value::Array(vec![]));
 
-        sqlx::query(
-            r#"INSERT INTO core.rule_triggers
-                   (key, module_id, event_type, label, description, fields, is_orphan)
-               VALUES ($1, $2, $3, $4, $5, $6, FALSE)
-               ON CONFLICT (key) DO UPDATE SET
-                   event_type  = EXCLUDED.event_type,
-                   label       = EXCLUDED.label,
-                   description = EXCLUDED.description,
-                   fields      = EXCLUDED.fields,
-                   is_orphan   = FALSE"#,
+        let clause = backend.upsert(
+            "core.rule_triggers",
+            &["key"],
+            &[
+                Assign::Incoming("event_type"),
+                Assign::Incoming("label"),
+                Assign::Incoming("description"),
+                Assign::Incoming("fields"),
+                Assign::Incoming("is_orphan"),
+            ],
+        );
+        let sql = format!(
+            "INSERT INTO core.rule_triggers \
+                 (key, module_id, event_type, label, description, fields, is_orphan) \
+             VALUES ($1, $2, $3, $4, $5, $6, FALSE){clause}"
+        );
+        tx.execute(
+            &sql,
+            params![
+                &full,
+                namespace,
+                def.event_type.trim(),
+                &def.label,
+                def.description.as_deref(),
+                fields
+            ],
         )
-        .bind(&full)
-        .bind(namespace)
-        .bind(def.event_type.trim())
-        .bind(&def.label)
-        .bind(def.description.as_deref())
-        .bind(&fields)
-        .execute(&mut *conn)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, key = %full, "rules: enregistrement d'un déclencheur");
@@ -296,31 +308,41 @@ async fn upsert(
                 continue;
             }
         }
-        let params = serde_json::to_value(&def.params).unwrap_or_else(|_| Value::Array(vec![]));
+        let params_schema =
+            serde_json::to_value(&def.params).unwrap_or_else(|_| Value::Array(vec![]));
 
-        sqlx::query(
-            r#"INSERT INTO core.rule_actions
-                   (key, module_id, label, description, endpoint, params_schema,
-                    is_blocking, is_reversible, is_orphan)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
-               ON CONFLICT (key) DO UPDATE SET
-                   label         = EXCLUDED.label,
-                   description   = EXCLUDED.description,
-                   endpoint      = EXCLUDED.endpoint,
-                   params_schema = EXCLUDED.params_schema,
-                   is_blocking   = EXCLUDED.is_blocking,
-                   is_reversible = EXCLUDED.is_reversible,
-                   is_orphan     = FALSE"#,
+        let clause = backend.upsert(
+            "core.rule_actions",
+            &["key"],
+            &[
+                Assign::Incoming("label"),
+                Assign::Incoming("description"),
+                Assign::Incoming("endpoint"),
+                Assign::Incoming("params_schema"),
+                Assign::Incoming("is_blocking"),
+                Assign::Incoming("is_reversible"),
+                Assign::Incoming("is_orphan"),
+            ],
+        );
+        let sql = format!(
+            "INSERT INTO core.rule_actions \
+                 (key, module_id, label, description, endpoint, params_schema, \
+                  is_blocking, is_reversible, is_orphan) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE){clause}"
+        );
+        tx.execute(
+            &sql,
+            params![
+                &full,
+                namespace,
+                &def.label,
+                def.description.as_deref(),
+                endpoint,
+                params_schema,
+                def.blocking,
+                def.reversible
+            ],
         )
-        .bind(&full)
-        .bind(namespace)
-        .bind(&def.label)
-        .bind(def.description.as_deref())
-        .bind(endpoint)
-        .bind(&params)
-        .bind(def.blocking)
-        .bind(def.reversible)
-        .execute(&mut *conn)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, key = %full, "rules: enregistrement d'une action");
@@ -329,79 +351,94 @@ async fn upsert(
         action_keys.push(full);
     }
 
-    purge_vanished(conn, namespace, &trigger_keys, &action_keys).await
+    purge_vanished(tx, namespace, &trigger_keys, &action_keys).await
 }
 
 /// Removes entries this namespace no longer declares — and only those a rule
 /// does not depend on. The rest survive, flagged, so an existing rule keeps
 /// meaning something and the console can grey it out.
 async fn purge_vanished(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     namespace: &str,
     trigger_keys: &[String],
     action_keys: &[String],
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"DELETE FROM core.rule_triggers t
-            WHERE t.module_id = $1
-              AND NOT (t.key = ANY($2))
-              AND NOT EXISTS (SELECT 1 FROM core.rules r WHERE r.trigger_key = t.key)"#,
-    )
-    .bind(namespace)
-    .bind(trigger_keys)
-    .execute(&mut *conn)
-    .await
-    .map_err(|e| {
+    let backend = tx.backend();
+
+    // `NOT (key = ANY($keys))` becomes a `NOT (key IN (...))` built variadically.
+    // An empty declared set means "keep nothing", so the membership clause is
+    // omitted entirely rather than emitted as `IN (NULL)` (which matches no row
+    // and would wrongly spare everything).
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        "DELETE FROM core.rule_triggers t WHERE t.module_id = ",
+    );
+    qb.push_bind(namespace);
+    if !trigger_keys.is_empty() {
+        qb.push(" AND NOT (t.key")
+            .push_in(trigger_keys.iter().map(String::as_str))
+            .push(")");
+    }
+    qb.push(" AND NOT EXISTS (SELECT 1 FROM core.rules r WHERE r.trigger_key = t.key)");
+    qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: purge des déclencheurs disparus");
         AppError::Database(e)
     })?;
 
-    sqlx::query(
-        r#"UPDATE core.rule_triggers
-              SET is_orphan = TRUE
-            WHERE module_id = $1 AND NOT (key = ANY($2)) AND is_orphan = FALSE"#,
-    )
-    .bind(namespace)
-    .bind(trigger_keys)
-    .execute(&mut *conn)
-    .await
-    .map_err(|e| {
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        "UPDATE core.rule_triggers SET is_orphan = TRUE WHERE module_id = ",
+    );
+    qb.push_bind(namespace);
+    if !trigger_keys.is_empty() {
+        qb.push(" AND NOT (key")
+            .push_in(trigger_keys.iter().map(String::as_str))
+            .push(")");
+    }
+    qb.push(" AND is_orphan = FALSE");
+    qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: marquage des déclencheurs orphelins");
         AppError::Database(e)
     })?;
 
     // An action is referenced from a JSONB array rather than by a foreign key,
     // so the dependency test is a containment check on `core.rules.actions`.
-    sqlx::query(
-        r#"DELETE FROM core.rule_actions a
-            WHERE a.module_id = $1
-              AND NOT (a.key = ANY($2))
-              AND NOT EXISTS (
-                    SELECT 1
-                      FROM core.rules r,
-                           LATERAL jsonb_array_elements(r.actions) AS spec
-                     WHERE spec->>'action' = a.key
-              )"#,
-    )
-    .bind(namespace)
-    .bind(action_keys)
-    .execute(&mut *conn)
-    .await
-    .map_err(|e| {
+    // FLAG: PostgreSQL-only. `LATERAL jsonb_array_elements(...)` and the `->>`
+    // JSON operator have no portable form; this dependency probe runs only on
+    // PostgreSQL.
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        "DELETE FROM core.rule_actions a WHERE a.module_id = ",
+    );
+    qb.push_bind(namespace);
+    if !action_keys.is_empty() {
+        qb.push(" AND NOT (a.key")
+            .push_in(action_keys.iter().map(String::as_str))
+            .push(")");
+    }
+    qb.push(
+        " AND NOT EXISTS (\
+                SELECT 1 FROM core.rules r, \
+                     LATERAL jsonb_array_elements(r.actions) AS spec \
+                 WHERE spec->>'action' = a.key)",
+    );
+    qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: purge des actions disparues");
         AppError::Database(e)
     })?;
 
-    sqlx::query(
-        r#"UPDATE core.rule_actions
-              SET is_orphan = TRUE
-            WHERE module_id = $1 AND NOT (key = ANY($2)) AND is_orphan = FALSE"#,
-    )
-    .bind(namespace)
-    .bind(action_keys)
-    .execute(&mut *conn)
-    .await
-    .map_err(|e| {
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        "UPDATE core.rule_actions SET is_orphan = TRUE WHERE module_id = ",
+    );
+    qb.push_bind(namespace);
+    if !action_keys.is_empty() {
+        qb.push(" AND NOT (key")
+            .push_in(action_keys.iter().map(String::as_str))
+            .push(")");
+    }
+    qb.push(" AND is_orphan = FALSE");
+    qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: marquage des actions orphelines");
         AppError::Database(e)
     })?;
@@ -412,7 +449,7 @@ async fn purge_vanished(
 /// Flags as orphan every non-core entry whose module is no longer installed,
 /// and clears the flag on those whose module came back. Cheap enough to run at
 /// startup and after an uninstall; never deletes a row.
-pub async fn refresh_orphans(db: &PgPool) -> Result<(), AppError> {
+pub async fn refresh_orphans(db: &DbPool) -> Result<(), AppError> {
     // One statement per catalogue table, each a whole compile-time literal: the
     // table name is part of the query text, so it is written out rather than
     // spliced in at run time. The label beside it is only for the log line.
@@ -432,7 +469,7 @@ pub async fn refresh_orphans(db: &PgPool) -> Result<(), AppError> {
         ("core.rule_triggers", refresh!("core.rule_triggers")),
         ("core.rule_actions", refresh!("core.rule_actions")),
     ] {
-        if let Err(e) = sqlx::query(sql).execute(db).await {
+        if let Err(e) = db.execute(sql, params![]).await {
             tracing::error!(error = %e, table = %table, "rules: réévaluation des orphelins");
             return Err(AppError::Database(e));
         }
@@ -442,62 +479,35 @@ pub async fn refresh_orphans(db: &PgPool) -> Result<(), AppError> {
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
-pub async fn list_triggers(db: &PgPool) -> Result<Vec<TriggerRow>, AppError> {
-    let rows = sqlx::query(
+pub async fn list_triggers(db: &DbPool) -> Result<Vec<TriggerRow>, AppError> {
+    db.fetch_all_as::<TriggerRow>(
         r#"SELECT key, module_id, event_type, label, description, fields, is_orphan
              FROM core.rule_triggers ORDER BY module_id, key"#,
+        params![],
     )
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "rules: lecture du catalogue des déclencheurs");
         AppError::Database(e)
-    })?;
-
-    Ok(rows
-        .iter()
-        .map(|r| TriggerRow {
-            key: r.get("key"),
-            module_id: r.get("module_id"),
-            event_type: r.get("event_type"),
-            label: r.get("label"),
-            description: r.get("description"),
-            fields: r.get("fields"),
-            is_orphan: r.get("is_orphan"),
-        })
-        .collect())
+    })
 }
 
-pub async fn list_actions(db: &PgPool) -> Result<Vec<ActionRow>, AppError> {
-    let rows = sqlx::query(
+pub async fn list_actions(db: &DbPool) -> Result<Vec<ActionRow>, AppError> {
+    db.fetch_all_as::<ActionRow>(
         r#"SELECT key, module_id, label, description, params_schema,
                   is_blocking, is_reversible, is_orphan
              FROM core.rule_actions ORDER BY module_id, key"#,
+        params![],
     )
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "rules: lecture du catalogue des actions");
         AppError::Database(e)
-    })?;
-
-    Ok(rows
-        .iter()
-        .map(|r| ActionRow {
-            key: r.get("key"),
-            module_id: r.get("module_id"),
-            label: r.get("label"),
-            description: r.get("description"),
-            params_schema: r.get("params_schema"),
-            is_blocking: r.get("is_blocking"),
-            is_reversible: r.get("is_reversible"),
-            is_orphan: r.get("is_orphan"),
-        })
-        .collect())
+    })
 }
 
 /// Everything the dispatcher needs to run one action.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ResolvedAction {
     pub key: String,
     pub module_id: String,
@@ -506,52 +516,32 @@ pub struct ResolvedAction {
     pub is_reversible: bool,
 }
 
-pub async fn resolve_action(db: &PgPool, key: &str) -> Result<Option<ResolvedAction>, AppError> {
-    let row = sqlx::query(
+pub async fn resolve_action(db: &DbPool, key: &str) -> Result<Option<ResolvedAction>, AppError> {
+    db.fetch_optional_as::<ResolvedAction>(
         r#"SELECT key, module_id, endpoint, is_blocking, is_reversible
              FROM core.rule_actions WHERE key = $1"#,
+        params![key],
     )
-    .bind(key)
-    .fetch_optional(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, action = %key, "rules: résolution d'une action");
         AppError::Database(e)
-    })?;
-
-    Ok(row.map(|r| ResolvedAction {
-        key: r.get("key"),
-        module_id: r.get("module_id"),
-        endpoint: r.get("endpoint"),
-        is_blocking: r.get("is_blocking"),
-        is_reversible: r.get("is_reversible"),
-    }))
+    })
 }
 
 /// The trigger a rule points at, with its declared fields — used to validate a
 /// rule's comparisons against the vocabulary its trigger actually offers.
-pub async fn get_trigger(db: &PgPool, key: &str) -> Result<Option<TriggerRow>, AppError> {
-    let row = sqlx::query(
+pub async fn get_trigger(db: &DbPool, key: &str) -> Result<Option<TriggerRow>, AppError> {
+    db.fetch_optional_as::<TriggerRow>(
         r#"SELECT key, module_id, event_type, label, description, fields, is_orphan
              FROM core.rule_triggers WHERE key = $1"#,
+        params![key],
     )
-    .bind(key)
-    .fetch_optional(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, trigger = %key, "rules: lecture d'un déclencheur");
         AppError::Database(e)
-    })?;
-
-    Ok(row.map(|r| TriggerRow {
-        key: r.get("key"),
-        module_id: r.get("module_id"),
-        event_type: r.get("event_type"),
-        label: r.get("label"),
-        description: r.get("description"),
-        fields: r.get("fields"),
-        is_orphan: r.get("is_orphan"),
-    }))
+    })
 }
 
 /// Parses the `fields` column back into declarations.
@@ -574,15 +564,24 @@ pub fn content_parts(fields: &[FieldDef]) -> Vec<&str> {
 
 /// Does `unit` exist? Used when validating a scope, so a rule cannot name a
 /// unit that was deleted last week and quietly apply to nobody.
-pub async fn org_unit_exists(db: &PgPool, unit: Uuid) -> Result<bool, AppError> {
-    sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM core.org_units WHERE id = $1)")
-        .bind(unit)
-        .fetch_one(db)
+pub async fn org_unit_exists(db: &DbPool, unit: Uuid) -> Result<bool, AppError> {
+    // An existence probe: a constant cast to one decodable width, present or
+    // absent, rather than a boolean `EXISTS(...)` whose type differs per engine.
+    let found = db
+        .fetch_optional_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.org_units WHERE id = $1 LIMIT 1",
+                db.backend().cast("1", SqlType::BigInt)
+            ),
+            params![unit],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "rules: vérification d'une unité organisationnelle");
             AppError::Database(e)
-        })
+        })?
+        .is_some();
+    Ok(found)
 }
 
 #[cfg(test)]

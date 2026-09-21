@@ -7,6 +7,7 @@ use crate::{
     state::AppState,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+use kubuno_db::params;
 use axum::{
     body::Body,
     extract::{FromRequestParts, Path, State, WebSocketUpgrade},
@@ -124,14 +125,15 @@ pub async fn proxy_to_module(
     });
 
     if let Some(uid) = internal_user_id {
-        let resolved_user = sqlx::query_as::<_, User>(
-            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-        )
-        .bind(uid)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
+        let resolved_user = state
+            .db
+            .fetch_optional_as::<User>(
+                "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+                params![uid],
+            )
+            .await
+            .ok()
+            .flatten();
 
         if let Some(user) = resolved_user {
             let headers = req.headers_mut();
@@ -683,12 +685,13 @@ async fn resolve_caller(
 }
 
 async fn load_active_user(state: &AppState, id: uuid::Uuid) -> Option<User> {
-    match sqlx::query_as::<_, User>(
-        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
+    match state
+        .db
+        .fetch_optional_as::<User>(
+            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+            params![id],
+        )
+        .await
     {
         Ok(u) => u,
         Err(e) => {

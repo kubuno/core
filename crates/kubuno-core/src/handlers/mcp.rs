@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use kubuno_db::params;
 use kubuno_mcp::{handle_message, McpToolProvider, Tool, ToolCallResult};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -32,13 +33,16 @@ struct CoreToolProvider {
 #[async_trait]
 impl McpToolProvider for CoreToolProvider {
     async fn list_tools(&self) -> Vec<Tool> {
-        let rows = sqlx::query_as::<_, (Value,)>(
-            "SELECT mcp_tools FROM core.module_instances
-             WHERE status IN ('healthy', 'starting')",
-        )
-        .fetch_all(&self.state.db)
-        .await
-        .unwrap_or_default();
+        let rows = self
+            .state
+            .db
+            .fetch_all_as::<(Value,)>(
+                "SELECT mcp_tools FROM core.module_instances
+                 WHERE status IN ('healthy', 'starting')",
+                params![],
+            )
+            .await
+            .unwrap_or_default();
 
         let mut out = Vec::new();
         for (tools,) in rows {
@@ -59,17 +63,20 @@ impl McpToolProvider for CoreToolProvider {
     }
 
     async fn call_tool(&self, name: &str, arguments: Value, user_id: Uuid) -> ToolCallResult {
-        // Localiser l'outil (base_url + route + method) parmi les instances actives
-        let rows = sqlx::query_as::<_, (String, String, Value)>(
-            "SELECT module_id, base_url, mcp_tools FROM core.module_instances
-             WHERE status IN ('healthy', 'starting')",
-        )
-        .fetch_all(&self.state.db)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "MCP: lecture des instances de modules impossible");
-            Vec::new()
-        });
+        // Locate the tool (base_url + route + method) among the active instances.
+        let rows = self
+            .state
+            .db
+            .fetch_all_as::<(String, String, Value)>(
+                "SELECT module_id, base_url, mcp_tools FROM core.module_instances
+                 WHERE status IN ('healthy', 'starting')",
+                params![],
+            )
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "MCP: could not read module instances");
+                Vec::new()
+            });
 
         // (module_id, base_url, route, method)
         let mut target: Option<(String, String, String, String)> = None;
@@ -101,16 +108,18 @@ impl McpToolProvider for CoreToolProvider {
         // Charger l'utilisateur pour injecter son identité aux modules.
         // `is_active` is part of the predicate: a suspended account must not keep
         // driving modules through a tool call.
-        let user = sqlx::query_as::<_, crate::models::user::User>(
-            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-        )
-        .bind(user_id)
-        .fetch_optional(&self.state.db)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "MCP : chargement de l'utilisateur");
-            None
-        });
+        let user = self
+            .state
+            .db
+            .fetch_optional_as::<crate::models::user::User>(
+                "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+                params![user_id],
+            )
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, user_id = %user_id, "MCP: loading the user");
+                None
+            });
         let Some(user) = user else {
             return ToolCallResult::error("Utilisateur introuvable");
         };
@@ -150,8 +159,12 @@ impl McpToolProvider for CoreToolProvider {
 }
 
 async fn mcp_enabled(state: &AppState) -> bool {
-    sqlx::query_scalar::<_, Value>("SELECT value FROM core.settings WHERE key = 'mcp.enabled'")
-        .fetch_optional(&state.db)
+    state
+        .db
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE key = 'mcp.enabled'",
+            params![],
+        )
         .await
         .ok()
         .flatten()

@@ -32,7 +32,7 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use super::policy::{self, Policy};
@@ -59,7 +59,7 @@ const BUSY_RETRY: Duration = Duration::from_secs(300);
 /// know what happened reads the row, so a failure is never a message that exists
 /// only in a log.
 pub async fn execute(
-    db: &PgPool,
+    db: &DbPool,
     trigger: Trigger,
     actor: Option<(Uuid, String)>,
 ) -> Result<Uuid, AppError> {
@@ -192,7 +192,7 @@ fn next_delay(policy: &Policy) -> Duration {
 /// Schedules the next occurrence, logging rather than failing: a re-arm that
 /// could not be written is recovered by [`schedule`] at the next startup, and
 /// turning it into an error would mark a *successful* backup as a failed job.
-async fn rearm(db: &PgPool, current: Uuid, delay: Duration) {
+async fn rearm(db: &DbPool, current: Uuid, delay: Duration) {
     let next = NewJob::new(RUN).delay(delay);
     if let Err(e) = queue::reschedule_after(db, next, current).await {
         tracing::error!(error = %e, "backup: replanification de la prochaine occurrence impossible");
@@ -204,7 +204,7 @@ async fn rearm(db: &PgPool, current: Uuid, delay: Duration) {
 /// The actor is carried in the payload rather than resolved later: by the time
 /// the job runs, the request that authorised it is long gone.
 pub async fn enqueue_manual(
-    db: &PgPool,
+    db: &DbPool,
     actor_id: Uuid,
     actor_label: &str,
 ) -> Result<Uuid, AppError> {
@@ -229,7 +229,7 @@ pub async fn enqueue_manual(
 ///
 /// The first occurrence is due at the policy's own hour, not immediately: a
 /// restart at 14:00 must not dump the database because somebody deployed.
-pub async fn schedule(db: &PgPool) {
+pub async fn schedule(db: &DbPool) {
     let policy = policy::load(db).await;
     let delay = if policy.enabled {
         next_delay(&policy)

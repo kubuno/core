@@ -4,7 +4,7 @@
 //! issues the certificate. The key material itself is deliberately absent: it is
 //! held on disk by [`super::store`], never in the database.
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::errors::AppError;
 
@@ -98,20 +98,20 @@ impl NetworkConfig {
     /// Reads every `network.*` key at the instance scope, each with the factory
     /// default the migration declared as a fallback. Never fails: an unreadable
     /// setting takes the safe default rather than the instance down.
-    pub async fn load(db: &PgPool) -> Self {
-        async fn bool_of(db: &PgPool, key: &str, default: bool) -> bool {
+    pub async fn load(db: &DbPool) -> Self {
+        async fn bool_of(db: &DbPool, key: &str, default: bool) -> bool {
             crate::settings::instance_value(db, key)
                 .await
                 .and_then(|v| v.as_bool())
                 .unwrap_or(default)
         }
-        async fn int_of(db: &PgPool, key: &str, default: i64) -> i64 {
+        async fn int_of(db: &DbPool, key: &str, default: i64) -> i64 {
             crate::settings::instance_value(db, key)
                 .await
                 .and_then(|v| v.as_i64())
                 .unwrap_or(default)
         }
-        async fn str_of(db: &PgPool, key: &str, default: &str) -> String {
+        async fn str_of(db: &DbPool, key: &str, default: &str) -> String {
             crate::settings::instance_value(db, key)
                 .await
                 .and_then(|v| v.as_str().map(str::to_string))

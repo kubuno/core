@@ -13,8 +13,10 @@
 //! own machines than the operator sees, because there is no second query that
 //! could drift.
 
+use chrono::Utc;
+use kubuno_db::{params, DbPool, DbQueryBuilder, DbTx};
 use serde::Deserialize;
-use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 use super::model::{event_kind, Approval, DeviceEventRow, DeviceRow, SessionRow};
@@ -23,6 +25,11 @@ use crate::errors::AppError;
 
 /// Columns of `core.devices` that may leave the server, plus the two joins the
 /// console needs. `correlation_hash` is absent, deliberately and permanently.
+//
+// NOTE (multi-DBMS): `host(d.last_ip)::text` and the inline `(SELECT COUNT(*)
+// ...)::bigint` cast are PostgreSQL-only. They are kept verbatim here and
+// flagged in the port report; the inet column and the cast need a portable
+// spelling once the core migrations gain a MySQL/SQLite form.
 macro_rules! device_columns {
     () => {
         r#"
@@ -50,6 +57,9 @@ macro_rules! device_from {
 const DEVICE_FROM: &str = device_from!();
 
 /// Columns of a session row. `token_hash` is absent for the same reason.
+//
+// NOTE (multi-DBMS): `host(rt.ip_address)::text` and `CONCAT_WS` are not
+// portable to SQLite; kept verbatim and flagged in the port report.
 macro_rules! session_columns {
     () => {
         r#"
@@ -101,57 +111,12 @@ fn clean(value: &Option<String>) -> Option<&str> {
     value.as_deref().map(str::trim).filter(|v| !v.is_empty())
 }
 
-fn map_device(row: &sqlx::postgres::PgRow) -> DeviceRow {
-    DeviceRow {
-        id: row.get("id"),
-        user_id: row.get("user_id"),
-        user_label: row.get("user_label"),
-        correlation_kind: row.get("correlation_kind"),
-        label: row.get("label"),
-        device_type: row.get("device_type"),
-        client_kind: row.get("client_kind"),
-        platform: row.get("platform"),
-        platform_version: row.get("platform_version"),
-        browser: row.get("browser"),
-        browser_version: row.get("browser_version"),
-        signal_level: row.get("signal_level"),
-        disk_encrypted_raw: row.get("disk_encrypted"),
-        screen_lock_raw: row.get("screen_lock"),
-        declared_platform: row.get("declared_platform"),
-        declared_version: row.get("declared_version"),
-        declared_app_version: row.get("declared_app_version"),
-        declared_at: row.get("declared_at"),
-        first_seen_at: row.get("first_seen_at"),
-        last_seen_at: row.get("last_seen_at"),
-        last_ip: row.get("last_ip"),
-        last_country: row.get("last_country"),
-        approval: row.get("approval"),
-        approval_by: row.get("approval_by"),
-        approval_label: row.get("approval_label"),
-        approval_at: row.get("approval_at"),
-        approval_reason: row.get("approval_reason"),
-        active_sessions: row.get("active_sessions"),
-    }
-}
-
-fn map_session(row: &sqlx::postgres::PgRow) -> SessionRow {
-    SessionRow {
-        id: row.get("id"),
-        user_id: row.get("user_id"),
-        user_label: row.get("user_label"),
-        device_id: row.get("device_id"),
-        device_label: row.get("device_label"),
-        device_name: row.get("device_name"),
-        device_type: row.get("device_type"),
-        client_type: row.get("client_type"),
-        ip_address: row.get("ip_address"),
-        country: row.get("country"),
-        auth_strength: row.get("auth_strength"),
-        user_agent: row.get("user_agent"),
-        created_at: row.get("created_at"),
-        last_used_at: row.get("last_used_at"),
-        expires_at: row.get("expires_at"),
-    }
+/// A distinct-values row for the [`facets`] scan.
+#[derive(Debug, FromRow)]
+struct FacetRow {
+    platform: Option<String>,
+    last_country: Option<String>,
+    device_type: String,
 }
 
 /// Appends the organisational perimeter of the caller.
@@ -160,66 +125,59 @@ fn map_session(row: &sqlx::postgres::PgRow) -> SessionRow {
 /// in that branch and nothing else. An empty subtree matches nothing, which is
 /// the correct answer for somebody who does not hold the key at all.
 fn push_scope(
-    builder: &mut QueryBuilder<Postgres>,
+    builder: &mut DbQueryBuilder,
     ctx: &AdminContext,
     // Spliced into the SQL text, so only a compile-time literal is accepted.
     column: &'static str,
 ) {
     if let Some(units) = ctx.subtree_filter(keys::SESSIONS_READ) {
-        builder.push(format!(
-            " AND {column} IS NOT NULL AND {column} = ANY("
-        ));
-        builder.push_bind(units);
-        builder.push(")");
+        builder.push(format!(" AND {column} IS NOT NULL AND {column}"));
+        builder.push_in(units);
     }
 }
 
 /// The administration list.
 pub async fn list(
-    db: &PgPool,
+    db: &DbPool,
     query: &DeviceQuery,
     ctx: &AdminContext,
 ) -> Result<(Vec<DeviceRow>, i64), AppError> {
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let offset = query.offset.unwrap_or(0).max(0);
 
-    let mut builder = QueryBuilder::<Postgres>::new("SELECT ");
+    let mut builder = DbQueryBuilder::new(db.backend(), "SELECT ");
     builder.push(DEVICE_COLUMNS).push(DEVICE_FROM).push(" WHERE TRUE ");
     push_filters(&mut builder, query, ctx);
-    builder.push(" ORDER BY d.last_seen_at DESC, d.id DESC LIMIT ");
-    builder.push_bind(limit);
-    builder.push(" OFFSET ");
-    builder.push_bind(offset);
+    builder.push_order_by("d.last_seen_at DESC, d.id DESC");
+    builder.push_limit_offset(limit, offset);
 
-    let rows = builder.build().fetch_all(db).await.map_err(|e| {
-        tracing::error!(error = %e, "devices: lecture de l'inventaire");
+    let rows = builder.fetch_all_as::<DeviceRow>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "devices: reading the inventory");
         AppError::Database(e)
     })?;
 
     // The total obeys the same perimeter and the same filters, or the pagination
     // announces devices the caller may not see.
-    let mut counter = QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint");
+    let mut counter = DbQueryBuilder::new(
+        db.backend(),
+        format!("SELECT {}", db.backend().count_bigint("*")),
+    );
     counter.push(DEVICE_FROM).push(" WHERE TRUE ");
     push_filters(&mut counter, query, ctx);
-    let total: i64 = counter
-        .build_query_scalar()
-        .fetch_one(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "devices: total de l'inventaire");
-            AppError::Database(e)
-        })?;
+    let total: i64 = counter.fetch_scalar::<i64>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "devices: inventory total");
+        AppError::Database(e)
+    })?;
 
-    Ok((rows.iter().map(map_device).collect(), total))
+    Ok((rows, total))
 }
 
-fn push_filters(builder: &mut QueryBuilder<Postgres>, query: &DeviceQuery, ctx: &AdminContext) {
+fn push_filters(builder: &mut DbQueryBuilder, query: &DeviceQuery, ctx: &AdminContext) {
     push_scope(builder, ctx, "u.org_unit_id");
 
     if let Some(text) = clean(&query.q) {
-        builder.push(
-            " AND (d.label ILIKE '%' || ",
-        );
+        // NOTE (multi-DBMS): ILIKE is PostgreSQL-only; flagged in the port report.
+        builder.push(" AND (d.label ILIKE '%' || ");
         builder.push_bind(text.to_string());
         builder.push(" || '%' OR d.platform ILIKE '%' || ");
         builder.push_bind(text.to_string());
@@ -252,9 +210,11 @@ fn push_filters(builder: &mut QueryBuilder<Postgres>, query: &DeviceQuery, ctx: 
         builder.push_bind(value.to_uppercase());
     }
     if let Some(days) = query.seen_days.filter(|d| *d > 0) {
-        builder.push(" AND d.last_seen_at >= NOW() - make_interval(days => ");
-        builder.push_bind(days as i32);
-        builder.push(")");
+        // Compute the cutoff in Rust rather than lean on PostgreSQL's
+        // `make_interval`, which no other engine offers.
+        let cutoff = Utc::now() - chrono::Duration::days(days);
+        builder.push(" AND d.last_seen_at >= ");
+        builder.push_bind(cutoff);
     }
     if let Some(user_id) = query.user_id {
         builder.push(" AND d.user_id = ");
@@ -265,17 +225,18 @@ fn push_filters(builder: &mut QueryBuilder<Postgres>, query: &DeviceQuery, ctx: 
 /// Distinct values present in the caller's perimeter, so the filter selects
 /// offer what exists rather than a catalogue of empty answers.
 pub async fn facets(
-    db: &PgPool,
+    db: &DbPool,
     ctx: &AdminContext,
 ) -> Result<(Vec<String>, Vec<String>, Vec<String>), AppError> {
-    let mut builder = QueryBuilder::<Postgres>::new(
+    let mut builder = DbQueryBuilder::new(
+        db.backend(),
         "SELECT DISTINCT d.platform, d.last_country, d.device_type",
     );
     builder.push(DEVICE_FROM).push(" WHERE TRUE ");
     push_scope(&mut builder, ctx, "u.org_unit_id");
 
-    let rows = builder.build().fetch_all(db).await.map_err(|e| {
-        tracing::error!(error = %e, "devices: facettes");
+    let rows = builder.fetch_all_as::<FacetRow>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "devices: facets");
         AppError::Database(e)
     })?;
 
@@ -283,19 +244,18 @@ pub async fn facets(
     let mut countries: Vec<String> = Vec::new();
     let mut types: Vec<String> = Vec::new();
     for row in &rows {
-        if let Some(p) = row.get::<Option<String>, _>("platform") {
+        if let Some(p) = row.platform.clone() {
             if !platforms.contains(&p) {
                 platforms.push(p);
             }
         }
-        if let Some(c) = row.get::<Option<String>, _>("last_country") {
+        if let Some(c) = row.last_country.clone() {
             if !countries.contains(&c) {
                 countries.push(c);
             }
         }
-        let t: String = row.get("device_type");
-        if !types.contains(&t) {
-            types.push(t);
+        if !types.contains(&row.device_type) {
+            types.push(row.device_type.clone());
         }
     }
     platforms.sort();
@@ -305,104 +265,95 @@ pub async fn facets(
 }
 
 /// One device, checked against the caller's perimeter.
-pub async fn get(db: &PgPool, id: Uuid, ctx: &AdminContext) -> Result<DeviceRow, AppError> {
-    let mut builder = QueryBuilder::<Postgres>::new("SELECT ");
+pub async fn get(db: &DbPool, id: Uuid, ctx: &AdminContext) -> Result<DeviceRow, AppError> {
+    let mut builder = DbQueryBuilder::new(db.backend(), "SELECT ");
     builder.push(DEVICE_COLUMNS).push(DEVICE_FROM).push(" WHERE d.id = ");
     builder.push_bind(id);
     push_scope(&mut builder, ctx, "u.org_unit_id");
 
-    let row = builder.build().fetch_optional(db).await.map_err(|e| {
-        tracing::error!(error = %e, device_id = %id, "devices: lecture d'un appareil");
+    let row = builder.fetch_optional_as::<DeviceRow>(db).await.map_err(|e| {
+        tracing::error!(error = %e, device_id = %id, "devices: reading one device");
         AppError::Database(e)
     })?;
 
     // Outside the perimeter reads as "does not exist", which is also what an
     // enumeration attempt must be told.
-    row.as_ref()
-        .map(map_device)
-        .ok_or_else(|| AppError::NotFound("Appareil introuvable".into()))
+    row.ok_or_else(|| AppError::NotFound("Appareil introuvable".into()))
 }
 
 /// One device owned by a given account. Used by the personal screen, where the
 /// only perimeter is "is it mine".
-pub async fn get_owned(db: &PgPool, id: Uuid, user_id: Uuid) -> Result<DeviceRow, AppError> {
+pub async fn get_owned(db: &DbPool, id: Uuid, user_id: Uuid) -> Result<DeviceRow, AppError> {
     let sql = concat!(
         "SELECT ",
         device_columns!(),
         device_from!(),
         " WHERE d.id = $1 AND d.user_id = $2"
     );
-    let row = sqlx::query(sql)
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(db)
+    let row = db
+        .fetch_optional_as::<DeviceRow>(sql, params![id, user_id])
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, device_id = %id, "devices: lecture d'un appareil personnel");
+            tracing::error!(error = %e, device_id = %id, "devices: reading a personal device");
             AppError::Database(e)
         })?;
-    row.as_ref()
-        .map(map_device)
-        .ok_or_else(|| AppError::NotFound("Appareil introuvable".into()))
+    row.ok_or_else(|| AppError::NotFound("Appareil introuvable".into()))
 }
 
 /// Every device of one account, most recently seen first.
-pub async fn for_user(db: &PgPool, user_id: Uuid) -> Result<Vec<DeviceRow>, AppError> {
+pub async fn for_user(db: &DbPool, user_id: Uuid) -> Result<Vec<DeviceRow>, AppError> {
     let sql = concat!(
         "SELECT ",
         device_columns!(),
         device_from!(),
         " WHERE d.user_id = $1 ORDER BY d.last_seen_at DESC, d.id DESC"
     );
-    let rows = sqlx::query(sql)
-        .bind(user_id)
-        .fetch_all(db)
+    let rows = db
+        .fetch_all_as::<DeviceRow>(sql, params![user_id])
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "devices: appareils d'un compte");
+            tracing::error!(error = %e, user_id = %user_id, "devices: devices of an account");
             AppError::Database(e)
         })?;
-    Ok(rows.iter().map(map_device).collect())
+    Ok(rows)
 }
 
 /// Live sessions attached to a device.
-pub async fn sessions_of(db: &PgPool, device_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
+pub async fn sessions_of(db: &DbPool, device_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
     let sql = concat!(
         "SELECT ",
         session_columns!(),
         session_from!(),
-        " WHERE rt.device_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > NOW() \
+        " WHERE rt.device_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > $2 \
          ORDER BY rt.last_used_at DESC"
     );
-    let rows = sqlx::query(sql)
-        .bind(device_id)
-        .fetch_all(db)
+    let rows = db
+        .fetch_all_as::<SessionRow>(sql, params![device_id, Utc::now()])
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, device_id = %device_id, "devices: sessions de l'appareil");
+            tracing::error!(error = %e, device_id = %device_id, "devices: sessions of the device");
             AppError::Database(e)
         })?;
-    Ok(rows.iter().map(map_session).collect())
+    Ok(rows)
 }
 
 /// Live sessions of one account, whatever their device.
-pub async fn sessions_of_user(db: &PgPool, user_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
+pub async fn sessions_of_user(db: &DbPool, user_id: Uuid) -> Result<Vec<SessionRow>, AppError> {
     let sql = concat!(
         "SELECT ",
         session_columns!(),
         session_from!(),
-        " WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > NOW() \
+        " WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > $2 \
          ORDER BY rt.last_used_at DESC"
     );
-    let rows = sqlx::query(sql)
-        .bind(user_id)
-        .fetch_all(db)
+    let rows = db
+        .fetch_all_as::<SessionRow>(sql, params![user_id, Utc::now()])
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "devices: sessions du compte");
+            tracing::error!(error = %e, user_id = %user_id, "devices: sessions of the account");
             AppError::Database(e)
         })?;
-    Ok(rows.iter().map(map_session).collect())
+    Ok(rows)
 }
 
 /// Filters of the instance-wide session list.
@@ -423,50 +374,52 @@ pub struct SessionQuery {
 /// Until now the only way to answer "who is currently signed in" was to open
 /// each account in turn, which meant nobody ever asked.
 pub async fn all_sessions(
-    db: &PgPool,
+    db: &DbPool,
     query: &SessionQuery,
     ctx: &AdminContext,
 ) -> Result<(Vec<SessionRow>, i64), AppError> {
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let offset = query.offset.unwrap_or(0).max(0);
 
-    let mut builder = QueryBuilder::<Postgres>::new("SELECT ");
+    let mut builder = DbQueryBuilder::new(db.backend(), "SELECT ");
     builder
         .push(SESSION_COLUMNS)
         .push(SESSION_FROM)
-        .push(" WHERE rt.revoked_at IS NULL AND rt.expires_at > NOW() ");
+        .push(" WHERE rt.revoked_at IS NULL AND rt.expires_at > ");
+    builder.push_bind(Utc::now());
+    builder.push(" ");
     push_session_filters(&mut builder, query, ctx);
-    builder.push(" ORDER BY rt.last_used_at DESC, rt.id DESC LIMIT ");
-    builder.push_bind(limit);
-    builder.push(" OFFSET ");
-    builder.push_bind(offset);
+    builder.push_order_by("rt.last_used_at DESC, rt.id DESC");
+    builder.push_limit_offset(limit, offset);
 
-    let rows = builder.build().fetch_all(db).await.map_err(|e| {
-        tracing::error!(error = %e, "devices: liste globale des sessions");
+    let rows = builder.fetch_all_as::<SessionRow>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "devices: global session list");
         AppError::Database(e)
     })?;
 
-    let mut counter = QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint");
+    let mut counter = DbQueryBuilder::new(
+        db.backend(),
+        format!("SELECT {}", db.backend().count_bigint("*")),
+    );
     counter
         .push(SESSION_FROM)
-        .push(" WHERE rt.revoked_at IS NULL AND rt.expires_at > NOW() ");
+        .push(" WHERE rt.revoked_at IS NULL AND rt.expires_at > ");
+    counter.push_bind(Utc::now());
+    counter.push(" ");
     push_session_filters(&mut counter, query, ctx);
-    let total: i64 = counter.build_query_scalar().fetch_one(db).await.map_err(|e| {
-        tracing::error!(error = %e, "devices: total des sessions");
+    let total: i64 = counter.fetch_scalar::<i64>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "devices: session total");
         AppError::Database(e)
     })?;
 
-    Ok((rows.iter().map(map_session).collect(), total))
+    Ok((rows, total))
 }
 
-fn push_session_filters(
-    builder: &mut QueryBuilder<Postgres>,
-    query: &SessionQuery,
-    ctx: &AdminContext,
-) {
+fn push_session_filters(builder: &mut DbQueryBuilder, query: &SessionQuery, ctx: &AdminContext) {
     push_scope(builder, ctx, "u.org_unit_id");
 
     if let Some(text) = clean(&query.q) {
+        // NOTE (multi-DBMS): ILIKE and `host()` are PostgreSQL-only; flagged.
         builder.push(" AND (u.username ILIKE '%' || ");
         builder.push_bind(text.to_string());
         builder.push(" || '%' OR u.email ILIKE '%' || ");
@@ -498,26 +451,26 @@ fn push_session_filters(
 
 /// The last lines of a device timeline.
 pub async fn events_of(
-    db: &PgPool,
+    db: &DbPool,
     device_id: Uuid,
     limit: i64,
 ) -> Result<Vec<DeviceEventRow>, AppError> {
-    let rows = sqlx::query_as::<_, DeviceEventRow>(
-        "SELECT id, occurred_at, kind, host(ip_address)::text AS ip_address, country,
+    // NOTE (multi-DBMS): `host(ip_address)::text` is PostgreSQL-only; flagged.
+    let rows = db
+        .fetch_all_as::<DeviceEventRow>(
+            "SELECT id, occurred_at, kind, host(ip_address)::text AS ip_address, country,
                 actor_id, actor_label, detail
            FROM core.device_events
           WHERE device_id = $1
           ORDER BY occurred_at DESC, id DESC
           LIMIT $2",
-    )
-    .bind(device_id)
-    .bind(limit.clamp(1, 200))
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, device_id = %device_id, "devices: journal de l'appareil");
-        AppError::Database(e)
-    })?;
+            params![device_id, limit.clamp(1, 200)],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, device_id = %device_id, "devices: device timeline");
+            AppError::Database(e)
+        })?;
     Ok(rows)
 }
 
@@ -525,40 +478,45 @@ pub async fn events_of(
 ///
 /// Returns the previous state so the audit entry can carry a real `before`.
 pub async fn set_approval(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     device_id: Uuid,
     next: Approval,
     actor_id: Uuid,
     actor_label: &str,
     reason: Option<&str>,
 ) -> Result<Approval, AppError> {
-    let previous: String = sqlx::query_scalar(
-        "SELECT approval FROM core.devices WHERE id = $1 FOR UPDATE",
-    )
-    .bind(device_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, device_id = %device_id, "devices: lecture de l'approbation");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Appareil introuvable".into()))?;
+    // NOTE (multi-DBMS): `FOR UPDATE` is not supported on SQLite; flagged.
+    let previous: String = tx
+        .fetch_optional_scalar::<String>(
+            "SELECT approval FROM core.devices WHERE id = $1 FOR UPDATE",
+            params![device_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, device_id = %device_id, "devices: reading the approval");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Appareil introuvable".into()))?;
 
-    sqlx::query(
+    // Placeholders must appear once each in ascending order (portable rewrite),
+    // so the WHERE key is numbered after the SET assignments.
+    tx.execute(
         "UPDATE core.devices
-            SET approval = $2, approval_by = $3, approval_label = $4,
-                approval_at = NOW(), approval_reason = $5
-          WHERE id = $1",
+            SET approval = $1, approval_by = $2, approval_label = $3,
+                approval_at = $4, approval_reason = $5
+          WHERE id = $6",
+        params![
+            next.as_str(),
+            actor_id,
+            actor_label,
+            Utc::now(),
+            reason,
+            device_id
+        ],
     )
-    .bind(device_id)
-    .bind(next.as_str())
-    .bind(actor_id)
-    .bind(actor_label)
-    .bind(reason)
-    .execute(&mut *conn)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, device_id = %device_id, "devices: écriture de l'approbation");
+        tracing::error!(error = %e, device_id = %device_id, "devices: writing the approval");
         AppError::Database(e)
     })?;
 
@@ -567,39 +525,30 @@ pub async fn set_approval(
         Approval::Blocked => event_kind::BLOCKED,
         Approval::Pending => event_kind::UNBLOCKED,
     };
-    super::correlate::record_event_tx(
-        &mut *conn,
-        device_id,
-        kind,
-        Some(actor_id),
-        Some(actor_label),
-        reason,
-    )
-    .await?;
+    super::correlate::record_event_tx(tx, device_id, kind, Some(actor_id), Some(actor_label), reason)
+        .await?;
 
     Ok(Approval::parse(&previous).unwrap_or(Approval::Pending))
 }
 
 /// Revokes every live session of a device. Returns how many were closed.
 pub async fn revoke_sessions(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     device_id: Uuid,
     reason: &str,
 ) -> Result<u64, AppError> {
-    let affected = sqlx::query(
-        "UPDATE core.refresh_tokens
-            SET revoked_at = NOW(), revoke_reason = $2
-          WHERE device_id = $1 AND revoked_at IS NULL",
-    )
-    .bind(device_id)
-    .bind(reason)
-    .execute(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, device_id = %device_id, "devices: révocation des sessions");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE core.refresh_tokens
+            SET revoked_at = $1, revoke_reason = $2
+          WHERE device_id = $3 AND revoked_at IS NULL",
+            params![Utc::now(), reason, device_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, device_id = %device_id, "devices: revoking sessions");
+            AppError::Database(e)
+        })?;
     Ok(affected)
 }
 
@@ -610,16 +559,17 @@ pub async fn revoke_sessions(
 /// interface says so in as many words because it is the misreading everybody
 /// makes. `refresh_tokens.device_id` is `ON DELETE SET NULL`, so sessions
 /// survive — forgetting is not a sign-out, and the console offers both.
-pub async fn forget(conn: &mut PgConnection, device_id: Uuid) -> Result<(), AppError> {
-    let affected = sqlx::query("DELETE FROM core.devices WHERE id = $1")
-        .bind(device_id)
-        .execute(&mut *conn)
+pub async fn forget(tx: &mut DbTx, device_id: Uuid) -> Result<(), AppError> {
+    let affected = tx
+        .execute(
+            "DELETE FROM core.devices WHERE id = $1",
+            params![device_id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, device_id = %device_id, "devices: oubli de l'appareil");
+            tracing::error!(error = %e, device_id = %device_id, "devices: forgetting the device");
             AppError::Database(e)
-        })?
-        .rows_affected();
+        })?;
     if affected == 0 {
         return Err(AppError::NotFound("Appareil introuvable".into()));
     }
@@ -628,20 +578,22 @@ pub async fn forget(conn: &mut PgConnection, device_id: Uuid) -> Result<(), AppE
 
 /// Renames a device. Empty clears the custom name and restores the description
 /// derived from the user agent.
-pub async fn rename(db: &PgPool, device_id: Uuid, user_id: Uuid, label: Option<&str>) -> Result<(), AppError> {
-    let affected = sqlx::query(
-        "UPDATE core.devices SET label = $3 WHERE id = $1 AND user_id = $2",
-    )
-    .bind(device_id)
-    .bind(user_id)
-    .bind(label)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, device_id = %device_id, "devices: renommage");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+pub async fn rename(
+    db: &DbPool,
+    device_id: Uuid,
+    user_id: Uuid,
+    label: Option<&str>,
+) -> Result<(), AppError> {
+    let affected = db
+        .execute(
+            "UPDATE core.devices SET label = $1 WHERE id = $2 AND user_id = $3",
+            params![label, device_id, user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, device_id = %device_id, "devices: rename");
+            AppError::Database(e)
+        })?;
     if affected == 0 {
         return Err(AppError::NotFound("Appareil introuvable".into()));
     }
@@ -649,12 +601,11 @@ pub async fn rename(db: &PgPool, device_id: Uuid, user_id: Uuid, label: Option<&
 }
 
 /// The device a live session belongs to, if any.
-pub async fn device_of_session(db: &PgPool, session_id: Uuid) -> Option<Uuid> {
-    sqlx::query_scalar::<_, Option<Uuid>>(
+pub async fn device_of_session(db: &DbPool, session_id: Uuid) -> Option<Uuid> {
+    db.fetch_optional_scalar::<Option<Uuid>>(
         "SELECT device_id FROM core.refresh_tokens WHERE id = $1",
+        params![session_id],
     )
-    .bind(session_id)
-    .fetch_optional(db)
     .await
     .ok()
     .flatten()

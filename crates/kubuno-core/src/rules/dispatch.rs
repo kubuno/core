@@ -39,8 +39,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use uuid::Uuid;
+
+use kubuno_db::{params, DbPool};
 
 use crate::config::settings::ServerSettings;
 use crate::crypto::token;
@@ -87,7 +88,7 @@ pub struct ActionJob {
 }
 
 /// Enqueues the actions of one match.
-pub async fn enqueue(db: &PgPool, job: &ActionJob) -> Result<(), AppError> {
+pub async fn enqueue(db: &DbPool, job: &ActionJob) -> Result<(), AppError> {
     let payload = serde_json::to_value(job).map_err(|e| {
         tracing::error!(error = %e, rule_id = %job.rule_id, "rules: sérialisation du travail d'action");
         AppError::Internal(anyhow::anyhow!(e))
@@ -127,7 +128,7 @@ pub struct DispatchOutcome {
 /// travels rather than one string because calling a module means presenting the
 /// secret **of that module** ([`ServerSettings::module_secret`]), which is only
 /// derivable from the master — see [`call_module`].
-pub async fn run_all(db: &PgPool, job: &ActionJob, server: &ServerSettings) -> DispatchOutcome {
+pub async fn run_all(db: &DbPool, job: &ActionJob, server: &ServerSettings) -> DispatchOutcome {
     let mut outcome = DispatchOutcome::default();
     let mut halted = false;
 
@@ -196,7 +197,7 @@ pub async fn run_all(db: &PgPool, job: &ActionJob, server: &ServerSettings) -> D
 
 /// Runs one action. Returns `(status, error, was_blocking)`.
 async fn run_one(
-    db: &PgPool,
+    db: &DbPool,
     job: &ActionJob,
     spec: &ActionSpec,
     server: &ServerSettings,
@@ -252,7 +253,7 @@ async fn run_one(
 /// same rule the proxy ([`crate::modules::proxy`]) and event delivery
 /// ([`crate::events::dispatch`]) follow.
 async fn call_module(
-    db: &PgPool,
+    db: &DbPool,
     job: &ActionJob,
     spec: &ActionSpec,
     module_id: &str,
@@ -262,16 +263,16 @@ async fn call_module(
     // Resolved from the database rather than from the in-memory registry: the
     // job runner holds a pool and nothing else, which is what makes an action
     // runnable by any core process.
-    let base_url: Option<String> = sqlx::query_scalar(
-        "SELECT base_url FROM core.module_instances WHERE module_id = $1 ORDER BY registered_at DESC LIMIT 1",
-    )
-    .bind(module_id)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, module_id = %module_id, "rules: résolution de l'adresse du module");
-        AppError::Database(e)
-    })?;
+    let base_url: Option<String> = db
+        .fetch_optional_scalar::<String>(
+            "SELECT base_url FROM core.module_instances WHERE module_id = $1 ORDER BY registered_at DESC LIMIT 1",
+            params![module_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, module_id = %module_id, "rules: résolution de l'adresse du module");
+            AppError::Database(e)
+        })?;
 
     let Some(base_url) = base_url else {
         return Err(AppError::Validation(format!(
@@ -339,7 +340,7 @@ fn idempotency_hash(execution_id: i64, index: usize, action: &str) -> String {
 
 /// Claims the right to run an action. `false` means somebody already did.
 async fn claim(
-    db: &PgPool,
+    db: &DbPool,
     execution_id: i64,
     index: usize,
     action: &str,
@@ -347,33 +348,44 @@ async fn claim(
     let id_hash = idempotency_hash(execution_id, index, action);
     let expires = chrono::Utc::now() + chrono::Duration::hours(IDEMPOTENCY_TTL_HOURS);
 
-    let affected = sqlx::query(
-        r#"INSERT INTO core.idempotency_keys
-               (id_hash, actor_hash, method, path, status_code, content_type, body, expires_at)
-           VALUES ($1, $2, 'RULE', $3, 200, NULL, ''::bytea, $4)
-           ON CONFLICT (id_hash) DO NOTHING"#,
-    )
-    .bind(&id_hash)
-    .bind(token::hash_token("rules-engine"))
-    .bind(action)
-    .bind(expires)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, action = %action, "rules: écriture de la clé d'idempotence");
-        e
-    })?
-    .rows_affected();
+    // The empty body is bound as empty bytes rather than written as `''::bytea`,
+    // and the "do nothing on conflict" clause is emitted per engine.
+    let backend = db.backend();
+    let sql = format!(
+        "INSERT {}INTO core.idempotency_keys \
+             (id_hash, actor_hash, method, path, status_code, content_type, body, expires_at) \
+         VALUES ($1, $2, 'RULE', $3, 200, NULL, $4, $5){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["id_hash"]),
+    );
+    let affected = db
+        .execute(
+            &sql,
+            params![
+                &id_hash,
+                token::hash_token("rules-engine"),
+                action,
+                Vec::<u8>::new(),
+                expires
+            ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, action = %action, "rules: écriture de la clé d'idempotence");
+            e
+        })?;
 
     Ok(affected == 1)
 }
 
 /// Gives the claim back after a failed attempt, so a retry may try again.
-async fn release(db: &PgPool, execution_id: i64, index: usize, action: &str) {
+async fn release(db: &DbPool, execution_id: i64, index: usize, action: &str) {
     let id_hash = idempotency_hash(execution_id, index, action);
-    if let Err(e) = sqlx::query("DELETE FROM core.idempotency_keys WHERE id_hash = $1")
-        .bind(&id_hash)
-        .execute(db)
+    if let Err(e) = db
+        .execute(
+            "DELETE FROM core.idempotency_keys WHERE id_hash = $1",
+            params![&id_hash],
+        )
         .await
     {
         // The action will be skipped on retry. Worth an error line: the effect

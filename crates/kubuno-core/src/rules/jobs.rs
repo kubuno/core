@@ -13,7 +13,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::config::settings::ServerSettings;
 use crate::jobs::queue::{self, NewJob};
@@ -104,7 +104,7 @@ pub fn register(registry: &mut JobRegistry, server: Arc<ServerSettings>) {
     });
 }
 
-async fn raise_action_failure(db: &PgPool, job: &dispatch::ActionJob, failed: i16) {
+async fn raise_action_failure(db: &DbPool, job: &dispatch::ActionJob, failed: i16) {
     use crate::alerts::{self, catalog, NewAlert, Severity};
 
     let alert = NewAlert::new(
@@ -133,7 +133,7 @@ async fn raise_action_failure(db: &PgPool, job: &dispatch::ActionJob, failed: i1
 
 /// Arms the recurring housekeeping at startup. Idempotent across restarts and
 /// across several core processes.
-pub async fn schedule(db: &PgPool) {
+pub async fn schedule(db: &DbPool) {
     match queue::ensure_scheduled(db, NewJob::new(MAINTENANCE)).await {
         Ok(Some(id)) => tracing::info!(job_id = %id, "Entretien du moteur de règles planifié"),
         Ok(None) => tracing::debug!("Entretien du moteur de règles déjà planifié"),

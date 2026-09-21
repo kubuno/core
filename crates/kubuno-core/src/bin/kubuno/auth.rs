@@ -43,7 +43,7 @@ use kubuno_core::{
     config::Settings,
     database::pool::create_pool,
 };
-use sqlx::PgPool;
+use kubuno_db::{dialect::Assign, params, DbPool};
 use uuid::Uuid;
 
 use crate::display::*;
@@ -60,16 +60,18 @@ struct Account {
     has_password: bool,
 }
 
-async fn find_account(db: &PgPool, needle: &str) -> Result<Account> {
-    let row: Option<(Uuid, String, String, String, bool, bool)> = sqlx::query_as(
-        "SELECT id, email, username, role, totp_enabled, (password_hash IS NOT NULL)
-           FROM core.users
-          WHERE email = $1 OR username = $1",
-    )
-    .bind(needle)
-    .fetch_optional(db)
-    .await
-    .context("Recherche du compte")?;
+async fn find_account(db: &DbPool, needle: &str) -> Result<Account> {
+    // `$1` was reused for both columns; positional placeholders must appear once
+    // each in ascending order, so bind `needle` twice as `$1` and `$2`.
+    let row: Option<(Uuid, String, String, String, bool, bool)> = db
+        .fetch_optional_as(
+            "SELECT id, email, username, role, totp_enabled, (password_hash IS NOT NULL)
+               FROM core.users
+              WHERE email = $1 OR username = $2",
+            params![needle, needle],
+        )
+        .await
+        .context("Recherche du compte")?;
 
     let (id, email, username, role, totp_enabled, has_password) =
         row.with_context(|| format!("Aucun compte pour « {needle} »"))?;
@@ -184,13 +186,12 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
     let mut done: Vec<String> = Vec::new();
 
     if disable_2fa {
-        sqlx::query(
+        db.execute(
             "UPDATE core.users
                 SET totp_enabled = FALSE, totp_secret = NULL, totp_pending_secret = NULL
               WHERE id = $1",
+            params![account.id],
         )
-        .bind(account.id)
-        .execute(&db)
         .await
         .context("Désactivation du second facteur")?;
 
@@ -200,21 +201,21 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
 
         // Sessions and step-up grants belong to the compromised-or-lost state we
         // are recovering from; leaving them alive would defeat the point.
-        sqlx::query(
+        db.execute(
             "UPDATE core.refresh_tokens
-                SET revoked_at = NOW(), revoke_reason = 'admin'
-              WHERE user_id = $1 AND revoked_at IS NULL",
+                SET revoked_at = $1, revoke_reason = 'admin'
+              WHERE user_id = $2 AND revoked_at IS NULL",
+            params![chrono::Utc::now(), account.id],
         )
-        .bind(account.id)
-        .execute(&db)
         .await
         .context("Révocation des sessions")?;
 
-        sqlx::query("DELETE FROM core.reauth_grants WHERE user_id = $1")
-            .bind(account.id)
-            .execute(&db)
-            .await
-            .context("Révocation des réauthentifications")?;
+        db.execute(
+            "DELETE FROM core.reauth_grants WHERE user_id = $1",
+            params![account.id],
+        )
+        .await
+        .context("Révocation des réauthentifications")?;
 
         ok("Double authentification désactivée, sessions révoquées.");
         done.push(format!("2FA désactivée, {dropped} code(s) de secours supprimé(s), sessions révoquées"));
@@ -239,13 +240,13 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
 
     if let Some(days) = grace_days {
         let days = days.clamp(0, 365);
-        sqlx::query(
-            "UPDATE core.users SET admin_2fa_grace_until = NOW() + ($2 || ' days')::interval
-              WHERE id = $1",
+        // Compute the grace deadline in Rust rather than with PostgreSQL's
+        // `NOW() + interval` arithmetic, which has no portable spelling.
+        let grace_until = chrono::Utc::now() + chrono::Duration::days(days);
+        db.execute(
+            "UPDATE core.users SET admin_2fa_grace_until = $1 WHERE id = $2",
+            params![grace_until, account.id],
         )
-        .bind(account.id)
-        .bind(days.to_string())
-        .execute(&db)
         .await
         .context("Report du délai de grâce")?;
         ok(&format!("Délai de grâce administrateur reporté de {days} jour(s)."));
@@ -260,14 +261,13 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
         // out, and the recovery has to undo it. Locks on this one key are
         // cleared — loudly, and counted in the audit entry — before the
         // account-scope row is written.
-        let unlocked = sqlx::query(
-            "UPDATE core.setting_values SET locked = FALSE WHERE key = $1 AND locked = TRUE",
-        )
-        .bind(kubuno_core::auth::methods::KEY_METHODS)
-        .execute(&db)
-        .await
-        .context("Levée des verrous sur la politique d'authentification")?
-        .rows_affected();
+        let unlocked = db
+            .execute(
+                "UPDATE core.setting_values SET locked = FALSE WHERE key = $1 AND locked = TRUE",
+                params![kubuno_core::auth::methods::KEY_METHODS],
+            )
+            .await
+            .context("Levée des verrous sur la politique d'authentification")?;
         if unlocked > 0 {
             warn(&format!(
                 "{unlocked} verrou(x) levé(s) sur « {} » — sans quoi la portée « compte » n'aurait pas primé.",
@@ -281,16 +281,29 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
         // underneath a lock. The account scope is the most specific level of
         // `core.setting_chain`, so this row now wins whatever the unit, the
         // group or the instance say.
-        sqlx::query(
-            r#"INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at)
-               VALUES ($1, 'user', $2, $3, NOW())
-               ON CONFLICT (key, scope_type, scope_id) DO UPDATE
-                   SET value = EXCLUDED.value, updated_at = NOW(), locked = FALSE"#,
+        let now = chrono::Utc::now();
+        let upsert = db.backend().upsert(
+            "core.setting_values",
+            &["key", "scope_type", "scope_id"],
+            &[
+                Assign::Incoming("value"),
+                Assign::Incoming("updated_at"),
+                Assign::Expr { col: "locked", expr: "FALSE" },
+            ],
+        );
+        let sql = format!(
+            "INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at) \
+             VALUES ($1, 'user', $2, $3, $4){upsert}"
+        );
+        db.execute(
+            &sql,
+            params![
+                kubuno_core::auth::methods::KEY_METHODS,
+                account.id,
+                serde_json::json!(["local"]),
+                now
+            ],
         )
-        .bind(kubuno_core::auth::methods::KEY_METHODS)
-        .bind(account.id)
-        .bind(serde_json::json!(["local"]))
-        .execute(&db)
         .await
         .context("Réouverture du mot de passe local")?;
 
@@ -307,19 +320,17 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
         let plain = read_new_password()?;
         let hash = kubuno_core::crypto::password::hash_password(&plain)
             .map_err(|e| anyhow::anyhow!("Hachage du mot de passe : {e}"))?;
-        sqlx::query(
-            // `password_changed_at` is stamped here too: the console recovery
-            // path deliberately bypasses the instance password policy — it is
-            // the escape hatch used when the policy itself is what locked
-            // everybody out — but the account must not come back carrying a
-            // date that makes it look permanently expired.
+        // `password_changed_at` is stamped here too: the console recovery
+        // path deliberately bypasses the instance password policy — it is
+        // the escape hatch used when the policy itself is what locked
+        // everybody out — but the account must not come back carrying a
+        // date that makes it look permanently expired.
+        db.execute(
             "UPDATE core.users \
-                SET password_hash = $2, must_change_password = TRUE, password_changed_at = NOW() \
-              WHERE id = $1",
+                SET password_hash = $1, must_change_password = TRUE, password_changed_at = $2 \
+              WHERE id = $3",
+            params![&hash, chrono::Utc::now(), account.id],
         )
-        .bind(account.id)
-        .bind(&hash)
-        .execute(&db)
         .await
         .context("Écriture du mot de passe")?;
         ok("Mot de passe local défini (changement demandé à la première connexion).");

@@ -26,11 +26,13 @@
 //! it at every restart to discover that nothing changed is the kind of cost that
 //! turns into "the server takes a while to come up".
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use chrono::Utc;
+use kubuno_db::dialect::Backend;
+use kubuno_db::{new_id, params, returning, DbPool, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::model::Rule;
@@ -107,7 +109,7 @@ pub struct SeedReport {
 ///
 /// Never fatal: an instance that fails to seed still serves whatever it already
 /// has, and every path that reads holidays tolerates an empty referential.
-pub async fn ensure_dataset(db: &PgPool) -> SeedReport {
+pub async fn ensure_dataset(db: &DbPool) -> SeedReport {
     match load(db, false).await {
         Ok(report) => {
             if report.up_to_date {
@@ -194,18 +196,22 @@ pub fn shipped_holiday(calendar_code: &str, key: &str) -> Option<ShippedHoliday>
 /// Loads the dataset. `force` re-applies it even when the version matches —
 /// what the console's "recharger le référentiel" does after somebody has
 /// deleted rows they now want back.
-pub async fn load(db: &PgPool, force: bool) -> Result<SeedReport, AppError> {
-    let current: Option<String> = sqlx::query_scalar(
-        "SELECT value #>> '{}' FROM core.settings WHERE key = $1",
-    )
-    .bind(VERSION_KEY)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: lecture de la version chargée");
-        AppError::Database(e)
-    })?
-    .flatten();
+pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
+    let backend = db.backend();
+    // `value #>> '{}'` (the JSON scalar as text at the root) via the portable
+    // JSON accessor.
+    let version_expr = backend.json_text("value", &[]);
+    let current: Option<String> = db
+        .fetch_optional_scalar::<Option<String>>(
+            &format!("SELECT {version_expr} FROM core.settings WHERE key = $1"),
+            params![VERSION_KEY],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: lecture de la version chargée");
+            AppError::Database(e)
+        })?
+        .flatten();
 
     let shipped = shipped_version();
     if !force && current.as_deref() == Some(shipped.as_str()) {
@@ -224,6 +230,73 @@ pub async fn load(db: &PgPool, force: bool) -> Result<SeedReport, AppError> {
     let mut report = SeedReport {
         version: dataset.version.clone(),
         ..SeedReport::default()
+    };
+
+    // Read the current built-in inventory BEFORE any write. The removal/orphan
+    // reconciliation at the end used to be a pair of PostgreSQL `UNNEST` array
+    // anti-joins — not portable, and `params!` binds a `Vec<String>` as a JSON
+    // array rather than an SQL array, so the old form could not be kept even on
+    // PostgreSQL. It is now computed in Rust against the shipped set and applied
+    // by id. Reading before the writes is correct: freshly inserted rows are, by
+    // construction, in the shipped set and never pruned.
+    let existing: Vec<(Uuid, String, String, bool, bool)> = db
+        .fetch_all_as::<(Uuid, String, String, bool, bool)>(
+            "SELECT h.id, c.code, h.key, h.is_overridden, h.is_orphan
+               FROM core.holidays h
+               JOIN core.holiday_calendars c ON c.id = h.calendar_id
+              WHERE h.is_builtin",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: lecture de l'inventaire existant");
+            AppError::Database(e)
+        })?;
+
+    // NOTE (multi-DBMS): the cross-column `CASE WHEN is_overridden` (an
+    // administrator's edit survives an upgrade) and the conditional
+    // `ON CONFLICT … WHERE` have no single portable spelling, so each engine's
+    // upsert form is written out here. Flagged in the port report.
+    let cal_conflict = match backend {
+        Backend::MySql => " ON DUPLICATE KEY UPDATE \
+              country_code = VALUES(country_code), \
+              subdivision = VALUES(subdivision), \
+              parent_id = VALUES(parent_id), \
+              name = CASE WHEN is_overridden THEN name ELSE VALUES(name) END, \
+              names = CASE WHEN is_overridden THEN names ELSE VALUES(names) END, \
+              is_builtin = TRUE, \
+              coverage_from = VALUES(coverage_from), \
+              coverage_to = VALUES(coverage_to)",
+        _ => " ON CONFLICT (code) DO UPDATE SET \
+              country_code = excluded.country_code, \
+              subdivision = excluded.subdivision, \
+              parent_id = excluded.parent_id, \
+              name = CASE WHEN core.holiday_calendars.is_overridden \
+                          THEN core.holiday_calendars.name ELSE excluded.name END, \
+              names = CASE WHEN core.holiday_calendars.is_overridden \
+                           THEN core.holiday_calendars.names ELSE excluded.names END, \
+              is_builtin = TRUE, \
+              coverage_from = excluded.coverage_from, \
+              coverage_to = excluded.coverage_to",
+    };
+    let hol_conflict = match backend {
+        Backend::MySql => " ON DUPLICATE KEY UPDATE \
+              name = CASE WHEN is_overridden THEN name ELSE VALUES(name) END, \
+              names = CASE WHEN is_overridden THEN names ELSE VALUES(names) END, \
+              category = CASE WHEN is_overridden THEN category ELSE VALUES(category) END, \
+              kind = CASE WHEN is_overridden THEN kind ELSE VALUES(kind) END, \
+              rule = CASE WHEN is_overridden THEN rule ELSE VALUES(rule) END, \
+              observance = CASE WHEN is_overridden THEN observance ELSE VALUES(observance) END, \
+              from_year = CASE WHEN is_overridden THEN from_year ELSE VALUES(from_year) END, \
+              to_year = CASE WHEN is_overridden THEN to_year ELSE VALUES(to_year) END, \
+              is_builtin = TRUE, \
+              is_orphan = CASE WHEN is_overridden THEN is_orphan ELSE FALSE END",
+        _ => " ON CONFLICT (calendar_id, key) DO UPDATE SET \
+              name = excluded.name, names = excluded.names, category = excluded.category, \
+              kind = excluded.kind, rule = excluded.rule, observance = excluded.observance, \
+              from_year = excluded.from_year, to_year = excluded.to_year, is_builtin = TRUE, \
+              is_orphan = FALSE \
+            WHERE core.holidays.is_overridden IS NOT TRUE",
     };
 
     let mut tx = db.begin().await.map_err(|e| {
@@ -266,37 +339,32 @@ pub async fn load(db: &PgPool, force: bool) -> Result<SeedReport, AppError> {
                 (None, None)
             };
 
-            let calendar_id: Uuid = sqlx::query_scalar(
-                r#"
-                INSERT INTO core.holiday_calendars
-                    (code, country_code, subdivision, parent_id, name, names,
-                     is_builtin, coverage_from, coverage_to)
-                VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8)
-                ON CONFLICT (code) DO UPDATE SET
-                    country_code  = EXCLUDED.country_code,
-                    subdivision   = EXCLUDED.subdivision,
-                    parent_id     = EXCLUDED.parent_id,
-                    -- An administrator's wording survives; everything else is
-                    -- refreshed. `enabled` is absent on purpose.
-                    name          = CASE WHEN core.holiday_calendars.is_overridden
-                                         THEN core.holiday_calendars.name ELSE EXCLUDED.name END,
-                    names         = CASE WHEN core.holiday_calendars.is_overridden
-                                         THEN core.holiday_calendars.names ELSE EXCLUDED.names END,
-                    is_builtin    = TRUE,
-                    coverage_from = EXCLUDED.coverage_from,
-                    coverage_to   = EXCLUDED.coverage_to
-                RETURNING id
-                "#,
+            // The id is generated in Rust (no `RETURNING` on MySQL). On a
+            // conflict the reselect-by-code returns the pre-existing id.
+            let cal_insert = format!(
+                "INSERT INTO core.holiday_calendars \
+                    (id, code, country_code, subdivision, parent_id, name, names, \
+                     is_builtin, coverage_from, coverage_to) \
+                VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9){cal_conflict}"
+            );
+            let calendar_id: Uuid = returning::insert_returning_scalar::<Uuid>(
+                &mut tx,
+                &cal_insert,
+                params![
+                    new_id(),
+                    &entry.code,
+                    &country.code,
+                    entry.subdivision.as_deref(),
+                    parent_id,
+                    &name,
+                    names.clone(),
+                    coverage_from,
+                    coverage_to
+                ],
+                "id",
+                "SELECT id FROM core.holiday_calendars WHERE code = $1",
+                params![&entry.code],
             )
-            .bind(&entry.code)
-            .bind(&country.code)
-            .bind(entry.subdivision.as_deref())
-            .bind(parent_id)
-            .bind(&name)
-            .bind(&names)
-            .bind(coverage_from)
-            .bind(coverage_to)
-            .fetch_one(&mut *tx)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, code = %entry.code, "holidays: écriture d'un calendrier");
@@ -321,49 +389,41 @@ pub async fn load(db: &PgPool, force: bool) -> Result<SeedReport, AppError> {
                 }
                 shipped_keys.push((entry.code.clone(), holiday.key.clone()));
 
-                let written = sqlx::query(
-                    r#"
-                    INSERT INTO core.holidays
-                        (calendar_id, key, name, names, category, kind, rule, observance,
-                         from_year, to_year, is_builtin)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)
-                    ON CONFLICT (calendar_id, key) DO UPDATE SET
-                        name       = EXCLUDED.name,
-                        names      = EXCLUDED.names,
-                        category   = EXCLUDED.category,
-                        kind       = EXCLUDED.kind,
-                        rule       = EXCLUDED.rule,
-                        observance = EXCLUDED.observance,
-                        from_year  = EXCLUDED.from_year,
-                        to_year    = EXCLUDED.to_year,
-                        is_builtin = TRUE,
-                        -- Back from the dead: a row that was orphaned by a
-                        -- previous dataset and returns in this one is no longer
-                        -- one.
-                        is_orphan  = FALSE
-                    -- The whole promise of this file, in one clause.
-                    WHERE core.holidays.is_overridden IS NOT TRUE
-                    "#,
-                )
-                .bind(calendar_id)
-                .bind(&holiday.key)
-                .bind(&holiday.name)
-                .bind(json!(holiday.names))
-                .bind(&holiday.category)
-                .bind(&holiday.kind)
-                .bind(&holiday.rule)
-                .bind(holiday.observance.as_deref().unwrap_or("none"))
-                .bind(holiday.from_year)
-                .bind(holiday.to_year)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, calendar = %entry.code, key = %holiday.key,
-                                    "holidays: écriture d'une journée");
-                    AppError::Database(e)
-                })?;
+                // The id is generated in Rust (no `DEFAULT gen_random_uuid()` on
+                // MySQL/SQLite). The `WHERE is_overridden IS NOT TRUE` guard is
+                // preserved on PostgreSQL/SQLite and folded into per-column CASE
+                // on MySQL (see `hol_conflict`).
+                let hol_insert = format!(
+                    "INSERT INTO core.holidays \
+                        (id, calendar_id, key, name, names, category, kind, rule, observance, \
+                         from_year, to_year, is_builtin) \
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE){hol_conflict}"
+                );
+                let written = tx
+                    .execute(
+                        &hol_insert,
+                        params![
+                            new_id(),
+                            calendar_id,
+                            &holiday.key,
+                            &holiday.name,
+                            json!(holiday.names),
+                            &holiday.category,
+                            &holiday.kind,
+                            holiday.rule.clone(),
+                            holiday.observance.as_deref().unwrap_or("none"),
+                            holiday.from_year,
+                            holiday.to_year
+                        ],
+                    )
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = %e, calendar = %entry.code, key = %holiday.key,
+                                        "holidays: écriture d'une journée");
+                        AppError::Database(e)
+                    })?;
 
-                if written.rows_affected() == 0 {
+                if written == 0 {
                     report.skipped_overridden += 1;
                 } else {
                     report.holidays += 1;
@@ -372,27 +432,27 @@ pub async fn load(db: &PgPool, force: bool) -> Result<SeedReport, AppError> {
 
             // Exclusions are replaced wholesale: they are three rows at most per
             // calendar, and a diff would cost more than the rewrite.
-            sqlx::query("DELETE FROM core.holiday_exclusions WHERE calendar_id = $1")
-                .bind(calendar_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "holidays: purge des exclusions");
-                    AppError::Database(e)
-                })?;
+            tx.execute(
+                "DELETE FROM core.holiday_exclusions WHERE calendar_id = $1",
+                params![calendar_id],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "holidays: purge des exclusions");
+                AppError::Database(e)
+            })?;
+            let excl_sql = format!(
+                "INSERT {}INTO core.holiday_exclusions (calendar_id, key) VALUES ($1, $2){}",
+                backend.insert_ignore_prefix(),
+                backend.on_conflict_do_nothing(&["calendar_id", "key"]),
+            );
             for key in &entry.excluded {
-                sqlx::query(
-                    "INSERT INTO core.holiday_exclusions (calendar_id, key) VALUES ($1, $2) \
-                     ON CONFLICT DO NOTHING",
-                )
-                .bind(calendar_id)
-                .bind(key)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "holidays: écriture d'une exclusion");
-                    AppError::Database(e)
-                })?;
+                tx.execute(&excl_sql, params![calendar_id, key])
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "holidays: écriture d'une exclusion");
+                        AppError::Database(e)
+                    })?;
             }
         }
     }
@@ -400,84 +460,63 @@ pub async fn load(db: &PgPool, force: bool) -> Result<SeedReport, AppError> {
     // ── What the new dataset no longer knows ────────────────────────────────
     //
     // Two fates, and the difference is whether somebody put work into the row.
-    let (codes, keys): (Vec<String>, Vec<String>) = shipped_keys.into_iter().unzip();
+    // The set arithmetic is done in Rust (the old parallel-array `UNNEST`
+    // anti-join is PostgreSQL-only) and applied to the pre-read snapshot by id.
+    let shipped: HashSet<(String, String)> = shipped_keys.into_iter().collect();
+    let mut to_remove: Vec<Uuid> = Vec::new();
+    let mut to_orphan: Vec<Uuid> = Vec::new();
+    let mut to_unorphan: Vec<Uuid> = Vec::new();
+    for (id, code, key, is_overridden, is_orphan) in &existing {
+        let present = shipped.contains(&(code.clone(), key.clone()));
+        if !present {
+            if !*is_overridden {
+                // Untouched and gone: delete it.
+                to_remove.push(*id);
+            } else if !*is_orphan {
+                // Edited and gone: kept, but flagged as an orphan.
+                to_orphan.push(*id);
+            }
+        } else if *is_orphan {
+            // Back from the dead: an orphaned row the dataset ships again.
+            to_unorphan.push(*id);
+        }
+    }
+    report.removed = to_remove.len();
+    report.orphaned = to_orphan.len();
 
-    let removed = sqlx::query(
-        r#"
-        DELETE FROM core.holidays h
-         USING core.holiday_calendars c
-         WHERE c.id = h.calendar_id
-           AND h.is_builtin
-           AND h.is_overridden IS NOT TRUE
-           AND NOT EXISTS (
-               SELECT 1 FROM UNNEST($1::text[], $2::text[]) AS s(code, key)
-                WHERE s.code = c.code AND s.key = h.key)
-        "#,
-    )
-    .bind(&codes)
-    .bind(&keys)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: retrait des journées disparues du jeu de données");
-        AppError::Database(e)
-    })?;
-    report.removed = removed.rows_affected() as usize;
+    if !to_remove.is_empty() {
+        let mut qb = DbQueryBuilder::new(backend, "DELETE FROM core.holidays WHERE id");
+        qb.push_in(to_remove);
+        qb.tx_execute(&mut tx).await.map_err(|e| {
+            tracing::error!(error = %e, "holidays: retrait des journées disparues du jeu de données");
+            AppError::Database(e)
+        })?;
+    }
+    if !to_orphan.is_empty() {
+        let mut qb =
+            DbQueryBuilder::new(backend, "UPDATE core.holidays SET is_orphan = TRUE WHERE id");
+        qb.push_in(to_orphan);
+        qb.tx_execute(&mut tx).await.map_err(|e| {
+            tracing::error!(error = %e, "holidays: marquage des journées orphelines");
+            AppError::Database(e)
+        })?;
+    }
+    if !to_unorphan.is_empty() {
+        let mut qb =
+            DbQueryBuilder::new(backend, "UPDATE core.holidays SET is_orphan = FALSE WHERE id");
+        qb.push_in(to_unorphan);
+        qb.tx_execute(&mut tx).await.map_err(|e| {
+            tracing::error!(error = %e, "holidays: levée du marquage orphelin");
+            AppError::Database(e)
+        })?;
+    }
 
-    let orphaned = sqlx::query(
-        r#"
-        UPDATE core.holidays h
-           SET is_orphan = TRUE
-          FROM core.holiday_calendars c
-         WHERE c.id = h.calendar_id
-           AND h.is_builtin
-           AND h.is_overridden
-           AND NOT EXISTS (
-               SELECT 1 FROM UNNEST($1::text[], $2::text[]) AS s(code, key)
-                WHERE s.code = c.code AND s.key = h.key)
-           AND h.is_orphan IS NOT TRUE
-        "#,
+    // The version is stored as a JSON string value directly (replacing the
+    // PostgreSQL-only `to_jsonb($1::text)`); `NOW()` is bound from Rust.
+    tx.execute(
+        "UPDATE core.settings SET value = $1, updated_at = $2 WHERE key = $3",
+        params![Value::String(dataset.version.clone()), Utc::now(), VERSION_KEY],
     )
-    .bind(&codes)
-    .bind(&keys)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: marquage des journées orphelines");
-        AppError::Database(e)
-    })?;
-    report.orphaned = orphaned.rows_affected() as usize;
-
-    // The reverse move: an edited row the dataset dropped once and now ships
-    // again. The upsert above cannot clear the flag on it — it skips overridden
-    // rows by design — so it is cleared here, where the comparison is made.
-    sqlx::query(
-        r#"
-        UPDATE core.holidays h
-           SET is_orphan = FALSE
-          FROM core.holiday_calendars c
-         WHERE c.id = h.calendar_id
-           AND h.is_orphan
-           AND EXISTS (
-               SELECT 1 FROM UNNEST($1::text[], $2::text[]) AS s(code, key)
-                WHERE s.code = c.code AND s.key = h.key)
-        "#,
-    )
-    .bind(&codes)
-    .bind(&keys)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: levée du marquage orphelin");
-        AppError::Database(e)
-    })?;
-
-    sqlx::query(
-        "UPDATE core.settings SET value = to_jsonb($1::text), updated_at = NOW() WHERE key = $2",
-    )
-    .bind(&dataset.version)
-    .bind(VERSION_KEY)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "holidays: enregistrement de la version chargée");

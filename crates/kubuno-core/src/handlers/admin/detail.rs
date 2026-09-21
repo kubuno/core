@@ -41,6 +41,7 @@
 //! ([`DetailTable::truncated`]), because a list that stopped is not a list that
 //! ended and a printed page has nobody left to ask.
 
+use kubuno_db::{params, DbPool};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::Row;
@@ -50,6 +51,31 @@ use crate::errors::AppError;
 use crate::state::AppState;
 
 use super::period::{Counted, Window};
+
+/// A row of a detail table, every cell already projected to text in SQL.
+///
+/// The column count is dynamic (it depends on the catalogue), so the row cannot
+/// be a fixed struct; this newtype collects every column positionally as
+/// `Option<String>`. One generic `FromRow` covers the three engines, which is
+/// what `fetch_all_as` requires — the pool exposes no positional multi-row read
+/// otherwise.
+struct TextCells(Vec<Option<String>>);
+
+impl<'r, R> sqlx::FromRow<'r, R> for TextCells
+where
+    R: Row,
+    usize: sqlx::ColumnIndex<R>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        let width = row.columns().len();
+        let mut cells = Vec::with_capacity(width);
+        for index in 0..width {
+            cells.push(row.try_get::<Option<String>, _>(index)?);
+        }
+        Ok(TextCells(cells))
+    }
+}
 
 /// How many records one report may carry.
 ///
@@ -287,7 +313,7 @@ pub struct DetailTable {
 /// is honest: the rows dropped by `LIMIT` are the *oldest* of the window, never
 /// an arbitrary sample.
 pub async fn read(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     what: &Counted,
     win: &Window,
     columns: &'static [DetailColumn],
@@ -326,10 +352,8 @@ pub async fn read(
     // table, time column and filter, and each `DetailColumn::expr` (a private
     // field only the const catalogues below set). The ceiling and cell clip are
     // integer constants; the window bounds are bound parameters.
-    let fetched = sqlx::query(sqlx::AssertSqlSafe(sql))
-        .bind(win.from)
-        .bind(win.to)
-        .fetch_all(db)
+    let fetched = db
+        .fetch_all_as::<TextCells>(&sql, params![win.from, win.to])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, panel = %label, "tableau de bord : détail");
@@ -338,20 +362,11 @@ pub async fn read(
 
     let truncated = fetched.len() as i64 > DETAIL_LIMIT;
     let width = columns.len() + 1;
-    let mut rows: Vec<Vec<Option<String>>> =
-        Vec::with_capacity(fetched.len().min(DETAIL_LIMIT as usize));
-
-    for row in fetched.iter().take(DETAIL_LIMIT as usize) {
-        let mut cells = Vec::with_capacity(width);
-        for index in 0..width {
-            let cell: Option<String> = row.try_get(index).map_err(|e| {
-                tracing::error!(error = %e, panel = %label, "tableau de bord : décodage du détail");
-                AppError::Database(e)
-            })?;
-            cells.push(cell);
-        }
-        rows.push(cells);
-    }
+    let rows: Vec<Vec<Option<String>>> = fetched
+        .into_iter()
+        .take(DETAIL_LIMIT as usize)
+        .map(|cells| cells.0)
+        .collect();
 
     let mut all = Vec::with_capacity(width);
     all.push(DetailColumn::when());

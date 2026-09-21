@@ -11,7 +11,7 @@
 //! and the only module identifier written anywhere in it is the `"core"` of
 //! [`super::catalog::CORE_NAMESPACE`], used right here.
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::errors::AppError;
 
@@ -405,7 +405,7 @@ pub fn actions() -> Vec<ActionDef> {
 }
 
 /// Registers the core's own catalogue entries. Called once at bootstrap.
-pub async fn register(db: &PgPool) -> Result<(), AppError> {
+pub async fn register(db: &DbPool) -> Result<(), AppError> {
     let mut tx = db.begin().await.map_err(|e| {
         tracing::error!(error = %e, "rules: ouverture de la transaction de déclaration du core");
         AppError::Database(e)

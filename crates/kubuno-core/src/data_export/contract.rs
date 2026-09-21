@@ -135,8 +135,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use futures::StreamExt;
+use kubuno_db::{params, DbPool};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
@@ -219,17 +219,26 @@ struct DescribeResponse {
 /// Every registered module, with its base URL. Read from SQL rather than from
 /// the in-memory registry so a background job — which holds a pool and nothing
 /// else — resolves exactly what a request handler would.
-async fn live_modules(db: &PgPool) -> Result<Vec<(String, String)>, sqlx::Error> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT DISTINCT ON (i.module_id) i.module_id, i.base_url \
+async fn live_modules(db: &DbPool) -> Result<Vec<(String, String)>, sqlx::Error> {
+    #[derive(sqlx::FromRow)]
+    struct ModuleRow {
+        module_id: String,
+        base_url: String,
+    }
+    // NOTE: `DISTINCT ON` is PostgreSQL-only. It keeps the newest instance per
+    // module (ordered by registered_at DESC); on another engine this would need
+    // rewriting as a grouped/windowed query.
+    let rows = db
+        .fetch_all_as::<ModuleRow>(
+            "SELECT DISTINCT ON (i.module_id) i.module_id, i.base_url \
            FROM core.module_instances i \
            JOIN core.modules m ON m.id = i.module_id \
           WHERE m.is_enabled = TRUE AND i.status <> 'stopped' \
           ORDER BY i.module_id, i.registered_at DESC",
-    )
-    .fetch_all(db)
-    .await?;
-    Ok(rows)
+            params![],
+        )
+        .await?;
+    Ok(rows.into_iter().map(|r| (r.module_id, r.base_url)).collect())
 }
 
 /// Asks every live module what it can export.
@@ -238,7 +247,7 @@ async fn live_modules(db: &PgPool) -> Result<Vec<(String, String)>, sqlx::Error>
 /// the contract is absent from the result and the rest of the list stands. The
 /// alternative — one unreachable module blanking the service picker — would make
 /// the feature unusable exactly when an instance is already unwell.
-pub async fn describe_all(db: &PgPool, server: &ServerSettings) -> Vec<ModuleOffer> {
+pub async fn describe_all(db: &DbPool, server: &ServerSettings) -> Vec<ModuleOffer> {
     let modules = match live_modules(db).await {
         Ok(m) => m,
         Err(e) => {
@@ -432,15 +441,15 @@ pub async fn fetch_account(
 }
 
 /// The base URL of one module, or `None` when it is not running.
-pub async fn base_url_of(db: &PgPool, module_id: &str) -> Option<String> {
-    match sqlx::query_scalar::<_, String>(
-        "SELECT base_url FROM core.module_instances \
+pub async fn base_url_of(db: &DbPool, module_id: &str) -> Option<String> {
+    match db
+        .fetch_optional_scalar::<String>(
+            "SELECT base_url FROM core.module_instances \
           WHERE module_id = $1 AND status <> 'stopped' \
           ORDER BY registered_at DESC LIMIT 1",
-    )
-    .bind(module_id)
-    .fetch_optional(db)
-    .await
+            params![module_id],
+        )
+        .await
     {
         Ok(v) => v,
         Err(e) => {

@@ -33,6 +33,8 @@ use axum::{
     http::HeaderMap,
     Json,
 };
+use chrono::Utc;
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -149,13 +151,9 @@ pub async fn reset_user_password(
     // as account maintenance. So: the privilege over the target's unit, AND the
     // target must not hold anything the caller does not hold.
     {
-        let mut conn = state.db.acquire().await.map_err(|e| {
-            tracing::error!(error = %e, "reset_user_password: connexion");
-            AppError::Database(e)
-        })?;
-        let unit = user_org_unit(&mut conn, user_id).await?;
+        let unit = user_org_unit(&state.db, user_id).await?;
         ctx.require_for_unit(keys::USER_PASSWORD, unit)?;
-        ensure_can_act_on_user(&mut conn, &ctx, user_id).await?;
+        ensure_can_act_on_user(&state.db, &ctx, user_id).await?;
     }
 
     // ── Validate before touching the database ────────────────────────────────
@@ -240,32 +238,36 @@ pub async fn reset_user_password(
     // ── Mutate, atomically, with the trail entry ─────────────────────────────
     let mut tx = audit.begin(&state.db).await?;
 
-    let target_user: Option<(String, String, Option<String>, bool, String, Value)> = sqlx::query_as(
-        "SELECT username, email, display_name, must_change_password, role, preferences \
-         FROM core.users WHERE id = $1 FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "reset_user_password: lecture de la cible");
-        AppError::Database(e)
-    })?;
+    // FOR UPDATE row read inside the transaction: `DbTx` cannot decode a struct,
+    // so the columns are mapped by hand from a raw row.
+    let target_row = tx
+        .fetch_optional_row(
+            "SELECT username, email, display_name, must_change_password, role, preferences \
+             FROM core.users WHERE id = $1 FOR UPDATE",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "reset_user_password: lecture de la cible");
+            AppError::Database(e)
+        })?;
 
-    let Some((username, email, display_name, was_must_change, role, preferences)) = target_user
-    else {
+    let Some(row) = target_row else {
         return Err(AppError::NotFound("Utilisateur introuvable".into()));
     };
+    let username: String = row.try_get("username").map_err(AppError::Database)?;
+    let email: String = row.try_get("email").map_err(AppError::Database)?;
+    let display_name: Option<String> = row.try_get("display_name").map_err(AppError::Database)?;
+    let was_must_change: bool = row.try_get("must_change_password").map_err(AppError::Database)?;
+    let role: String = row.try_get("role").map_err(AppError::Database)?;
+    let preferences: Value = row.try_get("preferences").map_err(AppError::Database)?;
 
-    sqlx::query(
+    tx.execute(
         "UPDATE core.users \
-            SET password_hash = $1, must_change_password = $2, password_changed_at = NOW() \
-          WHERE id = $3",
+            SET password_hash = $1, must_change_password = $2, password_changed_at = $3 \
+          WHERE id = $4",
+        params![&hash, dto.require_change, Utc::now(), user_id],
     )
-    .bind(&hash)
-    .bind(dto.require_change)
-    .bind(user_id)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, user_id = %user_id, "reset_user_password: écriture");
@@ -277,19 +279,18 @@ pub async fn reset_user_password(
         .await?;
 
     // The step that makes the reset mean anything.
-    let revoked = sqlx::query(
-        "UPDATE core.refresh_tokens \
-         SET revoked_at = NOW(), revoke_reason = 'password_change' \
-         WHERE user_id = $1 AND revoked_at IS NULL",
-    )
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "reset_user_password: révocation des sessions");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+    let revoked = tx
+        .execute(
+            "UPDATE core.refresh_tokens \
+             SET revoked_at = $1, revoke_reason = 'password_change' \
+             WHERE user_id = $2 AND revoked_at IS NULL",
+            params![Utc::now(), user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "reset_user_password: révocation des sessions");
+            AppError::Database(e)
+        })?;
 
     let label = user_label(&username, &email, display_name.as_deref());
     let snap = |must_change: bool| {
@@ -408,32 +409,32 @@ pub async fn require_password_change(
     Json(dto): Json<RequirePasswordChangeDto>,
 ) -> Result<Json<Value>, AppError> {
     {
-        let mut conn = state.db.acquire().await.map_err(|e| {
-            tracing::error!(error = %e, "require_password_change: connexion");
-            AppError::Database(e)
-        })?;
-        let unit = user_org_unit(&mut conn, user_id).await?;
+        let unit = user_org_unit(&state.db, user_id).await?;
         ctx.require_for_unit(keys::USER_PASSWORD, unit)?;
-        ensure_can_act_on_user(&mut conn, &ctx, user_id).await?;
+        ensure_can_act_on_user(&state.db, &ctx, user_id).await?;
     }
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let target_user: Option<(String, bool, Option<String>)> = sqlx::query_as(
-        "SELECT username, must_change_password, password_hash \
-         FROM core.users WHERE id = $1 FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "require_password_change: lecture");
-        AppError::Database(e)
-    })?;
+    // FOR UPDATE row read inside the transaction: mapped by hand from a raw row.
+    let target_row = tx
+        .fetch_optional_row(
+            "SELECT username, must_change_password, password_hash \
+             FROM core.users WHERE id = $1 FOR UPDATE",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "require_password_change: lecture");
+            AppError::Database(e)
+        })?;
 
-    let Some((username, was_required, password_hash)) = target_user else {
+    let Some(row) = target_row else {
         return Err(AppError::NotFound("Utilisateur introuvable".into()));
     };
+    let username: String = row.try_get("username").map_err(AppError::Database)?;
+    let was_required: bool = row.try_get("must_change_password").map_err(AppError::Database)?;
+    let password_hash: Option<String> = row.try_get("password_hash").map_err(AppError::Database)?;
 
     // An account with no local password has nothing to change: arming the flag
     // would close every write for somebody the change screen cannot help,
@@ -453,15 +454,15 @@ pub async fn require_password_change(
         return Ok(Json(json!({ "ok": true, "user_id": user_id, "required": dto.required })));
     }
 
-    sqlx::query("UPDATE core.users SET must_change_password = $1 WHERE id = $2")
-        .bind(dto.required)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "require_password_change: écriture");
-            AppError::Database(e)
-        })?;
+    tx.execute(
+        "UPDATE core.users SET must_change_password = $1 WHERE id = $2",
+        params![dto.required, user_id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, user_id = %user_id, "require_password_change: écriture");
+        AppError::Database(e)
+    })?;
 
     tx.commit(
         AuditEntry::new("core.users.require_password_change")

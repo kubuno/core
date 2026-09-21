@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use kubuno_db::DbPool;
 use sqlx::{PgPool, Row};
 use tokio::io::AsyncWriteExt;
 
@@ -295,7 +296,17 @@ async fn sequence_positions(conn: &mut sqlx::PgConnection) -> anyhow::Result<Vec
 /// The file is written under a `.part` name and renamed only after a successful
 /// `fsync`, so a partially written dump is never mistaken for a usable one — by
 /// the retention pass, by the console, or by an operator at 3 a.m.
-pub async fn write_dump(db: &PgPool, destination: &Path) -> anyhow::Result<DumpOutcome> {
+pub async fn write_dump(db: &DbPool, destination: &Path) -> anyhow::Result<DumpOutcome> {
+    // A logical, data-only dump built from `pg_catalog` and the COPY protocol is
+    // irreducibly PostgreSQL-specific (catalogue introspection, `COPY … TO
+    // STDOUT`, `REPEATABLE READ, READ ONLY`). The engine-agnostic layer cannot
+    // express it, so the entry point accepts a `DbPool` but extracts the
+    // underlying PostgreSQL pool and refuses on any other engine.
+    let db = match db {
+        DbPool::Pg(pool) => pool,
+        _ => bail!("La sauvegarde logique n'est disponible que sur PostgreSQL"),
+    };
+
     ensure_directory(destination).await?;
 
     if let Some(free) = free_bytes(destination) {

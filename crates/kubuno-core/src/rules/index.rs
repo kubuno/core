@@ -21,7 +21,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use sqlx::postgres::PgListener;
-use sqlx::PgPool;
+
+use kubuno_db::{params, DbPool};
 
 use crate::errors::AppError;
 
@@ -102,20 +103,32 @@ pub fn snapshot() -> Arc<RuleIndex> {
     }
 }
 
+/// One `(trigger key, event type)` mapping row.
+#[derive(sqlx::FromRow)]
+struct TriggerEvent {
+    key: String,
+    event_type: String,
+}
+
 /// Rebuilds the index from the database.
-pub async fn reload(db: &PgPool) -> Result<usize, AppError> {
+pub async fn reload(db: &DbPool) -> Result<usize, AppError> {
     let rules = store::load_active(db).await?;
 
     // Trigger → event type, in one query rather than one per rule.
-    let mappings: Vec<(String, String)> =
-        sqlx::query_as("SELECT key, event_type FROM core.rule_triggers")
-            .fetch_all(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "rules: lecture des déclencheurs pour l'index");
-                AppError::Database(e)
-            })?;
-    let event_of: HashMap<String, String> = mappings.into_iter().collect();
+    let mappings = db
+        .fetch_all_as::<TriggerEvent>(
+            "SELECT key, event_type FROM core.rule_triggers",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "rules: lecture des déclencheurs pour l'index");
+            AppError::Database(e)
+        })?;
+    let event_of: HashMap<String, String> = mappings
+        .into_iter()
+        .map(|m| (m.key, m.event_type))
+        .collect();
 
     let mut by_event: HashMap<String, Vec<Arc<CompiledRule>>> = HashMap::new();
     let mut by_trigger: HashMap<String, Vec<Arc<CompiledRule>>> = HashMap::new();
@@ -186,10 +199,25 @@ pub async fn reload(db: &PgPool) -> Result<usize, AppError> {
 ///
 /// Rebuilds once on connection too, which covers both the startup case and a
 /// reconnection during which a notification was lost.
-pub async fn start_listener(db: PgPool) {
+pub async fn start_listener(db: DbPool) {
+    // FLAG: PostgreSQL-only. Live reload rides `LISTEN/NOTIFY`; on MySQL and
+    // SQLite there is no such channel, so the index is built once here and then
+    // refreshed only on process restart (or through the event outbox).
+    let pg = match db.clone() {
+        DbPool::Pg(pg) => pg,
+        _ => {
+            if let Err(e) = reload(&db).await {
+                tracing::error!(error = %e, "rules: rechargement initial de l'index");
+            }
+            tracing::warn!(
+                "rules: écoute LISTEN/NOTIFY indisponible hors PostgreSQL, index figé jusqu'au redémarrage"
+            );
+            return;
+        }
+    };
     tokio::spawn(async move {
         loop {
-            let mut listener = match PgListener::connect_with(&db).await {
+            let mut listener = match PgListener::connect_with(&pg).await {
                 Ok(l) => l,
                 Err(e) => {
                     tracing::error!(error = %e, "rules: connexion de l'écouteur impossible, nouvelle tentative");

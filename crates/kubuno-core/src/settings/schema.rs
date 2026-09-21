@@ -5,14 +5,14 @@
 //! its label and whether it is exposed publicly. Values live in
 //! `core.setting_values`, one per scope.
 
+use kubuno_db::{params, DbPool};
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::{PgExecutor, Row};
 
 use crate::errors::AppError;
 
 /// One declared setting, without any value attached.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct SettingSchema {
     pub key: String,
     pub category: String,
@@ -32,21 +32,6 @@ pub struct SettingSchema {
 }
 
 impl SettingSchema {
-    fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        Ok(Self {
-            key: row.try_get("key")?,
-            category: row.try_get("category")?,
-            label: row.try_get("label")?,
-            description: row.try_get("description")?,
-            is_public: row.try_get("is_public")?,
-            scope: row.try_get("scope")?,
-            value_type: row.try_get("value_type")?,
-            allowed_values: row.try_get("allowed_values")?,
-            module_id: row.try_get("module_id")?,
-            default_value: row.try_get("default_value")?,
-        })
-    }
-
     /// Refuses a value that does not match the declaration.
     ///
     /// Legacy keys carry no `value_type`; for those the shape of the factory
@@ -114,57 +99,44 @@ impl SettingSchema {
 }
 
 /// Loads one declaration, or `NotFound`.
-pub async fn load<'e, E: PgExecutor<'e>>(db: E, key: &str) -> Result<SettingSchema, AppError> {
-    let row = sqlx::query(
+pub async fn load(db: &DbPool, key: &str) -> Result<SettingSchema, AppError> {
+    db.fetch_optional_as::<SettingSchema>(
         "SELECT key, category, label, description, is_public, scope, value_type, \
                 allowed_values, module_id, default_value \
          FROM core.settings WHERE key = $1",
+        params![key],
     )
-    .bind(key)
-    .fetch_optional(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, key = %key, "settings: lecture du schéma impossible");
         AppError::Database(e)
     })?
-    .ok_or_else(|| AppError::NotFound(format!("Réglage '{key}' inexistant")))?;
-
-    SettingSchema::from_row(&row).map_err(|e| {
-        tracing::error!(error = %e, key = %key, "settings: décodage du schéma impossible");
-        AppError::Database(e)
-    })
+    .ok_or_else(|| AppError::NotFound(format!("Réglage '{key}' inexistant")))
 }
 
 /// Loads every declaration matching an optional module filter.
 ///
 /// `module_id = Some("")` selects the core's own settings (`module_id IS NULL`),
 /// which is what the general Settings tab shows.
-pub async fn load_all<'e, E: PgExecutor<'e>>(
-    db: E,
+pub async fn load_all(
+    db: &DbPool,
     module_id: Option<&str>,
 ) -> Result<Vec<SettingSchema>, AppError> {
-    let rows = sqlx::query(
+    // `module_id` is bound twice (a typed NULL carries its own type across all
+    // three engines, so the former `$1::text` cast is no longer needed).
+    db.fetch_all_as::<SettingSchema>(
         "SELECT key, category, label, description, is_public, scope, value_type, \
                 allowed_values, module_id, default_value \
          FROM core.settings \
-         WHERE ($1::text IS NULL AND module_id IS NULL) OR module_id = $1 \
+         WHERE ($1 IS NULL AND module_id IS NULL) OR module_id = $2 \
          ORDER BY category, key",
+        params![module_id, module_id],
     )
-    .bind(module_id)
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "settings: lecture des schémas impossible");
         AppError::Database(e)
-    })?;
-
-    rows.iter()
-        .map(SettingSchema::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, "settings: décodage des schémas impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 #[cfg(test)]

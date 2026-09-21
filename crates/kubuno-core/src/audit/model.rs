@@ -208,7 +208,7 @@ impl AuditEntry {
 }
 
 /// A row read back from `core.admin_audit`, as served by the admin API.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AuditRow {
     pub id: i64,
     pub occurred_at: chrono::DateTime<chrono::Utc>,

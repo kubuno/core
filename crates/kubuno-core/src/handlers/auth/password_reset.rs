@@ -20,6 +20,7 @@ use crate::{
     state::AppState,
 };
 use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::json;
 use validator::Validate;
@@ -44,16 +45,16 @@ pub async fn forgot_password(
         return ok;
     }
 
-    let user: Option<(uuid::Uuid, String, String, Option<String>, serde_json::Value)> =
-        sqlx::query_as(
+    let user: Option<(uuid::Uuid, String, String, Option<String>, serde_json::Value)> = state
+        .db
+        .fetch_optional_as::<(uuid::Uuid, String, String, Option<String>, serde_json::Value)>(
             "SELECT id, email, username, display_name, preferences \
              FROM core.users WHERE email = $1 AND is_active = TRUE",
+            params![email],
         )
-        .bind(email)
-        .fetch_optional(&state.db)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "forgot_password: recherche du compte");
+            tracing::error!(error = %e, "forgot_password: looking up the account");
             e
         })
         .ok()
@@ -79,15 +80,14 @@ pub async fn forgot_password(
     let (raw_token, token_hash) = token::generate_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(mailer::RESET_TOKEN_HOURS);
 
-    let inserted = sqlx::query(
-        "INSERT INTO core.verification_tokens (user_id, token_hash, purpose, expires_at)
-         VALUES ($1, $2, 'password_reset', $3)",
-    )
-    .bind(user_id)
-    .bind(&token_hash)
-    .bind(expires_at)
-    .execute(&state.db)
-    .await;
+    let inserted = state
+        .db
+        .execute(
+            "INSERT INTO core.verification_tokens (user_id, token_hash, purpose, expires_at)
+             VALUES ($1, $2, 'password_reset', $3)",
+            params![user_id, &token_hash, expires_at],
+        )
+        .await;
 
     if let Err(e) = inserted {
         tracing::error!(error = %e, "Impossible de créer le token de réinitialisation");
@@ -145,14 +145,15 @@ pub async fn reset_password(
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let hash = token::hash_token(&dto.token);
-    let vt = sqlx::query_as::<_, crate::models::session::VerificationToken>(
-        "SELECT * FROM core.verification_tokens
-         WHERE token_hash = $1 AND purpose = 'password_reset' AND used_at IS NULL AND expires_at > NOW()"
-    )
-    .bind(&hash)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::Validation("Token invalide ou expiré".into()))?;
+    let vt = state
+        .db
+        .fetch_optional_as::<crate::models::session::VerificationToken>(
+            "SELECT * FROM core.verification_tokens
+             WHERE token_hash = $1 AND purpose = 'password_reset' AND used_at IS NULL AND expires_at > $2",
+            params![&hash, chrono::Utc::now()],
+        )
+        .await?
+        .ok_or_else(|| AppError::Validation("Token invalide ou expiré".into()))?;
 
     // Holding a valid link is not an exemption from the policy: this is the one
     // route on which a password is chosen by somebody who has just proved
@@ -173,17 +174,16 @@ pub async fn reset_password(
         .map_err(AppError::Internal)?;
 
     let mut tx = state.db.begin().await?;
+    let now = chrono::Utc::now();
 
     // The user picked this password themselves: the forced-change flag is lifted,
     // and the expiry clock restarts.
-    sqlx::query(
+    tx.execute(
         "UPDATE core.users \
-            SET password_hash = $1, must_change_password = FALSE, password_changed_at = NOW() \
-          WHERE id = $2",
+            SET password_hash = $1, must_change_password = FALSE, password_changed_at = $2 \
+          WHERE id = $3",
+        params![&new_hash, now, vt.user_id],
     )
-    .bind(&new_hash)
-    .bind(vt.user_id)
-    .execute(&mut *tx)
     .await?;
 
     crate::settings::password_policy::remember(
@@ -194,20 +194,18 @@ pub async fn reset_password(
     )
     .await?;
 
-    sqlx::query(
-        "UPDATE core.verification_tokens SET used_at = NOW() WHERE id = $1",
+    tx.execute(
+        "UPDATE core.verification_tokens SET used_at = $1 WHERE id = $2",
+        params![now, vt.id],
     )
-    .bind(vt.id)
-    .execute(&mut *tx)
     .await?;
 
-    // Révoquer toutes les sessions actives
-    sqlx::query(
-        "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'password_change'
-         WHERE user_id = $1 AND revoked_at IS NULL",
+    // Revoke every active session.
+    tx.execute(
+        "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'password_change'
+         WHERE user_id = $2 AND revoked_at IS NULL",
+        params![now, vt.user_id],
     )
-    .bind(vt.user_id)
-    .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;

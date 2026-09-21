@@ -13,6 +13,8 @@
 //! through verbatim otherwise.
 
 use axum::{extract::State, Json};
+use chrono::Utc;
+use kubuno_db::{params, DbPool};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -157,38 +159,46 @@ fn validate_public_url(value: &str) -> Result<(), AppError> {
 /// that the key changed with «rédigé» on both sides — the reader learns a
 /// credential rotated without learning it.
 async fn write_setting(
-    tx: &mut crate::audit::AuditTx<'_>,
+    tx: &mut crate::audit::AuditTx,
     admin_id: uuid::Uuid,
     key: &str,
     value: Value,
     entries: &mut Vec<AuditEntry>,
 ) -> Result<(), AppError> {
-    let previous: Option<Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1 FOR UPDATE")
-            .bind(key)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, key = %key, "mail settings: lecture");
-                AppError::Database(e)
-            })?;
+    // FOR UPDATE read inside the audited transaction (`DbTx` methods reached
+    // through the `AuditTx` deref).
+    let previous: Option<Value> = tx
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
+            params![key],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, key = %key, "mail settings: lecture");
+            AppError::Database(e)
+        })?;
 
     // A relay setting missing from `core.settings` means migration 000043 did
     // not run; inserting it here keeps the screen usable instead of 404-ing.
     let previous = match previous {
         Some(v) => v,
         None => {
-            sqlx::query(
-                "INSERT INTO core.settings (key, value, category, is_public) \
-                 VALUES ($1, 'null'::jsonb, 'mail', FALSE) ON CONFLICT (key) DO NOTHING",
-            )
-            .bind(key)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, key = %key, "mail settings: création");
-                AppError::Database(e)
-            })?;
+            // The stored value is a JSON null; it is bound as a parameter rather
+            // than written as PostgreSQL's `'null'::jsonb` literal, and the
+            // conflict clause is spelt per engine.
+            let backend = tx.backend();
+            let sql = format!(
+                "INSERT {}INTO core.settings (key, value, category, is_public) \
+                 VALUES ($1, $2, 'mail', FALSE){}",
+                backend.insert_ignore_prefix(),
+                backend.on_conflict_do_nothing(&["key"]),
+            );
+            tx.execute(&sql, params![key, Value::Null])
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, key = %key, "mail settings: création");
+                    AppError::Database(e)
+                })?;
             Value::Null
         }
     };
@@ -197,13 +207,10 @@ async fn write_setting(
         return Ok(()); // nothing changed: no write, no trail noise
     }
 
-    sqlx::query(
-        "UPDATE core.settings SET value = $1, updated_at = NOW(), updated_by = $2 WHERE key = $3",
+    tx.execute(
+        "UPDATE core.settings SET value = $1, updated_at = $2, updated_by = $3 WHERE key = $4",
+        params![value.clone(), Utc::now(), admin_id, key],
     )
-    .bind(&value)
-    .bind(admin_id)
-    .bind(key)
-    .execute(&mut **tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, key = %key, "mail settings: écriture");
@@ -479,15 +486,14 @@ fn hint_for(err: &send::SendError, cfg: &MailConfig) -> Option<String> {
 /// succeeded, and failing to bookkeep must never turn a working relay into an
 /// error on screen. A failure here is logged and the health check simply falls
 /// back to the audit trail, which is where this fact used to live exclusively.
-async fn record_successful_test(db: &sqlx::PgPool) {
-    let now = chrono::Utc::now().to_rfc3339();
-    if let Err(e) = sqlx::query(
-        "UPDATE core.settings SET value = $1, updated_at = NOW() WHERE key = $2",
-    )
-    .bind(json!(now))
-    .bind(mailer::config::KEY_LAST_TEST_OK)
-    .execute(db)
-    .await
+async fn record_successful_test(db: &DbPool) {
+    let now = Utc::now().to_rfc3339();
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.settings SET value = $1, updated_at = $2 WHERE key = $3",
+            params![json!(now), Utc::now(), mailer::config::KEY_LAST_TEST_OK],
+        )
+        .await
     {
         tracing::error!(error = %e, "mail: enregistrement du dernier test réussi");
     }

@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 use kubuno_core::{config::Settings, database::pool::create_pool};
+use kubuno_db::params;
 use std::process::Command as Proc;
 
 use crate::display::*;
@@ -17,16 +18,24 @@ pub async fn cmd_modules_commands() -> Result<()> {
         .await
         .context("Connexion à la base de données")?;
 
-    // Modules actifs avec leurs commandes CLI
-    let rows: Vec<(String, String, serde_json::Value)> = sqlx::query_as(
-        r#"SELECT id, display_name, cli_commands
-           FROM core.modules
-           WHERE is_enabled = TRUE AND cli_commands != '[]'::jsonb
-           ORDER BY id"#,
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    // Enabled modules with their CLI commands. The "non-empty command list"
+    // filter that PostgreSQL expressed as `cli_commands != '[]'::jsonb` is done
+    // in Rust instead, so the SQL carries no engine-specific JSON cast.
+    let rows: Vec<(String, String, serde_json::Value)> = pool
+        .fetch_all_as(
+            r#"SELECT id, display_name, cli_commands
+               FROM core.modules
+               WHERE is_enabled = TRUE
+               ORDER BY id"#,
+            params![],
+        )
+        .await
+        .unwrap_or_default();
+
+    let rows: Vec<(String, String, serde_json::Value)> = rows
+        .into_iter()
+        .filter(|(_, _, cmds)| cmds.as_array().is_some_and(|a| !a.is_empty()))
+        .collect();
 
     if rows.is_empty() {
         info("Aucun module installé n'offre de commandes CLI.");

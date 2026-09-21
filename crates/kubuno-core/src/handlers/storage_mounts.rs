@@ -10,9 +10,9 @@ use axum::{
     Json,
 };
 use futures::StreamExt;
+use kubuno_db::{new_id, params, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
@@ -73,11 +73,13 @@ async fn connector(
             let msg = AppError::RemoteMountUnreadable.to_string();
             // Best effort: the caller's failure is what matters, and a write
             // error here must not mask it.
-            if let Err(e) = sqlx::query(
-                "UPDATE core.remote_mounts SET status='error', last_error=$3 WHERE id=$1 AND owner_id=$2",
-            )
-            .bind(id).bind(user_id).bind(&msg)
-            .execute(&state.db).await
+            if let Err(e) = state
+                .db
+                .execute(
+                    "UPDATE core.remote_mounts SET status='error', last_error=$1 WHERE id=$2 AND owner_id=$3",
+                    params![msg, id, user_id],
+                )
+                .await
             {
                 tracing::error!(error = %e, mount = %id, "Marquage du montage illisible impossible");
             }
@@ -94,32 +96,48 @@ pub struct CreateMountDto {
     pub config:   Value,
 }
 
+/// One row of a user's mount listing, decoded portably from any engine.
+#[derive(sqlx::FromRow)]
+struct MountListRow {
+    id:                 Uuid,
+    name:               String,
+    provider:           String,
+    mount_name:         String,
+    status:             String,
+    last_connected_at:  Option<chrono::DateTime<chrono::Utc>>,
+    last_error:         Option<String>,
+    remote_quota_bytes: Option<i64>,
+    remote_used_bytes:  Option<i64>,
+    created_at:         chrono::DateTime<chrono::Utc>,
+}
+
 /// GET /internal/storage/mounts/:user_id — liste des montages d'un utilisateur.
 pub async fn list(
     _i: InternalRequest,
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    let rows = sqlx::query(
-        r#"SELECT id, name, provider, mount_name, status, last_connected_at, last_error,
-                  remote_quota_bytes, remote_used_bytes, created_at
-           FROM core.remote_mounts WHERE owner_id = $1 ORDER BY created_at DESC"#,
-    )
-    .bind(user_id)
-    .fetch_all(&state.db)
-    .await?;
+    let rows = state
+        .db
+        .fetch_all_as::<MountListRow>(
+            r#"SELECT id, name, provider, mount_name, status, last_connected_at, last_error,
+                      remote_quota_bytes, remote_used_bytes, created_at
+               FROM core.remote_mounts WHERE owner_id = $1 ORDER BY created_at DESC"#,
+            params![user_id],
+        )
+        .await?;
 
     let connections: Vec<Value> = rows.iter().map(|r| json!({
-        "id":                 r.get::<Uuid, _>("id"),
-        "name":               r.get::<String, _>("name"),
-        "provider":           r.get::<String, _>("provider"),
-        "mount_name":         r.get::<String, _>("mount_name"),
-        "status":             r.get::<String, _>("status"),
-        "last_connected_at":  r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_connected_at"),
-        "last_error":         r.get::<Option<String>, _>("last_error"),
-        "remote_quota_bytes": r.get::<Option<i64>, _>("remote_quota_bytes"),
-        "remote_used_bytes":  r.get::<Option<i64>, _>("remote_used_bytes"),
-        "created_at":         r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
+        "id":                 r.id,
+        "name":               r.name,
+        "provider":           r.provider,
+        "mount_name":         r.mount_name,
+        "status":             r.status,
+        "last_connected_at":  r.last_connected_at,
+        "last_error":         r.last_error,
+        "remote_quota_bytes": r.remote_quota_bytes,
+        "remote_used_bytes":  r.remote_used_bytes,
+        "created_at":         r.created_at,
     })).collect();
 
     Ok(Json(json!({ "connections": connections })))
@@ -143,13 +161,16 @@ pub async fn create(
     state.remote_mounts.connector_from(&dto.provider, &dto.config).map_err(config_err)?;
     let config_enc = state.remote_mounts.encrypt_config(&dto.config).map_err(config_err)?;
 
-    let id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO core.remote_mounts (owner_id, name, provider, config_enc, mount_name)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id"#,
-    )
-    .bind(user_id).bind(&dto.name).bind(&dto.provider).bind(&config_enc).bind(&mount_name)
-    .fetch_one(&state.db)
-    .await?;
+    // No RETURNING: the id is generated in Rust and bound like any other column.
+    let id = new_id();
+    state
+        .db
+        .execute(
+            r#"INSERT INTO core.remote_mounts (id, owner_id, name, provider, config_enc, mount_name)
+               VALUES ($1, $2, $3, $4, $5, $6)"#,
+            params![id, user_id, &dto.name, &dto.provider, config_enc, &mount_name],
+        )
+        .await?;
 
     Ok((StatusCode::CREATED, Json(json!({ "id": id, "mount_name": mount_name }))))
 }
@@ -190,12 +211,14 @@ pub async fn config(
     State(state): State<AppState>,
     Path((user_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>, AppError> {
-    let row = sqlx::query_as::<_, (String, Vec<u8>)>(
-        "SELECT provider, config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
-    )
-    .bind(id).bind(user_id)
-    .fetch_optional(&state.db).await?
-    .ok_or_else(|| AppError::NotFound(format!("Montage {id}")))?;
+    let row = state
+        .db
+        .fetch_optional_as::<(String, Vec<u8>)>(
+            "SELECT provider, config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
+            params![id, user_id],
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Montage {id}")))?;
 
     let cfg = state.remote_mounts.decrypt_config(&row.1)
         .ok_or(AppError::RemoteMountUnreadable)?;
@@ -240,11 +263,13 @@ pub async fn smb_shares(
     let mut password = dto.password.clone().filter(|p| !p.is_empty());
     if password.is_none() {
         if let Some(mount_id) = dto.mount_id {
-            let enc: Option<Vec<u8>> = sqlx::query_scalar(
-                "SELECT config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
-            )
-            .bind(mount_id).bind(user_id)
-            .fetch_optional(&state.db).await?;
+            let enc: Option<Vec<u8>> = state
+                .db
+                .fetch_optional_scalar::<Vec<u8>>(
+                    "SELECT config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
+                    params![mount_id, user_id],
+                )
+                .await?;
             password = enc
                 .and_then(|e| state.remote_mounts.decrypt_config(&e))
                 .and_then(|c| c.get("password").and_then(Value::as_str).map(str::to_string));
@@ -283,12 +308,14 @@ pub async fn update(
     Path((user_id, id)): Path<(Uuid, Uuid)>,
     Json(dto): Json<UpdateMountDto>,
 ) -> Result<Json<Value>, AppError> {
-    let row = sqlx::query_as::<_, (String, Vec<u8>)>(
-        "SELECT provider, config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
-    )
-    .bind(id).bind(user_id)
-    .fetch_optional(&state.db).await?
-    .ok_or_else(|| AppError::NotFound(format!("Montage {id}")))?;
+    let row = state
+        .db
+        .fetch_optional_as::<(String, Vec<u8>)>(
+            "SELECT provider, config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
+            params![id, user_id],
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Montage {id}")))?;
     let provider = row.0;
 
     let name = match dto.name.as_deref().map(str::trim) {
@@ -311,17 +338,30 @@ pub async fn update(
     };
 
     // New credentials reset the verdict: the mount is untested again, and any
-    // previous error no longer describes it.
-    sqlx::query(
-        r#"UPDATE core.remote_mounts
-              SET name       = COALESCE($3::varchar, name),
-                  config_enc = COALESCE($4::bytea, config_enc),
-                  status     = CASE WHEN $4::bytea IS NULL THEN status     ELSE 'disconnected' END,
-                  last_error = CASE WHEN $4::bytea IS NULL THEN last_error ELSE NULL END
-            WHERE id = $1 AND owner_id = $2"#,
-    )
-    .bind(id).bind(user_id).bind(name).bind(config_enc.as_deref())
-    .execute(&state.db).await?;
+    // previous error no longer describes it. Only the columns actually supplied
+    // are written — the former COALESCE/CASE-with-`::bytea` form was PostgreSQL
+    // syntax, so the SET list is now assembled from what the request carried.
+    if name.is_some() || config_enc.is_some() {
+        let mut qb = DbQueryBuilder::new(state.db.backend(), "UPDATE core.remote_mounts SET ");
+        let mut first = true;
+        if let Some(n) = name {
+            qb.push("name = ").push_bind(n);
+            first = false;
+        }
+        if let Some(enc) = config_enc.as_deref() {
+            if !first {
+                qb.push(", ");
+            }
+            qb.push("config_enc = ")
+                .push_bind(enc)
+                .push(", status = 'disconnected', last_error = NULL");
+        }
+        qb.push(" WHERE id = ")
+            .push_bind(id)
+            .push(" AND owner_id = ")
+            .push_bind(user_id);
+        qb.execute(&state.db).await?;
+    }
 
     // Drop the cached connector: it was built from the previous config.
     state.remote_mounts.invalidate(id).await;
@@ -335,11 +375,14 @@ pub async fn delete(
     Path((user_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     state.remote_mounts.invalidate(id).await;
-    let res = sqlx::query("DELETE FROM core.remote_mounts WHERE id = $1 AND owner_id = $2")
-        .bind(id).bind(user_id)
-        .execute(&state.db)
+    let res = state
+        .db
+        .execute(
+            "DELETE FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
+            params![id, user_id],
+        )
         .await?;
-    if res.rows_affected() == 0 {
+    if res == 0 {
         return Err(AppError::NotFound(format!("Montage {id}")));
     }
     Ok(StatusCode::NO_CONTENT)
@@ -355,23 +398,30 @@ pub async fn test(
     let conn = connector(&state, id, user_id).await?;
     match conn.connect().await {
         Ok(quota) => {
-            sqlx::query(
-                r#"UPDATE core.remote_mounts SET status='connected', last_connected_at=NOW(),
-                          last_error=NULL, remote_quota_bytes=$2, remote_used_bytes=$3 WHERE id=$1"#,
-            )
-            .bind(id)
-            .bind(quota.as_ref().and_then(|q| q.total_bytes).map(|b| b as i64))
-            .bind(quota.as_ref().and_then(|q| q.used_bytes).map(|b| b as i64))
-            .execute(&state.db).await?;
+            let now = chrono::Utc::now();
+            let total = quota.as_ref().and_then(|q| q.total_bytes).map(|b| b as i64);
+            let used = quota.as_ref().and_then(|q| q.used_bytes).map(|b| b as i64);
+            state
+                .db
+                .execute(
+                    r#"UPDATE core.remote_mounts SET status='connected', last_connected_at=$1,
+                              last_error=NULL, remote_quota_bytes=$2, remote_used_bytes=$3 WHERE id=$4"#,
+                    params![now, total, used, id],
+                )
+                .await?;
             Ok(Json(json!({
                 "ok": true,
                 "quota": quota.map(|q| json!({ "total_bytes": q.total_bytes, "used_bytes": q.used_bytes, "free_bytes": q.free_bytes })),
             })))
         }
         Err(e) => {
-            sqlx::query("UPDATE core.remote_mounts SET status='error', last_error=$2 WHERE id=$1")
-                .bind(id).bind(e.to_string())
-                .execute(&state.db).await?;
+            state
+                .db
+                .execute(
+                    "UPDATE core.remote_mounts SET status='error', last_error=$1 WHERE id=$2",
+                    params![e.to_string(), id],
+                )
+                .await?;
             Ok(Json(json!({ "ok": false, "error": e.to_string() })))
         }
     }

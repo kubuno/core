@@ -22,6 +22,8 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use kubuno_db::dialect::SqlType;
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -59,21 +61,24 @@ struct AccountRow {
 
 async fn slot_row(state: &AppState, raw: &str) -> Result<Option<AccountRow>, AppError> {
     let hash = token::hash_token(raw);
-    sqlx::query_as::<_, AccountRow>(
-        r#"SELECT u.id AS user_id, u.email::text AS email, u.username, u.display_name, u.avatar_url,
-                  (rt.revoked_at IS NULL AND rt.expires_at > NOW()) AS live,
+    let backend = state.db.backend();
+    let sql = format!(
+        r#"SELECT u.id AS user_id, {email} AS email, u.username, u.display_name, u.avatar_url,
+                  (rt.revoked_at IS NULL AND rt.expires_at > $1) AS live,
                   u.is_active AS user_active
            FROM core.refresh_tokens rt
            JOIN core.users u ON u.id = rt.user_id
-           WHERE rt.token_hash = $1"#,
-    )
-    .bind(&hash)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "accounts: lecture d'un slot");
-        AppError::Database(e)
-    })
+           WHERE rt.token_hash = $2"#,
+        email = backend.cast("u.email", SqlType::Text),
+    );
+    state
+        .db
+        .fetch_optional_as::<AccountRow>(&sql, params![Utc::now(), &hash])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "accounts: reading a slot");
+            AppError::Database(e)
+        })
 }
 
 /// GET /auth/accounts — the signed-in accounts of THIS browser.
@@ -130,17 +135,18 @@ pub async fn switch_account(
         last_used_at: chrono::DateTime<Utc>,
         live: bool,
     }
-    let rt = sqlx::query_as::<_, SlotSession>(
-        r#"SELECT id, user_id, expires_at, last_used_at, (revoked_at IS NULL) AS live
-           FROM core.refresh_tokens WHERE token_hash = $1"#,
-    )
-    .bind(&hash)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "switch: lecture de la session du slot");
-        AppError::Database(e)
-    })?;
+    let rt = state
+        .db
+        .fetch_optional_as::<SlotSession>(
+            r#"SELECT id, user_id, expires_at, last_used_at, (revoked_at IS NULL) AS live
+               FROM core.refresh_tokens WHERE token_hash = $1"#,
+            params![&hash],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "switch: reading the slot session");
+            AppError::Database(e)
+        })?;
     let Some(SlotSession { id: session_id, user_id, expires_at, last_used_at, live }) = rt else {
         return Err(AppError::Unauthorized);
     };
@@ -148,13 +154,14 @@ pub async fn switch_account(
         return Err(AppError::Unauthorized);
     }
 
-    let user = sqlx::query_as::<_, crate::models::user::User>(
-        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+    let user = state
+        .db
+        .fetch_optional_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+            params![user_id],
+        )
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
     let inventory = session_inventory(&state, session_id).await;
     if device_is_blocked(&state, inventory.device_id).await {
@@ -166,20 +173,24 @@ pub async fn switch_account(
         let idle_chrono =
             chrono::Duration::from_std(idle).unwrap_or_else(|_| chrono::Duration::days(3650));
         if Utc::now() - last_used_at > idle_chrono {
-            sqlx::query(
-                "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'idle_timeout'
-                 WHERE id = $1 AND revoked_at IS NULL",
-            )
-            .bind(session_id)
-            .execute(&state.db)
-            .await?;
+            state
+                .db
+                .execute(
+                    "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'idle_timeout'
+                     WHERE id = $2 AND revoked_at IS NULL",
+                    params![Utc::now(), session_id],
+                )
+                .await?;
             return Err(AppError::Unauthorized);
         }
     }
 
-    sqlx::query("UPDATE core.refresh_tokens SET last_used_at = NOW() WHERE id = $1")
-        .bind(session_id)
-        .execute(&state.db)
+    state
+        .db
+        .execute(
+            "UPDATE core.refresh_tokens SET last_used_at = $1 WHERE id = $2",
+            params![Utc::now(), session_id],
+        )
         .await?;
 
     let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);

@@ -11,6 +11,7 @@ use axum::{
     response::Response,
     Json,
 };
+use kubuno_db::{dialect::Assign, params, DbPool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -127,13 +128,13 @@ fn theme_dir_path(themes_dir: &str, id: &str) -> Result<std::path::PathBuf, AppE
 
 // ── Trust list (admin-controlled set of theme IDs allowed to run scripts) ──────
 
-async fn load_trusted(db: &sqlx::PgPool) -> HashSet<String> {
-    match sqlx::query_scalar::<_, Value>(
-        "SELECT value FROM core.settings WHERE key = $1",
-    )
-    .bind(TRUSTED_KEY)
-    .fetch_optional(db)
-    .await
+async fn load_trusted(db: &DbPool) -> HashSet<String> {
+    match db
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE key = $1",
+            params![TRUSTED_KEY],
+        )
+        .await
     {
         Ok(Some(Value::Array(arr))) => arr
             .into_iter()
@@ -147,20 +148,23 @@ async fn load_trusted(db: &sqlx::PgPool) -> HashSet<String> {
     }
 }
 
-async fn save_trusted(db: &sqlx::PgPool, trusted: &HashSet<String>) -> Result<(), AppError> {
+async fn save_trusted(db: &DbPool, trusted: &HashSet<String>) -> Result<(), AppError> {
     let mut ids: Vec<&String> = trusted.iter().collect();
     ids.sort();
     let value = json!(ids);
-    sqlx::query(
-        r#"INSERT INTO core.settings (key, value, category, label, is_public)
-           VALUES ($1, $2, 'appearance', 'Thèmes autorisés à exécuter des scripts', FALSE)
-           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"#,
-    )
-    .bind(TRUSTED_KEY)
-    .bind(&value)
-    .execute(db)
-    .await
-    .map_err(|e| {
+    let backend = db.backend();
+    let clause = backend.upsert(
+        "core.settings",
+        &["key"],
+        &[Assign::Incoming("value"), Assign::Incoming("updated_at")],
+    );
+    let sql = format!(
+        "INSERT INTO core.settings (key, value, category, label, is_public, updated_at) \
+         VALUES ($1, $2, 'appearance', 'Thèmes autorisés à exécuter des scripts', FALSE, $3){clause}"
+    );
+    db.execute(&sql, params![TRUSTED_KEY, value, chrono::Utc::now()])
+        .await
+        .map_err(|e| {
         tracing::error!("Écriture de {TRUSTED_KEY} impossible: {e}");
         AppError::Internal(anyhow::anyhow!("Impossible d'enregistrer la confiance des thèmes"))
     })?;

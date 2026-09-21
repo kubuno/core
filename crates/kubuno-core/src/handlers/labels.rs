@@ -10,6 +10,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::{dialect::Assign, new_id, params, Backend, DbPool, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -36,23 +37,24 @@ fn normalized_color(color: Option<&str>) -> Result<String, AppError> {
 /// exist or is not shared with them. `core.label_access` folds ownership, direct
 /// shares and group shares, keeping the most permissive.
 async fn access(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     user_id: Uuid,
     label_id: Uuid,
 ) -> Result<Option<(bool, bool)>, AppError> {
-    let row = sqlx::query_as::<_, (bool, bool)>(
-        "SELECT is_owner, can_manage FROM core.label_access($1) WHERE label_id = $2",
-    )
-    .bind(user_id)
-    .bind(label_id)
-    .fetch_optional(db)
-    .await?;
+    // NOTE: `core.label_access(...)` is a PostgreSQL set-returning function; this
+    // query has no MySQL/SQLite equivalent and is Postgres-only for now.
+    let row = db
+        .fetch_optional_as::<(bool, bool)>(
+            "SELECT is_owner, can_manage FROM core.label_access($1) WHERE label_id = $2",
+            params![user_id, label_id],
+        )
+        .await?;
     Ok(row)
 }
 
 /// Rejects the caller unless they may manage `label_id` (owner or a share with
 /// `can_manage`). Unknown and forbidden are both 404: no existence leak.
-async fn require_manage(db: &sqlx::PgPool, user_id: Uuid, label_id: Uuid) -> Result<(), AppError> {
+async fn require_manage(db: &DbPool, user_id: Uuid, label_id: Uuid) -> Result<(), AppError> {
     match access(db, user_id, label_id).await? {
         Some((_, true)) => Ok(()),
         Some((_, false)) => Err(AppError::Forbidden),
@@ -68,21 +70,25 @@ pub async fn list(
 ) -> Result<Json<Value>, AppError> {
     // `link_count` follows the visibility rule: a manager counts everyone's
     // links, a plain recipient only their own.
-    let rows = sqlx::query_as::<_, (Uuid, String, String, Option<String>, bool, bool, Uuid, String, i64, i64)>(
-        r#"SELECT l.id, l.name, l.color, l.description,
-                  a.is_owner, a.can_manage,
-                  l.owner_id, COALESCE(u.display_name, u.username) AS owner_name,
-                  (SELECT COUNT(*) FROM core.label_links k
-                    WHERE k.label_id = l.id AND (a.can_manage OR k.owner_id = $1)) AS link_count,
-                  (SELECT COUNT(*) FROM core.label_shares s WHERE s.label_id = l.id) AS share_count
-           FROM core.label_access($1) a
-           JOIN core.labels l ON l.id = a.label_id
-           JOIN core.users  u ON u.id = l.owner_id
-           ORDER BY a.is_owner DESC, LOWER(l.name)"#,
-    )
-    .bind(user.id)
-    .fetch_all(&state.db)
-    .await?;
+    // NOTE: `core.label_access(...)` is a PostgreSQL set-returning function
+    // (Postgres-only). `user.id` is bound twice because a positional placeholder
+    // is never reused across engines.
+    let rows = state
+        .db
+        .fetch_all_as::<(Uuid, String, String, Option<String>, bool, bool, Uuid, String, i64, i64)>(
+            r#"SELECT l.id, l.name, l.color, l.description,
+                      a.is_owner, a.can_manage,
+                      l.owner_id, COALESCE(u.display_name, u.username) AS owner_name,
+                      (SELECT COUNT(*) FROM core.label_links k
+                        WHERE k.label_id = l.id AND (a.can_manage OR k.owner_id = $1)) AS link_count,
+                      (SELECT COUNT(*) FROM core.label_shares s WHERE s.label_id = l.id) AS share_count
+               FROM core.label_access($2) a
+               JOIN core.labels l ON l.id = a.label_id
+               JOIN core.users  u ON u.id = l.owner_id
+               ORDER BY a.is_owner DESC, LOWER(l.name)"#,
+            params![user.id, user.id],
+        )
+        .await?;
 
     let labels: Vec<Value> = rows
         .into_iter()
@@ -111,18 +117,30 @@ pub async fn create(
     }
     let color = normalized_color(dto.color.as_deref())?;
 
-    let label = sqlx::query_as::<_, Label>(
-        r#"INSERT INTO core.labels (owner_id, name, color, description)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (owner_id, name) DO UPDATE SET updated_at = NOW()
-           RETURNING id, owner_id, name, color, description, created_at, updated_at"#,
-    )
-    .bind(user.id)
-    .bind(name)
-    .bind(&color)
-    .bind(dto.description.as_deref())
-    .fetch_one(&state.db)
-    .await?;
+    // No RETURNING: the id is generated in Rust; on conflict the stored id is
+    // kept, so the row is read back by its (owner_id, name) unique key.
+    let backend = state.db.backend();
+    let clause = backend.upsert("core.labels", &["owner_id", "name"], &[Assign::Incoming("updated_at")]);
+    let insert_sql = format!(
+        r#"INSERT INTO core.labels (id, owner_id, name, color, description, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6){clause}"#
+    );
+    let now = chrono::Utc::now();
+    state
+        .db
+        .execute(
+            &insert_sql,
+            params![new_id(), user.id, name, &color, dto.description.as_deref(), now],
+        )
+        .await?;
+    let label = state
+        .db
+        .fetch_one_as::<Label>(
+            r#"SELECT id, owner_id, name, color, description, created_at, updated_at
+               FROM core.labels WHERE owner_id = $1 AND name = $2"#,
+            params![user.id, name],
+        )
+        .await?;
 
     // Same shape as `list`, so the caller can drop the new label straight into
     // its state without inventing the access fields. A fresh label is owned,
@@ -151,21 +169,35 @@ pub async fn update(
         None => None,
     };
 
-    let label = sqlx::query_as::<_, Label>(
-        r#"UPDATE core.labels
-           SET name        = COALESCE($2, name),
-               color       = COALESCE($3, color),
-               description = COALESCE($4, description)
-           WHERE id = $1
-           RETURNING id, owner_id, name, color, description, created_at, updated_at"#,
-    )
-    .bind(id)
-    .bind(dto.name.as_deref().map(str::trim))
-    .bind(color.as_deref())
-    .bind(dto.description.as_deref())
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Étiquette introuvable".into()))?;
+    // No RETURNING: apply the partial update, then read the row back by id.
+    // Placeholders are renumbered so they ascend in source order.
+    let affected = state
+        .db
+        .execute(
+            r#"UPDATE core.labels
+               SET name        = COALESCE($1, name),
+                   color       = COALESCE($2, color),
+                   description = COALESCE($3, description)
+               WHERE id = $4"#,
+            params![
+                dto.name.as_deref().map(str::trim),
+                color.as_deref(),
+                dto.description.as_deref(),
+                id
+            ],
+        )
+        .await?;
+    if affected == 0 {
+        return Err(AppError::NotFound("Étiquette introuvable".into()));
+    }
+    let label = state
+        .db
+        .fetch_one_as::<Label>(
+            r#"SELECT id, owner_id, name, color, description, created_at, updated_at
+               FROM core.labels WHERE id = $1"#,
+            params![id],
+        )
+        .await?;
 
     Ok(Json(json!({ "label": label })))
 }
@@ -179,9 +211,9 @@ pub async fn delete(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
     require_manage(&state.db, user.id, id).await?;
-    sqlx::query("DELETE FROM core.labels WHERE id = $1")
-        .bind(id)
-        .execute(&state.db)
+    state
+        .db
+        .execute("DELETE FROM core.labels WHERE id = $1", params![id])
         .await?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -199,15 +231,17 @@ pub async fn labels_for_resource(
     AuthUser(user): AuthUser,
     Query(q): Query<ResourceQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let ids = sqlx::query_scalar::<_, Uuid>(
-        r#"SELECT label_id FROM core.label_links
-           WHERE owner_id = $1 AND resource_type = $2 AND resource_id = $3"#,
-    )
-    .bind(user.id)
-    .bind(&q.resource_type)
-    .bind(&q.resource_id)
-    .fetch_all(&state.db)
-    .await?;
+    let ids: Vec<Uuid> = state
+        .db
+        .fetch_all_as::<(Uuid,)>(
+            r#"SELECT label_id FROM core.label_links
+               WHERE owner_id = $1 AND resource_type = $2 AND resource_id = $3"#,
+            params![user.id, &q.resource_type, &q.resource_id],
+        )
+        .await?
+        .into_iter()
+        .map(|(id,)| id)
+        .collect();
     Ok(Json(json!({ "label_ids": ids })))
 }
 
@@ -220,49 +254,74 @@ pub async fn set_resource_labels(
 ) -> Result<Json<Value>, AppError> {
     dto.validate().map_err(|e| AppError::Validation(e.to_string()))?;
 
-    let mut tx = state.db.begin().await?;
+    let backend = state.db.backend();
 
     // Any label the caller may see can be linked — their own, and those shared
     // with them (a share is a shared vocabulary, so plain recipients may label
     // their own elements too). The links themselves stay owned by the caller.
-    let owned: Vec<Uuid> = sqlx::query_scalar::<_, Uuid>(
-        "SELECT label_id FROM core.label_access($1) WHERE label_id = ANY($2)",
-    )
-    .bind(user.id)
-    .bind(&dto.label_ids)
-    .fetch_all(&mut *tx)
-    .await?;
+    // Resolved before the transaction: it is a read only. NOTE:
+    // `core.label_access(...)` is a PostgreSQL set-returning function
+    // (Postgres-only); `= ANY(...)` becomes a portable `IN (...)`.
+    let mut owned_qb =
+        DbQueryBuilder::new(backend, "SELECT label_id FROM core.label_access(");
+    owned_qb.push_bind(user.id).push(") WHERE label_id");
+    owned_qb.push_in(dto.label_ids.iter().copied());
+    let owned: Vec<Uuid> = owned_qb
+        .fetch_all_as::<(Uuid,)>(&state.db)
+        .await?
+        .into_iter()
+        .map(|(id,)| id)
+        .collect();
 
-    sqlx::query(
-        r#"DELETE FROM core.label_links
-           WHERE owner_id = $1 AND resource_type = $2 AND resource_id = $3
-             AND label_id <> ALL($4)"#,
-    )
-    .bind(user.id)
-    .bind(&dto.resource_type)
-    .bind(&dto.resource_id)
-    .bind(&owned)
-    .execute(&mut *tx)
-    .await?;
+    let mut tx = state.db.begin().await?;
 
+    // Delete the links this resource no longer carries. When `owned` is empty the
+    // picker cleared every label, so every link of the resource is removed; the
+    // former `<> ALL(array)` (empty = keep none) is expressed by omitting the
+    // `NOT IN` guard in that case.
+    let mut del_qb = DbQueryBuilder::new(backend, "DELETE FROM core.label_links WHERE owner_id = ");
+    del_qb
+        .push_bind(user.id)
+        .push(" AND resource_type = ")
+        .push_bind(&dto.resource_type)
+        .push(" AND resource_id = ")
+        .push_bind(&dto.resource_id);
+    if !owned.is_empty() {
+        del_qb.push(" AND label_id NOT").push_in(owned.iter().copied());
+    }
+    del_qb.tx_execute(&mut tx).await?;
+
+    // No RETURNING and a generated id per link; the upsert keeps a link's stored
+    // id on conflict.
+    let link_clause = backend.upsert(
+        "core.label_links",
+        &["label_id", "resource_type", "resource_id"],
+        &[
+            Assign::Incoming("title"),
+            Assign::Incoming("href"),
+            Assign::Incoming("envelope"),
+        ],
+    );
+    let link_sql = format!(
+        r#"INSERT INTO core.label_links
+             (id, label_id, owner_id, module, resource_type, resource_id, title, href, envelope)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9){link_clause}"#
+    );
     for label_id in &owned {
-        sqlx::query(
-            r#"INSERT INTO core.label_links
-                 (label_id, owner_id, module, resource_type, resource_id, title, href, envelope)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-               ON CONFLICT (label_id, resource_type, resource_id)
-               DO UPDATE SET title = EXCLUDED.title, href = EXCLUDED.href,
-                             envelope = EXCLUDED.envelope"#,
+        tx.execute(
+            &link_sql,
+            params![
+                new_id(),
+                label_id,
+                user.id,
+                &dto.module,
+                &dto.resource_type,
+                &dto.resource_id,
+                dto.title.as_deref(),
+                dto.href.as_deref(),
+                dto.envelope.clone()
+            ],
         )
-        .bind(label_id)
-        .bind(user.id)
-        .bind(&dto.module)
-        .bind(&dto.resource_type)
-        .bind(&dto.resource_id)
-        .bind(dto.title.as_deref())
-        .bind(dto.href.as_deref())
-        .bind(&dto.envelope)
-        .execute(&mut *tx)
         .await?;
     }
 
@@ -301,31 +360,55 @@ pub async fn browse(
     // labels they co-manage (`can_manage`) — a plain share stays private.
     // `other_owners` names the members who labelled an element that is not the
     // caller's, so the browser can attribute it.
-    let rows = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, Option<Value>, Vec<Uuid>, Option<Vec<String>>)>(
-        r#"SELECT k.module, k.resource_type, k.resource_id,
-                  MAX(k.title) AS title, MAX(k.href) AS href,
-                  (ARRAY_AGG(k.envelope ORDER BY k.created_at DESC))[1] AS envelope,
-                  ARRAY_AGG(DISTINCT k.label_id) AS label_ids,
-                  ARRAY_AGG(DISTINCT COALESCE(u.display_name, u.username))
-                      FILTER (WHERE k.owner_id <> $1) AS other_owners
-           FROM core.label_links k
-           JOIN core.label_access($1) a ON a.label_id = k.label_id
-           JOIN core.users u ON u.id = k.owner_id
-           WHERE (k.owner_id = $1 OR a.can_manage)
-             AND ($2 = '' OR k.module = $2)
-             AND ($3 = '' OR k.title ILIKE '%' || $3 || '%')
-           GROUP BY k.module, k.resource_type, k.resource_id
-           HAVING $4 = 0 OR COUNT(DISTINCT k.label_id) FILTER (WHERE k.label_id = ANY($5)) = $4
-           ORDER BY MAX(k.created_at) DESC
-           LIMIT 500"#,
-    )
-    .bind(user.id)
-    .bind(q.module.as_deref().unwrap_or(""))
-    .bind(text.unwrap_or(""))
-    .bind(wanted.len() as i64)
-    .bind(&wanted)
-    .fetch_all(&state.db)
-    .await?;
+    //
+    // NOTE: heavily PostgreSQL-only — `core.label_access(...)` (set-returning
+    // function), `ARRAY_AGG`, `FILTER (WHERE ...)` and the array subscript `[1]`
+    // have no portable form. The aggregated id/name arrays are wrapped in
+    // `to_jsonb(...)` so they decode as portable JSON values, and the placeholders
+    // are numbered ascending by the builder (the original reused `$1` and `$4`).
+    let backend = state.db.backend();
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        "SELECT k.module, k.resource_type, k.resource_id, \
+                MAX(k.title) AS title, MAX(k.href) AS href, \
+                (ARRAY_AGG(k.envelope ORDER BY k.created_at DESC))[1] AS envelope, \
+                to_jsonb(ARRAY_AGG(DISTINCT k.label_id)) AS label_ids, \
+                to_jsonb(ARRAY_AGG(DISTINCT COALESCE(u.display_name, u.username)) \
+                    FILTER (WHERE k.owner_id <> ",
+    );
+    qb.push_bind(user.id);
+    qb.push(
+        ")) AS other_owners \
+         FROM core.label_links k \
+         JOIN core.label_access(",
+    );
+    qb.push_bind(user.id);
+    qb.push(
+        ") a ON a.label_id = k.label_id \
+         JOIN core.users u ON u.id = k.owner_id \
+         WHERE (k.owner_id = ",
+    );
+    qb.push_bind(user.id);
+    qb.push(" OR a.can_manage)");
+    if let Some(m) = q.module.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        qb.push(" AND k.module = ").push_bind(m);
+    }
+    if let Some(t) = text {
+        qb.push(" AND k.title ILIKE ").push_bind(format!("%{t}%"));
+    }
+    qb.push(" GROUP BY k.module, k.resource_type, k.resource_id");
+    if !wanted.is_empty() {
+        qb.push(" HAVING COUNT(DISTINCT k.label_id) FILTER (WHERE k.label_id");
+        qb.push_in(wanted.iter().copied());
+        qb.push(") = ").push_bind(wanted.len() as i64);
+    }
+    qb.push(" ORDER BY MAX(k.created_at) DESC LIMIT 500");
+
+    let rows = qb
+        .fetch_all_as::<(String, String, String, Option<String>, Option<String>, Option<Value>, Value, Option<Value>)>(
+            &state.db,
+        )
+        .await?;
 
     let items: Vec<Value> = rows
         .into_iter()
@@ -333,7 +416,7 @@ pub async fn browse(
             json!({
                 "module": module, "resource_type": resource_type, "resource_id": resource_id,
                 "title": title, "href": href, "envelope": envelope, "label_ids": label_ids,
-                "other_owners": other_owners.unwrap_or_default(),
+                "other_owners": other_owners.unwrap_or_else(|| json!([])),
             })
         })
         .collect();
@@ -350,18 +433,20 @@ pub async fn list_links(
     if access(&state.db, user.id, id).await?.is_none() {
         return Err(AppError::NotFound("Étiquette introuvable".into()));
     }
-    let links = sqlx::query_as::<_, LabelLink>(
-        r#"SELECT k.id, k.label_id, k.module, k.resource_type, k.resource_id,
-                  k.title, k.href, k.envelope, k.created_at
-           FROM core.label_links k
-           JOIN core.label_access($2) a ON a.label_id = k.label_id
-           WHERE k.label_id = $1 AND (k.owner_id = $2 OR a.can_manage)
-           ORDER BY k.created_at DESC"#,
-    )
-    .bind(id)
-    .bind(user.id)
-    .fetch_all(&state.db)
-    .await?;
+    // NOTE: `core.label_access(...)` is Postgres-only. Placeholders renumbered to
+    // ascend in source order; `user.id` is bound twice rather than reusing one.
+    let links = state
+        .db
+        .fetch_all_as::<LabelLink>(
+            r#"SELECT k.id, k.label_id, k.module, k.resource_type, k.resource_id,
+                      k.title, k.href, k.envelope, k.created_at
+               FROM core.label_links k
+               JOIN core.label_access($1) a ON a.label_id = k.label_id
+               WHERE k.label_id = $2 AND (k.owner_id = $3 OR a.can_manage)
+               ORDER BY k.created_at DESC"#,
+            params![user.id, id, user.id],
+        )
+        .await?;
     Ok(Json(json!({ "links": links })))
 }
 
@@ -373,17 +458,15 @@ pub async fn remove_link(
     Path((id, link_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>, AppError> {
     let can_manage = matches!(access(&state.db, user.id, id).await?, Some((_, true)));
-    let res = sqlx::query(
-        r#"DELETE FROM core.label_links
-           WHERE id = $1 AND label_id = $2 AND (owner_id = $3 OR $4)"#,
-    )
-    .bind(link_id)
-    .bind(id)
-    .bind(user.id)
-    .bind(can_manage)
-    .execute(&state.db)
-    .await?;
-    if res.rows_affected() == 0 {
+    let res = state
+        .db
+        .execute(
+            r#"DELETE FROM core.label_links
+               WHERE id = $1 AND label_id = $2 AND (owner_id = $3 OR $4)"#,
+            params![link_id, id, user.id, can_manage],
+        )
+        .await?;
+    if res == 0 {
         return Err(AppError::NotFound("Lien introuvable".into()));
     }
     Ok(Json(json!({ "ok": true })))
@@ -397,19 +480,21 @@ pub async fn list_shares(
 ) -> Result<Json<Value>, AppError> {
     require_manage(&state.db, user.id, id).await?;
 
-    let rows = sqlx::query_as::<_, (Uuid, Option<Uuid>, Option<Uuid>, bool, Option<String>, Option<String>)>(
-        r#"SELECT s.id, s.user_id, s.group_id, s.can_manage,
-                  COALESCE(u.display_name, u.username) AS user_name,
-                  g.name AS group_name
-           FROM core.label_shares s
-           LEFT JOIN core.users u       ON u.id = s.user_id
-           LEFT JOIN core.user_groups g ON g.id = s.group_id
-           WHERE s.label_id = $1
-           ORDER BY g.name NULLS LAST, COALESCE(u.display_name, u.username)"#,
-    )
-    .bind(id)
-    .fetch_all(&state.db)
-    .await?;
+    // NOTE: `ORDER BY ... NULLS LAST` is Postgres-only ordering syntax.
+    let rows = state
+        .db
+        .fetch_all_as::<(Uuid, Option<Uuid>, Option<Uuid>, bool, Option<String>, Option<String>)>(
+            r#"SELECT s.id, s.user_id, s.group_id, s.can_manage,
+                      COALESCE(u.display_name, u.username) AS user_name,
+                      g.name AS group_name
+               FROM core.label_shares s
+               LEFT JOIN core.users u       ON u.id = s.user_id
+               LEFT JOIN core.user_groups g ON g.id = s.group_id
+               WHERE s.label_id = $1
+               ORDER BY g.name NULLS LAST, COALESCE(u.display_name, u.username)"#,
+            params![id],
+        )
+        .await?;
 
     let shares: Vec<Value> = rows
         .into_iter()
@@ -435,9 +520,12 @@ pub async fn set_shares(
     dto.validate().map_err(|e| AppError::Validation(e.to_string()))?;
     require_manage(&state.db, user.id, id).await?;
 
-    let owner_id = sqlx::query_scalar::<_, Uuid>("SELECT owner_id FROM core.labels WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.db)
+    let owner_id = state
+        .db
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT owner_id FROM core.labels WHERE id = $1",
+            params![id],
+        )
         .await?
         .ok_or_else(|| AppError::NotFound("Étiquette introuvable".into()))?;
 
@@ -450,10 +538,23 @@ pub async fn set_shares(
     }
 
     let mut tx = state.db.begin().await?;
-    sqlx::query("DELETE FROM core.label_shares WHERE label_id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.label_shares WHERE label_id = $1", params![id])
         .await?;
+
+    // The two unique indexes on this table are PARTIAL (`WHERE user_id IS NOT
+    // NULL` / `WHERE group_id IS NOT NULL`), so a targeted `ON CONFLICT (cols)`
+    // cannot name them: keep a bare, arbiter-less "ignore duplicates". MySQL says
+    // it with `INSERT IGNORE`; PostgreSQL and SQLite with `ON CONFLICT DO NOTHING`.
+    let backend = tx.backend();
+    let (ignore_prefix, conflict) = match backend {
+        Backend::MySql => ("IGNORE ", ""),
+        _ => ("", " ON CONFLICT DO NOTHING"),
+    };
+    let insert_sql = format!(
+        "INSERT {ignore_prefix}INTO core.label_shares \
+             (id, label_id, user_id, group_id, can_manage, created_by) \
+         VALUES ($1, $2, $3, $4, $5, $6){conflict}"
+    );
 
     let mut kept = 0usize;
     for s in &dto.shares {
@@ -461,17 +562,10 @@ pub async fn set_shares(
             continue; // the owner already has full rights
         }
         // Unknown users/groups are rejected by the FKs — surface a clean 422.
-        sqlx::query(
-            r#"INSERT INTO core.label_shares (label_id, user_id, group_id, can_manage, created_by)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT DO NOTHING"#,
+        tx.execute(
+            &insert_sql,
+            params![new_id(), id, s.user_id, s.group_id, s.can_manage, user.id],
         )
-        .bind(id)
-        .bind(s.user_id)
-        .bind(s.group_id)
-        .bind(s.can_manage)
-        .bind(user.id)
-        .execute(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!(label_id = %id, error = %e, "insertion d'un partage d'étiquette");
@@ -497,33 +591,71 @@ pub async fn share_targets(
     Query(q): Query<ShareTargetsQuery>,
 ) -> Result<Json<Value>, AppError> {
     let text = q.q.as_deref().map(str::trim).unwrap_or("");
+    let backend = state.db.backend();
 
-    let users = sqlx::query_as::<_, (Uuid, String, Option<String>)>(
-        r#"SELECT id, COALESCE(display_name, username), avatar_url
-           FROM core.users
-           WHERE is_active = TRUE AND id <> $1
-             AND ($2 = '' OR username ILIKE '%' || $2 || '%'
-                          OR display_name ILIKE '%' || $2 || '%')
-           ORDER BY COALESCE(display_name, username)
-           LIMIT 25"#,
-    )
-    .bind(user.id)
-    .bind(text)
-    .fetch_all(&state.db)
-    .await?;
+    // The `$n = '' OR ...` match-all trick is replaced by branching in Rust, so
+    // the search predicate is only present (and its pattern only bound) when there
+    // is text to match. `ILIKE` is emitted per engine by `Backend::ilike`.
+    let users = if text.is_empty() {
+        state
+            .db
+            .fetch_all_as::<(Uuid, String, Option<String>)>(
+                r#"SELECT id, COALESCE(display_name, username), avatar_url
+                   FROM core.users
+                   WHERE is_active = TRUE AND id <> $1
+                   ORDER BY COALESCE(display_name, username)
+                   LIMIT 25"#,
+                params![user.id],
+            )
+            .await?
+    } else {
+        let pattern = format!("%{text}%");
+        let sql = format!(
+            r#"SELECT id, COALESCE(display_name, username), avatar_url
+               FROM core.users
+               WHERE is_active = TRUE AND id <> $1
+                 AND ({} OR {})
+               ORDER BY COALESCE(display_name, username)
+               LIMIT 25"#,
+            backend.ilike("username", 2),
+            backend.ilike("display_name", 3),
+        );
+        state
+            .db
+            .fetch_all_as::<(Uuid, String, Option<String>)>(
+                &sql,
+                params![user.id, pattern.clone(), pattern],
+            )
+            .await?
+    };
 
-    let groups = sqlx::query_as::<_, (Uuid, String, i64)>(
-        r#"SELECT g.id, g.name, COUNT(m.user_id)
-           FROM core.user_groups g
-           LEFT JOIN core.user_group_members m ON m.group_id = g.id
-           WHERE ($1 = '' OR g.name ILIKE '%' || $1 || '%')
-           GROUP BY g.id
-           ORDER BY g.name
-           LIMIT 25"#,
-    )
-    .bind(text)
-    .fetch_all(&state.db)
-    .await?;
+    let count_expr = backend.count_bigint("m.user_id");
+    let groups = if text.is_empty() {
+        let sql = format!(
+            r#"SELECT g.id, g.name, {count_expr}
+               FROM core.user_groups g
+               LEFT JOIN core.user_group_members m ON m.group_id = g.id
+               GROUP BY g.id
+               ORDER BY g.name
+               LIMIT 25"#
+        );
+        state.db.fetch_all_as::<(Uuid, String, i64)>(&sql, params![]).await?
+    } else {
+        let sql = format!(
+            r#"SELECT g.id, g.name, {count_expr}
+               FROM core.user_groups g
+               LEFT JOIN core.user_group_members m ON m.group_id = g.id
+               WHERE {}
+               GROUP BY g.id
+               ORDER BY g.name
+               LIMIT 25"#,
+            backend.ilike("g.name", 1),
+        );
+        state
+            .db
+            .fetch_all_as::<(Uuid, String, i64)>(&sql, params![format!("%{text}%")])
+            .await?
+    };
 
     Ok(Json(json!({
         "users": users.into_iter()

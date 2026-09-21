@@ -9,14 +9,16 @@
 //!
 //! ## What an action is allowed to touch
 //!
-//! A `PgPool` and nothing else. No `AppState`, no registry, no HTTP client.
+//! A `DbPool` and nothing else. No `AppState`, no registry, no HTTP client.
 //! That constraint is deliberate: it is what lets an action run inside the job
 //! runner, be retried, and be replayed after a crash, without a second
 //! dependency graph existing only for rules.
 
+use chrono::Utc;
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use uuid::Uuid;
+
+use kubuno_db::{params, DbPool};
 
 use crate::alerts::{self, NewAlert, Severity};
 use crate::audit::{AuditContext, AuditEntry};
@@ -34,7 +36,7 @@ const REVOKE_REASON: &str = "rule";
 
 /// Everything a local action gets.
 pub struct ActionContext<'a> {
-    pub db: &'a PgPool,
+    pub db: &'a DbPool,
     pub job: &'a ActionJob,
     pub params: &'a Value,
 }
@@ -99,6 +101,14 @@ pub async fn run(ctx: &ActionContext<'_>, key: &str) -> Result<bool, AppError> {
 
 // ── Suspend ──────────────────────────────────────────────────────────────────
 
+/// The three account columns the suspend guard reads.
+#[derive(sqlx::FromRow)]
+struct AccountRow {
+    username: String,
+    is_active: bool,
+    role: String,
+}
+
 /// Deactivates the account the event was about.
 ///
 /// Refuses to remove the **last active administrator**. A rule is written once
@@ -109,18 +119,24 @@ pub async fn run(ctx: &ActionContext<'_>, key: &str) -> Result<bool, AppError> {
 async fn suspend_account(ctx: &ActionContext<'_>) -> Result<(), AppError> {
     let user_id = ctx.subject("core.suspend_account")?;
 
-    let row: Option<(String, bool, String)> = sqlx::query_as(
-        "SELECT username, is_active, role FROM core.users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(ctx.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "rules: lecture du compte à suspendre");
-        AppError::Database(e)
-    })?;
+    let row = ctx
+        .db
+        .fetch_optional_as::<AccountRow>(
+            "SELECT username, is_active, role FROM core.users WHERE id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "rules: lecture du compte à suspendre");
+            AppError::Database(e)
+        })?;
 
-    let Some((username, is_active, role)) = row else {
+    let Some(AccountRow {
+        username,
+        is_active,
+        role,
+    }) = row
+    else {
         return Err(AppError::NotFound("compte".into()));
     };
     if !is_active {
@@ -131,16 +147,20 @@ async fn suspend_account(ctx: &ActionContext<'_>) -> Result<(), AppError> {
     }
 
     if role == "admin" {
-        let remaining: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM core.users WHERE role = 'admin' AND is_active AND id <> $1",
-        )
-        .bind(user_id)
-        .fetch_one(ctx.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "rules: comptage des administrateurs actifs");
-            AppError::Database(e)
-        })?;
+        let remaining: i64 = ctx
+            .db
+            .fetch_scalar::<i64>(
+                &format!(
+                    "SELECT {} FROM core.users WHERE role = 'admin' AND is_active AND id <> $1",
+                    ctx.db.backend().count_bigint("*")
+                ),
+                params![user_id],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "rules: comptage des administrateurs actifs");
+                AppError::Database(e)
+            })?;
         if remaining == 0 {
             let refusal = "Suspension refusée : ce compte est le dernier administrateur actif";
             tracing::error!(user_id = %user_id, rule_id = %ctx.job.rule_id, "{refusal}");
@@ -157,14 +177,15 @@ async fn suspend_account(ctx: &ActionContext<'_>) -> Result<(), AppError> {
     }
 
     let mut tx = ctx.audit().begin(ctx.db).await?;
-    sqlx::query("UPDATE core.users SET is_active = FALSE WHERE id = $1")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "rules: suspension d'un compte");
-            AppError::Database(e)
-        })?;
+    tx.execute(
+        "UPDATE core.users SET is_active = FALSE WHERE id = $1",
+        params![user_id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, user_id = %user_id, "rules: suspension d'un compte");
+        AppError::Database(e)
+    })?;
 
     let mut entry = ctx
         .entry("core.rules.suspend_account")
@@ -190,20 +211,18 @@ async fn revoke_sessions(ctx: &ActionContext<'_>) -> Result<(), AppError> {
     let user_id = ctx.subject("core.revoke_sessions")?;
 
     let mut tx = ctx.audit().begin(ctx.db).await?;
-    let revoked = sqlx::query(
-        r#"UPDATE core.refresh_tokens
-              SET revoked_at = NOW(), revoke_reason = $2
-            WHERE user_id = $1 AND revoked_at IS NULL"#,
-    )
-    .bind(user_id)
-    .bind(REVOKE_REASON)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "rules: révocation des sessions");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+    let revoked = tx
+        .execute(
+            r#"UPDATE core.refresh_tokens
+                  SET revoked_at = $2, revoke_reason = $3
+                WHERE user_id = $1 AND revoked_at IS NULL"#,
+            params![user_id, Utc::now(), REVOKE_REASON],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "rules: révocation des sessions");
+            AppError::Database(e)
+        })?;
 
     tx.commit(
         ctx.entry("core.rules.revoke_sessions")
@@ -226,17 +245,16 @@ async fn require_password_change(ctx: &ActionContext<'_>) -> Result<(), AppError
     let user_id = ctx.subject("core.require_password_change")?;
 
     let mut tx = ctx.audit().begin(ctx.db).await?;
-    let affected = sqlx::query(
-        "UPDATE core.users SET must_change_password = TRUE WHERE id = $1 AND NOT must_change_password",
-    )
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "rules: exigence de changement de mot de passe");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE core.users SET must_change_password = TRUE WHERE id = $1 AND NOT must_change_password",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "rules: exigence de changement de mot de passe");
+            AppError::Database(e)
+        })?;
 
     tx.commit(
         ctx.entry("core.rules.require_password_change")

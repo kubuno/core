@@ -29,8 +29,8 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
+use kubuno_db::{new_id, params, DbPool, DbQueryBuilder};
 use serde::Serialize;
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -152,7 +152,7 @@ pub fn disable_guard(governed: usize, seen: usize, would_disable: usize) -> Opti
 /// `status = "failed"`, because the caller is a background job whose retry would
 /// change nothing and whose failure would be invisible. `Err` is reserved for
 /// the database being unusable.
-pub async fn run(db: &PgPool, jwt_secret: &str, dir: &LdapDirectory) -> Result<SyncReport, AppError> {
+pub async fn run(db: &DbPool, jwt_secret: &str, dir: &LdapDirectory) -> Result<SyncReport, AppError> {
     let started = std::time::Instant::now();
     let cutoff = Utc::now();
     let mut report = SyncReport {
@@ -310,36 +310,39 @@ enum DisableOutcome {
 }
 
 async fn disable_missing(
-    db: &PgPool,
+    db: &DbPool,
     dir: &LdapDirectory,
     cutoff: DateTime<Utc>,
     seen: usize,
 ) -> Result<DisableOutcome, AppError> {
-    let governed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM core.users WHERE ldap_directory_id = $1 AND is_active = TRUE",
-    )
-    .bind(dir.id)
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "annuaire : comptage des comptes gouvernés");
-        AppError::Database(e)
-    })?;
+    let backend = db.backend();
+    let governed: i64 = db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.users WHERE ldap_directory_id = $1 AND is_active = TRUE",
+                backend.count_bigint("*")
+            ),
+            params![dir.id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "annuaire : comptage des comptes gouvernés");
+            AppError::Database(e)
+        })?;
 
     // Not seen during this run: either never stamped, or stamped before it began.
-    let candidates: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, username FROM core.users
+    let candidates: Vec<(Uuid, String)> = db
+        .fetch_all_as::<(Uuid, String)>(
+            "SELECT id, username FROM core.users
           WHERE ldap_directory_id = $1 AND is_active = TRUE
             AND (ldap_synced_at IS NULL OR ldap_synced_at < $2)",
-    )
-    .bind(dir.id)
-    .bind(cutoff)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "annuaire : liste des comptes absents");
-        AppError::Database(e)
-    })?;
+            params![dir.id, cutoff],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "annuaire : liste des comptes absents");
+            AppError::Database(e)
+        })?;
 
     if let Some(reason) = disable_guard(governed.max(0) as usize, seen, candidates.len()) {
         return Ok(DisableOutcome::Refused(reason));
@@ -349,26 +352,23 @@ async fn disable_missing(
     }
 
     let ids: Vec<Uuid> = candidates.iter().map(|(id, _)| *id).collect();
-    let affected = sqlx::query("UPDATE core.users SET is_active = FALSE WHERE id = ANY($1)")
-        .bind(&ids)
-        .execute(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "annuaire : désactivation des comptes absents");
-            AppError::Database(e)
-        })?
-        .rows_affected() as usize;
+    // `= ANY($1)` over an array is replaced by a portable `IN (...)` list.
+    let mut deactivate = DbQueryBuilder::new(backend, "UPDATE core.users SET is_active = FALSE WHERE id");
+    deactivate.push_in(ids.iter().copied());
+    let affected = deactivate.execute(db).await.map_err(|e| {
+        tracing::error!(error = %e, "annuaire : désactivation des comptes absents");
+        AppError::Database(e)
+    })? as usize;
 
     // Sessions of a deactivated account are cut: leaving a live refresh token
     // behind would keep somebody signed in for a month after they left.
-    if let Err(e) = sqlx::query(
-        "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'admin'
-          WHERE user_id = ANY($1) AND revoked_at IS NULL",
-    )
-    .bind(&ids)
-    .execute(db)
-    .await
-    {
+    let mut revoke =
+        DbQueryBuilder::new(backend, "UPDATE core.refresh_tokens SET revoked_at = ");
+    revoke.push_bind(Utc::now());
+    revoke.push(", revoke_reason = 'admin' WHERE user_id");
+    revoke.push_in(ids.iter().copied());
+    revoke.push(" AND revoked_at IS NULL");
+    if let Err(e) = revoke.execute(db).await {
         tracing::error!(error = %e, "annuaire : révocation des sessions des comptes désactivés");
     }
 
@@ -403,7 +403,7 @@ struct GroupOutcome {
 }
 
 async fn sync_groups(
-    db: &PgPool,
+    db: &DbPool,
     dir: &LdapDirectory,
     conn: &mut Connection,
     by_dn: &HashMap<String, Uuid>,
@@ -473,38 +473,68 @@ async fn sync_groups(
         }
         let desired: Vec<Uuid> = desired.into_iter().collect();
 
-        let added = sqlx::query(
-            "INSERT INTO core.user_group_members (group_id, user_id, source)
-             SELECT $1, u, 'directory' FROM UNNEST($2::uuid[]) AS u
-             ON CONFLICT (group_id, user_id) DO NOTHING",
-        )
-        .bind(group_id)
-        .bind(&desired)
-        .execute(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "annuaire : ajout des adhésions");
-            AppError::Database(e)
-        })?
-        .rows_affected() as usize;
+        // PostgreSQL's `UNNEST($2::uuid[])` is replaced by a portable multi-row
+        // `VALUES` list built from the desired members; the bare `ON CONFLICT DO
+        // NOTHING` goes through the backend (MySQL uses `INSERT IGNORE`).
+        let backend = db.backend();
+        let added = if desired.is_empty() {
+            0
+        } else {
+            let mut insert = DbQueryBuilder::new(
+                backend,
+                format!(
+                    "INSERT {}INTO core.user_group_members (group_id, user_id, source) VALUES ",
+                    backend.insert_ignore_prefix()
+                ),
+            );
+            for (i, uid) in desired.iter().enumerate() {
+                if i > 0 {
+                    insert.push(", ");
+                }
+                insert.push("(");
+                insert.push_bind(group_id);
+                insert.push(", ");
+                insert.push_bind(*uid);
+                insert.push(", 'directory')");
+            }
+            insert.push(backend.on_conflict_do_nothing(&["group_id", "user_id"]));
+            insert.execute(db).await.map_err(|e| {
+                tracing::error!(error = %e, "annuaire : ajout des adhésions");
+                AppError::Database(e)
+            })? as usize
+        };
 
         // Only rows a run created. A membership an operator granted by hand is
         // not the directory's to take away — and no membership at all is taken
         // away by a run that saw nobody.
         let removed = if allow_removals {
-            sqlx::query(
-                "DELETE FROM core.user_group_members
-                  WHERE group_id = $1 AND source = 'directory' AND NOT (user_id = ANY($2))",
-            )
-            .bind(group_id)
-            .bind(&desired)
-            .execute(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "annuaire : retrait des adhésions");
-                AppError::Database(e)
-            })?
-            .rows_affected() as usize
+            if desired.is_empty() {
+                // No desired members: every directory-sourced row of the group is
+                // stale. (The old `NOT (user_id = ANY('{}'))` matched all rows;
+                // an empty `IN (...)` would match none, so this case is explicit.)
+                db.execute(
+                    "DELETE FROM core.user_group_members
+                      WHERE group_id = $1 AND source = 'directory'",
+                    params![group_id],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "annuaire : retrait des adhésions");
+                    AppError::Database(e)
+                })? as usize
+            } else {
+                let mut delete = DbQueryBuilder::new(
+                    backend,
+                    "DELETE FROM core.user_group_members WHERE group_id = ",
+                );
+                delete.push_bind(group_id);
+                delete.push(" AND source = 'directory' AND user_id NOT");
+                delete.push_in(desired.iter().copied());
+                delete.execute(db).await.map_err(|e| {
+                    tracing::error!(error = %e, "annuaire : retrait des adhésions");
+                    AppError::Database(e)
+                })? as usize
+            }
         } else {
             0
         };
@@ -519,47 +549,51 @@ async fn sync_groups(
 /// Inserts or refreshes an imported group. Returns its id and whether this run
 /// created it.
 async fn upsert_group(
-    db: &PgPool,
+    db: &DbPool,
     dir: &LdapDirectory,
     group: &MappedGroup,
 ) -> Result<(Uuid, bool), AppError> {
-    if let Some(id) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM core.user_groups WHERE ldap_directory_id = $1 AND ldap_dn = $2",
-    )
-    .bind(dir.id)
-    .bind(&group.dn)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "annuaire : recherche du groupe importé");
-        AppError::Database(e)
-    })?
+    if let Some(id) = db
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT id FROM core.user_groups WHERE ldap_directory_id = $1 AND ldap_dn = $2",
+            params![dir.id, &group.dn],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "annuaire : recherche du groupe importé");
+            AppError::Database(e)
+        })?
     {
         // The name may have changed in the directory. Kept in step, but never
         // to a name another group already holds.
         let name = free_group_name(db, dir, &group.name, Some(id)).await?;
-        sqlx::query("UPDATE core.user_groups SET name = $2 WHERE id = $1")
-            .bind(id)
-            .bind(&name)
-            .execute(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "annuaire : renommage du groupe importé");
-                AppError::Database(e)
-            })?;
+        // Placeholders ascending: the SET value first, the WHERE key after.
+        db.execute(
+            "UPDATE core.user_groups SET name = $1 WHERE id = $2",
+            params![&name, id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "annuaire : renommage du groupe importé");
+            AppError::Database(e)
+        })?;
         return Ok((id, false));
     }
 
     let name = free_group_name(db, dir, &group.name, None).await?;
-    let id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO core.user_groups (name, description, ldap_directory_id, ldap_dn)
-         VALUES ($1, $2, $3, $4) RETURNING id",
+    // The old `RETURNING id` becomes generate-in-Rust + insert.
+    let id = new_id();
+    db.execute(
+        "INSERT INTO core.user_groups (id, name, description, ldap_directory_id, ldap_dn)
+         VALUES ($1, $2, $3, $4, $5)",
+        params![
+            id,
+            &name,
+            format!("Importé de l'annuaire « {} »", dir.display_name),
+            dir.id,
+            &group.dn
+        ],
     )
-    .bind(&name)
-    .bind(format!("Importé de l'annuaire « {} »", dir.display_name))
-    .bind(dir.id)
-    .bind(&group.dn)
-    .fetch_one(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, group = %group.dn, "annuaire : création du groupe importé");
@@ -575,7 +609,7 @@ async fn upsert_group(
 /// called "Administrateurs" must not collide with — or, worse, be merged into —
 /// the seeded one. The directory's slug disambiguates.
 async fn free_group_name(
-    db: &PgPool,
+    db: &DbPool,
     dir: &LdapDirectory,
     wanted: &str,
     keep: Option<Uuid>,
@@ -585,12 +619,12 @@ async fn free_group_name(
     // would drop the suffix and put us back on the collision we were escaping.
     let wanted = clamp_group_name(wanted, GROUP_NAME_MAX - (dir.slug.chars().count() + 12));
     let taken = |name: String, keep: Option<Uuid>| async move {
-        sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM core.user_groups WHERE name = $1 AND ($2::uuid IS NULL OR id <> $2))",
+        // `keep` is bound twice rather than reusing a placeholder (portable rewrite
+        // forbids reuse); the `::uuid` cast is dropped since the value is typed.
+        db.fetch_scalar::<bool>(
+            "SELECT EXISTS(SELECT 1 FROM core.user_groups WHERE name = $1 AND ($2 IS NULL OR id <> $3))",
+            params![name, keep, keep],
         )
-        .bind(name)
-        .bind(keep)
-        .fetch_one(db)
         .await
     };
 
@@ -619,18 +653,17 @@ async fn free_group_name(
 // ── Bookkeeping ──────────────────────────────────────────────────────────────
 
 /// Writes the run's outcome onto the directory row and into the trail.
-async fn finalise(db: &PgPool, dir: &LdapDirectory, report: SyncReport) -> SyncReport {
+async fn finalise(db: &DbPool, dir: &LdapDirectory, report: SyncReport) -> SyncReport {
     let summary = report.summary();
-    if let Err(e) = sqlx::query(
-        "UPDATE core.ldap_directories
-            SET last_sync_at = NOW(), last_sync_status = $2, last_sync_detail = $3
-          WHERE id = $1",
-    )
-    .bind(dir.id)
-    .bind(&report.status)
-    .bind(&summary)
-    .execute(db)
-    .await
+    // Placeholders ascending (SET first, WHERE last); `NOW()` bound from Rust.
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.ldap_directories
+            SET last_sync_at = $1, last_sync_status = $2, last_sync_detail = $3
+          WHERE id = $4",
+            params![Utc::now(), &report.status, &summary, dir.id],
+        )
+        .await
     {
         tracing::error!(error = %e, "annuaire : enregistrement du résultat de synchronisation");
     }

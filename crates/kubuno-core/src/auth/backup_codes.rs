@@ -21,8 +21,9 @@
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
+use kubuno_db::dialect::SqlType;
+use kubuno_db::{params, DbPool};
 use rand::Rng;
-use sqlx::PgPool;
 use std::net::IpAddr;
 use uuid::Uuid;
 
@@ -96,14 +97,15 @@ pub fn looks_like_code(input: &str) -> bool {
 }
 
 /// Reads the "few codes left" threshold from `core.settings`.
-async fn low_threshold(db: &PgPool) -> i64 {
-    let raw: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT value FROM core.settings WHERE key = 'security.backup_codes_low_threshold'",
-    )
-    .fetch_optional(db)
-    .await
-    .unwrap_or(None)
-    .flatten();
+async fn low_threshold(db: &DbPool) -> i64 {
+    let raw: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<Option<serde_json::Value>>(
+            "SELECT value FROM core.settings WHERE key = 'security.backup_codes_low_threshold'",
+            params![],
+        )
+        .await
+        .unwrap_or(None)
+        .flatten();
 
     raw.and_then(|v| v.as_i64()).unwrap_or(3).clamp(0, BATCH_SIZE as i64)
 }
@@ -116,7 +118,7 @@ async fn low_threshold(db: &PgPool) -> i64 {
 /// consumed (which must not become "used" evidence for a batch that no longer
 /// exists). The whole thing is one transaction, so a failure leaves the account
 /// with its previous, still-valid codes rather than with none at all.
-pub async fn replace_all(db: &PgPool, user_id: Uuid) -> Result<Vec<String>, AppError> {
+pub async fn replace_all(db: &DbPool, user_id: Uuid) -> Result<Vec<String>, AppError> {
     let plaintext: Vec<String> = (0..BATCH_SIZE).map(|_| generate_code()).collect();
 
     // argon2id is memory-hard by design; ten of them belong on the blocking pool.
@@ -133,42 +135,46 @@ pub async fn replace_all(db: &PgPool, user_id: Uuid) -> Result<Vec<String>, AppE
     .map_err(AppError::Internal)?;
 
     let mut tx = db.begin().await.map_err(|e| {
-        tracing::error!(error = %e, "backup_codes: ouverture de la transaction");
+        tracing::error!(error = %e, "backup_codes: opening the transaction");
         AppError::Database(e)
     })?;
 
-    let generation: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(generation), 0) + 1 FROM core.totp_backup_codes WHERE user_id = $1",
+    // `MAX(generation) + 1` is cast to bigint and decoded as i64 (its width is
+    // int4 on PostgreSQL but i64 on SQLite/MySQL), then narrowed to i32 to bind
+    // into the int4 column.
+    let backend = tx.backend();
+    let gen_sql = format!(
+        "SELECT {} FROM core.totp_backup_codes WHERE user_id = $1",
+        backend.cast("COALESCE(MAX(generation), 0) + 1", SqlType::BigInt)
+    );
+    let generation: i32 = tx
+        .fetch_optional_scalar::<i64>(&gen_sql, params![user_id])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "backup_codes: reading the generation");
+            AppError::Database(e)
+        })?
+        .unwrap_or(1) as i32;
+
+    tx.execute(
+        "DELETE FROM core.totp_backup_codes WHERE user_id = $1",
+        params![user_id],
     )
-    .bind(user_id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "backup_codes: lecture de la génération");
+        tracing::error!(error = %e, user_id = %user_id, "backup_codes: purging the previous batch");
         AppError::Database(e)
     })?;
 
-    sqlx::query("DELETE FROM core.totp_backup_codes WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "backup_codes: purge du lot précédent");
-            AppError::Database(e)
-        })?;
-
     for hash in &hashes {
-        sqlx::query(
+        tx.execute(
             "INSERT INTO core.totp_backup_codes (user_id, code_hash, generation)
              VALUES ($1, $2, $3)",
+            params![user_id, hash, generation],
         )
-        .bind(user_id)
-        .bind(hash)
-        .bind(generation)
-        .execute(&mut *tx)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "backup_codes: insertion");
+            tracing::error!(error = %e, user_id = %user_id, "backup_codes: insert");
             AppError::Database(e)
         })?;
     }
@@ -182,34 +188,40 @@ pub async fn replace_all(db: &PgPool, user_id: Uuid) -> Result<Vec<String>, AppE
 }
 
 /// Drops every code of an account (second factor turned off, recovery).
-pub async fn clear(db: &PgPool, user_id: Uuid) -> Result<u64, AppError> {
-    let done = sqlx::query("DELETE FROM core.totp_backup_codes WHERE user_id = $1")
-        .bind(user_id)
-        .execute(db)
+pub async fn clear(db: &DbPool, user_id: Uuid) -> Result<u64, AppError> {
+    let done = db
+        .execute(
+            "DELETE FROM core.totp_backup_codes WHERE user_id = $1",
+            params![user_id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "backup_codes: suppression");
+            tracing::error!(error = %e, user_id = %user_id, "backup_codes: delete");
             AppError::Database(e)
         })?;
-    Ok(done.rows_affected())
+    Ok(done)
 }
 
 /// Counters shown in the settings page. Never returns a code.
-pub async fn status(db: &PgPool, user_id: Uuid) -> Result<BackupCodeStatus, AppError> {
-    let row: Option<(i64, i64, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "SELECT COUNT(*) FILTER (WHERE used_at IS NULL),
-                COUNT(*),
-                MAX(created_at)
+pub async fn status(db: &DbPool, user_id: Uuid) -> Result<BackupCodeStatus, AppError> {
+    // `COUNT(*) FILTER (WHERE ...)` is PostgreSQL/SQLite only (MySQL lacks it), so
+    // it is rewritten as a portable `SUM(CASE ...)`; both aggregates are widened to
+    // bigint (i64).
+    let backend = db.backend();
+    let sql = format!(
+        "SELECT {remaining}, {total}, MAX(created_at)
            FROM core.totp_backup_codes
           WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "backup_codes: comptage");
-        AppError::Database(e)
-    })?;
+        remaining = backend.sum_bigint("CASE WHEN used_at IS NULL THEN 1 ELSE 0 END"),
+        total = backend.count_bigint("*"),
+    );
+    let row: Option<(i64, i64, Option<DateTime<Utc>>)> = db
+        .fetch_optional_as::<(i64, i64, Option<DateTime<Utc>>)>(&sql, params![user_id])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "backup_codes: counting");
+            AppError::Database(e)
+        })?;
 
     let (remaining, total, generated_at) = row.unwrap_or((0, 0, None));
     let threshold = low_threshold(db).await;
@@ -231,7 +243,7 @@ pub async fn status(db: &PgPool, user_id: Uuid) -> Result<BackupCodeStatus, AppE
 /// the same code produce exactly one winner. A replay after consumption never
 /// even reaches the comparison — the row is no longer in the candidate set.
 pub async fn consume(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     submitted: &str,
     ip: Option<IpAddr>,
@@ -241,18 +253,18 @@ pub async fn consume(
         return Ok(None);
     }
 
-    let rows: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, code_hash FROM core.totp_backup_codes
+    let rows: Vec<(Uuid, String)> = db
+        .fetch_all_as::<(Uuid, String)>(
+            "SELECT id, code_hash FROM core.totp_backup_codes
           WHERE user_id = $1 AND used_at IS NULL
           ORDER BY created_at",
-    )
-    .bind(user_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "backup_codes: lecture des candidats");
-        AppError::Database(e)
-    })?;
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "backup_codes: reading the candidates");
+            AppError::Database(e)
+        })?;
 
     if rows.is_empty() {
         return Ok(None);
@@ -278,36 +290,41 @@ pub async fn consume(
 
     let Some(id) = matched else { return Ok(None) };
 
+    // `used_at` is bound (not `NOW()`), and the `$2::inet` cast is dropped —
+    // `used_ip` is bound as text (the consolidated migration stores it in a
+    // portable text column, not PostgreSQL `INET`).
+    let now = Utc::now();
     let ip_text = ip.map(|a| a.to_string());
-    let consumed = sqlx::query(
-        "UPDATE core.totp_backup_codes
-            SET used_at = NOW(), used_ip = $2::inet
-          WHERE id = $1 AND used_at IS NULL",
-    )
-    .bind(id)
-    .bind(ip_text.as_deref())
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "backup_codes: consommation");
-        AppError::Database(e)
-    })?;
+    let consumed = db
+        .execute(
+            "UPDATE core.totp_backup_codes
+            SET used_at = $1, used_ip = $2
+          WHERE id = $3 AND used_at IS NULL",
+            params![now, ip_text.as_deref(), id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "backup_codes: consuming");
+            AppError::Database(e)
+        })?;
 
     // Lost the race against a concurrent sign-in using the same code.
-    if consumed.rows_affected() == 0 {
+    if consumed == 0 {
         return Ok(None);
     }
 
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM core.totp_backup_codes WHERE user_id = $1 AND used_at IS NULL",
-    )
-    .bind(user_id)
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "backup_codes: comptage après usage");
-        AppError::Database(e)
-    })?;
+    let backend = db.backend();
+    let remaining_sql = format!(
+        "SELECT {} FROM core.totp_backup_codes WHERE user_id = $1 AND used_at IS NULL",
+        backend.count_bigint("*")
+    );
+    let remaining: i64 = db
+        .fetch_scalar::<i64>(&remaining_sql, params![user_id])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "backup_codes: counting after use");
+            AppError::Database(e)
+        })?;
 
     Ok(Some(remaining))
 }

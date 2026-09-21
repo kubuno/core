@@ -18,8 +18,8 @@
 //! purpose: retrying a delivery is the whole point, and a link that has expired
 //! by then is inert anyway.
 
+use kubuno_db::{params, DbPool};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::jobs::{queue, JobRegistry, NewJob};
@@ -69,7 +69,7 @@ impl From<&EmailPayload> for Outgoing {
 /// message was queued is exactly the kind of observable difference that turns
 /// "forgot password" into an account-enumeration oracle.
 pub async fn enqueue(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &MailConfig,
     payload: EmailPayload,
 ) -> Option<Uuid> {
@@ -113,20 +113,21 @@ pub async fn enqueue(
 /// Called after the relay accepted the message: the body (and the one-time link
 /// it may carry) has no reason to survive in the queue table, which an operator
 /// can read and which backups keep for months.
-async fn scrub_payload(db: &PgPool, job_id: Uuid, payload: &EmailPayload) {
+async fn scrub_payload(db: &DbPool, job_id: Uuid, payload: &EmailPayload) {
     let meta = serde_json::json!({
         "to":      payload.to,
         "subject": payload.subject,
         "kind":    payload.kind,
         "scrubbed": true,
     });
-    if let Err(e) = sqlx::query("UPDATE core.jobs SET payload = $2 WHERE id = $1")
-        .bind(job_id)
-        .bind(&meta)
-        .execute(db)
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.jobs SET payload = $2 WHERE id = $1",
+            params![job_id, meta],
+        )
         .await
     {
-        tracing::error!(error = %e, job_id = %job_id, "mailer: purge du corps du message échouée");
+        tracing::error!(error = %e, job_id = %job_id, "mailer: scrubbing the message body failed");
     }
 }
 
