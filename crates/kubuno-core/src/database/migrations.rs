@@ -1,15 +1,22 @@
+use crate::database::SCHEMA;
 use anyhow::{Context, Result};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
-pub async fn run(pool: &PgPool) -> Result<()> {
+/// Runs the migration set for the pool's engine. The three dialects live under
+/// `migrations/{postgres,mysql,sqlite}`; `kubuno_db::migrations!` resolves all
+/// three at compile time and `.run` applies the one that matches the pool,
+/// keeping `_sqlx_migrations` inside the `core` namespace (the table PostgreSQL
+/// already used through its search_path, so an applied migration is not re-run).
+pub async fn run(pool: &DbPool) -> Result<()> {
     tracing::info!("Application des migrations SQL…");
-    // Migrations are split per engine under `migrations/{postgres,mysql,sqlite}`.
-    // The core still runs on PostgreSQL here; the runtime-engine switch (state on
-    // `kubuno_db::DbPool`, `kubuno_db::migrations!`) selects the right set.
-    sqlx::migrate!("../../migrations/postgres")
-        .run(pool)
-        .await
-        .context("Échec des migrations")?;
+    kubuno_db::migrations!(
+        "../../migrations/postgres",
+        "../../migrations/mysql",
+        "../../migrations/sqlite",
+    )
+    .run(pool, SCHEMA)
+    .await
+    .context("Échec des migrations")?;
     tracing::info!("Migrations appliquées avec succès");
     Ok(())
 }

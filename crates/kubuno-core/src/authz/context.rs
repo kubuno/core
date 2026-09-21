@@ -26,7 +26,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::Serialize;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 use super::model::{AssignmentScope, SUPERUSER_MARKER};
@@ -309,7 +309,7 @@ const MAX_HOLDERS: usize = 4096;
 /// Answered from the process-global roster, which costs one query per instance
 /// per TTL rather than one per caller. A `false` here means the caller's context
 /// is empty and needs no resolution — the fast path `/me` relies on.
-pub async fn holds_any_assignment(db: &PgPool, user_id: Uuid) -> Result<bool, AppError> {
+pub async fn holds_any_assignment(db: &DbPool, user_id: Uuid) -> Result<bool, AppError> {
     use super::cache::Roster;
 
     let roster = match super::cache::get_roster() {
@@ -330,31 +330,35 @@ pub async fn holds_any_assignment(db: &PgPool, user_id: Uuid) -> Result<bool, Ap
 }
 
 /// Loads the set of accounts holding at least one live assignment.
-async fn load_roster(db: &PgPool) -> Result<super::cache::Roster, AppError> {
+async fn load_roster(db: &DbPool) -> Result<super::cache::Roster, AppError> {
     use super::cache::Roster;
 
+    // `NOW()` is spelled per engine by the dialect layer (structural text, not a
+    // bind), so no engine-specific date function is hard-coded.
+    let now = db.backend().now();
     // One row over the cap is enough to know the cap is exceeded.
-    let rows: Vec<Uuid> = sqlx::query_scalar(
-        r#"
-        SELECT a.subject_user_id
-          FROM core.role_assignments a
-         WHERE a.subject_user_id IS NOT NULL
-           AND (a.expires_at IS NULL OR a.expires_at > NOW())
-        UNION
-        SELECT m.user_id
-          FROM core.role_assignments a
-          JOIN core.user_group_members m ON m.group_id = a.subject_group_id
-         WHERE (a.expires_at IS NULL OR a.expires_at > NOW())
-         LIMIT $1
-        "#,
-    )
-    .bind(MAX_HOLDERS as i64 + 1)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "authz: chargement du registre des détenteurs d'affectation");
-        AppError::Database(e)
-    })?;
+    let sql = format!(
+        "SELECT a.subject_user_id \
+          FROM core.role_assignments a \
+         WHERE a.subject_user_id IS NOT NULL \
+           AND (a.expires_at IS NULL OR a.expires_at > {now}) \
+        UNION \
+        SELECT m.user_id \
+          FROM core.role_assignments a \
+          JOIN core.user_group_members m ON m.group_id = a.subject_group_id \
+         WHERE (a.expires_at IS NULL OR a.expires_at > {now}) \
+         LIMIT $1"
+    );
+    let rows: Vec<Uuid> = db
+        .fetch_all_as::<HolderRow>(&sql, params![MAX_HOLDERS as i64 + 1])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "authz: chargement du registre des détenteurs d'affectation");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|r| r.subject_user_id)
+        .collect();
 
     if rows.len() > MAX_HOLDERS {
         tracing::warn!(
@@ -373,59 +377,61 @@ async fn load_roster(db: &PgPool) -> Result<super::cache::Roster, AppError> {
 /// filtered out, org-unit subtrees expanded. The superuser flag rides along as a
 /// marker row rather than a second statement.
 pub async fn resolve(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     origin: ActorOrigin,
     token_id: Option<Uuid>,
 ) -> Result<AdminContext, AppError> {
+    let backend = db.backend();
+    let now = backend.now();
+    let null_uuid = backend.cast("NULL", kubuno_db::dialect::SqlType::Uuid);
+    // NOTE (migration consolidation): `core.org_unit_descendants(...)` is a
+    // PostgreSQL set-returning function reached through `LATERAL`; MySQL/SQLite
+    // have neither, so this query is PostgreSQL-only until the subtree expansion
+    // is rewritten as a portable recursive CTE.
     // (privilege_key, scope, org_unit_id, caller's own unit)
-    let rows: Vec<(String, String, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
-        r#"
-        WITH mine AS (
-            SELECT a.id, a.role_id, a.scope, a.scope_org_unit_id
-              FROM core.role_assignments a
-             WHERE (a.expires_at IS NULL OR a.expires_at > NOW())
-               AND (
-                     a.subject_user_id = $1
-                  OR a.subject_group_id IN (
-                        SELECT m.group_id FROM core.user_group_members m WHERE m.user_id = $1
-                     )
-                   )
-        ),
-        own_unit AS (
-            SELECT org_unit_id FROM core.users WHERE id = $1
-        )
-        -- Explicit privileges, with the assignment's subtree already flattened.
-        SELECT rp.privilege_key,
-               mine.scope,
-               d.id,
-               (SELECT org_unit_id FROM own_unit)
-          FROM mine
-          JOIN core.role_privileges rp ON rp.role_id = mine.role_id
-          LEFT JOIN LATERAL core.org_unit_descendants(mine.scope_org_unit_id) d ON TRUE
-        UNION ALL
-        -- Superuser marker. '*' is not a valid privilege key, so it cannot be
-        -- confused with one.
-        SELECT '*',
-               mine.scope,
-               NULL::uuid,
-               (SELECT org_unit_id FROM own_unit)
-          FROM mine
-          JOIN core.roles r ON r.id = mine.role_id
-         WHERE r.is_superuser
-        "#,
-    )
-    .bind(user_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "authz: résolution des privilèges effectifs");
-        AppError::Database(e)
-    })?;
+    let sql = format!(
+        "WITH mine AS ( \
+            SELECT a.id, a.role_id, a.scope, a.scope_org_unit_id \
+              FROM core.role_assignments a \
+             WHERE (a.expires_at IS NULL OR a.expires_at > {now}) \
+               AND ( \
+                     a.subject_user_id = $1 \
+                  OR a.subject_group_id IN ( \
+                        SELECT m.group_id FROM core.user_group_members m WHERE m.user_id = $1 \
+                     ) \
+                   ) \
+        ), \
+        own_unit AS ( \
+            SELECT org_unit_id FROM core.users WHERE id = $1 \
+        ) \
+        SELECT rp.privilege_key, \
+               mine.scope, \
+               d.id, \
+               (SELECT org_unit_id FROM own_unit) AS org_unit_id \
+          FROM mine \
+          JOIN core.role_privileges rp ON rp.role_id = mine.role_id \
+          LEFT JOIN LATERAL core.org_unit_descendants(mine.scope_org_unit_id) d ON TRUE \
+        UNION ALL \
+        SELECT '*', \
+               mine.scope, \
+               {null_uuid}, \
+               (SELECT org_unit_id FROM own_unit) AS org_unit_id \
+          FROM mine \
+          JOIN core.roles r ON r.id = mine.role_id \
+         WHERE r.is_superuser"
+    );
+    let rows: Vec<PrivilegeRow> = db
+        .fetch_all_as(&sql, params![user_id])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "authz: résolution des privilèges effectifs");
+            AppError::Database(e)
+        })?;
 
     let mut ctx = AdminContext::empty(user_id, origin, token_id);
 
-    for (key, scope, unit, own_unit) in rows {
+    for PrivilegeRow { privilege_key: key, scope, id: unit, org_unit_id: own_unit } in rows {
         ctx.org_unit_id = own_unit;
 
         // A superuser role only counts at instance scope: confining "holds
@@ -448,9 +454,11 @@ pub async fn resolve(
     // The caller's own unit is not resolved by the query above when they hold no
     // assignment at all; fill it in so guards that compare scopes still work.
     if ctx.privileges.is_empty() && !ctx.is_superuser {
-        ctx.org_unit_id = sqlx::query_scalar("SELECT org_unit_id FROM core.users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(db)
+        ctx.org_unit_id = db
+            .fetch_optional_scalar::<Option<Uuid>>(
+                "SELECT org_unit_id FROM core.users WHERE id = $1",
+                params![user_id],
+            )
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, user_id = %user_id, "authz: lecture de l'unité de l'appelant");
@@ -460,6 +468,22 @@ pub async fn resolve(
     }
 
     Ok(ctx)
+}
+
+/// One holder id from the roster query.
+#[derive(sqlx::FromRow)]
+struct HolderRow {
+    subject_user_id: Uuid,
+}
+
+/// One resolved privilege row: the key (or `'*'` for the superuser marker), the
+/// assignment scope, the (flattened) org unit and the caller's own unit.
+#[derive(sqlx::FromRow)]
+struct PrivilegeRow {
+    privilege_key: String,
+    scope:         String,
+    id:            Option<Uuid>,
+    org_unit_id:   Option<Uuid>,
 }
 
 #[cfg(test)]

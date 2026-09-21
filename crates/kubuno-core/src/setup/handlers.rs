@@ -617,9 +617,15 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
         Err(e) => { let (c, m) = friendly_db_error(&e); return bad_code(c, m, json!({})) }
     };
 
+    // The installer wizard is PostgreSQL-specific (it can `CREATE DATABASE`,
+    // reads `pg_catalog` privileges, etc.) and keeps its own `PgPool` for that.
+    // The shared bootstrap helpers (migrations, org-unit seed, superadmin grant)
+    // now take a `DbPool`, so wrap the wizard's pool once for those boundaries.
+    let db = kubuno_db::DbPool::Pg(pool.clone());
+
     // 2. Schema. Idempotent, so pointing the wizard at an existing Kubuno
     //    database repairs its configuration instead of destroying its data.
-    if let Err(e) = crate::database::migrations::run(&pool).await {
+    if let Err(e) = crate::database::migrations::run(&db).await {
         tracing::error!(error = %e, "Migrations refusées pendant l'installation");
         return bad_code("install.schema_failed", format!("Création du schéma impossible : {e}"), json!({ "detail": e.to_string() }));
     }
@@ -639,7 +645,7 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
                 return bad_code("install.hash_failed", "Impossible de préparer le mot de passe administrateur.", json!({}));
             }
         };
-        let root_unit = crate::database::seed::root_org_unit(&pool).await;
+        let root_unit = crate::database::seed::root_org_unit(&db).await;
         let res = sqlx::query(
             r#"
             INSERT INTO core.users
@@ -671,7 +677,7 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
                 .unwrap_or(None);
         match admin_id {
             Some(id) => {
-                if let Err(e) = crate::authz::bootstrap::grant_instance_superadmin(&pool, id).await {
+                if let Err(e) = crate::authz::bootstrap::grant_instance_superadmin(&db, id).await {
                     tracing::error!(error = %e, "Attribution de la super-administration impossible");
                     return bad_code("install.admin_failed", "Le compte administrateur n'a pas pu recevoir ses droits.", json!({ "detail": e.to_string() }));
                 }

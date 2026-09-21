@@ -24,8 +24,9 @@ use chrono::Utc;
 use kubuno_db::{new_id, params, DbPool, DbQueryBuilder};
 use uuid::Uuid;
 
-use super::queue::{backoff_delay, truncate_error, FailOutcome, NewJob};
+use super::queue::{backoff_delay, truncate_error, FailOutcome, NewJob, JOB_CHANNEL};
 use super::Job;
+use kubuno_db::Backend;
 
 /// How many candidate rows a claimer reads before racing for one. A small
 /// number keeps the read cheap; if every candidate is lost to another worker
@@ -270,4 +271,19 @@ pub async fn requeue_stalled(
         tracing::error!(error = %e, "Reprise des tâches interrompues échouée");
         e
     })
+}
+
+/// Wakes idle runners. On PostgreSQL this is a `NOTIFY` on the job channel (the
+/// listener path); on MySQL/SQLite there is no `LISTEN`/`NOTIFY`, so it is a
+/// no-op and the runners' safety poll picks the work up instead.
+pub async fn notify_runners(db: &DbPool) {
+    if db.backend() != Backend::Postgres {
+        return;
+    }
+    if let Err(e) = db
+        .execute("SELECT pg_notify($1, '')", params![JOB_CHANNEL])
+        .await
+    {
+        tracing::error!(error = %e, "pg_notify sur le canal des tâches échoué");
+    }
 }

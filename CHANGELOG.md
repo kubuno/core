@@ -11,6 +11,17 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **The whole server runs on the database engine you choose.** The core now
+  opens its database through the run-time engine layer instead of a PostgreSQL-
+  only connection, so an administrator can install on PostgreSQL, MySQL/MariaDB
+  or SQLite by naming the engine in configuration — the same binary connects to
+  whichever is chosen, applies the matching schema, and reads and writes through
+  it everywhere.
+- **Modules inherit the server's database engine.** When the core launches an
+  installed module it now passes on which engine (and, for SQLite, which file
+  location) it is using, so a module always connects to the same kind of
+  database as the server rather than assuming PostgreSQL.
+
 - **Background work runs on every database engine.** Scheduled and retried
   background jobs — sending an invitation, running a backup, an export — no
   longer depend on a PostgreSQL-only locking trick to hand each job to exactly

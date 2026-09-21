@@ -18,23 +18,30 @@
 //! created, and [`reconcile_superadmins`] at every start for those already out
 //! there, whose instance cannot be repaired by a migration that has already run.
 
-use sqlx::PgPool;
+use kubuno_db::{params, Backend, DbPool};
 use uuid::Uuid;
+
+/// The "skip a duplicate" spelling for the current engine: MySQL uses
+/// `INSERT IGNORE`, PostgreSQL and SQLite a bare `ON CONFLICT DO NOTHING` (valid
+/// with no target on both). Returned as the `(prefix, suffix)` pair to splice
+/// into the statement.
+fn insert_ignore(backend: Backend) -> (&'static str, &'static str) {
+    match backend {
+        Backend::MySql => ("IGNORE ", ""),
+        _ => ("", " ON CONFLICT DO NOTHING"),
+    }
+}
 
 /// Grants the instance-scoped super-administrator role. Idempotent.
 ///
 /// Returns whether an assignment was actually created, so a caller can say so.
-pub async fn grant_instance_superadmin(db: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
-    let created = sqlx::query(
-        "INSERT INTO core.role_assignments (role_id, subject_user_id, scope) \
-         SELECT r.id, $1, 'instance' FROM core.roles r WHERE r.slug = 'super-admin' \
-         ON CONFLICT DO NOTHING",
-    )
-    .bind(user_id)
-    .execute(db)
-    .await?
-    .rows_affected()
-        > 0;
+pub async fn grant_instance_superadmin(db: &DbPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let (ignore, on_conflict) = insert_ignore(db.backend());
+    let sql = format!(
+        "INSERT {ignore}INTO core.role_assignments (role_id, subject_user_id, scope) \
+         SELECT r.id, $1, 'instance' FROM core.roles r WHERE r.slug = 'super-admin'{on_conflict}"
+    );
+    let created = db.execute(&sql, params![user_id]).await? > 0;
 
     if created {
         super::cache::invalidate_all();
@@ -51,19 +58,21 @@ pub async fn grant_instance_superadmin(db: &PgPool, user_id: Uuid) -> Result<boo
 /// `role = 'admin'` through a path that demands super-administration to begin
 /// with, so this widens no door. Accounts holding it through a group are left
 /// alone: `core.superadmin_ids()` already counts them.
-pub async fn reconcile_superadmins(db: &PgPool) -> Result<u64, sqlx::Error> {
-    let n = sqlx::query(
-        "INSERT INTO core.role_assignments (role_id, subject_user_id, scope) \
+pub async fn reconcile_superadmins(db: &DbPool) -> Result<u64, sqlx::Error> {
+    let (ignore, on_conflict) = insert_ignore(db.backend());
+    // NOTE (migration consolidation): `core.superadmin_ids()` is a PostgreSQL
+    // set-returning function; MySQL/SQLite have no equivalent, so this statement
+    // is PostgreSQL-only until the function is inlined as a portable subquery.
+    // The caller (main bootstrap) logs and continues on error.
+    let sql = format!(
+        "INSERT {ignore}INTO core.role_assignments (role_id, subject_user_id, scope) \
          SELECT r.id, u.id, 'instance' \
            FROM core.users u, core.roles r \
           WHERE u.role = 'admin' AND u.is_active \
             AND r.slug = 'super-admin' \
-            AND u.id NOT IN (SELECT user_id FROM core.superadmin_ids()) \
-         ON CONFLICT DO NOTHING",
-    )
-    .execute(db)
-    .await?
-    .rows_affected();
+            AND u.id NOT IN (SELECT user_id FROM core.superadmin_ids()){on_conflict}"
+    );
+    let n = db.execute(&sql, params![]).await?;
 
     if n > 0 {
         super::cache::invalidate_all();

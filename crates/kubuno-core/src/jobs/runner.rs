@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures::FutureExt;
+use kubuno_db::DbPool;
 use sqlx::postgres::PgListener;
-use sqlx::PgPool;
 use tokio::sync::{watch, Semaphore};
 
-use super::queue::{self, FailOutcome, JOB_CHANNEL};
+use super::portable;
+use super::queue::{FailOutcome, JOB_CHANNEL};
 use super::registry::{JobContext, JobRegistry};
 
 /// Runner tuning. Defaults are sized for a self-hosted instance: a handful of
@@ -44,26 +45,36 @@ fn as_u64(v: &serde_json::Value) -> Option<u64> {
     v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
 }
 
+/// One `core.settings` row read for the runner tuning.
+#[derive(sqlx::FromRow)]
+struct SettingRow {
+    key:   String,
+    value: serde_json::Value,
+}
+
 impl JobRunnerConfig {
     /// Reads `jobs.*` from `core.settings`, falling back to the defaults for
     /// any key that is missing or holds a nonsensical value. Never fails: a
     /// misconfigured setting must not stop the server from booting.
-    pub async fn from_db(db: &PgPool) -> Self {
+    pub async fn from_db(db: &DbPool) -> Self {
         let mut cfg = Self::default();
 
-        let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
-            "SELECT key, value FROM core.settings
-              WHERE key IN ('jobs.concurrency',
-                            'jobs.poll_interval_s',
-                            'jobs.stalled_after_s',
-                            'jobs.job_timeout_s')",
-        )
-        .fetch_all(db)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "Lecture des réglages jobs.* impossible — valeurs par défaut");
-            Vec::new()
-        });
+        let rows = db
+            .fetch_all_as::<SettingRow>(
+                "SELECT key, value FROM core.settings
+                  WHERE key IN ('jobs.concurrency',
+                                'jobs.poll_interval_s',
+                                'jobs.stalled_after_s',
+                                'jobs.job_timeout_s')",
+                kubuno_db::params![],
+            )
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "Lecture des réglages jobs.* impossible — valeurs par défaut");
+                Vec::new()
+            })
+            .into_iter()
+            .map(|r| (r.key, r.value));
 
         for (key, value) in rows {
             let Some(n) = as_u64(&value) else { continue };
@@ -117,7 +128,7 @@ impl JobRunnerHandle {
 
 /// Starts the runner: crash recovery, `LISTEN` wake-ups, claiming loop and the
 /// periodic recovery pass. Returns immediately.
-pub async fn start(db: PgPool, registry: Arc<JobRegistry>, cfg: JobRunnerConfig) -> JobRunnerHandle {
+pub async fn start(db: DbPool, registry: Arc<JobRegistry>, cfg: JobRunnerConfig) -> JobRunnerHandle {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let slots = Arc::new(Semaphore::new(cfg.concurrency));
 
@@ -155,7 +166,7 @@ pub async fn start(db: PgPool, registry: Arc<JobRegistry>, cfg: JobRunnerConfig)
 /// Claims jobs one by one and hands each to a task, never exceeding
 /// `concurrency` in flight.
 async fn dispatch_loop(
-    db: PgPool,
+    db: DbPool,
     registry: Arc<JobRegistry>,
     cfg: JobRunnerConfig,
     slots: Arc<Semaphore>,
@@ -179,13 +190,13 @@ async fn dispatch_loop(
             },
         };
 
-        match queue::claim(&db, &job_types).await {
+        match portable::claim(&db, &job_types).await {
             Ok(Some(job)) => {
                 let Some(handler) = registry.get(&job.job_type) else {
                     // Only registered types are claimed, so this cannot happen
                     // unless the registry changed under us.
                     tracing::error!(job_type = %job.job_type, "Tâche réclamée sans gestionnaire — remise en file");
-                    let _ = queue::fail(&db, &job, "Aucun gestionnaire pour ce type de tâche").await;
+                    let _ = portable::fail(&db, &job, "Aucun gestionnaire pour ce type de tâche").await;
                     drop(permit);
                     continue;
                 };
@@ -209,7 +220,7 @@ async fn dispatch_loop(
                 }
             }
             Err(_) => {
-                // Already logged in queue::claim (DB down, most likely).
+                // Already logged in portable::claim (DB down, most likely).
                 drop(permit);
                 tokio::select! {
                     biased;
@@ -225,7 +236,7 @@ async fn dispatch_loop(
 
 /// Runs one job and records its outcome.
 async fn execute(
-    db: &PgPool,
+    db: &DbPool,
     handler: Arc<dyn super::JobHandler>,
     ctx: JobContext,
     job: super::Job,
@@ -247,11 +258,11 @@ async fn execute(
     let elapsed_ms = started.elapsed().as_millis();
     match outcome {
         None => {
-            if queue::complete(db, job.id).await.is_ok() {
+            if portable::complete(db, job.id).await.is_ok() {
                 tracing::info!(job_id = %job.id, job_type = %job.job_type, durée_ms = elapsed_ms, "Tâche terminée");
             }
         }
-        Some(error) => match queue::fail(db, &job, &error).await {
+        Some(error) => match portable::fail(db, &job, &error).await {
             Ok(FailOutcome::Retry { delay, attempts_left }) => {
                 tracing::warn!(
                     job_id = %job.id, job_type = %job.job_type, erreur = %error,
@@ -273,13 +284,19 @@ async fn execute(
 /// `LISTEN kubuno_jobs` on a dedicated connection, reconnecting on error.
 /// Every notification simply wakes the dispatcher up — the payload carries no
 /// authority, the claim query decides what actually runs.
-fn spawn_listener(db: PgPool, wake: Arc<tokio::sync::Notify>, mut shutdown_rx: watch::Receiver<bool>) {
+fn spawn_listener(db: DbPool, wake: Arc<tokio::sync::Notify>, mut shutdown_rx: watch::Receiver<bool>) {
+    // Only PostgreSQL has `LISTEN`/`NOTIFY`. On MySQL/SQLite there is nothing to
+    // listen on, so the dispatcher's safety poll is the only wake path — start
+    // no listener task there.
+    let DbPool::Pg(pg) = db else {
+        return;
+    };
     tokio::spawn(async move {
         loop {
             if *shutdown_rx.borrow() {
                 return;
             }
-            let mut listener = match PgListener::connect_with(&db).await {
+            let mut listener = match PgListener::connect_with(&pg).await {
                 Ok(l) => l,
                 Err(e) => {
                     tracing::error!(error = %e, "Écoute du canal des tâches impossible — nouvelle tentative dans 5s");
@@ -320,7 +337,7 @@ fn spawn_listener(db: PgPool, wake: Arc<tokio::sync::Notify>, mut shutdown_rx: w
 
 /// Periodic crash recovery, for a *sibling* runner that died while this one
 /// keeps going (the startup pass only covers this process).
-fn spawn_recovery_loop(db: PgPool, cfg: JobRunnerConfig, mut shutdown_rx: watch::Receiver<bool>) {
+fn spawn_recovery_loop(db: DbPool, cfg: JobRunnerConfig, mut shutdown_rx: watch::Receiver<bool>) {
     let period = std::cmp::max(cfg.stalled_after / 2, Duration::from_secs(60));
     tokio::spawn(async move {
         loop {
@@ -333,12 +350,12 @@ fn spawn_recovery_loop(db: PgPool, cfg: JobRunnerConfig, mut shutdown_rx: watch:
     });
 }
 
-async fn recover_stalled(db: &PgPool, stalled_after: Duration) {
-    match queue::requeue_stalled(db, stalled_after).await {
+async fn recover_stalled(db: &DbPool, stalled_after: Duration) {
+    match portable::requeue_stalled(db, stalled_after).await {
         Ok(0) => {}
         Ok(n) => {
             tracing::warn!("Reprise après incident : {n} tâche(s) restée(s) « en cours » remise(s) en file");
-            queue::notify_runners(db).await;
+            portable::notify_runners(db).await;
         }
         Err(_) => { /* already logged */ }
     }

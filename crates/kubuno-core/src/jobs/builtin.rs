@@ -18,7 +18,8 @@
 
 use std::time::Duration;
 
-use sqlx::PgPool;
+use kubuno_db::dialect::SqlType;
+use kubuno_db::{params, DbPool};
 
 use super::queue::{self, NewJob};
 use super::registry::JobRegistry;
@@ -78,24 +79,36 @@ const DONE_JOB_RETENTION_DAYS: i32 = 7;
 /// Registers the core's own job types.
 pub fn register(registry: &mut JobRegistry) {
     registry.register_fn(CLEANUP_EVENT_LOG, |ctx, job| async move {
-        let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM core.event_log")
-            .fetch_one(&ctx.db)
+        let backend = ctx.db.backend();
+        let count_sql =
+            format!("SELECT {} FROM core.event_log", backend.count_bigint("*"));
+        let before: i64 = ctx
+            .db
+            .fetch_scalar(&count_sql, params![])
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Comptage de core.event_log échoué");
                 e
             })?;
 
-        sqlx::query("SELECT core.cleanup_event_log()")
-            .execute(&ctx.db)
+        // Portable replacement for the PL/pgSQL `core.cleanup_event_log()`: the
+        // 30-day cutoff is computed in Rust and bound, so no engine-specific
+        // date function appears in the text.
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(30);
+        ctx.db
+            .execute(
+                "DELETE FROM core.event_log WHERE created_at < $1",
+                params![cutoff],
+            )
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Purge de core.event_log échouée");
                 e
             })?;
 
-        let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM core.event_log")
-            .fetch_one(&ctx.db)
+        let after: i64 = ctx
+            .db
+            .fetch_scalar(&count_sql, params![])
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Comptage de core.event_log échoué");
@@ -121,20 +134,21 @@ pub fn register(registry: &mut JobRegistry) {
     // and a purge that swept those away would delete the evidence rather than
     // the noise. They are cleared by hand, from the console.
     registry.register_fn(PURGE_FINISHED_JOBS, |ctx, job| async move {
-        let deleted = sqlx::query(
-            "DELETE FROM core.jobs \
-              WHERE status = 'done' \
-                AND done_at IS NOT NULL \
-                AND done_at < NOW() - make_interval(days => $1)",
-        )
-        .bind(DONE_JOB_RETENTION_DAYS)
-        .execute(&ctx.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Purge des tâches terminées échouée");
-            e
-        })?
-        .rows_affected();
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(DONE_JOB_RETENTION_DAYS as i64);
+        let deleted = ctx
+            .db
+            .execute(
+                "DELETE FROM core.jobs \
+                  WHERE status = 'done' \
+                    AND done_at IS NOT NULL \
+                    AND done_at < $1",
+                params![cutoff],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Purge des tâches terminées échouée");
+                e
+            })?;
 
         tracing::info!(purgées = deleted, "Purge des tâches de fond terminées");
 
@@ -151,31 +165,34 @@ pub fn register(registry: &mut JobRegistry) {
     // constant. A window of 0 keeps nothing at all: "measure nothing" has to be
     // reachable from the settings page, not only by editing the source.
     registry.register_fn(PURGE_MODULE_USAGE, |ctx, job| async move {
-        let raw: Option<serde_json::Value> =
-            sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'usage.retention_days'")
-                .fetch_optional(&ctx.db)
-                .await
-                .unwrap_or(None)
-                .flatten();
+        let raw: Option<serde_json::Value> = ctx
+            .db
+            .fetch_optional_scalar(
+                "SELECT value FROM core.settings WHERE key = 'usage.retention_days'",
+                params![],
+            )
+            .await
+            .unwrap_or(None)
+            .flatten();
         // Clamped like every other window read from a writable column: an absurd
-        // figure handed to `make_interval` is a statement that never returns.
+        // figure is nonsense, and the cutoff date is computed in Rust.
         let days = raw
             .and_then(|v| v.as_i64())
             .unwrap_or(DEFAULT_USAGE_RETENTION_DAYS)
             .clamp(0, 3_650);
 
-        let deleted = sqlx::query(
-            "DELETE FROM core.module_usage_daily \
-              WHERE day < (CURRENT_DATE - make_interval(days => $1::int))",
-        )
-        .bind(days as i32)
-        .execute(&ctx.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Purge des compteurs de fréquentation échouée");
-            e
-        })?
-        .rows_affected();
+        let cutoff_day = (chrono::Utc::now() - chrono::Duration::days(days)).date_naive();
+        let deleted = ctx
+            .db
+            .execute(
+                "DELETE FROM core.module_usage_daily WHERE day < $1",
+                params![cutoff_day],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Purge des compteurs de fréquentation échouée");
+                e
+            })?;
 
         if deleted > 0 {
             tracing::info!(
@@ -230,14 +247,18 @@ pub fn register(registry: &mut JobRegistry) {
     // the module has to declare — so a "reconciliation" that recounted would be
     // inventing the number it is supposed to be checking.
     registry.register_fn(STORAGE_USAGE_RECONCILE, |ctx, job| async move {
-        let authoritative: i64 =
-            sqlx::query_scalar("SELECT COALESCE(SUM(used_bytes), 0)::bigint FROM core.users")
-                .fetch_one(&ctx.db)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "storage_usage: total faisant autorité");
-                    e
-                })?;
+        let sum_sql = format!(
+            "SELECT {} FROM core.users",
+            ctx.db.backend().sum_bigint("used_bytes")
+        );
+        let authoritative: i64 = ctx
+            .db
+            .fetch_scalar(&sum_sql, params![])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "storage_usage: total faisant autorité");
+                e
+            })?;
 
         let breakdown = crate::storage::usage::breakdown(&ctx.db, authoritative).await?;
         tracing::info!(
@@ -317,61 +338,75 @@ pub fn register(registry: &mut JobRegistry) {
         // Read straight from the instance row, like `audit::retention`: this is
         // an instance-wide policy, so resolving it through the per-unit chain
         // would invite a unit to shorten its own grace period.
-        let raw: Option<serde_json::Value> =
-            sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'users.purge_after_days'")
-                .fetch_optional(&ctx.db)
-                .await
-                .unwrap_or(None)
-                .flatten();
+        let raw: Option<serde_json::Value> = ctx
+            .db
+            .fetch_optional_scalar(
+                "SELECT value FROM core.settings WHERE key = 'users.purge_after_days'",
+                params![],
+            )
+            .await
+            .unwrap_or(None)
+            .flatten();
         // Clamped to ten years: a value read from a column somebody can write is
-        // an input, and `make_interval` with an absurd figure is a query that
-        // never returns.
+        // an input; the cutoff instant is computed in Rust and bound.
         let days = raw.and_then(|v| v.as_i64()).unwrap_or(20).clamp(0, 3_650);
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
 
         // Release alerts these accounts had taken, first. `core.alerts` pairs
         // `assignee_id` with `assigned_at` under a CHECK, while the foreign key
         // nulls only the first — so the delete below would fail on the
-        // constraint. Same reasoning as `admin::users::purge_user`.
-        if let Err(e) = sqlx::query(
-            "UPDATE core.alerts a SET assignee_id = NULL, assigned_at = NULL
-               FROM core.users u
-              WHERE a.assignee_id = u.id
-                AND u.deleted_at IS NOT NULL
-                AND u.deleted_at < NOW() - make_interval(days => $1::int)",
-        )
-        .bind(days as i32)
-        .execute(&ctx.db)
-        .await
+        // constraint. Same reasoning as `admin::users::purge_user`. Written as a
+        // correlated subquery (portable) rather than PostgreSQL's `UPDATE … FROM`.
+        if let Err(e) = ctx
+            .db
+            .execute(
+                "UPDATE core.alerts SET assignee_id = NULL, assigned_at = NULL \
+                  WHERE assignee_id IN ( \
+                      SELECT id FROM core.users \
+                       WHERE deleted_at IS NOT NULL AND deleted_at < $1)",
+                params![cutoff],
+            )
+            .await
         {
             tracing::error!(error = %e, "Libération des alertes avant purge échouée");
             return Err(e.into());
         }
 
-        // One statement, and it returns what it destroyed: an erasure that left
-        // no trace of its own scope would be the one operation nobody can audit
-        // after the fact.
-        let erased: Vec<(uuid::Uuid, String)> = sqlx::query_as(
-            "DELETE FROM core.users
-              WHERE deleted_at IS NOT NULL
-                AND deleted_at < NOW() - make_interval(days => $1::int)
-              RETURNING id, email::text",
-        )
-        .bind(days as i32)
-        .fetch_all(&ctx.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Purge des comptes supprimés échouée");
-            e
-        })?;
+        // Read what will be destroyed, then destroy it: MySQL has no
+        // `DELETE … RETURNING`, so the two-statement form is the portable one.
+        // The audit trail below needs the erased (id, email) pairs.
+        let email_txt = ctx.db.backend().cast("email", SqlType::Text);
+        let select_sql = format!(
+            "SELECT id, {email_txt} AS email FROM core.users \
+              WHERE deleted_at IS NOT NULL AND deleted_at < $1"
+        );
+        let erased: Vec<PurgedUser> = ctx
+            .db
+            .fetch_all_as(&select_sql, params![cutoff])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Lecture des comptes à purger échouée");
+                e
+            })?;
+        ctx.db
+            .execute(
+                "DELETE FROM core.users WHERE deleted_at IS NOT NULL AND deleted_at < $1",
+                params![cutoff],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Purge des comptes supprimés échouée");
+                e
+            })?;
 
         if !erased.is_empty() {
             let audit = crate::audit::AuditContext::system("Purge des comptes supprimés");
-            for (id, email) in &erased {
+            for u in &erased {
                 audit
                     .record(
                         &ctx.db,
                         crate::audit::AuditEntry::new("core.users.purge")
-                            .target(crate::audit::redact::target::USER, *id, email.clone())
+                            .target(crate::audit::redact::target::USER, u.id, u.email.clone())
                             .detail(format!("délai de grâce de {days} jour(s) écoulé")),
                     )
                     .await;
@@ -402,9 +437,16 @@ pub fn register(registry: &mut JobRegistry) {
     });
 }
 
+/// One erased account, read back before the purge deletes it.
+#[derive(sqlx::FromRow)]
+struct PurgedUser {
+    id:    uuid::Uuid,
+    email: String,
+}
+
 /// Arms the recurring maintenance jobs at startup. Idempotent across restarts
 /// and across several core processes.
-pub async fn schedule(db: &PgPool) {
+pub async fn schedule(db: &DbPool) {
     match queue::ensure_scheduled(db, NewJob::new(CLEANUP_EVENT_LOG)).await {
         Ok(Some(id)) => tracing::info!(job_id = %id, "Purge du journal d'événements planifiée"),
         Ok(None) => tracing::debug!("Purge du journal d'événements déjà planifiée"),
