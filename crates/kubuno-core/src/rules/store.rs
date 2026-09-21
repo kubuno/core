@@ -648,25 +648,48 @@ pub async fn hit_and_count(
 /// Drops hits older than the widest window any rule declares. Called by the
 /// maintenance job; the table is otherwise unbounded.
 pub async fn purge_hits(db: &DbPool) -> Result<u64, AppError> {
-    // FLAG: PostgreSQL-only. `DELETE … USING`, `make_interval` and the interval
-    // literal have no portable form, and the per-row window means the cutoff
-    // cannot be pre-computed in Rust. Only `NOW()` is lifted to a bound value.
-    let rows = db
-        .execute(
-            r#"DELETE FROM core.rule_hits h
-                USING core.rules r
-                WHERE h.rule_id = r.id
-                  AND h.occurred_at < $1
-                      - make_interval(secs => COALESCE(r.threshold_window_s, 0)::double precision)
-                      - INTERVAL '1 hour'"#,
-            params![Utc::now()],
+    // The retention window is per rule (its threshold window plus one hour), so
+    // there is no single cut-off. In place of the PostgreSQL-only
+    // `DELETE … USING … make_interval`, each rule's window is read, the cut-off
+    // is computed in Rust, and the rules are grouped by window so there is one
+    // `DELETE … WHERE rule_id IN (…) AND occurred_at < $cutoff` per distinct
+    // window (a handful) rather than one statement per rule.
+    let rules = db
+        .fetch_all_as::<(Uuid, Option<i32>)>(
+            "SELECT id, threshold_window_s FROM core.rules",
+            params![],
         )
         .await
         .map_err(|e| {
+            tracing::error!(error = %e, "rules: lecture des fenêtres de seuil");
+            AppError::Database(e)
+        })?;
+
+    let now = Utc::now();
+    let mut by_window: std::collections::HashMap<i64, Vec<Uuid>> = std::collections::HashMap::new();
+    for (id, window) in rules {
+        // The `+ 3600` keeps the original one-hour grace past the window.
+        let secs = i64::from(window.unwrap_or(0).max(0)) + 3_600;
+        by_window.entry(secs).or_default().push(id);
+    }
+
+    let mut total: u64 = 0;
+    for (secs, ids) in by_window {
+        if ids.is_empty() {
+            continue;
+        }
+        let cutoff = now - chrono::Duration::seconds(secs);
+        let mut qb =
+            DbQueryBuilder::new(db.backend(), "DELETE FROM core.rule_hits WHERE occurred_at < ");
+        qb.push_bind(cutoff);
+        qb.push(" AND rule_id");
+        qb.push_in(ids);
+        total += qb.execute(db).await.map_err(|e| {
             tracing::error!(error = %e, "rules: purge des occurrences de seuil");
             AppError::Database(e)
         })?;
-    Ok(rows)
+    }
+    Ok(total)
 }
 
 /// Drops executions past the configured retention.

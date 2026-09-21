@@ -76,11 +76,16 @@ pub async fn configured_days(db: &DbPool) -> i64 {
 pub async fn purge_expired(db: &DbPool) -> Result<u64, AppError> {
     let days = configured_days(db).await;
 
-    // NOTE: `core.purge_admin_audit` is a PostgreSQL stored function (defined by
-    // a migration) that deletes past the append-only trigger. It has no portable
-    // equivalent; on another engine the purge would need an engine-specific path.
-    let deleted: i64 = db
-        .fetch_scalar::<i64>("SELECT core.purge_admin_audit($1)", params![days as i32])
+    // The append-only guard is a `BEFORE UPDATE` trigger only — DELETE is
+    // deliberately allowed for retention — so the purge is a plain, portable
+    // `DELETE` with the cut-off computed in Rust, in place of the former
+    // PostgreSQL stored function `core.purge_admin_audit` (`make_interval`).
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+    let deleted: u64 = db
+        .execute(
+            "DELETE FROM core.admin_audit WHERE occurred_at < $1",
+            params![cutoff],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "audit: purge de rétention impossible");
@@ -101,7 +106,7 @@ pub async fn purge_expired(db: &DbPool) -> Result<u64, AppError> {
         .await;
     }
 
-    Ok(deleted.max(0) as u64)
+    Ok(deleted)
 }
 
 #[cfg(test)]
