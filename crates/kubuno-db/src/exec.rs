@@ -354,6 +354,47 @@ impl DbPool {
         }
     }
 
+    /// Every row of a query, without a target struct — for callers that map
+    /// columns by name at run time (the portable backup writer). On SQLite this
+    /// retries a transient `BUSY`/`LOCKED`.
+    pub async fn fetch_all_row(
+        &self,
+        sql: &str,
+        params: Vec<DbValue>,
+    ) -> Result<Vec<DbRow>, sqlx::Error> {
+        let prepared = self.prepare(sql)?;
+        match self {
+            DbPool::Pg(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+                .fetch_all(p)
+                .await?
+                .into_iter()
+                .map(DbRow::Pg)
+                .collect()),
+            DbPool::My(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+                .fetch_all(p)
+                .await?
+                .into_iter()
+                .map(DbRow::My)
+                .collect()),
+            DbPool::Sq(h) => {
+                with_sqlite_retry(|| {
+                    let sql = prepared.clone();
+                    let params = params.clone();
+                    let pool = h.pool.clone();
+                    async move {
+                        Ok(bind_all!(sqlx::query(safe(sql)), params)
+                            .fetch_all(&pool)
+                            .await?
+                            .into_iter()
+                            .map(DbRow::Sq)
+                            .collect())
+                    }
+                })
+                .await
+            }
+        }
+    }
+
     // ── transactions ────────────────────────────────────────────────────────────
 
     /// Begins a transaction. On SQLite this takes the single-writer permit for

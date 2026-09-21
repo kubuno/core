@@ -16,6 +16,38 @@ pub async fn cmd_db_backup(args: &clap::ArgMatches) -> Result<()> {
     println!();
 
     let settings = Settings::load().context("Chargement de la configuration")?;
+    let backend = kubuno_db::Backend::parse(&settings.database.engine)
+        .with_context(|| format!("Moteur de base inconnu : {}", settings.database.engine))?;
+
+    // PostgreSQL keeps its `pg_dump` `.sql`; MySQL and SQLite produce the portable
+    // NDJSON dump in process (no external tool, restorable by `kubuno db:restore`).
+    if backend != kubuno_db::Backend::Postgres {
+        let output = args.get_one::<String>("output").cloned().unwrap_or_else(|| {
+            let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            format!("kubuno_backup_{ts}.ndjson")
+        });
+        info(&format!("Moteur  : {}", settings.database.engine));
+        info(&format!("Fichier : {output}"));
+        println!();
+
+        let pool = create_pool(&settings.database)
+            .await
+            .context("Connexion à la base de données")?;
+        let out_path = std::path::PathBuf::from(&output);
+        let dir = out_path.parent().filter(|p| !p.as_os_str().is_empty()).map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let outcome = kubuno_core::backup::portable::write_dump(&pool, &dir)
+            .await
+            .context("Écriture de la sauvegarde portable")?;
+        // The writer names the file itself; move it to the requested path.
+        if outcome.path != out_path {
+            std::fs::rename(&outcome.path, &out_path)
+                .with_context(|| format!("Renommage vers {output}"))?;
+        }
+        ok(&format!("Sauvegarde créée : {output} ({} lignes)", outcome.rows));
+        return Ok(());
+    }
+
     let conn = PgConn::from_settings(&settings.database)?;
 
     let output = args.get_one::<String>("output").cloned().unwrap_or_else(|| {
@@ -69,10 +101,11 @@ pub async fn cmd_db_restore(args: &clap::ArgMatches) -> Result<()> {
     }
 
     let settings = Settings::load().context("Chargement de la configuration")?;
-    let conn = PgConn::from_settings(&settings.database)?;
+    let backend = kubuno_db::Backend::parse(&settings.database.engine)
+        .with_context(|| format!("Moteur de base inconnu : {}", settings.database.engine))?;
+    let is_portable = file.ends_with(".ndjson");
 
-    info(&format!("Base    : {}", conn.db));
-    info(&format!("Hôte    : {}:{}", conn.host, conn.port));
+    info(&format!("Moteur  : {}", settings.database.engine));
     info(&format!("Fichier : {file}"));
     println!();
 
@@ -85,20 +118,43 @@ pub async fn cmd_db_restore(args: &clap::ArgMatches) -> Result<()> {
         println!();
     }
 
-    let mut pg_args = conn.pg_args();
-    pg_args.extend(["-d".into(), conn.db.clone(), "-f".into(), file.clone()]);
-
-    let status = Proc::new("psql")
-        .envs(conn.pg_env())
-        .args(&pg_args)
-        .status()
-        .context("psql introuvable — installez postgresql-client")?;
-
-    if status.success() {
-        ok("Restauration terminée.");
-    } else {
-        fail("psql a échoué.");
-        std::process::exit(1);
+    // The `.sql` COPY dump is loaded by `psql` on PostgreSQL, exactly as before.
+    // Portable `.ndjson` dumps (MySQL/SQLite) are loaded in process — no external
+    // tool, and the same loader runs on every engine.
+    match (backend, is_portable) {
+        (kubuno_db::Backend::Postgres, false) => {
+            let conn = PgConn::from_settings(&settings.database)?;
+            let mut pg_args = conn.pg_args();
+            pg_args.extend(["-d".into(), conn.db.clone(), "-f".into(), file.clone()]);
+            let status = Proc::new("psql")
+                .envs(conn.pg_env())
+                .args(&pg_args)
+                .status()
+                .context("psql introuvable — installez postgresql-client")?;
+            if status.success() {
+                ok("Restauration terminée.");
+            } else {
+                fail("psql a échoué.");
+                std::process::exit(1);
+            }
+        }
+        (kubuno_db::Backend::Postgres, true) => {
+            // A portable dump onto PostgreSQL is not supported: PostgreSQL's own
+            // constraints are not deferrable, so the empty-then-refill loader
+            // cannot disable them for the load. Take a `.sql` dump on PostgreSQL.
+            fail("Un dump portable (.ndjson) se restaure sur MySQL ou SQLite. Sur PostgreSQL, \
+                  utilisez une sauvegarde .sql (kubuno db:backup).");
+            std::process::exit(1);
+        }
+        (_, _) => {
+            let pool = create_pool(&settings.database)
+                .await
+                .context("Connexion à la base de données")?;
+            let n = kubuno_core::backup::portable::restore(&pool, std::path::Path::new(file))
+                .await
+                .context("Restauration du dump portable")?;
+            ok(&format!("Restauration terminée : {n} lignes chargées."));
+        }
     }
     Ok(())
 }
