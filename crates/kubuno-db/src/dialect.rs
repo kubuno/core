@@ -397,6 +397,43 @@ impl Backend {
         }
     }
 
+    /// The domain half of an email address — everything after the `@`, the
+    /// portable stand-in for PostgreSQL's `SPLIT_PART(col, '@', 2)`.
+    ///
+    /// `col` is a column reference written in source (`&'static str`); no request
+    /// data is spliced. A well-formed address has exactly one `@`, so all three
+    /// spellings agree on it — the second field is the part after the separator.
+    ///
+    /// * PostgreSQL: `SPLIT_PART(col, '@', 2)`.
+    /// * MySQL/MariaDB: `SUBSTRING_INDEX(SUBSTRING_INDEX(col, '@', 2), '@', -1)`
+    ///   — the outer `-1` trims the first field the inner call keeps, so a value
+    ///   with no `@` yields the empty string rather than the whole address.
+    /// * SQLite: `substr(col, instr(col, '@') + 1)`.
+    pub fn email_domain(self, col: &'static str) -> String {
+        match self {
+            Backend::Postgres => format!("SPLIT_PART({col}, '@', 2)"),
+            Backend::MySql => {
+                format!("SUBSTRING_INDEX(SUBSTRING_INDEX({col}, '@', 2), '@', -1)")
+            }
+            Backend::Sqlite => format!("substr({col}, instr({col}, '@') + 1)"),
+        }
+    }
+
+    /// Wraps a bound text value as a JSON **string** scalar (`"…"`), for storing
+    /// it in a JSON column — PostgreSQL's `to_jsonb($n::text)`. `n` is the
+    /// placeholder number, bound as plain text; it is never interpolated.
+    ///
+    /// * PostgreSQL: `to_jsonb($n::text)`.
+    /// * MySQL/MariaDB: `JSON_QUOTE($n)`.
+    /// * SQLite: `json_quote($n)` (the column is `TEXT` holding JSON text).
+    pub fn json_string(self, n: usize) -> String {
+        match self {
+            Backend::Postgres => format!("to_jsonb(${n}::text)"),
+            Backend::MySql => format!("JSON_QUOTE(${n})"),
+            Backend::Sqlite => format!("json_quote(${n})"),
+        }
+    }
+
     /// Boolean OR over a group — PostgreSQL's `bool_or`. MySQL and SQLite store
     /// booleans as `0`/`1` and have no `bool_or`, but `MAX` over those integers
     /// is the same fold and decodes back to `bool`. PostgreSQL rejects
@@ -538,6 +575,26 @@ mod tests {
     }
 
     #[test]
+    fn email_domain_spells_each_engine() {
+        assert_eq!(Backend::Postgres.email_domain("u.email"), "SPLIT_PART(u.email, '@', 2)");
+        assert_eq!(
+            Backend::MySql.email_domain("u.email"),
+            "SUBSTRING_INDEX(SUBSTRING_INDEX(u.email, '@', 2), '@', -1)"
+        );
+        assert_eq!(
+            Backend::Sqlite.email_domain("u.email"),
+            "substr(u.email, instr(u.email, '@') + 1)"
+        );
+    }
+
+    #[test]
+    fn json_string_wraps_a_bound_text() {
+        assert_eq!(Backend::Postgres.json_string(1), "to_jsonb($1::text)");
+        assert_eq!(Backend::MySql.json_string(1), "JSON_QUOTE($1)");
+        assert_eq!(Backend::Sqlite.json_string(1), "json_quote($1)");
+    }
+
+    #[test]
     fn upsert_uses_the_local_spelling() {
         let assigns = [
             Assign::Incoming("kdbx_path"),
@@ -577,6 +634,8 @@ mod tests {
                 b.interval_before(7, Unit::Day),
                 b.ilike("name", 1),
                 b.string_agg("name", ", "),
+                b.email_domain("u.email"),
+                b.json_string(1),
                 format!("SELECT 1{}", b.for_update()),
             ];
             for f in fragments {
