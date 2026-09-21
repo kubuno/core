@@ -201,7 +201,10 @@ pub async fn declare_restore_test(
     let previous: Option<Value> = state
         .db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE \"key\" = $1 FOR UPDATE",
+            &format!(
+                "SELECT value FROM core.settings WHERE \"key\" = $1{}",
+                state.db.backend().for_update()
+            ),
             params![policy::KEY_LAST_RESTORE_TEST],
         )
         .await

@@ -14,10 +14,13 @@
 //! Everything below was first written for `security_dashboard`; this module is
 //! that code lifted out unchanged, not a re-derivation of it.
 
+use std::collections::{HashMap, HashSet};
+
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
-use kubuno_db::{params, DbPool};
+use kubuno_db::{dialect::SqlType, params, DbPool};
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::errors::AppError;
 
@@ -388,6 +391,40 @@ impl Counted {
             None => "COUNT(*)".to_owned(),
         }
     }
+
+    /// The same aggregate restricted to the rows matching `cond`, expressed with
+    /// a `CASE` inside `COUNT` rather than the `agg FILTER (WHERE ...)` clause
+    /// MySQL does not support. `COUNT` skips the `NULL` the `CASE` yields when
+    /// `cond` is false, so `COUNT(CASE WHEN c THEN 1 END)` equals
+    /// `COUNT(*) FILTER (WHERE c)` and `COUNT(DISTINCT CASE WHEN c THEN col END)`
+    /// equals `COUNT(DISTINCT col) FILTER (WHERE c)`, on all three engines.
+    ///
+    /// `cond` is a `&'static str`-derived fragment (a bind-parameter comparison);
+    /// no request data is spliced.
+    fn aggregate_when(&self, cond: &str) -> String {
+        match self.distinct {
+            Some(column) => format!("COUNT(DISTINCT CASE WHEN {cond} THEN {column} END)"),
+            None => format!("COUNT(CASE WHEN {cond} THEN 1 END)"),
+        }
+    }
+}
+
+/// Advances a local wall-clock instant by one bucket, the portable stand-in for
+/// `generate_series(..., INTERVAL '<step>')`. Weeks and days are whole-day steps
+/// over naive local time (no DST arithmetic), exactly as `generate_series` over a
+/// `timestamp` (without zone) produced them.
+fn advance_bucket(bucket: Bucket, t: NaiveDateTime) -> NaiveDateTime {
+    match bucket {
+        Bucket::Hour => t + Duration::hours(1),
+        Bucket::Day => t + Duration::days(1),
+        Bucket::Week => t + Duration::days(7),
+    }
+}
+
+/// Formats a bucket boundary the way the series keys are compared and returned —
+/// the portable equivalent of `to_char(d, 'YYYY-MM-DD"T"HH24:MI:SS')`.
+fn bucket_key(t: NaiveDateTime) -> String {
+    t.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
 /// The series, zero-filled over the window.
@@ -402,46 +439,76 @@ pub async fn series(
     win: &Window,
     label: &str,
 ) -> Result<Vec<Point>, AppError> {
-    let sql = format!(
-        "SELECT to_char(d, 'YYYY-MM-DD\"T\"HH24:MI:SS'), COALESCE(c.cnt, 0)::bigint \
-           FROM generate_series($1::timestamp, $2::timestamp, INTERVAL '{step}') AS d \
-           LEFT JOIN ( \
-                SELECT date_trunc('{unit}', t.{time} AT TIME ZONE $3::text) AS b, {agg} AS cnt \
-                  FROM {table} t \
-                 WHERE ({filter}) AND t.{time} >= $4 AND t.{time} < $5 \
-                 GROUP BY 1 \
-           ) c ON c.b = d \
-          ORDER BY d",
-        step = win.bucket.step(),
-        unit = win.bucket.unit(),
-        time = what.time,
-        agg = what.aggregate(),
-        table = what.table,
-        filter = what.filter,
-    );
+    // The zero-filled axis of local wall-clock bucket boundaries, built in Rust
+    // the way `generate_series($axis_from, $axis_to, INTERVAL '<step>')` built it
+    // (both endpoints inclusive). A bucket with no row stays at 0.
+    let mut keys: Vec<String> = Vec::new();
+    let mut cursor = win.axis_from;
+    while cursor <= win.axis_to {
+        keys.push(bucket_key(cursor));
+        cursor = advance_bucket(win.bucket, cursor);
+    }
 
-    // Safe: every fragment spliced above is a `&'static str` — the bucket's own
-    // step/unit and `Counted`'s table, time column and filter, all written in
-    // source. The window bounds and the zone travel as bind parameters.
+    // The counts, bucketed in Rust rather than through PostgreSQL-only SQL
+    // (`generate_series`, `date_trunc(... AT TIME ZONE ...)`, `to_char`, the
+    // `::timestamp/::text/::bigint` casts): read the raw rows in the window and
+    // fold each into its bucket. Truncating a row's instant to a bucket in the
+    // instance zone reuses `floor_local`, which already matches
+    // `date_trunc('week', …)` (weeks starting Monday) and its hour/day cases.
     //
-    // NOTE (engine portability): this statement is PostgreSQL-only —
-    // `generate_series`, `date_trunc(... AT TIME ZONE ...)`, `to_char` and the
-    // `::timestamp/::text/::bigint` casts have no portable spelling. It reads
-    // correctly on PostgreSQL; MySQL/SQLite support is a separate follow-up.
-    let rows: Vec<(String, i64)> = db
-        .fetch_all_as::<(String, i64)>(
-            &sql,
-            params![win.axis_from.and_utc(), win.axis_to.and_utc(), win.tz.name(), win.from, win.to],
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, panel = %label, "tableau de bord : série");
-            AppError::Database(e)
-        })?;
+    // Safe: `Counted`'s table, time column, filter and distinct column are all
+    // `&'static str` written in source; the two window bounds are bound.
+    let time = what.time;
+    let table = what.table;
+    let filter = what.filter;
+    let map_err = |e: sqlx::Error| {
+        tracing::error!(error = %e, panel = %label, "tableau de bord : série");
+        AppError::Database(e)
+    };
 
-    Ok(rows
+    let counts: HashMap<String, i64> = if let Some(column) = what.distinct {
+        // "How many distinct somebodies per bucket": collect the distinct ids in
+        // each bucket, then take each set's size. The distinct columns in use are
+        // UUID keys (`actor_id`), decoded natively as `Uuid` on every engine.
+        let sql = format!(
+            "SELECT t.{time}, {column} FROM {table} t \
+              WHERE ({filter}) AND t.{time} >= $1 AND t.{time} < $2"
+        );
+        let rows: Vec<(DateTime<Utc>, Option<Uuid>)> = db
+            .fetch_all_as::<(DateTime<Utc>, Option<Uuid>)>(&sql, params![win.from, win.to])
+            .await
+            .map_err(map_err)?;
+        let mut sets: HashMap<String, HashSet<Uuid>> = HashMap::new();
+        for (ts, id) in rows {
+            if let Some(id) = id {
+                let key = bucket_key(floor_local(win.bucket, ts.with_timezone(&win.tz).naive_local()));
+                sets.entry(key).or_default().insert(id);
+            }
+        }
+        sets.into_iter().map(|(k, s)| (k, s.len() as i64)).collect()
+    } else {
+        let sql = format!(
+            "SELECT t.{time} FROM {table} t \
+              WHERE ({filter}) AND t.{time} >= $1 AND t.{time} < $2"
+        );
+        let rows: Vec<(DateTime<Utc>,)> = db
+            .fetch_all_as::<(DateTime<Utc>,)>(&sql, params![win.from, win.to])
+            .await
+            .map_err(map_err)?;
+        let mut counts: HashMap<String, i64> = HashMap::new();
+        for (ts,) in rows {
+            let key = bucket_key(floor_local(win.bucket, ts.with_timezone(&win.tz).naive_local()));
+            *counts.entry(key).or_default() += 1;
+        }
+        counts
+    };
+
+    Ok(keys
         .into_iter()
-        .map(|(bucket, value)| Point { bucket, value })
+        .map(|bucket| {
+            let value = counts.get(&bucket).copied().unwrap_or(0);
+            Point { bucket, value }
+        })
         .collect())
 }
 
@@ -454,29 +521,28 @@ pub async fn totals(
     label: &str,
 ) -> Result<(i64, i64), AppError> {
     let sql = format!(
-        // `COUNT(…)` is already `bigint`; no cast is appended, because a cast
-        // written straight after a `FILTER` clause is a grammar an operator
-        // should not have to trust.
-        "SELECT {agg} FILTER (WHERE t.{time} >= $2), \
-                {agg} FILTER (WHERE t.{time} <  $2) \
+        // `agg FILTER (WHERE ...)` is PostgreSQL/SQLite-only (MySQL has no
+        // `FILTER`), so the sub-range restriction moves inside the aggregate as a
+        // `CASE` (see `aggregate_when`). Placeholders must appear once each, in
+        // ascending order — the prepare scanner rejects reuse on every engine —
+        // so `win.from` is bound twice, as $1 (current half) and $2 (previous).
+        "SELECT {current}, {previous} \
            FROM {table} t \
-          WHERE ({filter}) AND t.{time} >= $1 AND t.{time} < $3",
-        agg = what.aggregate(),
+          WHERE ({filter}) AND t.{time} >= $3 AND t.{time} < $4",
+        current = what.aggregate_when(&format!("t.{} >= $1", what.time)),
+        previous = what.aggregate_when(&format!("t.{} < $2", what.time)),
         time = what.time,
         table = what.table,
         filter = what.filter,
     );
 
     // Safe: `Counted`'s table, time column, filter and aggregate are all
-    // `&'static str` written in source; the three instants are bound.
-    //
-    // NOTE (engine portability): the `FILTER (WHERE ...)` aggregate clause is
-    // PostgreSQL/SQLite syntax and is not supported by MySQL — flagged for the
-    // engine-agnostic follow-up.
+    // `&'static str` written in source; the instants are bound. Bind order
+    // matches the placeholders: $1/$2 = win.from, $3 = previous_from, $4 = to.
     let row: (i64, i64) = db
         .fetch_one_as::<(i64, i64)>(
             &sql,
-            params![win.previous_from, win.from, win.to],
+            params![win.from, win.from, win.previous_from, win.to],
         )
         .await
         .map_err(|e| {
@@ -519,8 +585,13 @@ pub async fn breakdown(
     limit: i64,
     label: &str,
 ) -> Result<Vec<Slice>, AppError> {
+    // `(expr)::text` becomes the dialect cast (`CAST(... AS CHAR/TEXT)` off
+    // PostgreSQL); the grouping value is text on every engine. The `::bigint`
+    // cast on `COUNT(...)` is dropped — `COUNT` already decodes as `i64`. The
+    // positional `GROUP BY 1 / ORDER BY 2` is portable.
+    let key_expr = db.backend().cast(expr, SqlType::Text);
     let sql = format!(
-        "SELECT COALESCE(NULLIF(({expr})::text, ''), 'unknown'), {agg}::bigint \
+        "SELECT COALESCE(NULLIF({key_expr}, ''), 'unknown'), {agg} \
            FROM {table} t \
           WHERE ({filter}) AND t.{time} >= $1 AND t.{time} < $2 \
           GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT {limit}",
@@ -532,9 +603,6 @@ pub async fn breakdown(
 
     // Safe: the grouping expression and `Counted`'s fragments are all
     // `&'static str`, and `limit` is an integer. The bounds are bound.
-    //
-    // NOTE (engine portability): the `(expr)::text` and `::bigint` casts are
-    // PostgreSQL spellings — flagged for the engine-agnostic follow-up.
     let rows: Vec<(String, i64)> = db
         .fetch_all_as::<(String, i64)>(&sql, params![win.from, win.to])
         .await

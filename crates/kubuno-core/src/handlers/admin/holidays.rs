@@ -423,10 +423,14 @@ pub async fn update_holiday(
     let parsed = parse_holiday(&dto)?;
 
     let mut tx = audit.begin(&state.db).await?;
+    let for_update = tx.backend().for_update();
     let before = tx
         .fetch_optional_row(
-            "SELECT name, category, kind, rule, observance, from_year, to_year, color, is_builtin \
-               FROM core.holidays WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT name, category, kind, rule, observance, from_year, to_year, color, is_builtin \
+                   FROM core.holidays WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await
@@ -540,9 +544,13 @@ pub async fn delete_holiday(
     ctx.require(keys::HOLIDAYS_MANAGE)?;
 
     let mut tx = audit.begin(&state.db).await?;
+    let for_update = tx.backend().for_update();
     let row = tx
         .fetch_optional_row(
-            "SELECT name, is_builtin FROM core.holidays WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT name, is_builtin FROM core.holidays WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await
@@ -811,9 +819,13 @@ pub async fn delete_calendar(
     ctx.require(keys::HOLIDAYS_MANAGE)?;
 
     let mut tx = audit.begin(&state.db).await?;
+    let for_update = tx.backend().for_update();
     let row = tx
         .fetch_optional_row(
-            "SELECT name, code, is_builtin FROM core.holiday_calendars WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT name, code, is_builtin FROM core.holiday_calendars WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await

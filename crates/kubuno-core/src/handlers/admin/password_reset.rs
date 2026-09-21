@@ -240,10 +240,14 @@ pub async fn reset_user_password(
 
     // FOR UPDATE row read inside the transaction: `DbTx` cannot decode a struct,
     // so the columns are mapped by hand from a raw row.
+    let for_update = tx.backend().for_update();
     let target_row = tx
         .fetch_optional_row(
-            "SELECT username, email, display_name, must_change_password, role, preferences \
-             FROM core.users WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT username, email, display_name, must_change_password, role, preferences \
+                 FROM core.users WHERE id = $1{}",
+                for_update
+            ),
             params![user_id],
         )
         .await
@@ -417,10 +421,14 @@ pub async fn require_password_change(
     let mut tx = audit.begin(&state.db).await?;
 
     // FOR UPDATE row read inside the transaction: mapped by hand from a raw row.
+    let for_update = tx.backend().for_update();
     let target_row = tx
         .fetch_optional_row(
-            "SELECT username, must_change_password, password_hash \
-             FROM core.users WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT username, must_change_password, password_hash \
+                 FROM core.users WHERE id = $1{}",
+                for_update
+            ),
             params![user_id],
         )
         .await

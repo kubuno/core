@@ -817,9 +817,13 @@ pub async fn set_status(
     actor_label: &str,
     note: Option<&str>,
 ) -> Result<Status, AppError> {
+    let for_update = tx.backend().for_update();
     let current: String = tx
         .fetch_optional_scalar::<String>(
-            "SELECT status FROM core.alerts WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT status FROM core.alerts WHERE id = $1{}",
+                for_update
+            ),
             params![alert_id],
         )
         .await

@@ -167,9 +167,13 @@ async fn write_setting(
 ) -> Result<(), AppError> {
     // FOR UPDATE read inside the audited transaction (`DbTx` methods reached
     // through the `AuditTx` deref).
+    let for_update = tx.backend().for_update();
     let previous: Option<Value> = tx
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE \"key\" = $1 FOR UPDATE",
+            &format!(
+                "SELECT value FROM core.settings WHERE \"key\" = $1{}",
+                for_update
+            ),
             params![key],
         )
         .await

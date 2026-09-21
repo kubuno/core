@@ -206,9 +206,13 @@ pub async fn update_oauth_provider(
 
     let mut tx = audit.begin(&state.db).await?;
 
+    let for_update = tx.backend().for_update();
     let prev_raw = tx
         .fetch_optional_row(
-            "SELECT * FROM core.oauth_providers WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT * FROM core.oauth_providers WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await
@@ -286,9 +290,13 @@ pub async fn delete_oauth_provider(
     ctx.require(keys::AUTH_PROVIDERS_MANAGE)?;
     let mut tx = audit.begin(&state.db).await?;
 
+    let for_update = tx.backend().for_update();
     let prev_raw = tx
         .fetch_optional_row(
-            "SELECT * FROM core.oauth_providers WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT * FROM core.oauth_providers WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await

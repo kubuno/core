@@ -163,9 +163,13 @@ pub async fn update_settings(
     let mut entries: Vec<AuditEntry> = Vec::with_capacity(updates.len());
 
     for (key, value) in &updates {
+        let for_update = tx.backend().for_update();
         let previous: Option<Value> = tx
             .fetch_optional_scalar::<Value>(
-                "SELECT value FROM core.settings WHERE \"key\" = $1 FOR UPDATE",
+                &format!(
+                    "SELECT value FROM core.settings WHERE \"key\" = $1{}",
+                    for_update
+                ),
                 params![key],
             )
             .await
@@ -383,10 +387,15 @@ pub async fn toggle_module(
     let mut tx = audit.begin(&state.db).await?;
 
     // `DbTx` cannot decode a struct or tuple, so the locked row is read column by
-    // column. FOR UPDATE has no portable SQLite spelling — see the port notes.
+    // column. The row lock is spelled per engine via `Backend::for_update`
+    // (empty on SQLite, whose writes are already serialized).
+    let for_update = tx.backend().for_update();
     let previous = tx
         .fetch_optional_row(
-            "SELECT display_name, version, is_enabled FROM core.modules WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT display_name, version, is_enabled FROM core.modules WHERE id = $1{}",
+                for_update
+            ),
             params![&id],
         )
         .await

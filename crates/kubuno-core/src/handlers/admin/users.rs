@@ -818,8 +818,12 @@ pub async fn update_user(
     // Read the previous state inside the transaction: the `before` snapshot is
     // then the exact row the UPDATE is about to overwrite, not one a concurrent
     // request may have changed in between.
+    let for_update = tx.backend().for_update();
     let previous = tx
-        .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![id])
+        .fetch_optional_row(
+            &format!("SELECT * FROM core.users WHERE id = $1{for_update}"),
+            params![id],
+        )
         .await
         .map_err(|e| { tracing::error!(error = %e, "update_user: lecture"); AppError::Database(e) })?
         .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
@@ -993,9 +997,10 @@ pub async fn bulk_set_org_unit(
     // form (arrays exist only on PostgreSQL), so the loop reproduces its lock
     // ordering.
     let mut previous: Vec<User> = Vec::with_capacity(ids.len());
+    let sql = format!("SELECT * FROM core.users WHERE id = $1{}", tx.backend().for_update());
     for uid in &ids {
         if let Some(row) = tx
-            .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![*uid])
+            .fetch_optional_row(&sql, params![*uid])
             .await
             .map_err(|e| { tracing::error!(error = %e, "bulk_set_org_unit: lecture"); AppError::Database(e) })?
         {
@@ -1107,9 +1112,10 @@ async fn bulk_load_and_authorise(
     privilege: &str,
 ) -> Result<Vec<User>, AppError> {
     let mut users: Vec<User> = Vec::with_capacity(ids.len());
+    let sql = format!("SELECT * FROM core.users WHERE id = $1{}", db.backend().for_update());
     for uid in ids {
         if let Some(row) = tx
-            .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![*uid])
+            .fetch_optional_row(&sql, params![*uid])
             .await
             .map_err(|e| { tracing::error!(error = %e, "bulk: lecture"); AppError::Database(e) })?
         {
@@ -1417,11 +1423,12 @@ pub async fn delete_user(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut tx = audit.begin(&state.db).await?;
 
+    let sql = format!(
+        "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE{}",
+        tx.backend().for_update()
+    );
     let previous = tx
-        .fetch_optional_row(
-            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE FOR UPDATE",
-            params![id],
-        )
+        .fetch_optional_row(&sql, params![id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_user: lecture"); AppError::Database(e) })?
         .ok_or_else(|| AppError::NotFound(format!("User {id}")))?;
@@ -1509,8 +1516,9 @@ pub async fn purge_user(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut tx = audit.begin(&state.db).await?;
 
+    let sql = format!("SELECT * FROM core.users WHERE id = $1{}", tx.backend().for_update());
     let victim = tx
-        .fetch_optional_row("SELECT * FROM core.users WHERE id = $1 FOR UPDATE", params![id])
+        .fetch_optional_row(&sql, params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "purge_user: lecture");
@@ -1899,9 +1907,9 @@ pub async fn revoke_user_session(
     let session_sql = format!(
         r#"SELECT device_name, device_type, {ip} AS ip_address
            FROM core.refresh_tokens
-           WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
-           FOR UPDATE"#,
+           WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL{for_update}"#,
         ip = state.db.backend().inet_text("ip_address"),
+        for_update = state.db.backend().for_update(),
     );
     let session = tx
         .fetch_optional_row(

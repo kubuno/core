@@ -192,9 +192,13 @@ pub async fn update_group(
 
     let mut tx = audit.begin(&state.db).await?;
 
+    let for_update = tx.backend().for_update();
     let prev_raw = tx
         .fetch_optional_row(
-            "SELECT * FROM core.user_groups WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT * FROM core.user_groups WHERE id = $1{}",
+                for_update
+            ),
             params![group_id],
         )
         .await
@@ -252,9 +256,13 @@ pub async fn delete_group(
     ctx.require(keys::GROUPS_MANAGE)?;
     let mut tx = audit.begin(&state.db).await?;
 
+    let for_update = tx.backend().for_update();
     let group_raw = tx
         .fetch_optional_row(
-            "SELECT * FROM core.user_groups WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT * FROM core.user_groups WHERE id = $1{}",
+                for_update
+            ),
             params![group_id],
         )
         .await

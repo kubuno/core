@@ -241,55 +241,89 @@ pub async fn update_me(
     })?;
 
     // No RETURNING inside a tx (a DbTx cannot read a struct): the row is written
-    // here and read back by id after the commit. `preferences` is bound at both
-    // $3 and $4 because a positional placeholder is never reused across engines.
-    // NOTE: the `::jsonb`/`::text`/`::date`/`::boolean` casts and the `||` JSON
-    // concatenation are PostgreSQL-specific.
-    tx.execute(
-        r#"UPDATE core.users
-           SET display_name = COALESCE($1, display_name),
-               avatar_url   = COALESCE($2, avatar_url),
-               preferences  = CASE WHEN $3::jsonb IS NOT NULL THEN preferences || $4 ELSE preferences END,
-               -- One boolean "did the request carry this field" per column, so
-               -- an explicit null erases and an absent field is left alone.
-               first_name         = CASE WHEN $5::boolean  THEN $6::text  ELSE first_name END,
-               last_name          = CASE WHEN $7::boolean  THEN $8::text  ELSE last_name END,
-               name_pronunciation = CASE WHEN $9::boolean  THEN $10::text ELSE name_pronunciation END,
-               pronouns           = CASE WHEN $11::boolean THEN $12::text ELSE pronouns END,
-               work_location      = CASE WHEN $13::boolean THEN $14::text ELSE work_location END,
-               introduction       = CASE WHEN $15::boolean THEN $16::text ELSE introduction END,
-               gender             = CASE WHEN $17::boolean THEN $18::text ELSE gender END,
-               birthday           = CASE WHEN $19::boolean THEN $20::date ELSE birthday END
-           WHERE id = $21"#,
-        params![
-            dto.display_name.as_deref(),
-            dto.avatar_url.as_deref(),
-            dto.preferences.clone(),
-            dto.preferences.clone(),
-            dto.first_name.is_some(),
-            dto.first_name.clone().flatten(),
-            dto.last_name.is_some(),
-            dto.last_name.clone().flatten(),
-            dto.name_pronunciation.is_some(),
-            dto.name_pronunciation.clone().flatten(),
-            dto.pronouns.is_some(),
-            dto.pronouns.clone().flatten(),
-            dto.work_location.is_some(),
-            dto.work_location.clone().flatten(),
-            dto.introduction.is_some(),
-            dto.introduction.clone().flatten(),
-            dto.gender.is_some(),
-            dto.gender.clone().flatten(),
-            dto.birthday.is_some(),
-            dto.birthday.flatten(),
-            user.id
-        ],
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user.id, "update_me: écriture du profil");
-        AppError::Database(e)
-    })?;
+    // here and read back by id after the commit.
+    //
+    // Built dynamically, one SET assignment per column the request actually
+    // carries, each value bound at its own type. This drops the PostgreSQL-only
+    // `$n::boolean`/`$n::text`/`$n::date` casts, the `CASE WHEN <present>`
+    // presence guards and the `preferences || $n` jsonb concatenation, none of
+    // which MySQL/SQLite share. A `Some(_)` on a nullable text/date field means
+    // the request carried it (its inner value, possibly null, is written — an
+    // explicit erase); an absent field is simply not assigned. When nothing is
+    // carried the UPDATE is skipped rather than emitting an empty `SET`.
+    let mut qb = DbQueryBuilder::new(state.db.backend(), "UPDATE core.users SET ");
+    let mut wrote = false;
+    let mut lead = |qb: &mut DbQueryBuilder, col: &'static str| {
+        qb.push(if wrote { ", " } else { "" });
+        qb.push(col);
+        wrote = true;
+    };
+    // display_name / avatar_url: written only when the request supplies a value
+    // (the old `COALESCE($n, col)` — an absent field kept the stored value).
+    if let Some(v) = dto.display_name.clone() {
+        lead(&mut qb, "display_name = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = dto.avatar_url.clone() {
+        lead(&mut qb, "avatar_url = ");
+        qb.push_bind(v);
+    }
+    // preferences: shallow-merge the patch into the stored document in Rust (the
+    // top-level-key overwrite PostgreSQL's `||` did), then write the whole column.
+    if let Some(patch) = dto.preferences.clone() {
+        let mut merged = user.preferences.clone();
+        match (merged.as_object_mut(), patch.as_object()) {
+            (Some(base), Some(p)) => {
+                for (k, val) in p {
+                    base.insert(k.clone(), val.clone());
+                }
+            }
+            // A non-object stored document or patch cannot be key-merged; the
+            // patch replaces it, as `||` would when either side is not an object.
+            _ => merged = patch,
+        }
+        lead(&mut qb, "preferences = ");
+        qb.push_bind(merged);
+    }
+    if dto.first_name.is_some() {
+        lead(&mut qb, "first_name = ");
+        qb.push_bind(dto.first_name.clone().flatten());
+    }
+    if dto.last_name.is_some() {
+        lead(&mut qb, "last_name = ");
+        qb.push_bind(dto.last_name.clone().flatten());
+    }
+    if dto.name_pronunciation.is_some() {
+        lead(&mut qb, "name_pronunciation = ");
+        qb.push_bind(dto.name_pronunciation.clone().flatten());
+    }
+    if dto.pronouns.is_some() {
+        lead(&mut qb, "pronouns = ");
+        qb.push_bind(dto.pronouns.clone().flatten());
+    }
+    if dto.work_location.is_some() {
+        lead(&mut qb, "work_location = ");
+        qb.push_bind(dto.work_location.clone().flatten());
+    }
+    if dto.introduction.is_some() {
+        lead(&mut qb, "introduction = ");
+        qb.push_bind(dto.introduction.clone().flatten());
+    }
+    if dto.gender.is_some() {
+        lead(&mut qb, "gender = ");
+        qb.push_bind(dto.gender.clone().flatten());
+    }
+    if dto.birthday.is_some() {
+        lead(&mut qb, "birthday = ");
+        qb.push_bind(dto.birthday.flatten());
+    }
+    if wrote {
+        qb.push(" WHERE id = ").push_bind(user.id);
+        qb.tx_execute(&mut tx).await.map_err(|e| {
+            tracing::error!(error = %e, user_id = %user.id, "update_me: écriture du profil");
+            AppError::Database(e)
+        })?;
+    }
 
     // Personal module settings live in two places for compatibility: the
     // `preferences` document the client still writes, and the scoped settings

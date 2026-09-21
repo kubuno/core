@@ -513,9 +513,13 @@ pub async fn update_org_unit(
     // Snapshot taken inside the transaction, row locked: the `before` side of
     // the diff cannot drift between the read and the write. A struct read in a
     // transaction is mapped column by column (a `DbTx` reads rows, not structs).
+    let for_update = tx.backend().for_update();
     let previous_row = tx
         .fetch_optional_row(
-            "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await
@@ -669,9 +673,13 @@ pub async fn delete_org_unit(
     require_manage(&ctx)?;
     let mut tx = audit.begin(&state.db).await?;
 
+    let for_update = tx.backend().for_update();
     let unit_row = tx
         .fetch_optional_row(
-            "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await

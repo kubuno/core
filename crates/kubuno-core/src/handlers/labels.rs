@@ -376,62 +376,129 @@ pub async fn browse(
     // `other_owners` names the members who labelled an element that is not the
     // caller's, so the browser can attribute it.
     //
-    // NOTE: heavily PostgreSQL-only — `core.label_access(...)` (set-returning
-    // function), `ARRAY_AGG`, `FILTER (WHERE ...)` and the array subscript `[1]`
-    // have no portable form. The aggregated id/name arrays are wrapped in
-    // `to_jsonb(...)` so they decode as portable JSON values, and the placeholders
-    // are numbered ascending by the builder (the original reused `$1` and `$4`).
+    // Fetch the visible links flat (newest first) and fold them into one entry
+    // per element in Rust. The original relied on `core.label_access(...)` (a
+    // set-returning function), `ARRAY_AGG ... FILTER (WHERE ...)` and the array
+    // subscript `[1]`, none of which MySQL/SQLite have. The portable
+    // `compat::label_access` derived table replaces the function; the grouping,
+    // "newest snapshot wins", the distinct id/owner sets and the "carries ALL
+    // wanted labels" filter are all done here.
+    //
+    // `label_access` takes `$1..$3` (the caller id, thrice); those three binds
+    // are recorded first (via `bind_only`) so the fragment's placeholders come
+    // ahead of every filter's, keeping the final `$n` sequence ascending.
     let backend = state.db.backend();
+    let la = crate::database::compat::label_access(backend, 1);
     let mut qb = DbQueryBuilder::new(
         backend,
-        "SELECT k.module, k.resource_type, k.resource_id, \
-                MAX(k.title) AS title, MAX(k.href) AS href, \
-                (ARRAY_AGG(k.envelope ORDER BY k.created_at DESC))[1] AS envelope, \
-                to_jsonb(ARRAY_AGG(DISTINCT k.label_id)) AS label_ids, \
-                to_jsonb(ARRAY_AGG(DISTINCT COALESCE(u.display_name, u.username)) \
-                    FILTER (WHERE k.owner_id <> ",
+        "SELECT k.module, k.resource_type, k.resource_id, k.title, k.href, \
+                k.envelope, k.label_id, k.owner_id, \
+                COALESCE(u.display_name, u.username) AS owner_name \
+           FROM core.label_links k \
+           JOIN ",
     );
-    qb.push_bind(user.id);
-    qb.push(
-        ")) AS other_owners \
-         FROM core.label_links k \
-         JOIN core.label_access(",
-    );
-    qb.push_bind(user.id);
-    qb.push(
-        ") a ON a.label_id = k.label_id \
-         JOIN core.users u ON u.id = k.owner_id \
-         WHERE (k.owner_id = ",
-    );
+    // Record $1,$2,$3 (the caller id) for `label_access`, then interpolate it.
+    qb.bind_only(user.id);
+    qb.bind_only(user.id);
+    qb.bind_only(user.id);
+    qb.push(la);
+    qb.push(" a ON a.label_id = k.label_id JOIN core.users u ON u.id = k.owner_id WHERE (k.owner_id = ");
     qb.push_bind(user.id);
     qb.push(" OR a.can_manage)");
     if let Some(m) = q.module.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         qb.push(" AND k.module = ").push_bind(m);
     }
     if let Some(t) = text {
-        qb.push(" AND k.title ILIKE ").push_bind(format!("%{t}%"));
+        let n = qb.bind_only(format!("%{t}%"));
+        qb.push(" AND ").push(backend.ilike("k.title", n));
     }
-    qb.push(" GROUP BY k.module, k.resource_type, k.resource_id");
-    if !wanted.is_empty() {
-        qb.push(" HAVING COUNT(DISTINCT k.label_id) FILTER (WHERE k.label_id");
-        qb.push_in(wanted.iter().copied());
-        qb.push(") = ").push_bind(wanted.len() as i64);
-    }
-    qb.push(" ORDER BY MAX(k.created_at) DESC LIMIT 500");
+    // Newest first so the first row seen for a group is its newest snapshot, and
+    // groups surface in "newest link first" order without a second sort.
+    qb.push(" ORDER BY k.created_at DESC");
 
     let rows = qb
-        .fetch_all_as::<(String, String, String, Option<String>, Option<String>, Option<Value>, Value, Option<Value>)>(
+        .fetch_all_as::<(String, String, String, Option<String>, Option<String>, Option<Value>, Uuid, Uuid, String)>(
             &state.db,
         )
         .await?;
 
-    let items: Vec<Value> = rows
+    // One accumulator per element, in first-seen (i.e. newest-link-first) order.
+    struct Agg {
+        module: String,
+        resource_type: String,
+        resource_id: String,
+        title: Option<String>,
+        href: Option<String>,
+        envelope: Option<Value>,
+        label_ids: Vec<Uuid>,
+        seen_labels: std::collections::HashSet<Uuid>,
+        other_owners: Vec<String>,
+        seen_owners: std::collections::HashSet<String>,
+    }
+    let mut order: Vec<Agg> = Vec::new();
+    let mut index: std::collections::HashMap<(String, String, String), usize> =
+        std::collections::HashMap::new();
+    for (module, resource_type, resource_id, title, href, envelope, label_id, owner_id, owner_name) in
+        rows
+    {
+        let key = (module.clone(), resource_type.clone(), resource_id.clone());
+        let idx = *index.entry(key).or_insert_with(|| {
+            // First row of the group is the newest link: its envelope wins.
+            order.push(Agg {
+                module,
+                resource_type,
+                resource_id,
+                title: title.clone(),
+                href: href.clone(),
+                envelope,
+                label_ids: Vec::new(),
+                seen_labels: std::collections::HashSet::new(),
+                other_owners: Vec::new(),
+                seen_owners: std::collections::HashSet::new(),
+            });
+            order.len() - 1
+        });
+        let agg = &mut order[idx];
+        // MAX(title)/MAX(href): keep the lexicographically largest non-null.
+        if let Some(t) = title {
+            if agg.title.as_deref().is_none_or(|cur| t.as_str() > cur) {
+                agg.title = Some(t);
+            }
+        }
+        if let Some(h) = href {
+            if agg.href.as_deref().is_none_or(|cur| h.as_str() > cur) {
+                agg.href = Some(h);
+            }
+        }
+        if agg.seen_labels.insert(label_id) {
+            agg.label_ids.push(label_id);
+        }
+        if owner_id != user.id && agg.seen_owners.insert(owner_name.clone()) {
+            agg.other_owners.push(owner_name);
+        }
+    }
+
+    // "Element must carry ALL wanted labels": keep a group only when every
+    // requested label is present (matches the old `COUNT(DISTINCT ...) FILTER`
+    // equalling the requested count). Then cap at 500, first-seen order.
+    let items: Vec<Value> = order
         .into_iter()
-        .map(|(module, resource_type, resource_id, title, href, envelope, label_ids, other_owners)| {
+        .filter(|agg| {
+            wanted.is_empty()
+                || wanted
+                    .iter()
+                    .filter(|w| agg.seen_labels.contains(w))
+                    .collect::<std::collections::HashSet<_>>()
+                    .len()
+                    == wanted.len()
+        })
+        .take(500)
+        .map(|agg| {
             json!({
-                "module": module, "resource_type": resource_type, "resource_id": resource_id,
-                "title": title, "href": href, "envelope": envelope, "label_ids": label_ids,
-                "other_owners": other_owners.unwrap_or_else(|| json!([])),
+                "module": agg.module, "resource_type": agg.resource_type,
+                "resource_id": agg.resource_id, "title": agg.title, "href": agg.href,
+                "envelope": agg.envelope, "label_ids": agg.label_ids,
+                "other_owners": agg.other_owners,
             })
         })
         .collect();

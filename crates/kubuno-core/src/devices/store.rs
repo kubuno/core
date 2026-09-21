@@ -485,10 +485,15 @@ pub async fn set_approval(
     actor_label: &str,
     reason: Option<&str>,
 ) -> Result<Approval, AppError> {
-    // NOTE (multi-DBMS): `FOR UPDATE` is not supported on SQLite; flagged.
+    // The row lock is spelled per engine via `Backend::for_update` (empty on
+    // SQLite, whose writes are already serialized).
+    let for_update = tx.backend().for_update();
     let previous: String = tx
         .fetch_optional_scalar::<String>(
-            "SELECT approval FROM core.devices WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT approval FROM core.devices WHERE id = $1{}",
+                for_update
+            ),
             params![device_id],
         )
         .await

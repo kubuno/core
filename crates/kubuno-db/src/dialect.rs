@@ -371,6 +371,22 @@ impl Backend {
         }
     }
 
+    /// A `" FOR UPDATE"` row lock, or the empty string on SQLite, which has no
+    /// such clause. SQLite serializes writes at the database level (a write
+    /// transaction holds an exclusive lock), so the pessimistic lock a
+    /// `SELECT ... FOR UPDATE` takes on PostgreSQL/MySQL is already implied there
+    /// — dropping the clause keeps the same "no concurrent writer sees a stale
+    /// row" guarantee. Where the lock backs a work-queue claim, keep the
+    /// `UPDATE ... WHERE status = 'pending'` + `rows_affected == 1` check as the
+    /// real arbiter; this clause is only an optimization on the engines that have
+    /// it.
+    pub fn for_update(self) -> &'static str {
+        match self {
+            Backend::Postgres | Backend::MySql => " FOR UPDATE",
+            Backend::Sqlite => "",
+        }
+    }
+
     /// The client address as text. PostgreSQL stores it as `inet`, whose
     /// canonical text form is reached through `host(col)::text`; MySQL and SQLite
     /// keep it as a plain string column, so the column is returned unchanged.
@@ -492,6 +508,13 @@ mod tests {
     }
 
     #[test]
+    fn for_update_is_empty_only_on_sqlite() {
+        assert_eq!(Backend::Postgres.for_update(), " FOR UPDATE");
+        assert_eq!(Backend::MySql.for_update(), " FOR UPDATE");
+        assert_eq!(Backend::Sqlite.for_update(), "");
+    }
+
+    #[test]
     fn returning_is_empty_only_on_mysql() {
         for b in ALL {
             assert_eq!(b.returning("id").is_empty(), b == Backend::MySql);
@@ -554,6 +577,7 @@ mod tests {
                 b.interval_before(7, Unit::Day),
                 b.ilike("name", 1),
                 b.string_agg("name", ", "),
+                format!("SELECT 1{}", b.for_update()),
             ];
             for f in fragments {
                 let sql = format!("SELECT {f}");

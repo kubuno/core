@@ -77,14 +77,16 @@ pub struct AuditQuery {
 // the driver one `&'static str` literal: no part of this query text exists
 // before compile time, and every filter below travels as a bind parameter.
 //
-// NOTE: `host(ip_address)::text` is PostgreSQL-only (`inet` type + `host()`
-// function + `::` cast). The `ip_address` column is `inet` on PostgreSQL and
-// plain text elsewhere; on another engine this would select the column directly.
+// The `ip_address` column is `inet` on PostgreSQL (read back through
+// `host(ip_address)::text`) and plain text elsewhere. It is therefore NOT part
+// of this fixed column list: each call site appends `{Backend::inet_text} AS
+// ip_address`, so the accessor is spelled for the running engine. `AuditRow`
+// decodes by name, so appending the column last is harmless.
 macro_rules! select_columns {
     () => {
         r#"
     id, occurred_at, actor_id, actor_label, actor_role, actor_origin, actor_token_id,
-    host(ip_address)::text AS ip_address, user_agent,
+    user_agent,
     action, module_id, target_type, target_id, target_label,
     before, after, outcome, detail,
     reversible, reverts_entry_id, reverted_by_entry_id
@@ -110,7 +112,11 @@ pub async fn list(db: &DbPool, q: &AuditQuery) -> Result<Page, AppError> {
     let backend = db.backend();
     let mut qb = DbQueryBuilder::new(
         backend,
-        concat!("SELECT ", select_columns!(), " FROM core.admin_audit"),
+        format!(
+            "SELECT {cols}, {ip} AS ip_address FROM core.admin_audit",
+            cols = select_columns!().trim(),
+            ip = backend.inet_text("ip_address"),
+        ),
     );
     qb.push(" WHERE 1 = 1");
     if let Some(actor) = q.actor_id {
@@ -194,8 +200,12 @@ pub async fn list(db: &DbPool, q: &AuditQuery) -> Result<Page, AppError> {
 
 /// Fetches a single entry.
 pub async fn get(db: &DbPool, id: i64) -> Result<AuditRow, AppError> {
-    let sql = concat!("SELECT ", select_columns!(), " FROM core.admin_audit WHERE id = $1");
-    db.fetch_optional_as::<AuditRow>(sql, params![id])
+    let sql = format!(
+        "SELECT {cols}, {ip} AS ip_address FROM core.admin_audit WHERE id = $1",
+        cols = select_columns!().trim(),
+        ip = db.backend().inet_text("ip_address"),
+    );
+    db.fetch_optional_as::<AuditRow>(&sql, params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, entry_id = id, "audit: lecture de l'entrée");

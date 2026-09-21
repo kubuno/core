@@ -375,9 +375,13 @@ pub async fn update_role(
 
     let mut tx = audit.begin(&state.db).await?;
 
+    let for_update = tx.backend().for_update();
     let previous_row = tx
         .fetch_optional_row(
-            &format!("SELECT {ROLE_COLS} FROM core.roles WHERE id = $1 FOR UPDATE"),
+            &format!(
+                "SELECT {ROLE_COLS} FROM core.roles WHERE id = $1{}",
+                for_update
+            ),
             params![role_id],
         )
         .await
@@ -534,9 +538,13 @@ pub async fn delete_role(
 
     let mut tx = audit.begin(&state.db).await?;
 
+    let for_update = tx.backend().for_update();
     let role_row = tx
         .fetch_optional_row(
-            &format!("SELECT {ROLE_COLS} FROM core.roles WHERE id = $1 FOR UPDATE"),
+            &format!(
+                "SELECT {ROLE_COLS} FROM core.roles WHERE id = $1{}",
+                for_update
+            ),
             params![role_id],
         )
         .await

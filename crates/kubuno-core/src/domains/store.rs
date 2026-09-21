@@ -318,10 +318,15 @@ pub async fn refresh_mail(db: &DbPool, id: Uuid) -> Result<Domain, AppError> {
 /// One transaction, because the unique index means the intermediate state — two
 /// primaries, or none — cannot be allowed to exist even for a statement.
 pub async fn promote(tx: &mut DbTx, id: Uuid) -> Result<(String, Option<String>), AppError> {
-    // NOTE (multi-DBMS): `FOR UPDATE` is not supported on SQLite; flagged.
+    // The row lock is spelled per engine via `Backend::for_update` (empty on
+    // SQLite, whose writes are already serialized).
+    let for_update = tx.backend().for_update();
     let row = tx
         .fetch_optional_row(
-            "SELECT name, kind, verified_at FROM core.domains WHERE id = $1 FOR UPDATE",
+            &format!(
+                "SELECT name, kind, verified_at FROM core.domains WHERE id = $1{}",
+                for_update
+            ),
             params![id],
         )
         .await
