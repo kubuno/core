@@ -930,7 +930,7 @@ pub async fn unit_overlay(
                  LEFT JOIN core.holidays h ON h.id = p.holiday_id
                  LEFT JOIN core.holiday_calendars hc ON hc.id = h.calendar_id
                 WHERE p.org_unit_id = $1
-                ORDER BY c.name NULLS LAST, h.name"#,
+                ORDER BY (c.name IS NULL), c.name, h.name"#,
             params![unit_id],
         )
         .await

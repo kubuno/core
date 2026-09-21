@@ -221,7 +221,9 @@ fn sort_clause(sort: Option<&str>, dir: Option<&str>) -> String {
         _            => return "ORDER BY created_at DESC, id ASC".into(),
     };
     let direction = if dir == Some("desc") { "DESC" } else { "ASC" };
-    format!("ORDER BY {column} {direction} NULLS LAST, id ASC")
+    // `NULLS LAST` is PostgreSQL-only; `({column} IS NULL)` first sends absences
+    // to the end on the three engines, whichever way the column is read.
+    format!("ORDER BY ({column} IS NULL), {column} {direction}, id ASC")
 }
 
 /// The units the caller asked to look at, single and multi-select merged.
@@ -1855,16 +1857,22 @@ pub async fn list_user_sessions(
     let unit = user_org_unit(&state.db, user_id).await?;
     ctx.require_for_unit(keys::SESSIONS_READ, unit)?;
 
+    // `host(ip_address)::text` is PostgreSQL-only; the dialect layer selects the
+    // plain text column on the other engines.
+    let sessions_sql = format!(
+        r#"SELECT id, user_id, token_hash, device_name, device_type,
+                  {ip} as ip_address, user_agent,
+                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                  family_id, client_type
+           FROM core.refresh_tokens
+           WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
+           ORDER BY last_used_at DESC"#,
+        ip = state.db.backend().inet_text("ip_address"),
+    );
     let sessions = state
         .db
         .fetch_all_as::<crate::models::session::RefreshToken>(
-            r#"SELECT id, user_id, token_hash, device_name, device_type,
-                      host(ip_address)::text as ip_address, user_agent,
-                      expires_at, created_at, last_used_at, revoked_at, revoke_reason,
-                      family_id, client_type
-               FROM core.refresh_tokens
-               WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
-               ORDER BY last_used_at DESC"#,
+            &sessions_sql,
             params![user_id, chrono::Utc::now()],
         )
         .await
@@ -1888,12 +1896,16 @@ pub async fn revoke_user_session(
 
     // `token_hash` is not selected: it is not on the session whitelist and has
     // no business travelling anywhere near the trail.
+    let session_sql = format!(
+        r#"SELECT device_name, device_type, {ip} AS ip_address
+           FROM core.refresh_tokens
+           WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+           FOR UPDATE"#,
+        ip = state.db.backend().inet_text("ip_address"),
+    );
     let session = tx
         .fetch_optional_row(
-            r#"SELECT device_name, device_type, host(ip_address)::text AS ip_address
-               FROM core.refresh_tokens
-               WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
-               FOR UPDATE"#,
+            &session_sql,
             params![session_id, user_id],
         )
         .await

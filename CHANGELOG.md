@@ -22,6 +22,20 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Administration, permissions and settings inheritance work on MySQL/MariaDB
+  and SQLite.** The organisation-unit tree (a unit's sub-units and its parent
+  chain), delegated administration confined to a subtree, the "who is a full
+  administrator" checks, shared labels, and the per-scope settings inheritance
+  (factory default → instance → organisation unit → group → account, locks
+  included) previously ran only on PostgreSQL because they relied on
+  PostgreSQL-only database functions. They now run on all three supported
+  engines, so a delegated administrator sees the right accounts, a scoped
+  setting resolves to the right value, and the account directory, session list
+  and administrative pages load whichever engine the instance uses. When an
+  organisation unit, group or account is deleted, the setting overrides that
+  belonged to it are removed on every engine, and a setting changed in the admin
+  console is reflected everywhere it is read.
+
 - **Settings and other reserved-word columns work on MySQL/MariaDB.** The
   database session now quotes identifiers the same way as PostgreSQL and SQLite,
   so tables and columns whose names are MySQL reserved words (such as the

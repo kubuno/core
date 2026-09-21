@@ -371,6 +371,16 @@ impl Backend {
         }
     }
 
+    /// The client address as text. PostgreSQL stores it as `inet`, whose
+    /// canonical text form is reached through `host(col)::text`; MySQL and SQLite
+    /// keep it as a plain string column, so the column is returned unchanged.
+    pub fn inet_text(self, col: &'static str) -> String {
+        match self {
+            Backend::Postgres => format!("host({col})::text"),
+            Backend::MySql | Backend::Sqlite => col.to_string(),
+        }
+    }
+
     /// Boolean OR over a group — PostgreSQL's `bool_or`. MySQL and SQLite store
     /// booleans as `0`/`1` and have no `bool_or`, but `MAX` over those integers
     /// is the same fold and decodes back to `bool`. PostgreSQL rejects

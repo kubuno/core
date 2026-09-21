@@ -888,10 +888,12 @@ mod tests {
     /// stopping at the ceiling would report the ceiling and accept the write.
     #[test]
     fn the_walk_limit_sees_one_level_past_the_ceiling() {
-        assert!(
-            crate::database::compat::MAX_TREE_DEPTH > MAX_ORG_UNIT_DEPTH,
-            "le garde-fou de la marche doit dépasser le plafond pour voir une violation"
-        );
+        const {
+            assert!(
+                crate::database::compat::MAX_TREE_DEPTH > MAX_ORG_UNIT_DEPTH,
+                "le garde-fou de la marche doit dépasser le plafond pour voir une violation"
+            )
+        };
     }
 
     // ── The double option, which is the whole point of the update DTO ────────

@@ -463,17 +463,22 @@ pub async fn list_sessions(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // NOTE: `host(ip_address)::text` is PostgreSQL's inet accessor + cast.
+    // `host(ip_address)::text` is PostgreSQL-only (inet accessor + cast); the
+    // dialect layer selects the plain text column on the other engines.
+    let sql = format!(
+        r#"SELECT id, user_id, token_hash, device_name, device_type,
+                  {ip} as ip_address, user_agent,
+                  expires_at, created_at, last_used_at, revoked_at, revoke_reason,
+                  family_id, client_type
+           FROM core.refresh_tokens
+           WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
+           ORDER BY last_used_at DESC"#,
+        ip = state.db.backend().inet_text("ip_address"),
+    );
     let sessions = state
         .db
         .fetch_all_as::<RefreshToken>(
-            r#"SELECT id, user_id, token_hash, device_name, device_type,
-                      host(ip_address)::text as ip_address, user_agent,
-                      expires_at, created_at, last_used_at, revoked_at, revoke_reason,
-                      family_id, client_type
-               FROM core.refresh_tokens
-               WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
-               ORDER BY last_used_at DESC"#,
+            &sql,
             params![user.id, chrono::Utc::now()],
         )
         .await?;
@@ -643,7 +648,7 @@ pub async fn search_users(
         // on PostgreSQL); each pattern is bound once, in ascending order.
         let n1 = qb.bind_only(pattern.clone());
         let n2 = qb.bind_only(pattern);
-        qb.push(&format!(
+        qb.push(format!(
             " AND ({} OR {})",
             backend.ilike("username", n1),
             backend.ilike("display_name", n2)
@@ -654,7 +659,7 @@ pub async fn search_users(
             Some(a) => {
                 // Portable subtree membership via the recursive CTE.
                 let n = qb.bind_only(a);
-                qb.push(&format!(
+                qb.push(format!(
                     " AND org_unit_id IN (SELECT d.id FROM {} d)",
                     crate::database::compat::org_unit_descendants(n)
                 ));
@@ -1264,23 +1269,27 @@ pub async fn internal_list_users(
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
     let query = q.q.as_deref().unwrap_or("").trim().to_string();
 
-    // NOTE: `email::text`, `ILIKE` and `NULLS LAST` are PostgreSQL-only; the
-    // search predicate is included only when there is text to match.
+    // Case-insensitive match through the dialect layer (`ILIKE`/`email::text`
+    // and `NULLS LAST` are PostgreSQL-only); the predicate is present only when
+    // there is text to match.
+    let backend = state.db.backend();
     let mut qb = DbQueryBuilder::new(
-        state.db.backend(),
+        backend,
         concat!("SELECT ", directory_columns!(), " FROM core.users WHERE is_active = TRUE"),
     );
     if !query.is_empty() {
         let pattern = format!("%{query}%");
-        qb.push(" AND (username ILIKE ")
-            .push_bind(pattern.clone())
-            .push(" OR display_name ILIKE ")
-            .push_bind(pattern.clone())
-            .push(" OR email::text ILIKE ")
-            .push_bind(pattern)
-            .push(")");
+        let n1 = qb.bind_only(pattern.clone());
+        let n2 = qb.bind_only(pattern.clone());
+        let n3 = qb.bind_only(pattern);
+        qb.push(format!(
+            " AND ({} OR {} OR {})",
+            backend.ilike("username", n1),
+            backend.ilike("display_name", n2),
+            backend.ilike("email", n3)
+        ));
     }
-    qb.push(" ORDER BY display_name ASC NULLS LAST LIMIT ").push_bind(limit);
+    qb.push(" ORDER BY (display_name IS NULL), display_name ASC LIMIT ").push_bind(limit);
 
     let rows = qb
         .fetch_all_as::<(uuid::Uuid, String, Option<String>, Option<String>, String)>(&state.db)

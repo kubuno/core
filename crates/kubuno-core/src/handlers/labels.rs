@@ -511,7 +511,7 @@ pub async fn list_shares(
                LEFT JOIN core.users u       ON u.id = s.user_id
                LEFT JOIN core.user_groups g ON g.id = s.group_id
                WHERE s.label_id = $1
-               ORDER BY g.name NULLS LAST, COALESCE(u.display_name, u.username)"#,
+               ORDER BY (g.name IS NULL), g.name, COALESCE(u.display_name, u.username)"#,
             params![id],
         )
         .await?;

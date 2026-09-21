@@ -493,13 +493,17 @@ pub async fn consumers(
         _ => {}
     }
     // NULLIF guards the division: an account with no quota has no percentage, and
-    // it sinks rather than sorting as infinity. NOTE: `NULLS LAST` has no MySQL
-    // equivalent (flagged); the width cast is written per-engine.
+    // it sinks rather than sorting as infinity. `NULLS LAST` is PostgreSQL-only,
+    // so absences are sent to the end with `(expr IS NULL)` first; the width cast
+    // is written per-engine.
     let order_sql = match q.sort.as_deref() {
-        Some("percent") => format!(
-            "({} / NULLIF(u.quota_bytes, 0)) DESC NULLS LAST, u.used_bytes DESC",
-            backend.cast("u.used_bytes", SqlType::Double)
-        ),
+        Some("percent") => {
+            let pct = format!(
+                "({} / NULLIF(u.quota_bytes, 0))",
+                backend.cast("u.used_bytes", SqlType::Double)
+            );
+            format!("({pct} IS NULL), {pct} DESC, u.used_bytes DESC")
+        }
         _ => "u.used_bytes DESC".to_string(),
     };
     qb.push(" ORDER BY ").push(&order_sql);
