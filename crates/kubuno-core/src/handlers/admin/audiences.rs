@@ -128,6 +128,46 @@ struct AudienceListRow {
     applied_to:   i64,
 }
 
+/// The audiences list read.
+///
+/// Portable across the three engines: `LEFT JOIN LATERAL` exists on neither MySQL
+/// nor SQLite, so each per-audience figure is a correlated scalar subquery
+/// instead — `COUNT(*)`/`COUNT(DISTINCT …)` already decode as `i64`, so the old
+/// `::bigint` casts are gone, and `COUNT` returns `0` for no rows, so the
+/// `COALESCE` wrappers went with them. Public so the portability test exercises
+/// the exact query the handler runs on each engine.
+pub const LIST_SQL: &str = r#"
+        SELECT a.id,
+               a.name,
+               a.description,
+               a.is_everyone,
+               a.created_at,
+               a.updated_at,
+               (SELECT COUNT(*) FROM core.target_audience_members tm
+                 WHERE tm.audience_id = a.id)                       AS member_count,
+               CASE WHEN a.is_everyone
+                    THEN (SELECT COUNT(*) FROM core.users WHERE is_active)
+                    -- DISTINCT because a person reachable through two member
+                    -- groups is still one person: a reach that double-counted
+                    -- would overstate exactly the exposure this figure reveals.
+                    ELSE (SELECT COUNT(DISTINCT u.id)
+                            FROM core.target_audience_members tm
+                            LEFT JOIN core.user_group_members gm
+                                   ON tm.member_type = 'group' AND gm.group_id = tm.member_id
+                            JOIN core.users u
+                                   ON u.id = CASE tm.member_type
+                                               WHEN 'user'  THEN tm.member_id
+                                               WHEN 'group' THEN gm.user_id
+                                             END
+                           WHERE tm.audience_id = a.id
+                             AND u.is_active)
+               END                                                  AS reach,
+               (SELECT COUNT(*) FROM core.target_audience_policies tp
+                 WHERE tp.audience_id = a.id)                       AS applied_to
+          FROM core.target_audiences a
+         ORDER BY a.is_everyone DESC, LOWER(a.name)
+        "#;
+
 pub async fn list_audiences(
     State(state): State<AppState>,
     _admin: AdminUser,
@@ -135,54 +175,10 @@ pub async fn list_audiences(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::AUDIENCES_READ)?;
 
-    // NOTE (multi-engine): this read relies on `LEFT JOIN LATERAL`,
-    // `COUNT(DISTINCT …)` and `::bigint` casts, which are PostgreSQL-shaped.
-    // Flagged for the dialect layer; the API surface is ported.
     let rows = state
         .db
         .fetch_all_as::<AudienceListRow>(
-            r#"
-        SELECT a.id,
-               a.name,
-               a.description,
-               a.is_everyone,
-               a.created_at,
-               a.updated_at,
-               COALESCE(m.member_count, 0)::bigint  AS member_count,
-               CASE WHEN a.is_everyone
-                    THEN (SELECT COUNT(*) FROM core.users WHERE is_active)
-                    ELSE COALESCE(r.reach, 0)
-               END::bigint                          AS reach,
-               COALESCE(p.applied_to, 0)::bigint    AS applied_to
-          FROM core.target_audiences a
-          LEFT JOIN LATERAL (
-              SELECT COUNT(*) AS member_count
-                FROM core.target_audience_members tm
-               WHERE tm.audience_id = a.id
-          ) m ON TRUE
-          LEFT JOIN LATERAL (
-              -- DISTINCT because a person reachable through two member groups is
-              -- still one person: a reach that double-counted would overstate
-              -- exactly the exposure this figure exists to reveal.
-              SELECT COUNT(DISTINCT u.id) AS reach
-                FROM core.target_audience_members tm
-                LEFT JOIN core.user_group_members gm
-                       ON tm.member_type = 'group' AND gm.group_id = tm.member_id
-                JOIN core.users u
-                       ON u.id = CASE tm.member_type
-                                   WHEN 'user'  THEN tm.member_id
-                                   WHEN 'group' THEN gm.user_id
-                                 END
-               WHERE tm.audience_id = a.id
-                 AND u.is_active
-          ) r ON TRUE
-          LEFT JOIN LATERAL (
-              SELECT COUNT(*) AS applied_to
-                FROM core.target_audience_policies tp
-               WHERE tp.audience_id = a.id
-          ) p ON TRUE
-         ORDER BY a.is_everyone DESC, LOWER(a.name)
-        "#,
+            LIST_SQL,
             params![],
         )
         .await
@@ -262,8 +258,9 @@ pub async fn get_audience(
     // rendered them, so it read "entrée(s), compte(s) atteint(s)" with no
     // numbers at all — the kind of defect that survives because the sentence
     // still looks like a sentence.
-    // NOTE (multi-engine): PostgreSQL-shaped (`LEFT JOIN LATERAL`,
-    // `COUNT(DISTINCT …)`, `::bigint`). Flagged; the API surface is ported.
+    // Portable across the three engines, exactly as the list above: the two
+    // figures are correlated scalar subqueries rather than `LEFT JOIN LATERAL`,
+    // and `COUNT` decodes as `i64` so no `::bigint` cast is needed.
     let audience = state
         .db
         .fetch_optional_as::<AudienceHeaderRow>(
@@ -274,32 +271,25 @@ pub async fn get_audience(
                a.is_everyone,
                a.created_at,
                a.updated_at,
-               COALESCE(m.member_count, 0)::bigint AS member_count,
+               (SELECT COUNT(*) FROM core.target_audience_members tm
+                 WHERE tm.audience_id = a.id)                       AS member_count,
                CASE WHEN a.is_everyone
                     THEN (SELECT COUNT(*) FROM core.users WHERE is_active)
-                    ELSE COALESCE(r.reach, 0)
-               END::bigint                         AS reach
+                    -- DISTINCT for the same reason as in the list: somebody
+                    -- reachable through two member groups is still one person.
+                    ELSE (SELECT COUNT(DISTINCT u.id)
+                            FROM core.target_audience_members tm
+                            LEFT JOIN core.user_group_members gm
+                                   ON tm.member_type = 'group' AND gm.group_id = tm.member_id
+                            JOIN core.users u
+                                   ON u.id = CASE tm.member_type
+                                               WHEN 'user'  THEN tm.member_id
+                                               WHEN 'group' THEN gm.user_id
+                                             END
+                           WHERE tm.audience_id = a.id
+                             AND u.is_active)
+               END                                                  AS reach
           FROM core.target_audiences a
-          LEFT JOIN LATERAL (
-              SELECT COUNT(*) AS member_count
-                FROM core.target_audience_members tm
-               WHERE tm.audience_id = a.id
-          ) m ON TRUE
-          LEFT JOIN LATERAL (
-              -- DISTINCT for the same reason as in the list: somebody reachable
-              -- through two member groups is still one person.
-              SELECT COUNT(DISTINCT u.id) AS reach
-                FROM core.target_audience_members tm
-                LEFT JOIN core.user_group_members gm
-                       ON tm.member_type = 'group' AND gm.group_id = tm.member_id
-                JOIN core.users u
-                       ON u.id = CASE tm.member_type
-                                   WHEN 'user'  THEN tm.member_id
-                                   WHEN 'group' THEN gm.user_id
-                                 END
-               WHERE tm.audience_id = a.id
-                 AND u.is_active
-          ) r ON TRUE
          WHERE a.id = $1
         "#,
             params![id],
@@ -311,7 +301,8 @@ pub async fn get_audience(
         })?
         .ok_or_else(|| AppError::NotFound("Audience introuvable".into()))?;
 
-    // NOTE (multi-engine): the `::bigint` cast is PostgreSQL-shaped. Flagged.
+    // Portable: the `CASE` yields a `COUNT` for a group and `NULL` for a user,
+    // decoded as `Option<i64>` on every engine, so the `::bigint` cast is gone.
     let member_rows = state
         .db
         .fetch_all_as::<MemberRow>(
@@ -326,7 +317,7 @@ pub async fn get_audience(
                             FROM core.user_group_members gm
                             JOIN core.users gu ON gu.id = gm.user_id AND gu.is_active
                            WHERE gm.group_id = tm.member_id)
-               END::bigint                                           AS group_reach,
+               END                                                   AS group_reach,
                (g.id IS NULL AND u.id IS NULL)                       AS is_dangling
           FROM core.target_audience_members tm
           LEFT JOIN core.user_groups g ON tm.member_type = 'group' AND g.id = tm.member_id

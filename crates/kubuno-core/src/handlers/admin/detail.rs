@@ -52,28 +52,55 @@ use crate::state::AppState;
 
 use super::period::{Counted, Window};
 
-/// A row of a detail table, every cell already projected to text in SQL.
+/// A row of a detail table: the event instant, then every other cell projected
+/// to text in SQL.
 ///
-/// The column count is dynamic (it depends on the catalogue), so the row cannot
-/// be a fixed struct; this newtype collects every column positionally as
-/// `Option<String>`. One generic `FromRow` covers the three engines, which is
-/// what `fetch_all_as` requires — the pool exposes no positional multi-row read
-/// otherwise.
-struct TextCells(Vec<Option<String>>);
+/// The instant is decoded as a true `DateTime<Utc>` (column 0) so it can be
+/// formatted in Rust — portably, in place of PostgreSQL's `to_char(… AT TIME
+/// ZONE 'UTC', …)`. The remaining column count is dynamic (it depends on the
+/// catalogue), so those cells are collected positionally as `Option<String>`.
+/// One generic `FromRow` covers the three engines, which is what `fetch_all_as`
+/// requires — the pool exposes no positional multi-row read otherwise.
+struct DetailRow {
+    when: chrono::DateTime<chrono::Utc>,
+    cells: Vec<Option<String>>,
+}
 
-impl<'r, R> sqlx::FromRow<'r, R> for TextCells
+impl<'r, R> sqlx::FromRow<'r, R> for DetailRow
 where
     R: Row,
     usize: sqlx::ColumnIndex<R>,
     Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    chrono::DateTime<chrono::Utc>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
 {
     fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        let when = row.try_get::<chrono::DateTime<chrono::Utc>, _>(0)?;
         let width = row.columns().len();
-        let mut cells = Vec::with_capacity(width);
-        for index in 0..width {
+        let mut cells = Vec::with_capacity(width.saturating_sub(1));
+        for index in 1..width {
             cells.push(row.try_get::<Option<String>, _>(index)?);
         }
-        Ok(TextCells(cells))
+        Ok(DetailRow { when, cells })
+    }
+}
+
+impl DetailRow {
+    /// The row as the console reads it: the instant as an ISO-8601 `…Z` string
+    /// (the exact shape the old `to_char` produced), then every other cell
+    /// clipped to [`MAX_CELL`] characters — the Rust stand-in for `left(…, N)`.
+    fn into_cells(self) -> Vec<Option<String>> {
+        let mut out = Vec::with_capacity(self.cells.len() + 1);
+        out.push(Some(self.when.format("%Y-%m-%dT%H:%M:%SZ").to_string()));
+        for cell in self.cells {
+            out.push(cell.map(|s| {
+                if s.chars().count() > MAX_CELL as usize {
+                    s.chars().take(MAX_CELL as usize).collect()
+                } else {
+                    s
+                }
+            }));
+        }
+        out
     }
 }
 
@@ -124,25 +151,37 @@ pub struct DetailColumn {
     /// nothing here is ever assembled from a request.
     #[serde(skip)]
     expr: &'static str,
+    /// Whether `expr` is a client-address column stored as PostgreSQL `inet` and
+    /// read back through the dialect's `inet_text` — its canonical text on
+    /// PostgreSQL, the plain column on MySQL/SQLite. Kept out of the wire form.
+    #[serde(skip)]
+    inet: bool,
 }
 
 impl DetailColumn {
     /// A human string — a name, a title, a reason.
     const fn text(id: &'static str, expr: &'static str) -> Self {
-        Self { id, kind: "text", expr }
+        Self { id, kind: "text", expr, inet: false }
     }
 
     /// An identifier printed as it is stored — an action, a severity, a country
     /// code. Never translated by guesswork: the console prints what the row says.
     const fn code(id: &'static str, expr: &'static str) -> Self {
-        Self { id, kind: "code", expr }
+        Self { id, kind: "code", expr, inet: false }
+    }
+
+    /// A client address column (`inet` on PostgreSQL). `expr` is the raw column,
+    /// read back portably through [`read`]'s `inet_text`, not wrapped in
+    /// `host(…)` — which exists on PostgreSQL only.
+    const fn inet(id: &'static str, expr: &'static str) -> Self {
+        Self { id, kind: "code", expr, inet: true }
     }
 
     /// The window's own timestamp column, synthesised by [`read`] as the first
     /// column of every table. It carries no expression of its own because the
     /// column it reads is [`Counted::time`], which varies by source.
     const fn when() -> Self {
-        Self { id: "when", kind: "instant", expr: "" }
+        Self { id: "when", kind: "instant", expr: "", inet: false }
     }
 }
 
@@ -168,7 +207,7 @@ pub const AUDIT: &[DetailColumn] = &[
     DetailColumn::text("target", "t.target_label"),
     DetailColumn::code("outcome", "t.outcome"),
     DetailColumn::text("reason", "t.detail"),
-    DetailColumn::code("ip", "host(t.ip_address)"),
+    DetailColumn::inet("ip", "t.ip_address"),
 ];
 
 /// `core.device_events` — the device timelines (migration 000065).
@@ -198,7 +237,7 @@ pub const DEVICE: &[DetailColumn] = &[
             FROM core.devices d WHERE d.id = t.device_id)",
     ),
     DetailColumn::code("country", "t.country"),
-    DetailColumn::code("ip", "host(t.ip_address)"),
+    DetailColumn::inet("ip", "t.ip_address"),
     DetailColumn::text("detail", "t.detail"),
 ];
 
@@ -319,19 +358,26 @@ pub async fn read(
     columns: &'static [DetailColumn],
     label: &str,
 ) -> Result<DetailTable, AppError> {
-    // The instant, as a true instant: the console spells it in the zone the
-    // document names, exactly like the window bounds three lines above it.
-    let mut select = format!(
-        "to_char(t.{time} AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')",
-        time = what.time,
-    );
+    // Portable across the three engines. Two constructs were PostgreSQL-only and
+    // are gone:
+    //   * `to_char(t.{time} AT TIME ZONE 'UTC', …)` — the instant is read as a
+    //     real `DateTime<Utc>` (first column) and formatted in Rust below.
+    //   * `left((expr)::text, N)` — each cell is cast to text through the dialect
+    //     (`::text` off PostgreSQL becomes `CAST(… AS CHAR/TEXT)`) and clipped in
+    //     Rust, so no engine-specific `left`/`substr` is needed.
+    // A client-address column is read through `inet_text` rather than `host(…)`,
+    // which does not exist off PostgreSQL.
+    let backend = db.backend();
+    let mut select = format!("t.{time}", time = what.time);
     for column in columns {
-        // `::text` so the reader can decode every cell the same way, and
-        // `left(…)` so no single cell can run away with the response.
-        select.push_str(&format!(
-            ", left(({expr})::text, {MAX_CELL})",
-            expr = column.expr,
-        ));
+        let cell = if column.inet {
+            // `inet_text` already yields text on every engine.
+            backend.inet_text(column.expr)
+        } else {
+            backend.cast(column.expr, kubuno_db::dialect::SqlType::Text)
+        };
+        select.push_str(", ");
+        select.push_str(&cell);
     }
 
     let sql = format!(
@@ -350,10 +396,10 @@ pub async fn read(
 
     // Safe: every fragment is a `&'static str` written in source — `Counted`'s
     // table, time column and filter, and each `DetailColumn::expr` (a private
-    // field only the const catalogues below set). The ceiling and cell clip are
-    // integer constants; the window bounds are bound parameters.
+    // field only the const catalogues below set). The ceiling is an integer
+    // constant; the window bounds are bound parameters.
     let fetched = db
-        .fetch_all_as::<TextCells>(&sql, params![win.from, win.to])
+        .fetch_all_as::<DetailRow>(&sql, params![win.from, win.to])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, panel = %label, "tableau de bord : détail");
@@ -365,7 +411,7 @@ pub async fn read(
     let rows: Vec<Vec<Option<String>>> = fetched
         .into_iter()
         .take(DETAIL_LIMIT as usize)
-        .map(|cells| cells.0)
+        .map(DetailRow::into_cells)
         .collect();
 
     let mut all = Vec::with_capacity(width);

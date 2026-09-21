@@ -25,26 +25,26 @@ use crate::errors::AppError;
 
 /// Columns every read shares, account count included.
 ///
-/// A macro rather than a `const` so call sites splice it with `concat!` and end
-/// up with one `&'static str` literal: the query text is fixed at compile time,
-/// which the driver accepts without any audit escape hatch.
-//
-// NOTE (multi-DBMS): the account-count subquery uses PostgreSQL's
-// `SPLIT_PART(u.email::text, '@', 2)` (and the `::text`/`::bigint` casts). It is
-// kept verbatim and flagged in the port report — splitting a string has no
-// single portable spelling across the three engines.
-macro_rules! select_domains {
-    () => {
+/// Built per engine because the account-count subquery splits an address on its
+/// `@`, which has no single spelling across the three engines: the portable
+/// [`kubuno_db::dialect::Backend::email_domain`] produces `SPLIT_PART` on
+/// PostgreSQL, `SUBSTRING_INDEX` on MySQL and `substr`/`instr` on SQLite. The
+/// `COUNT(*)` scalar subquery already decodes as `i64` on every engine, so the
+/// old `::bigint` cast is dropped. Every other token is a fixed identifier, so
+/// the assembled text still carries no request data.
+fn select_domains(backend: kubuno_db::dialect::Backend, suffix: &str) -> String {
+    let domain = backend.email_domain("u.email");
+    format!(
         r#"
     SELECT d.id, d.name, d.kind, d.parent_id, p.name AS parent_name,
            d.verify_token, d.verified_at, d.last_checked_at, d.last_error,
            d.mx_hosts, d.has_spf, d.has_dmarc, d.mail_checked_at, d.created_at,
            (SELECT COUNT(*) FROM core.users u
-             WHERE LOWER(SPLIT_PART(u.email::text, '@', 2)) = d.name) AS account_count
+             WHERE LOWER({domain}) = d.name) AS account_count
       FROM core.domains d
       LEFT JOIN core.domains p ON p.id = d.parent_id
-"#
-    };
+{suffix}"#
+    )
 }
 
 /// The raw columns of a [`select_domains`] read. `Domain` carries a parsed
@@ -93,14 +93,12 @@ impl DomainRow {
 /// Every domain, the primary first, then aliases grouped under the domain they
 /// serve — the order the console renders without having to sort.
 pub async fn list(db: &DbPool) -> Result<Vec<Domain>, AppError> {
+    let sql = select_domains(
+        db.backend(),
+        " ORDER BY (d.kind = 'primary') DESC, COALESCE(p.name, d.name), d.kind, d.name",
+    );
     let rows = db
-        .fetch_all_as::<DomainRow>(
-            concat!(
-                select_domains!(),
-                " ORDER BY (d.kind = 'primary') DESC, COALESCE(p.name, d.name), d.kind, d.name"
-            ),
-            params![],
-        )
+        .fetch_all_as::<DomainRow>(&sql, params![])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "domains: liste");
@@ -110,7 +108,8 @@ pub async fn list(db: &DbPool) -> Result<Vec<Domain>, AppError> {
 }
 
 pub async fn get(db: &DbPool, id: Uuid) -> Result<Domain, AppError> {
-    db.fetch_optional_as::<DomainRow>(concat!(select_domains!(), " WHERE d.id = $1"), params![id])
+    let sql = select_domains(db.backend(), " WHERE d.id = $1");
+    db.fetch_optional_as::<DomainRow>(&sql, params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "domains: lecture");

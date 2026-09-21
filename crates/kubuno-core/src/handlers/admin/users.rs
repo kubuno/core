@@ -1625,6 +1625,52 @@ pub async fn purge_user(
     Ok(Json(json!({ "message": "Compte supprimé définitivement" })))
 }
 
+/// One zero-filled daily series over the last `days` days, up to today in UTC.
+///
+/// The portable replacement for the old `generate_series` + `to_char` +
+/// `::date`/`::bigint` query: the `days` day buckets are generated in Rust, the
+/// rows falling in the window are read once and folded into their UTC calendar
+/// day, and every day with no row stays at zero. `table` and `date_col` are
+/// `&'static str` written in source (no request data spliced); the only bound
+/// value is the window's lower bound.
+///
+/// Public so the portability test can exercise it directly on each engine; the
+/// only caller in production is [`admin_stats`].
+pub async fn daily_series(
+    db: &DbPool,
+    table: &'static str,
+    date_col: &'static str,
+    days: i64,
+) -> Result<Vec<(String, i64)>, AppError> {
+    use std::collections::HashMap;
+
+    let today = chrono::Utc::now().date_naive();
+    let start = today - chrono::Duration::days((days - 1).max(0));
+    let start_ts = start.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc();
+
+    let sql = format!("SELECT t.{date_col} FROM {table} t WHERE t.{date_col} >= $1");
+    let rows: Vec<(chrono::DateTime<chrono::Utc>,)> = db
+        .fetch_all_as::<(chrono::DateTime<chrono::Utc>,)>(&sql, params![start_ts])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, table, "admin_stats: daily series");
+            AppError::Database(e)
+        })?;
+
+    let mut counts: HashMap<chrono::NaiveDate, i64> = HashMap::new();
+    for (ts,) in rows {
+        *counts.entry(ts.date_naive()).or_default() += 1;
+    }
+
+    let mut out = Vec::with_capacity(days.max(0) as usize);
+    let mut cur = start;
+    while cur <= today {
+        out.push((cur.format("%Y-%m-%d").to_string(), counts.get(&cur).copied().unwrap_or(0)));
+        cur += chrono::Duration::days(1);
+    }
+    Ok(out)
+}
+
 pub async fn admin_stats(
     State(state): State<AppState>,
     _admin: AdminUser,
@@ -1792,37 +1838,17 @@ pub async fn admin_stats(
         .await
         .map_err(|e| { tracing::error!(error = %e, "admin_stats: top_storage"); AppError::Database(e) })?;
 
-    // Daily series (zero-filled via generate_series). PostgreSQL-only: the two
-    // spliced names are `&'static str`, so only a literal written below can reach
-    // the statement; `days` is an integer.
-    let daily = |table: &'static str, date_col: &'static str, days: i64| -> String {
-        format!(
-            "SELECT to_char(d::date, 'YYYY-MM-DD'), COALESCE(c.cnt, 0)::bigint \
-             FROM generate_series((CURRENT_DATE - INTERVAL '{n} days')::date, CURRENT_DATE, INTERVAL '1 day') AS d \
-             LEFT JOIN (SELECT {col}::date AS day, COUNT(*) cnt FROM {tbl} \
-                        WHERE {col} > CURRENT_DATE - INTERVAL '{n1} days' GROUP BY 1) c ON c.day = d::date \
-             ORDER BY d",
-            n = days - 1, n1 = days, col = date_col, tbl = table,
-        )
-    };
-
-    let signups_daily: Vec<(String, i64)> = state
-        .db
-        .fetch_all_as::<(String, i64)>(&daily("core.users", "created_at", 14), params![])
+    // Daily series, zero-filled. The date buckets are generated in Rust (like
+    // `admin::period` does) instead of through PostgreSQL's `generate_series` +
+    // `to_char` + `::date`/`::bigint`, none of which MySQL and SQLite share:
+    // `daily_series` reads the raw timestamps in its window and folds each into
+    // its UTC calendar day, leaving every empty day at zero.
+    let signups_daily = daily_series(&state.db, "core.users", "created_at", 14).await?;
+    let logins_daily = daily_series(&state.db, "core.refresh_tokens", "created_at", 14).await?;
+    // event_log may be empty / absent depending on the instance.
+    let events_daily = daily_series(&state.db, "core.event_log", "created_at", 7)
         .await
-        .map_err(|e| { tracing::error!(error = %e, "admin_stats: signups_daily"); AppError::Database(e) })?;
-
-    let logins_daily: Vec<(String, i64)> = state
-        .db
-        .fetch_all_as::<(String, i64)>(&daily("core.refresh_tokens", "created_at", 14), params![])
-        .await
-        .map_err(|e| { tracing::error!(error = %e, "admin_stats: logins_daily"); AppError::Database(e) })?;
-
-    let events_daily: Vec<(String, i64)> = state
-        .db
-        .fetch_all_as::<(String, i64)>(&daily("core.event_log", "created_at", 7), params![])
-        .await
-        .unwrap_or_default(); // event_log may be empty / absent depending on the instance.
+        .unwrap_or_default();
 
     let kv = |rows: Vec<(String, i64)>| -> Vec<serde_json::Value> {
         rows.into_iter().map(|(k, v)| json!({ "key": k, "count": v })).collect()

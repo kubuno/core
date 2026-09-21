@@ -964,6 +964,248 @@ async fn exercise_ported_paths(pool: &DbPool) {
             "own label link is visible through the browse access query"
         );
     }
+
+    // ── domains: per-domain account count via the portable email split ──
+    {
+        let duid = Uuid::new_v4();
+        let dun = format!("d{}", &duid.simple().to_string()[..12]);
+        pool.execute(
+            "INSERT INTO core.users (id, email, username, password_hash, role, preferences, org_unit_id) \
+             VALUES ($1, $2, $3, 'x', 'user', $4, $5)",
+            params![
+                duid,
+                format!("{dun}@dom-probe.test"),
+                dun.clone(),
+                serde_json::json!({}),
+                ou
+            ],
+        )
+        .await
+        .expect("insert domain-probe user");
+
+        let did = Uuid::new_v4();
+        pool.execute(
+            "INSERT INTO core.domains (id, name, kind, verify_token, created_by) \
+             VALUES ($1, 'dom-probe.test', 'secondary', $2, $3)",
+            params![did, format!("tok{}", did.simple()), duid],
+        )
+        .await
+        .expect("insert probe domain");
+
+        let domains = kubuno_core::domains::store::list(pool)
+            .await
+            .expect("list domains with account counts");
+        let probe = domains
+            .iter()
+            .find(|d| d.name == "dom-probe.test")
+            .expect("the probe domain is listed");
+        assert_eq!(
+            probe.account_count, 1,
+            "the one account at dom-probe.test is counted through email_domain()"
+        );
+    }
+
+    // ── admin stats: the daily sign-up series, buckets generated in Rust ──
+    {
+        let series = kubuno_core::handlers::admin::users::daily_series(
+            pool,
+            "core.users",
+            "created_at",
+            14,
+        )
+        .await
+        .expect("daily sign-up series");
+        assert_eq!(series.len(), 14, "one zero-filled bucket per day over the window");
+        let total: i64 = series.iter().map(|(_, c)| *c).sum();
+        assert!(total >= 1, "the accounts just inserted fall in today's bucket");
+        let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+        assert_eq!(
+            series.last().map(|(d, _)| d.as_str()),
+            Some(today.as_str()),
+            "the series ends on today's UTC calendar day"
+        );
+    }
+
+    // ── audit drill-down: portable cell truncation + instant + inet_text ──
+    {
+        // `core.admin_audit` is append-only (a trigger forbids UPDATE on
+        // PostgreSQL), so the oversized reason is written at append time: 300
+        // characters, past the 200-char clip the reader applies in Rust.
+        let long = "z".repeat(300);
+        let ctx = kubuno_core::audit::model::AuditContext::system("Portability drill-down");
+        let atx = ctx.begin(pool).await.expect("begin drill-down audit tx");
+        atx.commit(
+            kubuno_core::audit::model::AuditEntry::new("core.test.detail")
+                .module("core")
+                .detail(long),
+        )
+        .await
+        .expect("append an audit row with an oversized reason");
+
+        let columns = kubuno_core::handlers::admin::detail::for_table("core.admin_audit")
+            .expect("audit detail catalogue");
+        let counted = kubuno_core::handlers::admin::period::Counted::rows(
+            "core.admin_audit",
+            "occurred_at",
+            "TRUE",
+        );
+        let win = kubuno_core::handlers::admin::period::resolve_window(
+            "last_7_days",
+            chrono_tz::Tz::UTC,
+        );
+        let table = kubuno_core::handlers::admin::detail::read(pool, &counted, &win, columns, "test")
+            .await
+            .expect("drill-down read across engines");
+
+        // The first column of every row is the instant, formatted in Rust as `…Z`.
+        let a_row = table
+            .rows
+            .iter()
+            .find(|r| r.first().and_then(|c| c.as_ref()).is_some())
+            .expect("at least one detail row");
+        assert!(
+            a_row[0].as_ref().unwrap().ends_with('Z'),
+            "the instant is formatted in Rust, not by to_char"
+        );
+        // The `reason` column (`t.detail`) is index 5 (when, action, actor,
+        // target, outcome, reason): our stretched row is clipped to exactly 200.
+        let clipped = table.rows.iter().any(|r| {
+            r.get(5)
+                .and_then(|c| c.as_deref())
+                .is_some_and(|s| s.chars().count() == 200 && s.chars().all(|c| c == 'z'))
+        });
+        assert!(clipped, "an oversized cell is clipped to MAX_CELL characters in Rust");
+
+        // The DEVICE and RULE catalogues build a label with `CONCAT_WS`; confirm
+        // the engine supports it (SQLite gained it in 3.44; the bundled build is
+        // newer), so those drill-downs read on every engine too.
+        let cc: String = pool
+            .fetch_scalar::<String>("SELECT CONCAT_WS('-', 'a', 'b')", params![])
+            .await
+            .expect("CONCAT_WS available on this engine");
+        assert_eq!(cc, "a-b");
+    }
+
+    // ── audiences: reach via correlated COUNT(DISTINCT … CASE join) ──
+    {
+        // A second active account, and a group holding both it and `uid`.
+        let other = Uuid::new_v4();
+        let oname = format!("g{}", &other.simple().to_string()[..12]);
+        pool.execute(
+            "INSERT INTO core.users (id, email, username, password_hash, role, preferences, org_unit_id) \
+             VALUES ($1, $2, $3, 'x', 'user', $4, $5)",
+            params![
+                other,
+                format!("{oname}@ex.test"),
+                oname.clone(),
+                serde_json::json!({}),
+                ou
+            ],
+        )
+        .await
+        .expect("insert second audience account");
+
+        let gid = Uuid::new_v4();
+        pool.execute(
+            "INSERT INTO core.user_groups (id, name, description, permissions, is_default, release_exempt) \
+             VALUES ($1, $2, NULL, $3, $4, $5)",
+            params![gid, format!("aud-grp-{gid}"), serde_json::json!([]), false, false],
+        )
+        .await
+        .expect("insert audience group");
+        for m in [uid, other] {
+            pool.execute(
+                "INSERT INTO core.user_group_members (group_id, user_id) VALUES ($1, $2)",
+                params![gid, m],
+            )
+            .await
+            .expect("add group member");
+        }
+
+        let aud = Uuid::new_v4();
+        pool.execute(
+            "INSERT INTO core.target_audiences (id, name, description, created_by) \
+             VALUES ($1, $2, NULL, $3)",
+            params![aud, format!("aud-{aud}"), uid],
+        )
+        .await
+        .expect("insert audience");
+        // One user member (also in the group) and one group member: reach must
+        // count `uid` once though two entries resolve to it.
+        pool.execute(
+            "INSERT INTO core.target_audience_members (audience_id, member_type, member_id, added_by) \
+             VALUES ($1, 'user', $2, $3)",
+            params![aud, uid, uid],
+        )
+        .await
+        .expect("add user member");
+        pool.execute(
+            "INSERT INTO core.target_audience_members (audience_id, member_type, member_id, added_by) \
+             VALUES ($1, 'group', $2, $3)",
+            params![aud, gid, uid],
+        )
+        .await
+        .expect("add group member entry");
+
+        let sql = format!(
+            "SELECT member_count, reach, applied_to FROM ({}) s WHERE id = $1",
+            kubuno_core::handlers::admin::audiences::LIST_SQL,
+        );
+        let (member_count, reach, applied_to): (i64, i64, i64) = pool
+            .fetch_optional_as::<(i64, i64, i64)>(&sql, params![aud])
+            .await
+            .expect("audience reach query across engines")
+            .expect("the audience row is present");
+        assert_eq!(member_count, 2, "two entries: one user, one group");
+        assert_eq!(
+            reach, 2,
+            "reach counts uid once though it is both a direct member and in the group"
+        );
+        assert_eq!(applied_to, 0, "the audience is applied nowhere yet");
+    }
+
+    // ── rekey: the JSON-string round-trip of the settings-backed secret store ──
+    {
+        let backend = pool.backend();
+        // Store a text value as a JSON string the way `security:rekey` writes the
+        // SMTP password (`json_string`), then read it back unwrapped
+        // (`json_text`) — the two constructs that had no portable spelling.
+        let key = format!("mail.smtp_password.probe.{}", Uuid::new_v4());
+        let write = format!(
+            "INSERT INTO core.settings (\"key\", value) VALUES ($1, {})",
+            backend.json_string(2),
+        );
+        pool.execute(&write, params![key.clone(), "sealed-ciphertext".to_string()])
+            .await
+            .expect("write a JSON-string secret");
+
+        let read = format!(
+            "SELECT {} FROM core.settings WHERE \"key\" = $1",
+            backend.json_text("value", &[]),
+        );
+        let back: String = pool
+            .fetch_scalar::<String>(&read, params![key.clone()])
+            .await
+            .expect("read the JSON-string secret back");
+        assert_eq!(
+            back, "sealed-ciphertext",
+            "json_string/json_text round-trip (rekey settings store)"
+        );
+
+        // Rewrite it, exactly as the rekey UPDATE does.
+        let update = format!(
+            "UPDATE core.settings SET value = {} WHERE \"key\" = $2",
+            backend.json_string(1),
+        );
+        pool.execute(&update, params!["resealed".to_string(), key.clone()])
+            .await
+            .expect("rewrite the JSON-string secret");
+        let back2: String = pool
+            .fetch_scalar::<String>(&read, params![key])
+            .await
+            .expect("read the rewritten secret");
+        assert_eq!(back2, "resealed", "the rewritten secret reads back");
+    }
 }
 
 async fn run_all(pool: &DbPool) {
