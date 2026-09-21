@@ -11,6 +11,20 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Background work runs on every database engine.** Scheduled and retried
+  background jobs — sending an invitation, running a backup, an export — no
+  longer depend on a PostgreSQL-only locking trick to hand each job to exactly
+  one worker. The same queue now behaves identically on PostgreSQL, MySQL/MariaDB
+  and SQLite, so a smaller instance can run on SQLite with no loss of function.
+- **Live updates reach you without PostgreSQL.** The event bus that pushes
+  changes between the server's parts (and on to modules and open browser tabs)
+  used a PostgreSQL-only notification channel. On MySQL/MariaDB and SQLite those
+  events are now recorded and delivered by a background reader instead, each
+  event delivered exactly once even when several server processes share one
+  database — so nothing is silently lost on a non-PostgreSQL install.
+- **The server's own schema is prepared per engine.** The core's database
+  schema is split so the right form is applied for the engine an administrator
+  chooses; the existing PostgreSQL form is unchanged and keeps its history.
 - **A module's PostgreSQL migrations keep working untouched.** The engine puts
   the module's schema on PostgreSQL's search path on every connection, as each
   module's own start-up used to. A migration written before multi-engine
