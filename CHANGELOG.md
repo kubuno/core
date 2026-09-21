@@ -134,14 +134,40 @@ number at release time, and CI publishes that section as the GitHub Release note
   from the application, so a module written once syncs correctly whichever
   engine the server runs, with the counter proven collision-free under
   concurrent writers on every engine.
+- **The administration console's reads and maintenance run on every engine.**
+  The device and session inventory and its search (including the client
+  address), the label browser, the "edit my profile" update, the personal-data
+  export (account and instance sheets), and the retention purges of the audit
+  trail and the rule-threshold hits no longer depend on PostgreSQL-only SQL
+  (native arrays, `json_agg`/`row_to_json`, the `inet` address accessor,
+  `make_interval`, per-row `FOR UPDATE`, or a stored function). They are
+  assembled in the application where needed and behave identically on
+  PostgreSQL, MySQL/MariaDB and SQLite. On SQLite, a row's "last updated"
+  timestamp is now kept current by a trigger, matching PostgreSQL's function and
+  MySQL's `ON UPDATE`.
+
+### Fixed
+
+- **The tamper-evident administrative audit trail is written and verified on
+  every engine.** Recording an administrative action and re-checking the audit
+  hash chain now work on PostgreSQL, MySQL/MariaDB and SQLite: the engine-
+  assigned entry id is read back the correct way for each engine, and the
+  reserved-word columns and the client address are spelled per engine — so
+  actions are logged, and can be checked for tampering, whichever database the
+  instance runs on.
 
 ### Known limitations
 
 - On MySQL and SQLite, events a module publishes are recorded durably but not
   yet delivered: the core still listens only to PostgreSQL's notification
-  channel and needs a reader for the new event table. The background job queue
-  and the compile-time-checked queries of the core, media and drive are
-  PostgreSQL-only for now.
+  channel and needs a reader for the new event table. The compile-time-checked
+  queries of the core, media and drive are PostgreSQL-only for now.
+- A few administrative **reporting** views and one maintenance tool remain
+  PostgreSQL-only and are not yet portable: the target-audience reach figures
+  (a `LATERAL` join), the per-domain account count (`SPLIT_PART`), the sign-up
+  activity chart (`generate_series`), the audit drill-down's cell truncation
+  (`left(...)`), and the secret re-encryption CLI (`rekey`). They are unused on a
+  MySQL/SQLite install's normal operation but would error if opened there.
 
 ### Security
 
