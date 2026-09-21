@@ -587,10 +587,199 @@ async fn seed_counts(pool: &DbPool) {
     assert_eq!(priv_rows, 2, "seeded privileges reachable by reserved `key`");
 }
 
+/// Exercises the authorization/settings paths that used to run only on
+/// PostgreSQL (they called stored `LANGUAGE sql`/plpgsql functions). Every
+/// assertion runs against the live engine, so a recursive-CTE or dialect slip on
+/// MySQL/SQLite fails here rather than in production.
+async fn exercise_authz_settings(pool: &DbPool) {
+    use kubuno_core::database::compat;
+    let backend = pool.backend();
+
+    // Build A → B under the existing root: root ─ A ─ B.
+    let root: Uuid = pool
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT id FROM core.org_units WHERE parent_id IS NULL",
+            params![],
+        )
+        .await
+        .expect("query root")
+        .expect("a root org unit exists after seeding");
+    let a = Uuid::new_v4();
+    let b = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.org_units (id, name, parent_id) VALUES ($1, $2, $3)",
+        params![a, format!("A-{a}"), root],
+    )
+    .await
+    .expect("insert unit A");
+    pool.execute(
+        "INSERT INTO core.org_units (id, name, parent_id) VALUES ($1, $2, $3)",
+        params![b, format!("B-{b}"), a],
+    )
+    .await
+    .expect("insert unit B");
+
+    // org_unit_descendants(A) = {A, B}, never the parent.
+    let sql = format!("SELECT id FROM {} d", compat::org_unit_descendants(1));
+    let desc: std::collections::HashSet<Uuid> = pool
+        .fetch_all_as::<(Uuid,)>(&sql, params![a])
+        .await
+        .expect("descendants")
+        .into_iter()
+        .map(|(x,)| x)
+        .collect();
+    assert!(desc.contains(&a) && desc.contains(&b), "descendants include self and child");
+    assert!(!desc.contains(&root), "descendants exclude the parent");
+
+    // org_unit_ancestors(B) climbs B → A → root, nearest first.
+    let sql = format!("SELECT id, depth FROM {} a ORDER BY depth", compat::org_unit_ancestors(1));
+    let anc: Vec<(Uuid, i32)> = pool.fetch_all_as::<(Uuid, i32)>(&sql, params![b]).await.expect("ancestors");
+    assert_eq!(anc.first().map(|(id, _)| *id), Some(b), "nearest ancestor is the unit itself");
+    let anc_ids: std::collections::HashSet<Uuid> = anc.iter().map(|(x, _)| *x).collect();
+    assert!(anc_ids.contains(&a) && anc_ids.contains(&root), "ancestors reach the root");
+
+    // Multi-root walk tags each descendant with its root.
+    let sql = format!("SELECT root, id FROM {} w", compat::org_unit_descendants_with_root(1, 1));
+    let pairs: Vec<(Uuid, Uuid)> = pool.fetch_all_as::<(Uuid, Uuid)>(&sql, params![a]).await.expect("desc_with_root");
+    assert!(pairs.iter().any(|(r, i)| *r == a && *i == b), "root A maps to descendant B");
+
+    // A user placed in B, a super-user role granted at instance scope.
+    let user = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role, org_unit_id) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        params![user, format!("az-{user}@x.test"), format!("az-{user}"), "h", "admin", b],
+    )
+    .await
+    .expect("insert user");
+    let su_role = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.roles (id, slug, name, is_superuser) VALUES ($1, $2, $3, $4)",
+        params![su_role, format!("su-{su_role}"), "SU", true],
+    )
+    .await
+    .expect("insert su role");
+    pool.execute(
+        "INSERT INTO core.role_assignments (id, role_id, subject_user_id, scope) \
+         VALUES ($1, $2, $3, 'instance')",
+        params![Uuid::new_v4(), su_role, user],
+    )
+    .await
+    .expect("insert su assignment");
+
+    // superadmin_ids lists that account.
+    let sql = format!("SELECT user_id FROM {} s WHERE s.user_id = $1", compat::superadmin_ids(backend));
+    let su: Option<Uuid> = pool.fetch_optional_scalar::<Uuid>(&sql, params![user]).await.expect("superadmin_ids");
+    assert_eq!(su, Some(user), "the instance super-user is listed");
+
+    // authz::context::resolve: a delegated grant scoped to A expands to A and B.
+    let deleg = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.roles (id, slug, name) VALUES ($1, $2, $3)",
+        params![deleg, format!("dg-{deleg}"), "Delegate"],
+    )
+    .await
+    .expect("insert delegate role");
+    pool.execute(
+        "INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)",
+        params![deleg, "core.users.read"],
+    )
+    .await
+    .expect("insert role_privilege");
+    pool.execute(
+        "INSERT INTO core.role_assignments (id, role_id, subject_user_id, scope, scope_org_unit_id) \
+         VALUES ($1, $2, $3, 'org_unit', $4)",
+        params![Uuid::new_v4(), deleg, user, a],
+    )
+    .await
+    .expect("insert scoped assignment");
+    let ctx = kubuno_core::authz::context::resolve(
+        pool,
+        user,
+        kubuno_core::audit::ActorOrigin::Session,
+        None,
+    )
+    .await
+    .expect("resolve admin context");
+    assert!(ctx.is_superuser, "the instance super-user role is recognised");
+    let scope = ctx
+        .privileges
+        .get("core.users.read")
+        .expect("the delegated privilege is present");
+    assert!(
+        scope.units.contains(&a) && scope.units.contains(&b),
+        "an org-unit-scoped grant expands to the whole subtree"
+    );
+
+    // label_access: an owned label reads back as owner with management rights.
+    let label = Uuid::new_v4();
+    pool.execute(
+        "INSERT INTO core.labels (id, owner_id, name) VALUES ($1, $2, $3)",
+        params![label, user, format!("lbl-{label}")],
+    )
+    .await
+    .expect("insert label");
+    let sql = format!(
+        "SELECT la.is_owner, la.can_manage FROM {} la WHERE la.label_id = $4",
+        compat::label_access(backend, 1)
+    );
+    let acc: Option<(bool, bool)> = pool
+        .fetch_optional_as::<(bool, bool)>(&sql, params![user, user, user, label])
+        .await
+        .expect("label_access");
+    assert_eq!(acc, Some((true, true)), "the owner has full label access");
+
+    // setting_chain (portable load_chain): default + instance + unit-A override,
+    // resolved for the user in B.
+    use kubuno_core::settings::chain;
+    use kubuno_core::settings::scope::SettingScope;
+    let skey = format!("test.authz.{}", Uuid::new_v4());
+    pool.execute(
+        "INSERT INTO core.settings (\"key\", value, default_value) VALUES ($1, $2, $3)",
+        params![skey.clone(), serde_json::json!("dflt"), serde_json::json!("dflt")],
+    )
+    .await
+    .expect("insert setting");
+    pool.execute(
+        "INSERT INTO core.setting_values (\"key\", scope_type, scope_id, value) \
+         VALUES ($1, 'instance', $2, $3)",
+        params![skey.clone(), Uuid::nil(), serde_json::json!("inst")],
+    )
+    .await
+    .expect("insert instance value");
+    pool.execute(
+        "INSERT INTO core.setting_values (\"key\", scope_type, scope_id, value) \
+         VALUES ($1, 'org_unit', $2, $3)",
+        params![skey.clone(), a, serde_json::json!("unitA")],
+    )
+    .await
+    .expect("insert org-unit value");
+    let levels = chain::load_chain(pool, &skey, &SettingScope::user(user))
+        .await
+        .expect("load_chain");
+    let types: std::collections::HashSet<&str> = levels.iter().map(|l| l.scope_type.as_str()).collect();
+    assert!(types.contains("default"), "chain carries the factory default");
+    assert!(types.contains("instance"), "chain carries the instance override");
+    assert!(types.contains("org_unit"), "chain carries the unit-A override");
+    // Ordered from most general to most specific.
+    let specs: Vec<i32> = levels.iter().map(|l| l.specificity).collect();
+    assert!(specs.windows(2).all(|w| w[0] <= w[1]), "chain is ordered by specificity: {specs:?}");
+
+    // rules::store::resolve_subject: the user's unit chain and empty group set.
+    let subject = kubuno_core::rules::store::resolve_subject(pool, user).await.expect("resolve_subject");
+    assert_eq!(subject.org_unit_id, Some(b), "subject sits in unit B");
+    assert!(
+        subject.unit_chain.contains(&a) && subject.unit_chain.contains(&b) && subject.unit_chain.contains(&root),
+        "subject unit chain climbs to the root: {:?}",
+        subject.unit_chain
+    );
+}
+
 async fn run_all(pool: &DbPool) {
     setup(pool).await;
     seed_counts(pool).await;
     schema_round_trips(pool).await;
+    exercise_authz_settings(pool).await;
     exercise_jobs(pool).await;
     // The transactional outbox is the fallback for engines WITHOUT
     // `LISTEN`/`NOTIFY`: on PostgreSQL `kubuno_db::events::notify` publishes with
