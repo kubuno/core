@@ -83,19 +83,34 @@ async fn reset_schema(pool: &DbPool) {
                 .expect("recreate schema pg");
         }
         DbPool::My(p) => {
-            use sqlx::Executor;
+            // Session variables (SET FOREIGN_KEY_CHECKS=0) would not span the
+            // pool's separate connections, so drop the tables in dependency
+            // order the robust way: repeated passes, each dropping whatever no
+            // longer has a dependant, until none remain.
             let rows: Vec<(String,)> = sqlx::query_as(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'core'",
             )
             .fetch_all(p)
             .await
             .expect("list core tables");
-            let mut sql = String::from("SET FOREIGN_KEY_CHECKS=0;");
-            for (t,) in &rows {
-                sql.push_str(&format!("DROP TABLE IF EXISTS `{t}`;"));
+            let mut remaining: Vec<String> = rows.into_iter().map(|(t,)| t).collect();
+            for _ in 0..16 {
+                if remaining.is_empty() {
+                    break;
+                }
+                let mut still = Vec::new();
+                for t in &remaining {
+                    if pool
+                        .execute(&format!("DROP TABLE IF EXISTS `{t}`"), params![])
+                        .await
+                        .is_err()
+                    {
+                        still.push(t.clone());
+                    }
+                }
+                remaining = still;
             }
-            sql.push_str("SET FOREIGN_KEY_CHECKS=1;");
-            p.execute(sql.as_str()).await.expect("drop core tables");
+            assert!(remaining.is_empty(), "core tables left after reset: {remaining:?}");
         }
         DbPool::Sq(_) => {}
     }
@@ -145,15 +160,29 @@ struct TokenRow {
 /// enum CHECKs, timestamps and the BIGSERIAL/AUTO_INCREMENT read-back all
 /// round-trip. Every identifier is random, so a shared server never collides.
 async fn schema_round_trips(pool: &DbPool) {
-    // The migrations seed exactly one root org unit; hang a child off it so we
-    // never trip PostgreSQL's single-root partial UNIQUE.
-    let root: Uuid = pool
-        .fetch_scalar(
+    // A root org unit (parent_id NULL): reuse the one the PostgreSQL seed
+    // migrations create, or make one where the schema carries no seed data yet.
+    // Only ever one, so PostgreSQL's single-root partial UNIQUE is respected.
+    let root: Uuid = match pool
+        .fetch_optional_scalar::<Uuid>(
             "SELECT id FROM core.org_units WHERE parent_id IS NULL",
             params![],
         )
         .await
-        .expect("seeded root org unit");
+        .expect("query root org unit")
+    {
+        Some(id) => id,
+        None => {
+            let id = Uuid::new_v4();
+            pool.execute(
+                "INSERT INTO core.org_units (id, name) VALUES ($1, $2)",
+                params![id, "Root"],
+            )
+            .await
+            .expect("insert root org_unit");
+            id
+        }
+    };
     let ou = Uuid::new_v4();
     pool.execute(
         "INSERT INTO core.org_units (id, name, parent_id) VALUES ($1, $2, $3)",
@@ -252,27 +281,52 @@ async fn schema_round_trips(pool: &DbPool) {
     .await
     .expect("insert role");
 
-    // rules: JSON conditions/actions carry their table defaults; a real key.
+    // `key` is a reserved word on MySQL/MariaDB (but a plain identifier on
+    // PostgreSQL and SQLite); back-tick it only there.
+    let key_col = if pool.backend() == Backend::MySql {
+        "`key`"
+    } else {
+        "key"
+    };
+
+    // rules: JSON conditions/actions carry their table defaults; trigger_key is
+    // an FK to rule_triggers, so seed a trigger first (a real install's triggers
+    // are declared by modules; the schema itself ships none).
+    let trigger_key = format!("test.trigger.{}", Uuid::new_v4());
+    pool.execute(
+        &format!(
+            "INSERT INTO core.rule_triggers ({key_col}, module_id, event_type, label) \
+             VALUES ($1, $2, $3, $4)"
+        ),
+        params![trigger_key.clone(), "core", "auth.login.failed", "Test trigger"],
+    )
+    .await
+    .expect("insert rule_trigger");
     let rule_id = Uuid::new_v4();
     pool.execute(
         "INSERT INTO core.rules (id, name, trigger_key) VALUES ($1, $2, $3)",
-        params![rule_id, format!("rule-{rule_id}"), "auth.login.failed"],
+        params![rule_id, format!("rule-{rule_id}"), trigger_key],
     )
     .await
     .expect("insert rule");
 
-    // settings + setting_values: JSON value, composite PK, the binary sentinel
-    // default on scope_id (instance scope).
+    // settings + setting_values: JSON value and the composite PK. The value is
+    // written at USER scope (scope_id = the user) rather than instance scope, so
+    // it never collides with the row PostgreSQL's settings_value_redirect
+    // trigger mirrors for the instance scope.
     let skey = format!("test.setting.{}", Uuid::new_v4());
     pool.execute(
-        "INSERT INTO core.settings (key, value) VALUES ($1, $2)",
+        &format!("INSERT INTO core.settings ({key_col}, value) VALUES ($1, $2)"),
         params![skey.clone(), serde_json::json!({"enabled": true})],
     )
     .await
     .expect("insert setting");
     pool.execute(
-        "INSERT INTO core.setting_values (key, scope_type, value) VALUES ($1, $2, $3)",
-        params![skey.clone(), "instance", serde_json::json!(42)],
+        &format!(
+            "INSERT INTO core.setting_values ({key_col}, scope_type, scope_id, value) \
+             VALUES ($1, $2, $3, $4)"
+        ),
+        params![skey.clone(), "user", uid, serde_json::json!(42)],
     )
     .await
     .expect("insert setting_value");
