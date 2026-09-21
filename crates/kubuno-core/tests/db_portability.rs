@@ -249,7 +249,14 @@ async fn exercise_outbox(pool: &DbPool) {
 async fn run_all(pool: &DbPool) {
     setup(pool).await;
     exercise_jobs(pool).await;
-    exercise_outbox(pool).await;
+    // The transactional outbox is the fallback for engines WITHOUT
+    // `LISTEN`/`NOTIFY`: on PostgreSQL `kubuno_db::events::notify` publishes with
+    // `pg_notify` and writes no outbox row, so the poller has nothing to drain
+    // (that path is covered by the `PgListener` reader). Exercise the outbox
+    // only where it is actually the delivery mechanism.
+    if pool.backend() != Backend::Postgres {
+        exercise_outbox(pool).await;
+    }
 }
 
 #[tokio::test]
