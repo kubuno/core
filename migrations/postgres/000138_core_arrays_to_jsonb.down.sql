@@ -3,11 +3,16 @@
 -- gathers back into a text array.
 
 DROP INDEX IF EXISTS core.idx_core_api_tokens_scopes;
+ALTER TABLE core.api_tokens DROP CONSTRAINT IF EXISTS api_tokens_scoped_or_legacy;
 
 ALTER TABLE core.api_tokens
     ALTER COLUMN scopes DROP DEFAULT,
     ALTER COLUMN scopes TYPE TEXT[] USING ARRAY(SELECT jsonb_array_elements_text(scopes)),
     ALTER COLUMN scopes SET DEFAULT '{}';
+
+ALTER TABLE core.api_tokens
+    ADD CONSTRAINT api_tokens_scoped_or_legacy
+    CHECK (is_legacy OR cardinality(scopes) > 0);
 
 CREATE INDEX idx_core_api_tokens_scopes ON core.api_tokens USING GIN (scopes);
 

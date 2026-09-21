@@ -8,13 +8,20 @@
 -- to what the application binds, so no data is lost.
 
 -- api_tokens.scopes carries a GIN index used for membership; it must be dropped
--- before the type change and recreated for the new type.
+-- before the type change and recreated for the new type. The "scoped or legacy"
+-- CHECK counted array elements with `cardinality()`, which has no `jsonb`
+-- overload, so it too must be dropped and re-armed against the JSON length.
 DROP INDEX IF EXISTS core.idx_core_api_tokens_scopes;
+ALTER TABLE core.api_tokens DROP CONSTRAINT IF EXISTS api_tokens_scoped_or_legacy;
 
 ALTER TABLE core.api_tokens
     ALTER COLUMN scopes DROP DEFAULT,
     ALTER COLUMN scopes TYPE JSONB USING to_jsonb(scopes),
     ALTER COLUMN scopes SET DEFAULT '[]'::jsonb;
+
+ALTER TABLE core.api_tokens
+    ADD CONSTRAINT api_tokens_scoped_or_legacy
+    CHECK (is_legacy OR jsonb_array_length(scopes) > 0);
 
 -- `jsonb_path_ops` supports the containment test (`@>`) that
 -- `Backend::json_array_contains` emits on PostgreSQL.
