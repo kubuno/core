@@ -206,7 +206,7 @@ pub async fn overview(
 
     // The whole stored JSON value as text — PostgreSQL's `value #>> '{}'`.
     let loaded_sql = format!(
-        "SELECT {} FROM core.settings WHERE key = 'intl.holidays_dataset'",
+        "SELECT {} FROM core.settings WHERE \"key\" = 'intl.holidays_dataset'",
         state.db.backend().json_text("value", &[]),
     );
     let loaded: Option<String> = state
@@ -332,7 +332,7 @@ async fn custom_key(db: &DbPool, calendar_id: Uuid, name: &str) -> Result<String
         let candidate = if suffix == 0 { base.clone() } else { format!("{base}-{suffix}") };
         let taken: bool = db
             .fetch_scalar::<bool>(
-                "SELECT EXISTS(SELECT 1 FROM core.holidays WHERE calendar_id = $1 AND key = $2)",
+                "SELECT EXISTS(SELECT 1 FROM core.holidays WHERE calendar_id = $1 AND \"key\" = $2)",
                 params![calendar_id, &candidate],
             )
             .await
@@ -365,7 +365,7 @@ pub async fn create_holiday(
     let id = new_id();
     tx.execute(
         r#"INSERT INTO core.holidays
-               (id, calendar_id, key, name, names, category, kind, rule, observance,
+               (id, calendar_id, "key", name, names, category, kind, rule, observance,
                 from_year, to_year, color, is_builtin, created_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, FALSE, $13)"#,
         params![
@@ -585,7 +585,7 @@ pub async fn reset_holiday(
     let row = state
         .db
         .fetch_optional_row(
-            "SELECT h.key, h.name, h.is_builtin, c.code AS calendar_code \
+            "SELECT h.\"key\", h.name, h.is_builtin, c.code AS calendar_code \
                FROM core.holidays h JOIN core.holiday_calendars c ON c.id = h.calendar_id \
               WHERE h.id = $1",
             params![id],
@@ -876,7 +876,7 @@ pub async fn set_exclusions(
     .map_err(AppError::Database)?;
     let conflict = tx.backend().on_conflict_do_nothing(&["calendar_id", "key"]);
     let insert_sql =
-        format!("INSERT INTO core.holiday_exclusions (calendar_id, key) VALUES ($1, $2){conflict}");
+        format!("INSERT INTO core.holiday_exclusions (calendar_id, \"key\") VALUES ($1, $2){conflict}");
     for key in &dto.keys {
         tx.execute(&insert_sql, params![id, key])
             .await

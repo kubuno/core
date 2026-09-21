@@ -201,7 +201,7 @@ pub async fn declare_restore_test(
     let previous: Option<Value> = state
         .db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
+            "SELECT value FROM core.settings WHERE \"key\" = $1 FOR UPDATE",
             params![policy::KEY_LAST_RESTORE_TEST],
         )
         .await
@@ -222,7 +222,7 @@ pub async fn declare_restore_test(
     // mirrors it into the instance scope — the same path every other legacy
     // writer takes, so there is exactly one source of truth.
     tx.execute(
-        "UPDATE core.settings SET value = $1, updated_at = $2, updated_by = $3 WHERE key = $4",
+        "UPDATE core.settings SET value = $1, updated_at = $2, updated_by = $3 WHERE \"key\" = $4",
         params![value.clone(), Utc::now(), audit.admin.id, policy::KEY_LAST_RESTORE_TEST],
     )
     .await

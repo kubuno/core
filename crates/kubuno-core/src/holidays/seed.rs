@@ -203,7 +203,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
     let version_expr = backend.json_text("value", &[]);
     let current: Option<String> = db
         .fetch_optional_scalar::<Option<String>>(
-            &format!("SELECT {version_expr} FROM core.settings WHERE key = $1"),
+            &format!("SELECT {version_expr} FROM core.settings WHERE \"key\" = $1"),
             params![VERSION_KEY],
         )
         .await
@@ -241,7 +241,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
     // construction, in the shipped set and never pruned.
     let existing: Vec<(Uuid, String, String, bool, bool)> = db
         .fetch_all_as::<(Uuid, String, String, bool, bool)>(
-            "SELECT h.id, c.code, h.key, h.is_overridden, h.is_orphan
+            "SELECT h.id, c.code, h.\"key\", h.is_overridden, h.is_orphan
                FROM core.holidays h
                JOIN core.holiday_calendars c ON c.id = h.calendar_id
               WHERE h.is_builtin",
@@ -258,7 +258,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
     // `ON CONFLICT … WHERE` have no single portable spelling, so each engine's
     // upsert form is written out here. Flagged in the port report.
     let cal_conflict = match backend {
-        Backend::MySql => " ON DUPLICATE KEY UPDATE \
+        Backend::MySql => " ON DUPLICATE \"key\" UPDATE \
               country_code = VALUES(country_code), \
               subdivision = VALUES(subdivision), \
               parent_id = VALUES(parent_id), \
@@ -280,7 +280,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
               coverage_to = excluded.coverage_to",
     };
     let hol_conflict = match backend {
-        Backend::MySql => " ON DUPLICATE KEY UPDATE \
+        Backend::MySql => " ON DUPLICATE \"key\" UPDATE \
               name = CASE WHEN is_overridden THEN name ELSE VALUES(name) END, \
               names = CASE WHEN is_overridden THEN names ELSE VALUES(names) END, \
               category = CASE WHEN is_overridden THEN category ELSE VALUES(category) END, \
@@ -291,7 +291,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
               to_year = CASE WHEN is_overridden THEN to_year ELSE VALUES(to_year) END, \
               is_builtin = TRUE, \
               is_orphan = CASE WHEN is_overridden THEN is_orphan ELSE FALSE END",
-        _ => " ON CONFLICT (calendar_id, key) DO UPDATE SET \
+        _ => " ON CONFLICT (calendar_id, \"key\") DO UPDATE SET \
               name = excluded.name, names = excluded.names, category = excluded.category, \
               kind = excluded.kind, rule = excluded.rule, observance = excluded.observance, \
               from_year = excluded.from_year, to_year = excluded.to_year, is_builtin = TRUE, \
@@ -395,7 +395,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
                 // on MySQL (see `hol_conflict`).
                 let hol_insert = format!(
                     "INSERT INTO core.holidays \
-                        (id, calendar_id, key, name, names, category, kind, rule, observance, \
+                        (id, calendar_id, \"key\", name, names, category, kind, rule, observance, \
                          from_year, to_year, is_builtin) \
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE){hol_conflict}"
                 );
@@ -442,7 +442,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
                 AppError::Database(e)
             })?;
             let excl_sql = format!(
-                "INSERT {}INTO core.holiday_exclusions (calendar_id, key) VALUES ($1, $2){}",
+                "INSERT {}INTO core.holiday_exclusions (calendar_id, \"key\") VALUES ($1, $2){}",
                 backend.insert_ignore_prefix(),
                 backend.on_conflict_do_nothing(&["calendar_id", "key"]),
             );
@@ -514,7 +514,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
     // The version is stored as a JSON string value directly (replacing the
     // PostgreSQL-only `to_jsonb($1::text)`); `NOW()` is bound from Rust.
     tx.execute(
-        "UPDATE core.settings SET value = $1, updated_at = $2 WHERE key = $3",
+        "UPDATE core.settings SET value = $1, updated_at = $2 WHERE \"key\" = $3",
         params![Value::String(dataset.version.clone()), Utc::now(), VERSION_KEY],
     )
     .await

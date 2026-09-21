@@ -100,7 +100,7 @@ pub fn looks_like_code(input: &str) -> bool {
 async fn low_threshold(db: &DbPool) -> i64 {
     let raw: Option<serde_json::Value> = db
         .fetch_optional_scalar::<Option<serde_json::Value>>(
-            "SELECT value FROM core.settings WHERE key = 'security.backup_codes_low_threshold'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'security.backup_codes_low_threshold'",
             params![],
         )
         .await

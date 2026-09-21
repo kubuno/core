@@ -80,9 +80,9 @@ pub async fn instance_value(db: &DbPool, key: &str) -> Option<Value> {
         .fetch_optional_scalar::<Value>(
             "SELECT COALESCE( \
                  (SELECT v.value FROM core.setting_values v \
-                   WHERE v.key = s.key AND v.scope_type = 'instance'), \
+                   WHERE v.\"key\" = s.\"key\" AND v.scope_type = 'instance'), \
                  s.default_value) \
-             FROM core.settings s WHERE s.key = $1",
+             FROM core.settings s WHERE s.\"key\" = $1",
             params![key],
         )
         .await

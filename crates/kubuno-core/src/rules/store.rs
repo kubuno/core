@@ -751,7 +751,7 @@ pub async fn resolve_subject(db: &DbPool, user_id: Uuid) -> Result<Subject, AppE
 /// Reads one numeric knob from `core.settings`, clamped to a sane range.
 pub async fn setting_u64(db: &DbPool, key: &str, default: u64, min: u64, max: u64) -> u64 {
     let raw: Option<Value> = db
-        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE key = $1", params![key])
+        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE \"key\" = $1", params![key])
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, key = %key, "rules: lecture d'un réglage");
@@ -768,7 +768,7 @@ pub async fn setting_u64(db: &DbPool, key: &str, default: u64, min: u64, max: u6
 pub async fn engine_enabled(db: &DbPool) -> bool {
     let raw: Option<Value> = db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = 'rules.enabled'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'rules.enabled'",
             params![],
         )
         .await

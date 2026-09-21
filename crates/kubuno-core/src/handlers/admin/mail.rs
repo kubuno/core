@@ -169,7 +169,7 @@ async fn write_setting(
     // through the `AuditTx` deref).
     let previous: Option<Value> = tx
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
+            "SELECT value FROM core.settings WHERE \"key\" = $1 FOR UPDATE",
             params![key],
         )
         .await
@@ -188,7 +188,7 @@ async fn write_setting(
             // conflict clause is spelt per engine.
             let backend = tx.backend();
             let sql = format!(
-                "INSERT {}INTO core.settings (key, value, category, is_public) \
+                "INSERT {}INTO core.settings (\"key\", value, category, is_public) \
                  VALUES ($1, $2, 'mail', FALSE){}",
                 backend.insert_ignore_prefix(),
                 backend.on_conflict_do_nothing(&["key"]),
@@ -208,7 +208,7 @@ async fn write_setting(
     }
 
     tx.execute(
-        "UPDATE core.settings SET value = $1, updated_at = $2, updated_by = $3 WHERE key = $4",
+        "UPDATE core.settings SET value = $1, updated_at = $2, updated_by = $3 WHERE \"key\" = $4",
         params![value.clone(), Utc::now(), admin_id, key],
     )
     .await
@@ -490,7 +490,7 @@ async fn record_successful_test(db: &DbPool) {
     let now = Utc::now().to_rfc3339();
     if let Err(e) = db
         .execute(
-            "UPDATE core.settings SET value = $1, updated_at = $2 WHERE key = $3",
+            "UPDATE core.settings SET value = $1, updated_at = $2 WHERE \"key\" = $3",
             params![json!(now), Utc::now(), mailer::config::KEY_LAST_TEST_OK],
         )
         .await

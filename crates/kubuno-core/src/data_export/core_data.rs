@@ -249,14 +249,14 @@ pub async fn instance_org_units(db: &DbPool) -> Result<Value, AppError> {
 pub async fn instance_settings(db: &DbPool) -> Result<Value, AppError> {
     json_rows(
         db,
-        "SELECT COALESCE(json_agg(t ORDER BY t.key), '[]'::json) FROM ( \
-            SELECT s.key, s.category, s.label, s.description, s.value_type, \
+        "SELECT COALESCE(json_agg(t ORDER BY t.\"key\"), '[]'::json) FROM ( \
+            SELECT s.\"key\", s.category, s.label, s.description, s.value_type, \
                    s.default_value, s.updated_at, \
-                   CASE WHEN s.key ~* '(secret|password|token|api_key|private_key|passphrase)' \
+                   CASE WHEN s.\"key\" ~* '(secret|password|token|api_key|private_key|passphrase)' \
                         THEN to_jsonb('(masqué)'::text) \
                         ELSE COALESCE( \
                             (SELECT v.value FROM core.setting_values v \
-                              WHERE v.key = s.key AND v.scope_type = 'instance'), \
+                              WHERE v.\"key\" = s.\"key\" AND v.scope_type = 'instance'), \
                             s.default_value) \
                    END AS value \
               FROM core.settings s \

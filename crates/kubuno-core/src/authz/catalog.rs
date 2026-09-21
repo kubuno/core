@@ -107,7 +107,7 @@ pub async fn register_module_privileges(
 
         let sql = format!(
             r#"INSERT INTO core.privileges
-                   (key, namespace, domain, verb, label, description, is_ou_scopable, is_orphan)
+                   ("key", namespace, domain, verb, label, description, is_ou_scopable, is_orphan)
                VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE){}"#,
             backend.upsert(
                 "core.privileges",

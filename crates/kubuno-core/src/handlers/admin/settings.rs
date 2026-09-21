@@ -72,8 +72,8 @@ pub async fn get_settings(
     let rows = state
         .db
         .fetch_all_as::<SettingRow>(
-            "SELECT key, value, category, label, description, is_public FROM core.settings \
-             WHERE module_id IS NULL AND category <> 'mail' ORDER BY category, key",
+            "SELECT \"key\", value, category, label, description, is_public FROM core.settings \
+             WHERE module_id IS NULL AND category <> 'mail' ORDER BY category, \"key\"",
             params![],
         )
         .await?;
@@ -165,7 +165,7 @@ pub async fn update_settings(
     for (key, value) in &updates {
         let previous: Option<Value> = tx
             .fetch_optional_scalar::<Value>(
-                "SELECT value FROM core.settings WHERE key = $1 FOR UPDATE",
+                "SELECT value FROM core.settings WHERE \"key\" = $1 FOR UPDATE",
                 params![key],
             )
             .await
@@ -178,7 +178,7 @@ pub async fn update_settings(
         tx.execute(
             r#"UPDATE core.settings
                SET value = $1, updated_at = $2, updated_by = $3
-               WHERE key = $4"#,
+               WHERE "key" = $4"#,
             params![value.clone(), Utc::now(), admin_id, key],
         )
         .await
@@ -233,7 +233,7 @@ async fn validate_module_bounds(
     // built instead, so the number of placeholders follows the key count.
     let mut qb = DbQueryBuilder::new(
         db.backend(),
-        "SELECT key, module_id FROM core.settings WHERE key",
+        "SELECT \"key\", module_id FROM core.settings WHERE \"key\"",
     );
     qb.push_in(keys.iter().map(String::as_str));
     let owners: Vec<(String, Option<String>)> = qb
@@ -272,7 +272,7 @@ pub async fn public_config(
     let rows = state
         .db
         .fetch_all_as::<(String, Value)>(
-            "SELECT key, value FROM core.settings WHERE is_public = TRUE",
+            "SELECT \"key\", value FROM core.settings WHERE is_public = TRUE",
             params![],
         )
         .await?;

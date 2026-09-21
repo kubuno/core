@@ -160,7 +160,7 @@ pub async fn set_value(
         ],
     );
     let sql = format!(
-        "INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at, updated_by) \
+        "INSERT INTO core.setting_values (\"key\", scope_type, scope_id, value, updated_at, updated_by) \
          VALUES ($1, $2, $3, $4, $5, $6){upsert}"
     );
     tx.execute(
@@ -210,7 +210,7 @@ pub async fn clear_value(
     }
 
     tx.execute(
-        "DELETE FROM core.setting_values WHERE key = $1 AND scope_type = $2 AND scope_id = $3",
+        "DELETE FROM core.setting_values WHERE \"key\" = $1 AND scope_type = $2 AND scope_id = $3",
         params![key, scope.kind.as_str(), scope.storage_id()],
     )
     .await
@@ -261,7 +261,7 @@ pub async fn set_lock(
     let now = chrono::Utc::now();
     tx.execute(
         "UPDATE core.setting_values SET locked = $1, updated_at = $2, updated_by = $3 \
-         WHERE key = $4 AND scope_type = $5 AND scope_id = $6",
+         WHERE \"key\" = $4 AND scope_type = $5 AND scope_id = $6",
         params![
             locked,
             now,
@@ -344,7 +344,7 @@ pub async fn sync_user_preferences(
             if value.is_null() {
                 tx.execute(
                     "DELETE FROM core.setting_values \
-                     WHERE key = $1 AND scope_type = 'user' AND scope_id = $2",
+                     WHERE \"key\" = $1 AND scope_type = 'user' AND scope_id = $2",
                     params![&key, user_id],
                 )
                 .await
@@ -370,7 +370,7 @@ pub async fn sync_user_preferences(
                 &[Assign::Incoming("value"), Assign::Incoming("updated_at")],
             );
             let sql = format!(
-                "INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at, updated_by) \
+                "INSERT INTO core.setting_values (\"key\", scope_type, scope_id, value, updated_at, updated_by) \
                  VALUES ($1, 'user', $2, $3, $4, $5){upsert}"
             );
             tx.execute(&sql, params![&key, user_id, value.clone(), now, user_id])
@@ -437,12 +437,12 @@ pub async fn overrides_by_key(
     let mut qb = DbQueryBuilder::new(
         backend,
         format!(
-            "SELECT v.key, {scope_type_text}, v.scope_id, {name_text}, v.locked \
+            "SELECT v.\"key\", {scope_type_text}, v.scope_id, {name_text}, v.locked \
                FROM core.setting_values v \
                LEFT JOIN core.org_units   o ON v.scope_type = 'org_unit' AND o.id = v.scope_id \
                LEFT JOIN core.user_groups g ON v.scope_type = 'group'    AND g.id = v.scope_id \
                LEFT JOIN core.users       u ON v.scope_type = 'user'     AND u.id = v.scope_id \
-              WHERE v.key"
+              WHERE v.\"key\""
         ),
     );
     qb.push_in(keys.iter().cloned());

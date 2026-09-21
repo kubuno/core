@@ -265,7 +265,7 @@ pub async fn active_anywhere(db: &DbPool) -> MethodSet {
 
     let overrides: Vec<Value> = db
         .fetch_all_as::<ValueRow>(
-            "SELECT value FROM core.setting_values WHERE key = $1",
+            "SELECT value FROM core.setting_values WHERE \"key\" = $1",
             params![KEY_METHODS],
         )
         .await

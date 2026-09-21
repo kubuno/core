@@ -340,8 +340,8 @@ struct Panel {
 async fn retention(db: &DbPool) -> Value {
     let rows: Vec<(String, Value)> = db
         .fetch_all_as::<(String, Value)>(
-            "SELECT key, value FROM core.settings \
-              WHERE key IN ('security.audit_retention_days', 'alerts.retention_days', \
+            "SELECT \"key\", value FROM core.settings \
+              WHERE \"key\" IN ('security.audit_retention_days', 'alerts.retention_days', \
                             'rules.execution_retention_days')",
             params![],
         )

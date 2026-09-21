@@ -168,7 +168,7 @@ pub fn register(registry: &mut JobRegistry) {
         let raw: Option<serde_json::Value> = ctx
             .db
             .fetch_optional_scalar(
-                "SELECT value FROM core.settings WHERE key = 'usage.retention_days'",
+                "SELECT value FROM core.settings WHERE \"key\" = 'usage.retention_days'",
                 params![],
             )
             .await
@@ -341,7 +341,7 @@ pub fn register(registry: &mut JobRegistry) {
         let raw: Option<serde_json::Value> = ctx
             .db
             .fetch_optional_scalar(
-                "SELECT value FROM core.settings WHERE key = 'users.purge_after_days'",
+                "SELECT value FROM core.settings WHERE \"key\" = 'users.purge_after_days'",
                 params![],
             )
             .await

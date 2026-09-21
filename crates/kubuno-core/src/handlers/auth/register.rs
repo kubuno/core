@@ -36,7 +36,7 @@ pub async fn register(
     let open: bool = state
         .db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = 'auth.registration_open'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'auth.registration_open'",
             params![],
         )
         .await?

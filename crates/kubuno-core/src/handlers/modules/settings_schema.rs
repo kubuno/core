@@ -398,7 +398,7 @@ async fn build_module_settings(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let rows: Vec<(String, serde_json::Value, Option<serde_json::Value>)> = db
         .fetch_all_as::<(String, serde_json::Value, Option<serde_json::Value>)>(
-            "SELECT key, value, default_value FROM core.settings \
+            "SELECT \"key\", value, default_value FROM core.settings \
              WHERE module_id = $1 AND scope IN ('global', 'overridable')",
             params![module_id],
         )

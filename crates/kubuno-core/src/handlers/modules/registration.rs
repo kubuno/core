@@ -266,7 +266,7 @@ pub async fn register_module(
     // so the value is passed twice rather than pointing two columns at one $2.
     let settings_sql = format!(
         r#"INSERT INTO core.settings
-               (key, value, default_value, category, label, description, is_public,
+               ("key", value, default_value, category, label, description, is_public,
                 scope, value_type, allowed_values, module_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11){settings_clause}"#
     );

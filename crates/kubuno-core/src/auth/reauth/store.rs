@@ -40,8 +40,8 @@ pub async fn policy(db: &DbPool) -> ReauthPolicy {
 
     let rows = db
         .fetch_all_as::<(String, serde_json::Value)>(
-            "SELECT key, value FROM core.settings
-          WHERE key IN ('security.reauth_token_ttl_s', 'security.reauth_grace_s')",
+            "SELECT \"key\", value FROM core.settings
+          WHERE \"key\" IN ('security.reauth_token_ttl_s', 'security.reauth_grace_s')",
             params![],
         )
         .await

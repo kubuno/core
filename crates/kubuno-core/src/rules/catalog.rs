@@ -263,7 +263,7 @@ async fn upsert(
         );
         let sql = format!(
             "INSERT INTO core.rule_triggers \
-                 (key, module_id, event_type, label, description, fields, is_orphan) \
+                 (\"key\", module_id, event_type, label, description, fields, is_orphan) \
              VALUES ($1, $2, $3, $4, $5, $6, FALSE){clause}"
         );
         tx.execute(
@@ -326,7 +326,7 @@ async fn upsert(
         );
         let sql = format!(
             "INSERT INTO core.rule_actions \
-                 (key, module_id, label, description, endpoint, params_schema, \
+                 (\"key\", module_id, label, description, endpoint, params_schema, \
                   is_blocking, is_reversible, is_orphan) \
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE){clause}"
         );
@@ -379,7 +379,7 @@ async fn purge_vanished(
             .push_in(trigger_keys.iter().map(String::as_str))
             .push(")");
     }
-    qb.push(" AND NOT EXISTS (SELECT 1 FROM core.rules r WHERE r.trigger_key = t.key)");
+    qb.push(" AND NOT EXISTS (SELECT 1 FROM core.rules r WHERE r.trigger_key = t.\"key\")");
     qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: purge des déclencheurs disparus");
         AppError::Database(e)
@@ -420,7 +420,7 @@ async fn purge_vanished(
         " AND NOT EXISTS (\
                 SELECT 1 FROM core.rules r, \
                      LATERAL jsonb_array_elements(r.actions) AS spec \
-                 WHERE spec->>'action' = a.key)",
+                 WHERE spec->>'action' = a.\"key\")",
     );
     qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: purge des actions disparues");
@@ -481,8 +481,8 @@ pub async fn refresh_orphans(db: &DbPool) -> Result<(), AppError> {
 
 pub async fn list_triggers(db: &DbPool) -> Result<Vec<TriggerRow>, AppError> {
     db.fetch_all_as::<TriggerRow>(
-        r#"SELECT key, module_id, event_type, label, description, fields, is_orphan
-             FROM core.rule_triggers ORDER BY module_id, key"#,
+        r#"SELECT "key", module_id, event_type, label, description, fields, is_orphan
+             FROM core.rule_triggers ORDER BY module_id, "key""#,
         params![],
     )
     .await
@@ -494,9 +494,9 @@ pub async fn list_triggers(db: &DbPool) -> Result<Vec<TriggerRow>, AppError> {
 
 pub async fn list_actions(db: &DbPool) -> Result<Vec<ActionRow>, AppError> {
     db.fetch_all_as::<ActionRow>(
-        r#"SELECT key, module_id, label, description, params_schema,
+        r#"SELECT "key", module_id, label, description, params_schema,
                   is_blocking, is_reversible, is_orphan
-             FROM core.rule_actions ORDER BY module_id, key"#,
+             FROM core.rule_actions ORDER BY module_id, "key""#,
         params![],
     )
     .await
@@ -518,8 +518,8 @@ pub struct ResolvedAction {
 
 pub async fn resolve_action(db: &DbPool, key: &str) -> Result<Option<ResolvedAction>, AppError> {
     db.fetch_optional_as::<ResolvedAction>(
-        r#"SELECT key, module_id, endpoint, is_blocking, is_reversible
-             FROM core.rule_actions WHERE key = $1"#,
+        r#"SELECT "key", module_id, endpoint, is_blocking, is_reversible
+             FROM core.rule_actions WHERE "key" = $1"#,
         params![key],
     )
     .await
@@ -533,8 +533,8 @@ pub async fn resolve_action(db: &DbPool, key: &str) -> Result<Option<ResolvedAct
 /// rule's comparisons against the vocabulary its trigger actually offers.
 pub async fn get_trigger(db: &DbPool, key: &str) -> Result<Option<TriggerRow>, AppError> {
     db.fetch_optional_as::<TriggerRow>(
-        r#"SELECT key, module_id, event_type, label, description, fields, is_orphan
-             FROM core.rule_triggers WHERE key = $1"#,
+        r#"SELECT "key", module_id, event_type, label, description, fields, is_orphan
+             FROM core.rule_triggers WHERE "key" = $1"#,
         params![key],
     )
     .await

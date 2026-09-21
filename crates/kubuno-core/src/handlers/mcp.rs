@@ -162,7 +162,7 @@ async fn mcp_enabled(state: &AppState) -> bool {
     state
         .db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = 'mcp.enabled'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'mcp.enabled'",
             params![],
         )
         .await

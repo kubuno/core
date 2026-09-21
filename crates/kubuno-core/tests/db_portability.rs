@@ -545,6 +545,46 @@ async fn seed_counts(pool: &DbPool) {
         .await
         .expect("count read-only-admin grants");
     assert!(grants >= 1, "read-only-admin role has seeded privileges");
+
+    // Handler round-trip on the reserved-word `key` column, written the way the
+    // settings store does (double-quoted identifier, portable via ANSI_QUOTES on
+    // MySQL). Uses a random user-scope key so a shared server never collides.
+    let uid = Uuid::new_v4();
+    let skey = format!("handler.key.{uid}");
+    // A setting_value's `key` is an FK to settings.key, so define the setting
+    // first (also a write through the reserved-word column).
+    pool.execute(
+        "INSERT INTO core.settings (\"key\", value) VALUES ($1, $2)",
+        params![skey.clone(), serde_json::json!({"default": true})],
+    )
+    .await
+    .expect("write setting by reserved `key`");
+    pool.execute(
+        "INSERT INTO core.setting_values (\"key\", scope_type, scope_id, value) \
+         VALUES ($1, $2, $3, $4)",
+        params![skey.clone(), "user", uid, serde_json::json!({"on": true})],
+    )
+    .await
+    .expect("write setting_value by reserved `key`");
+    let back: i64 = pool
+        .fetch_scalar(
+            "SELECT COUNT(*) FROM core.setting_values WHERE \"key\" = $1 AND scope_id = $2",
+            params![skey.clone(), uid],
+        )
+        .await
+        .expect("read setting_value by reserved `key`");
+    assert_eq!(back, 1, "setting_value round-trips on the reserved `key` column");
+
+    // Privileges are keyed by the reserved word too: read the seeded catalog the
+    // way the authz catalog handler does.
+    let priv_rows: i64 = pool
+        .fetch_scalar(
+            "SELECT COUNT(*) FROM core.privileges WHERE \"key\" IN ($1, $2)",
+            params!["core.users.read", "core.users.create"],
+        )
+        .await
+        .expect("read privileges by reserved `key`");
+    assert_eq!(priv_rows, 2, "seeded privileges reachable by reserved `key`");
 }
 
 async fn run_all(pool: &DbPool) {

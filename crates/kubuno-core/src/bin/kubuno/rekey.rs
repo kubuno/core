@@ -41,9 +41,9 @@ const STORES: &[Store] = &[
     Store {
         label: "Mot de passe du relais SMTP",
         domain: b"kubuno:smtp:",
-        select: "SELECT key AS id, value #>> '{}' AS blob FROM core.settings \
-                 WHERE key = 'mail.smtp_password' AND value #>> '{}' <> ''",
-        update: "UPDATE core.settings SET value = to_jsonb($1::text) WHERE key = $2",
+        select: "SELECT \"key\" AS id, value #>> '{}' AS blob FROM core.settings \
+                 WHERE \"key\" = 'mail.smtp_password' AND value #>> '{}' <> ''",
+        update: "UPDATE core.settings SET value = to_jsonb($1::text) WHERE \"key\" = $2",
     },
     Store {
         label: "Mot de passe de liaison de l'annuaire",

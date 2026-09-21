@@ -35,7 +35,7 @@ use crate::errors::AppError;
 async fn bool_setting(db: &DbPool, key: &str, default: bool) -> bool {
     let value: Option<Value> = db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = $1",
+            "SELECT value FROM core.settings WHERE \"key\" = $1",
             params![key],
         )
         .await
@@ -64,7 +64,7 @@ pub async fn block_denies_refresh(db: &DbPool) -> bool {
 pub async fn country_db_path(db: &DbPool) -> String {
     let value: Option<Value> = db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = 'devices.country_db_path'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'devices.country_db_path'",
             params![],
         )
         .await

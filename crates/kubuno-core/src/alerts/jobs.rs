@@ -32,7 +32,7 @@ const MAX_INTERVAL_S: u64 = 6 * 3_600;
 async fn interval(db: &DbPool) -> Duration {
     let raw: Option<serde_json::Value> = db
         .fetch_optional_scalar::<Option<serde_json::Value>>(
-            "SELECT value FROM core.settings WHERE key = 'alerts.scan_interval_s'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'alerts.scan_interval_s'",
             params![],
         )
         .await

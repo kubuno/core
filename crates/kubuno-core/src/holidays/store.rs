@@ -187,7 +187,7 @@ pub async fn list_calendars(
                (SELECT COUNT(*) FROM core.holidays h
                  WHERE h.calendar_id = c.parent_id
                    AND NOT EXISTS (SELECT 1 FROM core.holiday_exclusions e
-                                    WHERE e.calendar_id = c.id AND e.key = h.key)) AS inherited_count,
+                                    WHERE e.calendar_id = c.id AND e."key" = h."key")) AS inherited_count,
                (SELECT COUNT(*) FROM core.holidays h
                  WHERE h.calendar_id = c.id AND h.is_overridden) AS overridden_count,
                (SELECT COUNT(*) FROM core.holiday_calendars s WHERE s.parent_id = c.id) AS subdivision_count
@@ -265,7 +265,7 @@ pub async fn holidays_of(
     let rows = db
         .fetch_all_as::<HolidayInheritedRow>(
             r#"
-        SELECT h.id, h.calendar_id, h.key, h.name, h.names, h.category, h.kind, h.rule,
+        SELECT h.id, h.calendar_id, h."key", h.name, h.names, h.category, h.kind, h.rule,
                h.observance, h.from_year, h.to_year, h.color, h.enabled,
                h.is_builtin, h.is_overridden, h.is_orphan,
                (h.calendar_id <> $1) AS inherited
@@ -273,7 +273,7 @@ pub async fn holidays_of(
          WHERE h.calendar_id = $2
             OR ($3 AND h.calendar_id = (SELECT parent_id FROM core.holiday_calendars WHERE id = $4)
                    AND NOT EXISTS (SELECT 1 FROM core.holiday_exclusions e
-                                    WHERE e.calendar_id = $5 AND e.key = h.key))
+                                    WHERE e.calendar_id = $5 AND e."key" = h."key"))
          ORDER BY inherited, LOWER(h.name)
         "#,
             params![
@@ -302,7 +302,7 @@ pub async fn holidays_of(
 pub async fn exclusions(db: &DbPool, calendar_id: Uuid) -> Result<Vec<String>, AppError> {
     let rows = db
         .fetch_all_as::<(String,)>(
-            "SELECT key FROM core.holiday_exclusions WHERE calendar_id = $1 ORDER BY key",
+            "SELECT \"key\" FROM core.holiday_exclusions WHERE calendar_id = $1 ORDER BY \"key\"",
             params![calendar_id],
         )
         .await
@@ -404,7 +404,7 @@ pub async fn feed(db: &DbPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, 
               JOIN wanted w ON p.id = w.parent_id
              WHERE w.depth < 8
         )
-        SELECT h.id, h.calendar_id, h.key, h.name, h.names, h.category, h.kind, h.rule,
+        SELECT h.id, h.calendar_id, h."key", h.name, h.names, h.category, h.kind, h.rule,
                h.observance, h.from_year, h.to_year, h.color, h.enabled,
                h.is_builtin, h.is_overridden, h.is_orphan,
                w.root_id, w.root_code, w.root_name, w.root_names
@@ -424,7 +424,7 @@ pub async fn feed(db: &DbPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, 
         r#"
            -- A day the requested calendar explicitly does not observe.
            AND NOT EXISTS (SELECT 1 FROM core.holiday_exclusions e
-                            WHERE e.calendar_id = w.root_id AND e.key = h.key)
+                            WHERE e.calendar_id = w.root_id AND e."key" = h."key")
         "#,
     );
 

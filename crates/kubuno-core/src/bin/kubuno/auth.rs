@@ -263,7 +263,7 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
         // account-scope row is written.
         let unlocked = db
             .execute(
-                "UPDATE core.setting_values SET locked = FALSE WHERE key = $1 AND locked = TRUE",
+                "UPDATE core.setting_values SET locked = FALSE WHERE \"key\" = $1 AND locked = TRUE",
                 params![kubuno_core::auth::methods::KEY_METHODS],
             )
             .await
@@ -292,7 +292,7 @@ pub async fn cmd_auth_recover(args: &clap::ArgMatches) -> Result<()> {
             ],
         );
         let sql = format!(
-            "INSERT INTO core.setting_values (key, scope_type, scope_id, value, updated_at) \
+            "INSERT INTO core.setting_values (\"key\", scope_type, scope_id, value, updated_at) \
              VALUES ($1, 'user', $2, $3, $4){upsert}"
         );
         db.execute(

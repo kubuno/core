@@ -117,7 +117,7 @@ pub async fn reload(db: &DbPool) -> Result<usize, AppError> {
     // Trigger → event type, in one query rather than one per rule.
     let mappings = db
         .fetch_all_as::<TriggerEvent>(
-            "SELECT key, event_type FROM core.rule_triggers",
+            "SELECT \"key\", event_type FROM core.rule_triggers",
             params![],
         )
         .await

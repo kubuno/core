@@ -154,7 +154,7 @@ impl MailConfig {
     /// so an instance whose migration ran halfway still boots.
     pub async fn load(db: &DbPool, jwt_secret: &str) -> Result<Self, AppError> {
         let mut qb =
-            DbQueryBuilder::new(db.backend(), "SELECT key, value FROM core.settings WHERE key");
+            DbQueryBuilder::new(db.backend(), "SELECT \"key\", value FROM core.settings WHERE \"key\"");
         qb.push_in(ALL_KEYS.iter().copied());
         let rows: Vec<(String, serde_json::Value)> =
             qb.fetch_all_as(db).await.map_err(|e| {

@@ -390,7 +390,7 @@ async fn default_quota_policy(db: &DbPool) -> Result<Value, AppError> {
             r#"SELECT v.scope_id AS unit_id, o.name AS unit_name, v.value, v.locked, v.updated_at
                  FROM core.setting_values v
                  JOIN core.org_units o ON o.id = v.scope_id
-                WHERE v.key = $1 AND v.scope_type = 'org_unit'
+                WHERE v."key" = $1 AND v.scope_type = 'org_unit'
                 ORDER BY o.name"#,
             params![key],
         )

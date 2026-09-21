@@ -95,8 +95,8 @@ struct SettingKv {
 pub async fn reload_from_db(db: &DbPool) {
     let rows = db
         .fetch_all_as::<SettingKv>(
-            "SELECT key, value FROM core.settings \
-         WHERE key IN ('security.ddos_enabled', 'security.ddos_rate_per_min', 'security.ddos_max_concurrent', \
+            "SELECT \"key\", value FROM core.settings \
+         WHERE \"key\" IN ('security.ddos_enabled', 'security.ddos_rate_per_min', 'security.ddos_max_concurrent', \
                        'security.rate_user_per_min')",
             params![],
         )

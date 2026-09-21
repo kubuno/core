@@ -55,7 +55,7 @@ use crate::settings::intl;
 pub async fn instance_name(db: &DbPool) -> String {
     let value: Option<serde_json::Value> = db
         .fetch_optional_scalar::<serde_json::Value>(
-            "SELECT value FROM core.settings WHERE key = 'instance.name'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'instance.name'",
             params![],
         )
         .await

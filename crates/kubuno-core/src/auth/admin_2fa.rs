@@ -68,8 +68,8 @@ pub async fn policy(db: &DbPool) -> Admin2faPolicy {
 
     let rows = db
         .fetch_all_as::<(String, serde_json::Value)>(
-            "SELECT key, value FROM core.settings
-          WHERE key IN ('security.admin_2fa_required', 'security.admin_2fa_grace_days')",
+            "SELECT \"key\", value FROM core.settings
+          WHERE \"key\" IN ('security.admin_2fa_required', 'security.admin_2fa_grace_days')",
             params![],
         )
         .await

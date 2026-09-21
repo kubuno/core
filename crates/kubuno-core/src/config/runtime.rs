@@ -42,8 +42,8 @@ pub async fn security_ttls(db: &DbPool, settings: &Settings) -> SecurityTtls {
 
     let rows = db
         .fetch_all_as::<SettingRow>(
-            "SELECT key, value FROM core.settings \
-             WHERE key IN ('security.jwt_access_ttl_s', \
+            "SELECT \"key\", value FROM core.settings \
+             WHERE \"key\" IN ('security.jwt_access_ttl_s', \
                            'security.jwt_refresh_ttl_d', \
                            'security.max_sessions', \
                            'security.session_idle_timeout_min')",

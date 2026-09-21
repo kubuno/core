@@ -61,8 +61,8 @@ impl JobRunnerConfig {
 
         let rows = db
             .fetch_all_as::<SettingRow>(
-                "SELECT key, value FROM core.settings
-                  WHERE key IN ('jobs.concurrency',
+                "SELECT \"key\", value FROM core.settings
+                  WHERE \"key\" IN ('jobs.concurrency',
                                 'jobs.poll_interval_s',
                                 'jobs.stalled_after_s',
                                 'jobs.job_timeout_s')",

@@ -120,7 +120,7 @@ pub async fn list_privileges(
     let privileges = state
         .db
         .fetch_all_as::<Privilege>(
-            "SELECT key, namespace, domain, verb, label, description, is_ou_scopable, is_orphan \
+            "SELECT \"key\", namespace, domain, verb, label, description, is_ou_scopable, is_orphan \
              FROM core.privileges ORDER BY namespace, domain, verb",
             params![],
         )
@@ -183,7 +183,7 @@ pub async fn list_roles(
     let non_scopable_sql = format!(
         "SELECT rp.role_id, {} \
            FROM core.role_privileges rp \
-           JOIN core.privileges p ON p.key = rp.privilege_key \
+           JOIN core.privileges p ON p.\"key\" = rp.privilege_key \
           WHERE NOT p.is_ou_scopable GROUP BY rp.role_id",
         backend.count_bigint("*"),
     );
@@ -260,7 +260,7 @@ async fn validate_privileges(db: &DbPool, keys_in: &[String]) -> Result<(), AppE
     }
     // The catalogue is static reference data, so it is read on the pool even when
     // a caller runs this mid-transaction. `= ANY($1)` becomes a variadic `IN`.
-    let mut qb = DbQueryBuilder::new(db.backend(), "SELECT key FROM core.privileges WHERE key");
+    let mut qb = DbQueryBuilder::new(db.backend(), "SELECT \"key\" FROM core.privileges WHERE \"key\"");
     qb.push_in(keys_in.iter().cloned());
     let known: Vec<String> = qb
         .fetch_all_as::<(String,)>(db)
@@ -470,7 +470,7 @@ pub async fn update_role(
                FROM core.role_assignments a \
               WHERE a.role_id = $1 AND a.scope = 'org_unit' \
                 AND EXISTS (SELECT 1 FROM core.role_privileges rp \
-                              JOIN core.privileges p ON p.key = rp.privilege_key \
+                              JOIN core.privileges p ON p.\"key\" = rp.privilege_key \
                              WHERE rp.role_id = a.role_id AND NOT p.is_ou_scopable)",
             tx.backend().count_bigint("*"),
         );

@@ -326,7 +326,7 @@ pub async fn revoke(
 async fn load_allowed_roles(db: &DbPool) -> Vec<String> {
     let row: Option<serde_json::Value> = db
         .fetch_optional_scalar::<serde_json::Value>(
-            "SELECT value FROM core.settings WHERE key = 'auth.api_token_allowed_roles'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'auth.api_token_allowed_roles'",
             params![],
         )
         .await

@@ -264,7 +264,7 @@ pub async fn gather(db: &DbPool, settings: &Settings, probe: RequestProbe) -> Re
     let mail_settings_changed_at = db
         .fetch_scalar::<Option<DateTime<Utc>>>(
             "SELECT MAX(updated_at) FROM core.settings \
-         WHERE category = 'mail' AND key <> 'mail.last_test_ok_at' AND updated_by IS NOT NULL",
+         WHERE category = 'mail' AND \"key\" <> 'mail.last_test_ok_at' AND updated_by IS NOT NULL",
             params![],
         )
         .await
@@ -399,12 +399,12 @@ async fn load_settings(db: &DbPool) -> Result<SettingMap, AppError> {
     // absence of a row is exactly the absence of a decision.
     let mut qb = DbQueryBuilder::new(
         db.backend(),
-        "SELECT s.key, s.value, \
+        "SELECT s.\"key\", s.value, \
                 EXISTS ( \
                     SELECT 1 FROM core.setting_values v \
-                     WHERE v.key = s.key AND v.scope_type = 'instance' \
+                     WHERE v.\"key\" = s.\"key\" AND v.scope_type = 'instance' \
                 ) AS chosen \
-           FROM core.settings s WHERE s.key",
+           FROM core.settings s WHERE s.\"key\"",
     );
     qb.push_in(SETTING_KEYS.iter().copied());
     let rows: Vec<(String, Value, bool)> = qb.fetch_all_as(db).await.map_err(|e| {

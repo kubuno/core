@@ -101,7 +101,7 @@ pub fn grace_deadline(legacy_since: DateTime<Utc>, grace_days: i64) -> DateTime<
 async fn read_i64(db: &DbPool, key: &str) -> Option<i64> {
     let value: Option<serde_json::Value> = db
         .fetch_optional_scalar::<serde_json::Value>(
-            "SELECT value FROM core.settings WHERE key = $1",
+            "SELECT value FROM core.settings WHERE \"key\" = $1",
             params![key],
         )
         .await
@@ -165,7 +165,7 @@ pub async fn validate_requested(
     // grantable; whatever is missing from the answer is refused below.
     let mut qb = DbQueryBuilder::new(
         db.backend(),
-        "SELECT key, is_token_grantable FROM core.privileges WHERE key",
+        "SELECT \"key\", is_token_grantable FROM core.privileges WHERE \"key\"",
     );
     qb.push_in(scopes.iter().cloned());
     let rows: Vec<(String, bool)> = qb.fetch_all_as(db).await.map_err(|e| {
@@ -244,7 +244,7 @@ pub async fn grantable_for(
 ) -> Result<Vec<GrantableScope>, AppError> {
     let rows: Vec<(String, String, String, String, String, Option<String>)> = db
         .fetch_all_as::<(String, String, String, String, String, Option<String>)>(
-            "SELECT key, namespace, domain, verb, label, description
+            "SELECT \"key\", namespace, domain, verb, label, description
            FROM core.privileges
           WHERE is_token_grantable AND NOT is_orphan
           ORDER BY namespace, domain, verb",

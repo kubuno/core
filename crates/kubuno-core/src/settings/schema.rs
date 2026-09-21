@@ -101,9 +101,9 @@ impl SettingSchema {
 /// Loads one declaration, or `NotFound`.
 pub async fn load(db: &DbPool, key: &str) -> Result<SettingSchema, AppError> {
     db.fetch_optional_as::<SettingSchema>(
-        "SELECT key, category, label, description, is_public, scope, value_type, \
+        "SELECT \"key\", category, label, description, is_public, scope, value_type, \
                 allowed_values, module_id, default_value \
-         FROM core.settings WHERE key = $1",
+         FROM core.settings WHERE \"key\" = $1",
         params![key],
     )
     .await
@@ -125,11 +125,11 @@ pub async fn load_all(
     // `module_id` is bound twice (a typed NULL carries its own type across all
     // three engines, so the former `$1::text` cast is no longer needed).
     db.fetch_all_as::<SettingSchema>(
-        "SELECT key, category, label, description, is_public, scope, value_type, \
+        "SELECT \"key\", category, label, description, is_public, scope, value_type, \
                 allowed_values, module_id, default_value \
          FROM core.settings \
          WHERE ($1 IS NULL AND module_id IS NULL) OR module_id = $2 \
-         ORDER BY category, key",
+         ORDER BY category, \"key\"",
         params![module_id, module_id],
     )
     .await

@@ -90,7 +90,7 @@ struct SettingKv {
 }
 
 pub async fn thresholds(db: &DbPool) -> Result<Thresholds, AppError> {
-    let mut qb = DbQueryBuilder::new(db.backend(), "SELECT key, value FROM core.settings WHERE key");
+    let mut qb = DbQueryBuilder::new(db.backend(), "SELECT \"key\", value FROM core.settings WHERE \"key\"");
     qb.push_in(SETTING_KEYS.iter().copied());
     let rows: Vec<SettingKv> = qb.fetch_all_as::<SettingKv>(db).await.map_err(|e| {
         tracing::error!(error = %e, "alerts: lecture des seuils");

@@ -692,7 +692,7 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
     // 4. Instance name, when one was given.
     if let Some(inst) = req.instance.as_ref() {
         if !inst.name.trim().is_empty() {
-            let _ = sqlx::query("UPDATE core.settings SET value = $1 WHERE key = 'instance.name'")
+            let _ = sqlx::query("UPDATE core.settings SET value = $1 WHERE \"key\" = 'instance.name'")
                 .bind(serde_json::Value::String(inst.name.trim().to_string()))
                 .execute(&pool)
                 .await;
@@ -701,7 +701,7 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
         // already uses (`instance.logo_url`, `instance.color_primary`), so the
         // shell and the login page read them at once with no wiring of their own.
         if let Some(u) = inst.logo_dataurl.as_deref().filter(|u| !u.is_empty()) {
-            let _ = sqlx::query("UPDATE core.settings SET value = $1 WHERE key = 'instance.logo_url'")
+            let _ = sqlx::query("UPDATE core.settings SET value = $1 WHERE \"key\" = 'instance.logo_url'")
                 .bind(serde_json::Value::String(u.to_string()))
                 .execute(&pool)
                 .await;
@@ -718,9 +718,9 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
             .any(|e| e.manifest.id == t);
             if known {
                 let _ = sqlx::query(
-                    "INSERT INTO core.settings (key, value, category, label, is_public)
+                    "INSERT INTO core.settings (\"key\", value, category, label, is_public)
                      VALUES ('appearance.theme', $1, 'appearance', 'Thème de l''instance', TRUE)
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                     ON CONFLICT (\"key\") DO UPDATE SET value = EXCLUDED.value",
                 )
                 .bind(serde_json::Value::String(t.to_string()))
                 .execute(&pool)
@@ -736,9 +736,9 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
             match crate::settings::intl::normalise_locale(l) {
                 Some(code) => {
                     let _ = sqlx::query(
-                        "INSERT INTO core.settings (key, value, category, label, is_public)
+                        "INSERT INTO core.settings (\"key\", value, category, label, is_public)
                          VALUES ($1, $2, 'general', 'Langue de l''instance', TRUE)
-                         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                         ON CONFLICT (\"key\") DO UPDATE SET value = EXCLUDED.value",
                     )
                     .bind(crate::settings::intl::LOCALE_KEY)
                     .bind(serde_json::Value::String(code.to_string()))
@@ -750,7 +750,7 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
         }
         if let Some(c) = inst.color_primary.as_deref().filter(|c| !c.is_empty()) {
             let hex = if c.starts_with('#') { c.to_string() } else { format!("#{c}") };
-            let _ = sqlx::query("UPDATE core.settings SET value = $1 WHERE key = 'instance.color_primary'")
+            let _ = sqlx::query("UPDATE core.settings SET value = $1 WHERE \"key\" = 'instance.color_primary'")
                 .bind(serde_json::Value::String(hex))
                 .execute(&pool)
                 .await;

@@ -736,7 +736,7 @@ async fn compute(
 async fn retention(db: &DbPool) -> Value {
     let days: Option<Value> = db
         .fetch_optional_scalar::<Option<Value>>(
-            "SELECT value FROM core.settings WHERE key = 'usage.retention_days'",
+            "SELECT value FROM core.settings WHERE \"key\" = 'usage.retention_days'",
             params![],
         )
         .await

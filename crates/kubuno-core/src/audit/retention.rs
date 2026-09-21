@@ -56,7 +56,7 @@ pub fn validate_retention(value: &serde_json::Value) -> Result<i64, AppError> {
 pub async fn configured_days(db: &DbPool) -> i64 {
     let raw: Option<serde_json::Value> = db
         .fetch_optional_scalar::<Option<serde_json::Value>>(
-            "SELECT value FROM core.settings WHERE key = $1",
+            "SELECT value FROM core.settings WHERE \"key\" = $1",
             params![RETENTION_SETTING_KEY],
         )
         .await

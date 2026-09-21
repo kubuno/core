@@ -107,7 +107,7 @@ async fn execute(
     // fixed in `crate::events::bus`).
     let event_type: Option<String> = db
         .fetch_optional_scalar::<String>(
-            "SELECT event_type FROM core.rule_triggers WHERE key = $1",
+            "SELECT event_type FROM core.rule_triggers WHERE \"key\" = $1",
             params![&rule.trigger_key],
         )
         .await

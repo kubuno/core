@@ -42,7 +42,7 @@ use super::scan::Compiled;
 // `concat!` and is a single compile-time literal.
 macro_rules! columns {
     () => {
-        r#"id, key, label, description, category, kind, pattern, terms, checksum,
+        r#"id, "key", label, description, category, kind, pattern, terms, checksum,
     proximity_terms, proximity_window, proximity_required,
     base_confidence, checksum_bonus, proximity_bonus,
     min_confidence, min_matches, min_unique_matches,
@@ -189,7 +189,7 @@ pub async fn key_exists(db: &DbPool, key: &str, except: Option<Uuid>) -> Result<
     let mut qb = DbQueryBuilder::new(
         db.backend(),
         format!(
-            "SELECT {} FROM core.content_detectors WHERE key = ",
+            "SELECT {} FROM core.content_detectors WHERE \"key\" = ",
             db.backend().cast("1", SqlType::BigInt)
         ),
     );
@@ -273,7 +273,7 @@ pub async fn insert(
 
     tx.execute(
         r#"INSERT INTO core.content_detectors
-               (id, key, label, description, category, kind, pattern, terms, checksum,
+               (id, "key", label, description, category, kind, pattern, terms, checksum,
                 proximity_terms, proximity_window, proximity_required,
                 base_confidence, checksum_bonus, proximity_bonus,
                 min_confidence, min_matches, min_unique_matches,
@@ -303,7 +303,7 @@ pub async fn update(
     let affected = tx
         .execute(
             r#"UPDATE core.content_detectors SET
-                   key = $1, label = $2, description = $3, category = $4, kind = $5,
+                   "key" = $1, label = $2, description = $3, category = $4, kind = $5,
                    pattern = $6, terms = $7, checksum = $8,
                    proximity_terms = $9, proximity_window = $10, proximity_required = $11,
                    base_confidence = $12, checksum_bonus = $13, proximity_bonus = $14,
@@ -466,7 +466,7 @@ pub async fn reload(db: &DbPool) -> Result<usize, AppError> {
 /// have to read.
 pub async fn setting_str(db: &DbPool, key: &str, default: &str) -> String {
     let raw: Option<Value> = db
-        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE key = $1", params![key])
+        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE \"key\" = $1", params![key])
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, key = %key, "detectors: lecture d'un réglage");
@@ -484,7 +484,7 @@ pub async fn setting_str(db: &DbPool, key: &str, default: &str) -> String {
 
 pub async fn setting_bool(db: &DbPool, key: &str, default: bool) -> bool {
     let raw: Option<Value> = db
-        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE key = $1", params![key])
+        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE \"key\" = $1", params![key])
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, key = %key, "detectors: lecture d'un réglage");

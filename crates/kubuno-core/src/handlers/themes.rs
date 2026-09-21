@@ -131,7 +131,7 @@ fn theme_dir_path(themes_dir: &str, id: &str) -> Result<std::path::PathBuf, AppE
 async fn load_trusted(db: &DbPool) -> HashSet<String> {
     match db
         .fetch_optional_scalar::<Value>(
-            "SELECT value FROM core.settings WHERE key = $1",
+            "SELECT value FROM core.settings WHERE \"key\" = $1",
             params![TRUSTED_KEY],
         )
         .await
@@ -159,7 +159,7 @@ async fn save_trusted(db: &DbPool, trusted: &HashSet<String>) -> Result<(), AppE
         &[Assign::Incoming("value"), Assign::Incoming("updated_at")],
     );
     let sql = format!(
-        "INSERT INTO core.settings (key, value, category, label, is_public, updated_at) \
+        "INSERT INTO core.settings (\"key\", value, category, label, is_public, updated_at) \
          VALUES ($1, $2, 'appearance', 'Thèmes autorisés à exécuter des scripts', FALSE, $3){clause}"
     );
     db.execute(&sql, params![TRUSTED_KEY, value, chrono::Utc::now()])

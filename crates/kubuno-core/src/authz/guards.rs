@@ -82,7 +82,7 @@ async fn role_contents(db: &DbPool, role_id: Uuid) -> Result<(bool, Vec<String>)
 
     let keys: Vec<String> = db
         .fetch_all_as::<KeyRow>(
-            "SELECT privilege_key AS key FROM core.role_privileges WHERE role_id = $1 ORDER BY privilege_key",
+            "SELECT privilege_key AS \"key\" FROM core.role_privileges WHERE role_id = $1 ORDER BY privilege_key",
             params![role_id],
         )
         .await
@@ -124,11 +124,11 @@ pub async fn ensure_scopable(
 
     let blocking: Vec<String> = db
         .fetch_all_as::<KeyRow>(
-            r#"SELECT p.key
+            r#"SELECT p."key"
                  FROM core.role_privileges rp
-                 JOIN core.privileges p ON p.key = rp.privilege_key
+                 JOIN core.privileges p ON p."key" = rp.privilege_key
                 WHERE rp.role_id = $1 AND NOT p.is_ou_scopable
-                ORDER BY p.key"#,
+                ORDER BY p."key""#,
             params![role_id],
         )
         .await
