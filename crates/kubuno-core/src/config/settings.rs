@@ -1,9 +1,6 @@
 use crate::auth::internal_secret::{authenticate, derive_module_secret, InternalCaller};
-use anyhow::Context;
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use sqlx::postgres::PgConnectOptions;
-use std::str::FromStr;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -218,98 +215,93 @@ impl TlsSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct DatabaseSettings {
-    // Mode URL — les caractères spéciaux DOIVENT être encodés : '#' → %23, '@' → %40
-    pub url: Option<String>,
+/// The `[database]` section is owned by kubuno-db: which of its fields matter
+/// (`url`/host/port/user/password/database, or SQLite `path`) depends on the
+/// `engine` the administrator chooses at run time, and the pool is opened by
+/// `kubuno_db::connect`.
+pub use kubuno_db::DbSettings as DatabaseSettings;
 
-    // Mode champs séparés (recommandé — aucun encodage requis)
-    pub host:     Option<String>,
-    pub port:     Option<u16>,
-    pub user:     Option<String>,
-    pub password: Option<String>,
-    pub database: Option<String>,
-
-    // Optional schema-name prefix (WordPress-style), so several Kubuno instances
-    // can share one database server: every schema name becomes `<prefix><name>`
-    // (`core` -> `kub_core`, the `notes` module -> `kub_notes`). Empty/absent
-    // means no prefix. Must match `^[a-z0-9_]{1,32}$`. The shared database
-    // foundation (`kubuno-db`) applies it to schema creation, the search path and
-    // every statement; it is surfaced here so it round-trips through the config
-    // file and the setup wizard, and reaches modules configured the same way.
-    #[serde(default)]
-    pub schema_prefix: Option<String>,
-
-    // Paramètres du pool (communs aux deux modes)
-    pub max_connections: u32,
-    pub min_connections: u32,
-    #[serde(with = "duration_secs")]
-    pub connect_timeout: Duration,
-    pub run_migrations:  bool,
+/// Minimal presence check the installer and `load()` share. kubuno-db validates
+/// the concrete fields per engine when it connects; here we only reject an
+/// obviously empty PostgreSQL/MySQL section early, with a friendly message. On
+/// SQLite the file path defaults, so nothing is required.
+pub fn validate_database(db: &DatabaseSettings) -> Result<(), String> {
+    let backend = kubuno_db::Backend::parse(&db.engine)
+        .ok_or_else(|| format!("database.engine inconnu : {}", db.engine))?;
+    if matches!(backend, kubuno_db::Backend::Sqlite) {
+        return Ok(());
+    }
+    if db.url.is_none() && (db.user.is_none() || db.database.is_none()) {
+        return Err(
+            "database: fournissez 'url' OU les champs 'host/user/password/database'".into(),
+        );
+    }
+    // Reject an invalid schema prefix early, at config load, with a clear
+    // message (WordPress-style prefix shared by several instances). kubuno-db
+    // enforces the same `^[a-z0-9_]{1,32}$` rule again when it connects; doing
+    // it here means an install with `KV__DATABASE__SCHEMA_PREFIX` or a bad
+    // `[database] schema_prefix` never reaches the pool.
+    kubuno_db::SchemaPrefix::new(db.schema_prefix.as_deref())?;
+    Ok(())
 }
 
-impl DatabaseSettings {
-    /// Construit les options de connexion sqlx depuis l'URL ou les champs séparés.
-    pub fn connect_options(&self) -> anyhow::Result<PgConnectOptions> {
-        if let Some(url) = &self.url {
-            return PgConnectOptions::from_str(url)
-                .context("database.url invalide (encodez '#' → %23, '@' → %40)");
-        }
-        let user = self.user.as_deref()
-            .context("database.user requis (ou database.url)")?;
-        let password = self.password.as_deref()
-            .context("database.password requis (ou database.url)")?;
-        let database = self.database.as_deref()
-            .context("database.database requis (ou database.url)")?;
-        Ok(PgConnectOptions::new()
-            .host(self.host.as_deref().unwrap_or("localhost"))
-            .port(self.port.unwrap_or(5432))
-            .username(user)
-            .password(password)
-            .database(database))
-    }
-
-    fn validate(&self) -> Result<(), String> {
-        if self.url.is_none() && (self.user.is_none() || self.database.is_none()) {
-            return Err(
-                "database: fournissez 'url' OU les champs 'host/user/password/database'".into(),
-            );
-        }
-        Ok(())
-    }
-
-    /// Extrait les credentials individuels (host/port/user/password/database)
-    /// que la config soit en mode URL ou champs séparés.
-    /// Utilisé par le superviseur pour les injecter dans les processus modules.
-    pub fn credentials(&self) -> anyhow::Result<DbCredentials> {
-        if let Some(raw) = &self.url {
-            let parsed = url::Url::parse(raw)
-                .map_err(|e| anyhow::anyhow!("database.url invalide : {e}"))?;
+/// Extracts the individual credentials (engine/host/port/user/password/database
+/// and, for SQLite, the file path), whether the configuration is in URL or
+/// discrete-field mode. Used by the supervisor to inject them into the module
+/// processes so a module connects to the SAME engine and database as the core.
+pub fn database_credentials(db: &DatabaseSettings) -> anyhow::Result<DbCredentials> {
+    let default_port = match kubuno_db::Backend::parse(&db.engine) {
+        Some(kubuno_db::Backend::MySql) => 3306,
+        _ => 5432,
+    };
+    if let Some(raw) = &db.url {
+        // A SQLite URL is `sqlite://<path>`; keep the path and skip URL parsing.
+        if let Some(path) = raw.strip_prefix("sqlite://") {
             return Ok(DbCredentials {
-                host:     parsed.host_str().unwrap_or("localhost").to_string(),
-                port:     parsed.port().unwrap_or(5432),
-                user:     parsed.username().to_string(),
-                password: parsed.password().unwrap_or("").to_string(),
-                database: parsed.path().trim_start_matches('/').to_string(),
+                engine: db.engine.clone(),
+                host: String::new(),
+                port: default_port,
+                user: String::new(),
+                password: String::new(),
+                database: String::new(),
+                path: path.to_string(),
             });
         }
-        Ok(DbCredentials {
-            host:     self.host.clone().unwrap_or_else(|| "localhost".to_string()),
-            port:     self.port.unwrap_or(5432),
-            user:     self.user.clone().unwrap_or_default(),
-            password: self.password.clone().unwrap_or_default(),
-            database: self.database.clone().unwrap_or_default(),
-        })
+        let parsed = url::Url::parse(raw)
+            .map_err(|e| anyhow::anyhow!("database.url invalide : {e}"))?;
+        return Ok(DbCredentials {
+            engine:   db.engine.clone(),
+            host:     parsed.host_str().unwrap_or("localhost").to_string(),
+            port:     parsed.port().unwrap_or(default_port),
+            user:     parsed.username().to_string(),
+            password: parsed.password().unwrap_or("").to_string(),
+            database: parsed.path().trim_start_matches('/').to_string(),
+            path:     db.path.clone().unwrap_or_default(),
+        });
     }
+    Ok(DbCredentials {
+        engine:   db.engine.clone(),
+        host:     db.host.clone().unwrap_or_else(|| "localhost".to_string()),
+        port:     db.port.unwrap_or(default_port),
+        user:     db.user.clone().unwrap_or_default(),
+        password: db.password.clone().unwrap_or_default(),
+        database: db.database.clone().unwrap_or_default(),
+        path:     db.path.clone().unwrap_or_default(),
+    })
 }
 
 #[derive(Debug, Clone)]
 pub struct DbCredentials {
+    /// The engine name (`postgres`/`mysql`/`sqlite`), transported so a module
+    /// opens the same kind of database as the core.
+    pub engine:   String,
     pub host:     String,
     pub port:     u16,
     pub user:     String,
     pub password: String,
     pub database: String,
+    /// SQLite only: the directory holding the per-schema `.sqlite` files.
+    pub path:     String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -386,6 +378,9 @@ impl Settings {
             .set_default("server.tls.cert_path", "")?
             .set_default("server.tls.key_path", "")?
             .set_default("server.tls.redirect_http_from_port", 0)?
+            .set_default("database.engine", "postgres")?
+            // SQLite only: directory holding the `<schema>.sqlite` files.
+            .set_default("database.path", "/var/lib/kubuno/db")?
             .set_default("database.max_connections", 20)?
             .set_default("database.min_connections", 2)?
             .set_default("database.connect_timeout", 10u64)?
@@ -447,7 +442,7 @@ impl Settings {
     /// As `load`, against an explicitly named configuration file.
     pub fn load_from(explicit: Option<&str>) -> Result<Self, ConfigError> {
         let settings = Self::load_unvalidated_from(explicit)?;
-        settings.database.validate()
+        validate_database(&settings.database)
             .map_err(ConfigError::Message)?;
         settings.server.tls.validate()
             .map_err(ConfigError::Message)?;
@@ -535,7 +530,7 @@ mod tests {
             .set_default("logging.max_log_files", 30u32).unwrap()
             .build().unwrap();
         let settings: Settings = cfg.try_deserialize().expect("Désérialisation doit réussir");
-        let err = settings.database.validate();
+        let err = validate_database(&settings.database);
         assert!(err.is_err(), "validate() doit échouer sans url ni user/database");
         let msg = err.unwrap_err();
         assert!(msg.contains("url"), "L'erreur doit mentionner 'url': {msg}");

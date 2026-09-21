@@ -19,6 +19,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{Duration, Utc};
+use kubuno_db::params;
 
 use crate::{crypto::token, state::AppState};
 
@@ -58,14 +59,15 @@ pub async fn idempotency(state: AppState, req: Request, next: Next) -> Response 
     let path = req.uri().path().to_string();
     let id_hash = token::hash_token(&format!("{actor_hash}|{method}|{path}|{key}"));
 
-    // Réponse déjà mémorisée et non expirée ⇒ rejeu sans ré-exécution.
-    match sqlx::query_as::<_, (i32, Option<String>, Vec<u8>)>(
-        "SELECT status_code, content_type, body FROM core.idempotency_keys
-         WHERE id_hash = $1 AND expires_at > NOW()",
-    )
-    .bind(&id_hash)
-    .fetch_optional(&state.db)
-    .await
+    // An already-stored, unexpired response ⇒ replay without re-execution.
+    match state
+        .db
+        .fetch_optional_as::<(i32, Option<String>, Vec<u8>)>(
+            "SELECT status_code, content_type, body FROM core.idempotency_keys
+             WHERE id_hash = $1 AND expires_at > $2",
+            params![&id_hash, Utc::now()],
+        )
+        .await
     {
         Ok(Some((status, ctype, body))) => {
             let status = StatusCode::from_u16(status as u16).unwrap_or(StatusCode::OK);
@@ -81,8 +83,8 @@ pub async fn idempotency(state: AppState, req: Request, next: Next) -> Response 
         }
         Ok(None) => {}
         Err(e) => {
-            // En cas d'erreur DB on n'empêche pas la requête : on la laisse passer
-            // sans idempotence plutôt que de renvoyer une erreur.
+            // On a DB error we do not block the request: let it through without
+            // idempotency rather than returning an error.
             tracing::error!(error = %e, "Lecture idempotency_keys échouée");
             return next.run(req).await;
         }
@@ -107,22 +109,30 @@ pub async fn idempotency(state: AppState, req: Request, next: Next) -> Response 
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
         let expires = Utc::now() + Duration::hours(TTL_HOURS);
-        if let Err(e) = sqlx::query(
-            "INSERT INTO core.idempotency_keys
+        let backend = state.db.backend();
+        let insert_sql = format!(
+            "INSERT {}INTO core.idempotency_keys
                 (id_hash, actor_hash, method, path, status_code, content_type, body, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             ON CONFLICT (id_hash) DO NOTHING",
-        )
-        .bind(&id_hash)
-        .bind(&actor_hash)
-        .bind(method.as_str())
-        .bind(&path)
-        .bind(parts.status.as_u16() as i32)
-        .bind(ctype)
-        .bind(bytes.as_ref())
-        .bind(expires)
-        .execute(&state.db)
-        .await
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8){}",
+            backend.insert_ignore_prefix(),
+            backend.on_conflict_do_nothing(&["id_hash"]),
+        );
+        if let Err(e) = state
+            .db
+            .execute(
+                &insert_sql,
+                params![
+                    &id_hash,
+                    &actor_hash,
+                    method.as_str(),
+                    &path,
+                    parts.status.as_u16() as i32,
+                    ctype,
+                    bytes.as_ref(),
+                    expires,
+                ],
+            )
+            .await
         {
             tracing::error!(error = %e, "Écriture idempotency_keys échouée");
         }

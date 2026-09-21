@@ -66,8 +66,8 @@ pub use schema::SettingSchema;
 pub use scope::{ScopeKind, SettingScope, INSTANCE_SCOPE_ID};
 pub use store::{clear_value, set_lock, set_value, WriteOutcome};
 
+use kubuno_db::{params, DbPool};
 use serde_json::Value;
-use sqlx::PgExecutor;
 
 /// The instance-level value of `key`, factory default included.
 ///
@@ -75,17 +75,17 @@ use sqlx::PgExecutor;
 /// Returns `None` for an undeclared key rather than an error: every caller here
 /// has a hard-coded fallback anyway, and a missing setting must not take a
 /// background worker down.
-pub async fn instance_value<'e, E: PgExecutor<'e>>(db: E, key: &str) -> Option<Value> {
-    match sqlx::query_scalar::<_, Value>(
-        "SELECT COALESCE( \
-             (SELECT v.value FROM core.setting_values v \
-               WHERE v.key = s.key AND v.scope_type = 'instance'), \
-             s.default_value) \
-         FROM core.settings s WHERE s.key = $1",
-    )
-    .bind(key)
-    .fetch_optional(db)
-    .await
+pub async fn instance_value(db: &DbPool, key: &str) -> Option<Value> {
+    match db
+        .fetch_optional_scalar::<Value>(
+            "SELECT COALESCE( \
+                 (SELECT v.value FROM core.setting_values v \
+                   WHERE v.\"key\" = s.\"key\" AND v.scope_type = 'instance'), \
+                 s.default_value) \
+             FROM core.settings s WHERE s.\"key\" = $1",
+            params![key],
+        )
+        .await
     {
         Ok(v) => v,
         Err(e) => {

@@ -22,12 +22,28 @@
 
 use std::collections::HashSet;
 
-use sqlx::{PgConnection, PgPool};
+use kubuno_db::{params, Backend, DbPool, DbTx};
 use uuid::Uuid;
 
 use super::context::AdminContext;
 use super::model::AssignmentScope;
 use crate::errors::AppError;
+
+/// One privilege key read as a single-column row. `DbPool` cannot fetch a bare
+/// scalar list into a `Vec`, so each key comes back wrapped in this one-field
+/// struct and is unwrapped by the caller.
+#[derive(sqlx::FromRow)]
+struct KeyRow {
+    key: String,
+}
+
+/// A role-assignment row: whether the assigned role is a superuser role, and one
+/// of the privilege keys it carries (NULL when it carries none).
+#[derive(sqlx::FromRow)]
+struct RoleAssignmentRow {
+    is_superuser: bool,
+    privilege_key: Option<String>,
+}
 
 /// Guard 1 — defining roles and their privilege sets is superuser-only.
 pub fn ensure_role_management(ctx: &AdminContext) -> Result<(), AppError> {
@@ -35,49 +51,48 @@ pub fn ensure_role_management(ctx: &AdminContext) -> Result<(), AppError> {
 }
 
 /// The organisational unit an account sits in.
-pub async fn user_org_unit(
-    conn: &mut PgConnection,
-    user_id: Uuid,
-) -> Result<Option<Uuid>, AppError> {
-    let unit: Option<Option<Uuid>> =
-        sqlx::query_scalar("SELECT org_unit_id FROM core.users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&mut *conn)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, user_id = %user_id, "authz: lecture de l'unité de la cible");
-                AppError::Database(e)
-            })?;
+pub async fn user_org_unit(db: &DbPool, user_id: Uuid) -> Result<Option<Uuid>, AppError> {
+    let unit: Option<Option<Uuid>> = db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "authz: reading the target's org unit");
+            AppError::Database(e)
+        })?;
     Ok(unit.flatten())
 }
 
 /// Privileges carried by a role, and whether the role is a superuser role.
-async fn role_contents(
-    conn: &mut PgConnection,
-    role_id: Uuid,
-) -> Result<(bool, Vec<String>), AppError> {
-    let is_superuser: Option<bool> =
-        sqlx::query_scalar("SELECT is_superuser FROM core.roles WHERE id = $1")
-            .bind(role_id)
-            .fetch_optional(&mut *conn)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, role_id = %role_id, "authz: lecture du rôle");
-                AppError::Database(e)
-            })?;
+async fn role_contents(db: &DbPool, role_id: Uuid) -> Result<(bool, Vec<String>), AppError> {
+    let is_superuser: Option<bool> = db
+        .fetch_optional_scalar::<bool>(
+            "SELECT is_superuser FROM core.roles WHERE id = $1",
+            params![role_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, role_id = %role_id, "authz: reading the role");
+            AppError::Database(e)
+        })?;
     let is_superuser =
         is_superuser.ok_or_else(|| AppError::NotFound(format!("Rôle {role_id}")))?;
 
-    let keys: Vec<String> = sqlx::query_scalar(
-        "SELECT privilege_key FROM core.role_privileges WHERE role_id = $1 ORDER BY privilege_key",
-    )
-    .bind(role_id)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, role_id = %role_id, "authz: lecture des privilèges du rôle");
-        AppError::Database(e)
-    })?;
+    let keys: Vec<String> = db
+        .fetch_all_as::<KeyRow>(
+            "SELECT privilege_key AS \"key\" FROM core.role_privileges WHERE role_id = $1 ORDER BY privilege_key",
+            params![role_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, role_id = %role_id, "authz: reading the role's privileges");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
 
     Ok((is_superuser, keys))
 }
@@ -90,7 +105,7 @@ async fn role_contents(
 /// "restricted to the Marketing unit": the settings privilege would still apply
 /// to the whole instance, and the person granting it would believe otherwise.
 pub async fn ensure_scopable(
-    conn: &mut PgConnection,
+    db: &DbPool,
     role_id: Uuid,
     scope: AssignmentScope,
 ) -> Result<(), AppError> {
@@ -98,7 +113,7 @@ pub async fn ensure_scopable(
         return Ok(());
     }
 
-    let (is_superuser, _) = role_contents(conn, role_id).await?;
+    let (is_superuser, _) = role_contents(db, role_id).await?;
     if is_superuser {
         return Err(AppError::Validation(
             "Un rôle super-utilisateur ne peut pas être restreint à une unité organisationnelle : \
@@ -107,20 +122,23 @@ pub async fn ensure_scopable(
         ));
     }
 
-    let blocking: Vec<String> = sqlx::query_scalar(
-        r#"SELECT p.key
-             FROM core.role_privileges rp
-             JOIN core.privileges p ON p.key = rp.privilege_key
-            WHERE rp.role_id = $1 AND NOT p.is_ou_scopable
-            ORDER BY p.key"#,
-    )
-    .bind(role_id)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, role_id = %role_id, "authz: contrôle de restreignabilité");
-        AppError::Database(e)
-    })?;
+    let blocking: Vec<String> = db
+        .fetch_all_as::<KeyRow>(
+            r#"SELECT p."key"
+                 FROM core.role_privileges rp
+                 JOIN core.privileges p ON p."key" = rp.privilege_key
+                WHERE rp.role_id = $1 AND NOT p.is_ou_scopable
+                ORDER BY p."key""#,
+            params![role_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, role_id = %role_id, "authz: scopability check");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
 
     if blocking.is_empty() {
         return Ok(());
@@ -137,7 +155,7 @@ pub async fn ensure_scopable(
 /// Guard 2 — you cannot grant a privilege you do not hold, nor over a scope
 /// wider than the one you hold it at.
 pub async fn ensure_can_grant(
-    conn: &mut PgConnection,
+    db: &DbPool,
     ctx: &AdminContext,
     role_id: Uuid,
     scope: AssignmentScope,
@@ -147,7 +165,7 @@ pub async fn ensure_can_grant(
         return Ok(());
     }
 
-    let (is_superuser_role, keys) = role_contents(conn, role_id).await?;
+    let (is_superuser_role, keys) = role_contents(db, role_id).await?;
     if is_superuser_role {
         tracing::warn!(
             actor = %ctx.user_id,
@@ -195,35 +213,38 @@ pub async fn ensure_can_grant(
 
 /// Every role held by an account, directly or through a group, not expired.
 async fn roles_held_by(
-    conn: &mut PgConnection,
+    db: &DbPool,
     user_id: Uuid,
 ) -> Result<(bool, HashSet<String>), AppError> {
-    let rows: Vec<(bool, Option<String>)> = sqlx::query_as(
-        r#"SELECT r.is_superuser, rp.privilege_key
-             FROM core.role_assignments a
-             JOIN core.roles r ON r.id = a.role_id
-             LEFT JOIN core.role_privileges rp ON rp.role_id = r.id
-            WHERE (a.expires_at IS NULL OR a.expires_at > NOW())
-              AND (
-                    a.subject_user_id = $1
-                 OR a.subject_group_id IN (
-                        SELECT m.group_id FROM core.user_group_members m WHERE m.user_id = $1
-                    )
-                  )"#,
-    )
-    .bind(user_id)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "authz: lecture des rôles de la cible");
-        AppError::Database(e)
-    })?;
+    // `NOW()` is bound from Rust so the comparison is engine-agnostic, and the
+    // user id feeds two placeholders (bound twice: one per `$n`).
+    let now = chrono::Utc::now();
+    let rows: Vec<RoleAssignmentRow> = db
+        .fetch_all_as::<RoleAssignmentRow>(
+            r#"SELECT r.is_superuser, rp.privilege_key
+                 FROM core.role_assignments a
+                 JOIN core.roles r ON r.id = a.role_id
+                 LEFT JOIN core.role_privileges rp ON rp.role_id = r.id
+                WHERE (a.expires_at IS NULL OR a.expires_at > $1)
+                  AND (
+                        a.subject_user_id = $2
+                     OR a.subject_group_id IN (
+                            SELECT m.group_id FROM core.user_group_members m WHERE m.user_id = $3
+                        )
+                      )"#,
+            params![now, user_id, user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "authz: reading the target's roles");
+            AppError::Database(e)
+        })?;
 
     let mut superuser = false;
     let mut keys = HashSet::new();
-    for (is_superuser, key) in rows {
-        superuser |= is_superuser;
-        if let Some(k) = key {
+    for row in rows {
+        superuser |= row.is_superuser;
+        if let Some(k) = row.privilege_key {
             keys.insert(k);
         }
     }
@@ -240,7 +261,7 @@ async fn roles_held_by(
 /// like account maintenance. The rule is not "do not touch admins", it is the
 /// general form: whatever the target holds, the caller must hold too.
 pub async fn ensure_can_act_on_user(
-    conn: &mut PgConnection,
+    db: &DbPool,
     ctx: &AdminContext,
     target_user_id: Uuid,
 ) -> Result<(), AppError> {
@@ -253,7 +274,7 @@ pub async fn ensure_can_act_on_user(
         return Ok(());
     }
 
-    let (target_is_superuser, target_keys) = roles_held_by(conn, target_user_id).await?;
+    let (target_is_superuser, target_keys) = roles_held_by(db, target_user_id).await?;
 
     if target_is_superuser {
         tracing::warn!(
@@ -264,7 +285,7 @@ pub async fn ensure_can_act_on_user(
         return Err(AppError::Forbidden);
     }
 
-    let target_unit = user_org_unit(conn, target_user_id).await?;
+    let target_unit = user_org_unit(db, target_user_id).await?;
     let missing: Vec<&String> = target_keys
         .iter()
         .filter(|k| !ctx.has_for_unit(k, target_unit))
@@ -285,14 +306,24 @@ pub async fn ensure_can_act_on_user(
 /// Number of active super-administrators, evaluated on the given connection —
 /// so it can be called **inside** a transaction, after the mutation, and see its
 /// effect.
-pub async fn superadmin_count(conn: &mut PgConnection) -> Result<i64, AppError> {
-    sqlx::query_scalar("SELECT COUNT(*)::bigint FROM core.superadmin_ids()")
-        .fetch_one(&mut *conn)
+pub async fn superadmin_count(tx: &mut DbTx) -> Result<i64, AppError> {
+    let backend = tx.backend();
+    // Portable derived table (see `database::compat`): the set-returning
+    // function `core.superadmin_ids()` exists only on PostgreSQL.
+    let sql = format!(
+        "SELECT {} FROM {} s",
+        backend.count_bigint("*"),
+        crate::database::compat::superadmin_ids(backend)
+    );
+    let count = tx
+        .fetch_optional_scalar::<i64>(&sql, params![])
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "authz: comptage des super-administrateurs");
+            tracing::error!(error = %e, "authz: counting super-administrators");
             AppError::Database(e)
-        })
+        })?;
+    // COUNT always returns exactly one row.
+    Ok(count.unwrap_or(0))
 }
 
 /// Guard 4 — refuse a mutation that would leave the instance with no active
@@ -301,8 +332,8 @@ pub async fn superadmin_count(conn: &mut PgConnection) -> Result<i64, AppError> 
 /// Called **after** the write, inside the same transaction: "would this leave
 /// zero" is a question about the post-state, and predicting it from the
 /// pre-state is where off-by-one mistakes live. The caller rolls back on `Err`.
-pub async fn ensure_superadmin_remains(conn: &mut PgConnection) -> Result<(), AppError> {
-    if superadmin_count(conn).await? > 0 {
+pub async fn ensure_superadmin_remains(tx: &mut DbTx) -> Result<(), AppError> {
+    if superadmin_count(tx).await? > 0 {
         return Ok(());
     }
     tracing::warn!("Refus : l'opération retirerait le dernier super-administrateur de l'instance");
@@ -319,22 +350,24 @@ pub async fn ensure_superadmin_remains(conn: &mut PgConnection) -> Result<(), Ap
 /// frontend reads it, so it is maintained as a denormalised cache of exactly one
 /// fact. Delegated administrators keep `role = 'user'`: their power is scoped to
 /// the core's console and does not travel to the modules.
-pub async fn sync_role_cache(conn: &mut PgConnection, user_id: Uuid) -> Result<(), AppError> {
-    sqlx::query(
+pub async fn sync_role_cache(tx: &mut DbTx, user_id: Uuid) -> Result<(), AppError> {
+    // Portable derived table (see `database::compat`) in place of the
+    // PostgreSQL-only `core.superadmin_ids()`.
+    let sql = format!(
         r#"UPDATE core.users u
               SET role = CASE
-                             WHEN EXISTS (SELECT 1 FROM core.superadmin_ids() s WHERE s.user_id = u.id)
+                             WHEN EXISTS (SELECT 1 FROM {} s WHERE s.user_id = u.id)
                                  THEN 'admin'
                              WHEN u.role = 'admin' THEN 'user'
                              ELSE u.role
                          END
             WHERE u.id = $1"#,
-    )
-    .bind(user_id)
-    .execute(&mut *conn)
+        crate::database::compat::superadmin_ids(tx.backend())
+    );
+    tx.execute(&sql, params![user_id])
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "authz: synchronisation du cache users.role");
+        tracing::error!(error = %e, user_id = %user_id, "authz: syncing the users.role cache");
         AppError::Database(e)
     })?;
     Ok(())
@@ -348,39 +381,45 @@ pub async fn sync_role_cache(conn: &mut PgConnection, user_id: Uuid) -> Result<(
 /// assignment — invisible to the whole delegation model, and to guard 4. So the
 /// two representations are written together.
 pub async fn apply_legacy_role_change(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     user_id: Uuid,
     new_role: &str,
     granted_by: Uuid,
 ) -> Result<(), AppError> {
+    let backend = tx.backend();
     if new_role == "admin" {
-        sqlx::query(
-            r#"INSERT INTO core.role_assignments (role_id, subject_user_id, scope, created_by)
-               SELECT r.id, $1, 'instance', $2 FROM core.roles r WHERE r.slug = 'super-admin'
-               ON CONFLICT DO NOTHING"#,
-        )
-        .bind(user_id)
-        .bind(granted_by)
-        .execute(&mut *conn)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "authz: octroi de l'affectation super-admin");
-            AppError::Database(e)
-        })?;
+        // `ON CONFLICT DO NOTHING` with no target list has no portable target,
+        // so it is spliced as (prefix, suffix): MySQL uses `INSERT IGNORE`, the
+        // others a trailing `ON CONFLICT DO NOTHING`.
+        let (ignore, on_conflict) = match backend {
+            Backend::MySql => ("IGNORE ", ""),
+            _ => ("", " ON CONFLICT DO NOTHING"),
+        };
+        let sql = format!(
+            r#"INSERT {ignore}INTO core.role_assignments (role_id, subject_user_id, scope, created_by)
+               SELECT r.id, $1, 'instance', $2 FROM core.roles r WHERE r.slug = 'super-admin'{on_conflict}"#
+        );
+        tx.execute(&sql, params![user_id, granted_by])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, user_id = %user_id, "authz: granting the super-admin assignment");
+                AppError::Database(e)
+            })?;
     } else {
-        sqlx::query(
-            r#"DELETE FROM core.role_assignments a
-                USING core.roles r
-                WHERE a.role_id = r.id
-                  AND r.is_superuser
-                  AND a.subject_user_id = $1
-                  AND a.scope = 'instance'"#,
+        // Rewritten from PostgreSQL's `DELETE ... USING` (unsupported on
+        // SQLite, differently spelled on MySQL) to a portable subquery. The
+        // subquery targets `core.roles`, not the delete target, so MySQL
+        // accepts it too.
+        tx.execute(
+            r#"DELETE FROM core.role_assignments
+                WHERE subject_user_id = $1
+                  AND scope = 'instance'
+                  AND role_id IN (SELECT r.id FROM core.roles r WHERE r.is_superuser)"#,
+            params![user_id],
         )
-        .bind(user_id)
-        .execute(&mut *conn)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "authz: retrait de l'affectation super-admin");
+            tracing::error!(error = %e, user_id = %user_id, "authz: revoking the super-admin assignment");
             AppError::Database(e)
         })?;
     }
@@ -389,10 +428,17 @@ pub async fn apply_legacy_role_change(
 }
 
 /// Convenience wrapper for callers holding a pool rather than a transaction.
-pub async fn superadmin_count_pool(db: &PgPool) -> Result<i64, AppError> {
-    let mut conn = db.acquire().await.map_err(|e| {
-        tracing::error!(error = %e, "authz: acquisition d'une connexion");
+pub async fn superadmin_count_pool(db: &DbPool) -> Result<i64, AppError> {
+    // A short read-only transaction so the count reuses the tx-based helper;
+    // it is rolled back (nothing was written).
+    let mut tx = db.begin().await.map_err(|e| {
+        tracing::error!(error = %e, "authz: acquiring a connection");
         AppError::Database(e)
     })?;
-    superadmin_count(&mut conn).await
+    let count = superadmin_count(&mut tx).await?;
+    tx.rollback().await.map_err(|e| {
+        tracing::error!(error = %e, "authz: releasing the connection");
+        AppError::Database(e)
+    })?;
+    Ok(count)
 }

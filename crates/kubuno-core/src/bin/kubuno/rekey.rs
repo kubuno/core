@@ -15,62 +15,197 @@ use anyhow::{Context, Result};
 use kubuno_core::config::Settings;
 use kubuno_core::crypto::{datakey, encryption};
 use kubuno_core::database::pool::create_pool;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use kubuno_db::{params, Backend, DbPool, DbTx, DbValue};
+use uuid::Uuid;
 
 use crate::display::{confirm_yes_no, info, ok, section, warn};
 
+/// How a store's identifier column is typed, which decides how it round-trips.
+enum IdKind {
+    /// A text primary key (`core.settings."key"`).
+    Text,
+    /// A UUID primary key — binary off PostgreSQL, so it is read and bound as a
+    /// `Uuid` rather than through the `id::text` / `$n::uuid` casts PostgreSQL
+    /// alone accepts.
+    Uuid,
+}
+
 /// One store of encrypted values: where they live and which domain keys them.
+///
+/// The `SELECT` and `UPDATE` are assembled per engine ([`Store::select`],
+/// [`Store::update`]) because two things had no portable spelling: reading a
+/// JSON-column value as text (`value #>> '{}'`) and writing one back
+/// (`to_jsonb($1::text)`). The dialect layer produces the local form of each,
+/// and the identifier round-trips through its real type instead of a cast.
 struct Store {
     label: &'static str,
     domain: &'static [u8],
-    /// Rows to rewrite: (identifier, ciphertext).
-    select: &'static str,
-    /// Rewrite, taking the new ciphertext then the identifier.
-    update: &'static str,
+    /// Schema-qualified table.
+    table: &'static str,
+    /// Identifier column, already quoted where it is a reserved word.
+    id_col: &'static str,
+    /// Column holding the ciphertext.
+    blob_col: &'static str,
+    /// Whether `blob_col` is a JSON column (`core.settings.value`): the value is
+    /// then a JSON string, read through `json_text` and written through
+    /// `json_string`, rather than a plain text column.
+    blob_json: bool,
+    /// A portable predicate ANDed with "the ciphertext is non-empty". Empty for
+    /// none. Written in source, so no request data reaches the statement.
+    extra_where: &'static str,
+    id_kind: IdKind,
+}
+
+impl Store {
+    /// The `SELECT id, blob` this store reads, in the local dialect.
+    fn select(&self, backend: Backend) -> String {
+        let blob = if self.blob_json {
+            backend.json_text(self.blob_col, &[])
+        } else {
+            self.blob_col.to_string()
+        };
+        let mut where_ = String::new();
+        if !self.extra_where.is_empty() {
+            where_.push_str(self.extra_where);
+            where_.push_str(" AND ");
+        }
+        where_.push_str(&format!("{blob} <> ''"));
+        format!(
+            "SELECT {id} AS id, {blob} AS blob FROM {table} WHERE {where_}",
+            id = self.id_col,
+            table = self.table,
+        )
+    }
+
+    /// The `UPDATE` that rewrites one row: the new ciphertext ($1), then the
+    /// identifier ($2).
+    fn update(&self, backend: Backend) -> String {
+        let value = if self.blob_json {
+            backend.json_string(1)
+        } else {
+            "$1".to_string()
+        };
+        format!(
+            "UPDATE {table} SET {col} = {value} WHERE {id} = $2",
+            table = self.table,
+            col = self.blob_col,
+            id = self.id_col,
+        )
+    }
+}
+
+/// One encrypted value with a text identifier (`core.settings."key"`).
+#[derive(sqlx::FromRow)]
+struct TextEncRow {
+    id: String,
+    blob: String,
+}
+
+/// One encrypted value with a UUID identifier — read as a real `Uuid`, so it
+/// round-trips on the engines that store it as bytes.
+#[derive(sqlx::FromRow)]
+struct UuidEncRow {
+    id: Uuid,
+    blob: String,
+}
+
+/// A store row normalised for the rewrite loop: the id as a bind value and as a
+/// display string, plus the ciphertext.
+struct Enc {
+    id_value: DbValue,
+    id_display: String,
+    blob: String,
+}
+
+/// Reads a store's rows, whatever its identifier type, into the uniform [`Enc`].
+async fn load_store(pool: &DbPool, store: &Store) -> Result<Vec<Enc>, sqlx::Error> {
+    let sql = store.select(pool.backend());
+    match store.id_kind {
+        IdKind::Text => {
+            let rows = pool.fetch_all_as::<TextEncRow>(&sql, params![]).await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| Enc {
+                    id_value: DbValue::from(r.id.clone()),
+                    id_display: r.id,
+                    blob: r.blob,
+                })
+                .collect())
+        }
+        IdKind::Uuid => {
+            let rows = pool.fetch_all_as::<UuidEncRow>(&sql, params![]).await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| Enc {
+                    id_value: DbValue::from(r.id),
+                    id_display: r.id.to_string(),
+                    blob: r.blob,
+                })
+                .collect())
+        }
+    }
 }
 
 const STORES: &[Store] = &[
     Store {
         label: "Mot de passe du relais SMTP",
         domain: b"kubuno:smtp:",
-        select: "SELECT key AS id, value #>> '{}' AS blob FROM core.settings \
-                 WHERE key = 'mail.smtp_password' AND value #>> '{}' <> ''",
-        update: "UPDATE core.settings SET value = to_jsonb($1::text) WHERE key = $2",
+        table: "core.settings",
+        id_col: "\"key\"",
+        blob_col: "value",
+        blob_json: true,
+        extra_where: "\"key\" = 'mail.smtp_password'",
+        id_kind: IdKind::Text,
     },
     Store {
         label: "Mot de passe de liaison de l'annuaire",
         domain: b"kubuno:ldap:",
-        select: "SELECT id::text AS id, bind_password_enc AS blob FROM core.ldap_directories \
-                 WHERE bind_password_enc <> ''",
-        update: "UPDATE core.ldap_directories SET bind_password_enc = $1 WHERE id = $2::uuid",
+        table: "core.ldap_directories",
+        id_col: "id",
+        blob_col: "bind_password_enc",
+        blob_json: false,
+        extra_where: "",
+        id_kind: IdKind::Uuid,
     },
     Store {
         label: "Secrets clients OpenID Connect",
         domain: b"kubuno:oidc:",
-        select: "SELECT id::text AS id, client_secret_enc AS blob FROM core.oauth_providers \
-                 WHERE client_secret_enc <> ''",
-        update: "UPDATE core.oauth_providers SET client_secret_enc = $1 WHERE id = $2::uuid",
+        table: "core.oauth_providers",
+        id_col: "id",
+        blob_col: "client_secret_enc",
+        blob_json: false,
+        extra_where: "",
+        id_kind: IdKind::Uuid,
     },
     Store {
         label: "Secrets de double authentification (actifs)",
         domain: b"kubuno:totp:",
-        select: "SELECT id::text AS id, totp_secret AS blob FROM core.users \
-                 WHERE totp_secret IS NOT NULL AND totp_secret <> ''",
-        update: "UPDATE core.users SET totp_secret = $1 WHERE id = $2::uuid",
+        table: "core.users",
+        id_col: "id",
+        blob_col: "totp_secret",
+        blob_json: false,
+        extra_where: "totp_secret IS NOT NULL",
+        id_kind: IdKind::Uuid,
     },
     Store {
         label: "Secrets de double authentification (en cours d'activation)",
         domain: b"kubuno:totp:",
-        select: "SELECT id::text AS id, totp_pending_secret AS blob FROM core.users \
-                 WHERE totp_pending_secret IS NOT NULL AND totp_pending_secret <> ''",
-        update: "UPDATE core.users SET totp_pending_secret = $1 WHERE id = $2::uuid",
+        table: "core.users",
+        id_col: "id",
+        blob_col: "totp_pending_secret",
+        blob_json: false,
+        extra_where: "totp_pending_secret IS NOT NULL",
+        id_kind: IdKind::Uuid,
     },
     Store {
         label: "Identifiants des campagnes de migration",
         domain: b"kubuno:data-migration:",
-        select: "SELECT id::text AS id, secret_enc AS blob FROM core.migration_accounts \
-                 WHERE secret_enc <> ''",
-        update: "UPDATE core.migration_accounts SET secret_enc = $1 WHERE id = $2::uuid",
+        table: "core.migration_accounts",
+        id_col: "id",
+        blob_col: "secret_enc",
+        blob_json: false,
+        extra_where: "",
+        id_kind: IdKind::Uuid,
     },
 ];
 
@@ -149,7 +284,7 @@ pub async fn cmd_security_rekey(force: bool, check: bool, config: Option<&str>) 
     let mut tx = pool.begin().await.context("Ouverture de la transaction")?;
     let mut rewritten = 0i64;
     for store in STORES {
-        rewritten += rekey_store(&mut tx, store, &new_root).await?;
+        rewritten += rekey_store(&pool, &mut tx, store, &new_root).await?;
     }
     tx.commit().await.context("Validation de la transaction")?;
     ok(&format!("{rewritten} valeur(s) re-chiffrée(s)."));
@@ -173,65 +308,64 @@ pub async fn cmd_security_rekey(force: bool, check: bool, config: Option<&str>) 
 }
 
 /// Counts what each store holds, for the summary shown before confirming.
-async fn survey(pool: &PgPool) -> Result<Vec<(&'static str, i64)>> {
+async fn survey(pool: &DbPool) -> Result<Vec<(&'static str, i64)>> {
+    let backend = pool.backend();
     let mut out = Vec::new();
     for store in STORES {
-        let sql = format!("SELECT count(*) FROM ({}) s", store.select);
+        // `count(*)` is cast to a portable bigint so every engine decodes as i64.
+        let sql = format!("SELECT {} FROM ({}) s", backend.count_bigint("*"), store.select(backend));
         // A store whose table does not exist yet (migrations behind) counts as empty
         // rather than aborting the whole command.
-        // Safe: `store.select` is a `&'static str` field of the private `STORES`
-        // const array above — every one of them is a literal in this file.
-        let n: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
-            .fetch_one(pool)
-            .await
-            .unwrap_or(0);
+        let n: i64 = pool.fetch_scalar::<i64>(&sql, params![]).await.unwrap_or(0);
         out.push((store.label, n));
     }
     Ok(out)
 }
 
 /// Decrypts every value of one store without writing anything.
-async fn verify_store(pool: &PgPool, store: &Store) -> Result<usize> {
+async fn verify_store(pool: &DbPool, store: &Store) -> Result<usize> {
     let key = datakey::key(store.domain, "");
-    let rows = match sqlx::query(store.select).fetch_all(pool).await {
+    let rows = match load_store(pool, store).await {
         Ok(rows) => rows,
         Err(_) => return Ok(0), // absent table: nothing to read, not a failure
     };
     let mut n = 0;
     for row in rows {
-        let id: String = row.try_get("id").context("Lecture de l'identifiant")?;
-        let blob: String = row.try_get("blob").context("Lecture du chiffré")?;
-        encryption::decrypt(&key, &blob)
-            .map_err(|e| anyhow::anyhow!("{id} illisible ({e})"))?;
+        encryption::decrypt(&key, &row.blob)
+            .map_err(|e| anyhow::anyhow!("{} illisible ({e})", row.id_display))?;
         n += 1;
     }
     Ok(n)
 }
 
-/// Re-encrypts one store inside the caller's transaction.
+/// Re-encrypts one store. The rows are read through the pool (a transaction
+/// cannot fetch more than one row at a time), and every rewrite is applied on
+/// the caller's transaction, so the writes still commit all-or-nothing. The
+/// service is stopped for the duration, so nothing writes between the read and
+/// the rewrite.
 async fn rekey_store(
-    tx: &mut Transaction<'_, Postgres>,
+    pool: &DbPool,
+    tx: &mut DbTx,
     store: &Store,
     new_root: &str,
 ) -> Result<i64> {
     let old_key = datakey::key(store.domain, "");
     let new_key = datakey::derive(store.domain, new_root);
+    let update = store.update(pool.backend());
 
-    let rows = match sqlx::query(store.select).fetch_all(&mut **tx).await {
+    let rows = match load_store(pool, store).await {
         Ok(rows) => rows,
         Err(e) => {
             // Same tolerance as the survey: an absent table is not a failure.
-            tracing::warn!(magasin = store.label, erreur = %e, "Magasin ignoré");
+            tracing::warn!(store = store.label, error = %e, "Store skipped");
             return Ok(0);
         }
     };
 
     let mut n = 0i64;
     for row in rows {
-        let id: String = row.try_get("id").context("Lecture de l'identifiant")?;
-        let blob: String = row.try_get("blob").context("Lecture du chiffré")?;
-
-        let plain = encryption::decrypt(&old_key, &blob).map_err(|e| {
+        let id = row.id_display;
+        let plain = encryption::decrypt(&old_key, &row.blob).map_err(|e| {
             anyhow::anyhow!(
                 "{} ({id}) : déchiffrement impossible avec la clé actuelle — \
                  la valeur a-t-elle été chiffrée avec une autre clé ? ({e})",
@@ -241,10 +375,7 @@ async fn rekey_store(
         let sealed = encryption::encrypt(&new_key, &plain)
             .map_err(|e| anyhow::anyhow!("{} ({id}) : re-chiffrement impossible ({e})", store.label))?;
 
-        sqlx::query(store.update)
-            .bind(&sealed)
-            .bind(&id)
-            .execute(&mut **tx)
+        tx.execute(&update, params![&sealed, row.id_value])
             .await
             .with_context(|| format!("Écriture de {} ({id})", store.label))?;
         n += 1;

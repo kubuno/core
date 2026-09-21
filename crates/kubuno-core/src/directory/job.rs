@@ -13,7 +13,7 @@
 
 use std::time::Duration;
 
-use sqlx::PgPool;
+use kubuno_db::{new_id, params, DbPool};
 use uuid::Uuid;
 
 use crate::jobs::{
@@ -88,39 +88,58 @@ pub fn register(registry: &mut JobRegistry, jwt_secret: String) {
 /// `exclude` is the caller's own row, still `running` while it schedules its
 /// successor.
 async fn ensure_one_per_directory(
-    db: &PgPool,
+    db: &DbPool,
     directory_id: Uuid,
     delay: Option<Duration>,
     exclude: Option<Uuid>,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    let run_after = delay.map(|d| chrono::Utc::now() + chrono::Duration::from_std(d).unwrap_or_default());
-    sqlx::query_scalar::<_, Uuid>(
-        r#"INSERT INTO core.jobs (job_type, payload, run_after)
-           SELECT $1, $2, COALESCE($3, NOW())
+    // The old `RETURNING id` (which MySQL lacks) is replaced by generating the id
+    // in Rust and inserting it: the `INSERT … SELECT … WHERE NOT EXISTS` inserts
+    // exactly zero or one row, so a `rows_affected() == 1` means the id we bound
+    // was written. `NOW()`/`COALESCE` are folded into a bound instant, the JSON
+    // text extraction goes through the backend, and each value is bound once (no
+    // reused placeholder). The `FROM (SELECT 1)` derived table keeps the
+    // conditional insert legal on MySQL, which forbids a bare `SELECT … WHERE`.
+    let run_after = delay
+        .map(|d| chrono::Utc::now() + chrono::Duration::from_std(d).unwrap_or_default())
+        .unwrap_or_else(chrono::Utc::now);
+    let id = new_id();
+    let payload_key = db.backend().json_text("payload", &["directory_id"]);
+    let sql = format!(
+        r#"INSERT INTO core.jobs (id, job_type, payload, run_after)
+           SELECT $1, $2, $3, $4 FROM (SELECT 1) AS _one
             WHERE NOT EXISTS (
                 SELECT 1 FROM core.jobs
-                 WHERE job_type = $1
+                 WHERE job_type = $5
                    AND status IN ('pending', 'running')
-                   AND payload ->> 'directory_id' = $4
-                   AND ($5::uuid IS NULL OR id <> $5)
-            )
-           RETURNING id"#,
-    )
-    .bind(SYNC)
-    .bind(serde_json::json!({ "directory_id": directory_id.to_string() }))
-    .bind(run_after)
-    .bind(directory_id.to_string())
-    .bind(exclude)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, directory_id = %directory_id, "annuaire : planification de la synchronisation");
-        e
-    })
+                   AND {payload_key} = $6
+                   AND ($7 IS NULL OR id <> $8)
+            )"#
+    );
+    let affected = db
+        .execute(
+            &sql,
+            params![
+                id,
+                SYNC,
+                serde_json::json!({ "directory_id": directory_id.to_string() }),
+                run_after,
+                SYNC,
+                directory_id.to_string(),
+                exclude,
+                exclude
+            ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, directory_id = %directory_id, "annuaire : planification de la synchronisation");
+            e
+        })?;
+    Ok((affected == 1).then_some(id))
 }
 
 /// Arms one directory's cycle. Idempotent across restarts and processes.
-pub async fn schedule_one(db: &PgPool, directory_id: Uuid) {
+pub async fn schedule_one(db: &DbPool, directory_id: Uuid) {
     match ensure_one_per_directory(db, directory_id, None, None).await {
         Ok(Some(id)) => tracing::info!(job_id = %id, directory_id = %directory_id, "annuaire : synchronisation planifiée"),
         Ok(None) => tracing::debug!(directory_id = %directory_id, "annuaire : synchronisation déjà planifiée"),
@@ -130,7 +149,7 @@ pub async fn schedule_one(db: &PgPool, directory_id: Uuid) {
 
 /// Queues an immediate run. Used by the "synchronise now" button when the
 /// operator does not want to wait for the answer.
-pub async fn run_now(db: &PgPool, directory_id: Uuid) -> Result<Uuid, sqlx::Error> {
+pub async fn run_now(db: &DbPool, directory_id: Uuid) -> Result<Uuid, sqlx::Error> {
     queue::enqueue(
         db,
         NewJob::new(SYNC).payload(serde_json::json!({ "directory_id": directory_id.to_string() })),
@@ -140,16 +159,17 @@ pub async fn run_now(db: &PgPool, directory_id: Uuid) -> Result<Uuid, sqlx::Erro
 
 /// Arms every directory that asks for a periodic import. Called at startup,
 /// beside the built-in purges.
-pub async fn schedule_all(db: &PgPool) {
-    let rows = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM core.ldap_directories WHERE enabled = TRUE AND sync_enabled = TRUE",
-    )
-    .fetch_all(db)
-    .await;
+pub async fn schedule_all(db: &DbPool) {
+    let rows = db
+        .fetch_all_as::<(Uuid,)>(
+            "SELECT id FROM core.ldap_directories WHERE enabled = TRUE AND sync_enabled = TRUE",
+            params![],
+        )
+        .await;
 
     match rows {
         Ok(ids) => {
-            for id in ids {
+            for (id,) in ids {
                 schedule_one(db, id).await;
             }
         }

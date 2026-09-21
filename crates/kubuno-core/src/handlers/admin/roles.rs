@@ -19,6 +19,8 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use chrono::Utc;
+use kubuno_db::{new_id, params, DbPool, DbQueryBuilder, DbRow};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -35,6 +37,45 @@ use crate::{
     errors::AppError,
     state::AppState,
 };
+
+/// Columns of `core.roles`, in the order every read below names them.
+const ROLE_COLS: &str =
+    "id, slug, name, description, is_system, is_superuser, created_at, updated_at";
+
+/// Maps a hand-fetched row to a [`Role`] (the tx read paths cannot decode a
+/// struct directly).
+fn role_from_row(r: &DbRow) -> Result<Role, sqlx::Error> {
+    Ok(Role {
+        id:           r.try_get("id")?,
+        slug:         r.try_get("slug")?,
+        name:         r.try_get("name")?,
+        description:  r.try_get("description")?,
+        is_system:    r.try_get("is_system")?,
+        is_superuser: r.try_get("is_superuser")?,
+        created_at:   r.try_get("created_at")?,
+        updated_at:   r.try_get("updated_at")?,
+    })
+}
+
+/// Maps a hand-fetched row to an [`AssignmentRow`] (same reason as
+/// [`role_from_row`]: no struct decode inside a transaction).
+fn assignment_from_row(r: &DbRow) -> Result<AssignmentRow, sqlx::Error> {
+    Ok(AssignmentRow {
+        id:                  r.try_get("id")?,
+        role_id:             r.try_get("role_id")?,
+        role_slug:           r.try_get("role_slug")?,
+        role_name:           r.try_get("role_name")?,
+        subject_user_id:     r.try_get("subject_user_id")?,
+        subject_group_id:    r.try_get("subject_group_id")?,
+        subject_label:       r.try_get("subject_label")?,
+        scope:               r.try_get("scope")?,
+        scope_org_unit_id:   r.try_get("scope_org_unit_id")?,
+        scope_org_unit_name: r.try_get("scope_org_unit_name")?,
+        expires_at:          r.try_get("expires_at")?,
+        created_at:          r.try_get("created_at")?,
+        created_by:          r.try_get("created_by")?,
+    })
+}
 
 /// Snapshot of a role for the trail: the definition **and** its privilege set,
 /// because "the role was widened" is the change worth reading.
@@ -53,20 +94,18 @@ fn role_snapshot(role: &Role, privileges: &[String]) -> Value {
     )
 }
 
-async fn privileges_of(
-    conn: &mut sqlx::PgConnection,
-    role_id: Uuid,
-) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar(
-        "SELECT privilege_key FROM core.role_privileges WHERE role_id = $1 ORDER BY privilege_key",
-    )
-    .bind(role_id)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, role_id = %role_id, "roles: lecture des privilèges");
-        AppError::Database(e)
-    })
+async fn privileges_of(db: &DbPool, role_id: Uuid) -> Result<Vec<String>, AppError> {
+    let rows = db
+        .fetch_all_as::<(String,)>(
+            "SELECT privilege_key FROM core.role_privileges WHERE role_id = $1 ORDER BY privilege_key",
+            params![role_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, role_id = %role_id, "roles: reading the privileges");
+            AppError::Database(e)
+        })?;
+    Ok(rows.into_iter().map(|(k,)| k).collect())
 }
 
 // ── Catalogue ─────────────────────────────────────────────────────────────────
@@ -78,16 +117,18 @@ pub async fn list_privileges(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::ROLES_READ)?;
 
-    let privileges = sqlx::query_as::<_, Privilege>(
-        "SELECT key, namespace, domain, verb, label, description, is_ou_scopable, is_orphan \
-         FROM core.privileges ORDER BY namespace, domain, verb",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "list_privileges");
-        AppError::Database(e)
-    })?;
+    let privileges = state
+        .db
+        .fetch_all_as::<Privilege>(
+            "SELECT \"key\", namespace, domain, verb, label, description, is_ou_scopable, is_orphan \
+             FROM core.privileges ORDER BY namespace, domain, verb",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "list_privileges");
+            AppError::Database(e)
+        })?;
 
     Ok(Json(json!({ "privileges": privileges })))
 }
@@ -101,43 +142,56 @@ pub async fn list_roles(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::ROLES_READ)?;
 
-    let roles = sqlx::query_as::<_, Role>(
-        "SELECT id, slug, name, description, is_system, is_superuser, created_at, updated_at \
-         FROM core.roles ORDER BY is_superuser DESC, is_system DESC, name",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_roles"); AppError::Database(e) })?;
+    let backend = state.db.backend();
+
+    let roles = state
+        .db
+        .fetch_all_as::<Role>(
+            &format!("SELECT {ROLE_COLS} FROM core.roles ORDER BY is_superuser DESC, is_system DESC, name"),
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_roles"); AppError::Database(e) })?;
 
     // Privileges and assignment counts in two set-based queries rather than one
     // per role: the console lists every role on one screen.
-    let pairs: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT role_id, privilege_key FROM core.role_privileges ORDER BY privilege_key",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_roles: privilèges"); AppError::Database(e) })?;
+    let pairs: Vec<(Uuid, String)> = state
+        .db
+        .fetch_all_as(
+            "SELECT role_id, privilege_key FROM core.role_privileges ORDER BY privilege_key",
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_roles: privileges"); AppError::Database(e) })?;
 
-    let counts: Vec<(Uuid, i64)> = sqlx::query_as(
-        "SELECT role_id, COUNT(*)::bigint FROM core.role_assignments \
-         WHERE expires_at IS NULL OR expires_at > NOW() GROUP BY role_id",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_roles: affectations"); AppError::Database(e) })?;
+    // Live assignments (not yet expired) counted per role. The "not expired"
+    // cutoff is bound from Rust rather than spelled `NOW()` in SQL.
+    let counts_sql = format!(
+        "SELECT role_id, {} FROM core.role_assignments \
+         WHERE expires_at IS NULL OR expires_at > $1 GROUP BY role_id",
+        backend.count_bigint("*"),
+    );
+    let counts: Vec<(Uuid, i64)> = state
+        .db
+        .fetch_all_as(&counts_sql, params![Utc::now()])
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_roles: assignments"); AppError::Database(e) })?;
 
     // A role is delegable to an organisational unit only when *every* one of its
     // privileges is scopable — surfaced here so the console can say so before
     // the operator discovers it on a refusal.
-    let non_scopable: Vec<(Uuid, i64)> = sqlx::query_as(
-        "SELECT rp.role_id, COUNT(*)::bigint \
+    let non_scopable_sql = format!(
+        "SELECT rp.role_id, {} \
            FROM core.role_privileges rp \
-           JOIN core.privileges p ON p.key = rp.privilege_key \
+           JOIN core.privileges p ON p.\"key\" = rp.privilege_key \
           WHERE NOT p.is_ou_scopable GROUP BY rp.role_id",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_roles: restreignabilité"); AppError::Database(e) })?;
+        backend.count_bigint("*"),
+    );
+    let non_scopable: Vec<(Uuid, i64)> = state
+        .db
+        .fetch_all_as(&non_scopable_sql, params![])
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_roles: scopability"); AppError::Database(e) })?;
 
     let out: Vec<Value> = roles
         .iter()
@@ -197,23 +251,24 @@ fn validate_slug(slug: &str) -> Result<(), AppError> {
 /// Checks that every key exists in the catalogue. An unknown key would be
 /// rejected by the foreign key anyway; catching it here turns a 500 into a
 /// message naming the offender.
-async fn validate_privileges(
-    conn: &mut sqlx::PgConnection,
-    keys_in: &[String],
-) -> Result<(), AppError> {
+async fn validate_privileges(db: &DbPool, keys_in: &[String]) -> Result<(), AppError> {
     for key in keys_in {
         parse_key(key)?;
     }
     if keys_in.is_empty() {
         return Ok(());
     }
-    let known: Vec<String> = sqlx::query_scalar(
-        "SELECT key FROM core.privileges WHERE key = ANY($1)",
-    )
-    .bind(keys_in)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "roles: validation des privilèges"); AppError::Database(e) })?;
+    // The catalogue is static reference data, so it is read on the pool even when
+    // a caller runs this mid-transaction. `= ANY($1)` becomes a variadic `IN`.
+    let mut qb = DbQueryBuilder::new(db.backend(), "SELECT \"key\" FROM core.privileges WHERE \"key\"");
+    qb.push_in(keys_in.iter().cloned());
+    let known: Vec<String> = qb
+        .fetch_all_as::<(String,)>(db)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "roles: validating the privileges"); AppError::Database(e) })?
+        .into_iter()
+        .map(|(k,)| k)
+        .collect();
 
     let unknown: Vec<&String> = keys_in.iter().filter(|k| !known.contains(k)).collect();
     if !unknown.is_empty() {
@@ -242,17 +297,22 @@ pub async fn create_role(
         return Err(AppError::Validation("Nom requis".into()));
     }
 
-    let mut tx = audit.begin(&state.db).await?;
-    validate_privileges(&mut tx, &dto.privileges).await?;
+    // The catalogue check reads static reference data, so it runs on the pool
+    // before the write transaction opens.
+    validate_privileges(&state.db, &dto.privileges).await?;
 
-    let role = sqlx::query_as::<_, Role>(
-        "INSERT INTO core.roles (slug, name, description) VALUES ($1, $2, $3) \
-         RETURNING id, slug, name, description, is_system, is_superuser, created_at, updated_at",
+    let mut tx = audit.begin(&state.db).await?;
+
+    // The primary key and timestamps are produced in Rust (no `RETURNING`, and no
+    // reliance on DB-side defaults for portability).
+    let id = new_id();
+    let now = Utc::now();
+    let name = dto.name.trim().to_string();
+    tx.execute(
+        "INSERT INTO core.roles (id, slug, name, description, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        params![id, &dto.slug, &name, dto.description.as_deref(), now, now],
     )
-    .bind(&dto.slug)
-    .bind(dto.name.trim())
-    .bind(dto.description.as_deref())
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         if e.to_string().contains("unique") {
@@ -263,13 +323,24 @@ pub async fn create_role(
         }
     })?;
 
+    let role = Role {
+        id,
+        slug: dto.slug.clone(),
+        name,
+        description: dto.description.clone(),
+        is_system: false,
+        is_superuser: false,
+        created_at: now,
+        updated_at: now,
+    };
+
     for key in &dto.privileges {
-        sqlx::query("INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)")
-            .bind(role.id)
-            .bind(key)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| { tracing::error!(error = %e, key = %key, "create_role: privilège"); AppError::Database(e) })?;
+        tx.execute(
+            "INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)",
+            params![role.id, key],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, key = %key, "create_role: privilege"); AppError::Database(e) })?;
     }
 
     tx.commit(
@@ -304,17 +375,23 @@ pub async fn update_role(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let previous = sqlx::query_as::<_, Role>(
-        "SELECT id, slug, name, description, is_system, is_superuser, created_at, updated_at \
-         FROM core.roles WHERE id = $1 FOR UPDATE",
-    )
-    .bind(role_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "update_role: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound(format!("Rôle {role_id}")))?;
+    let for_update = tx.backend().for_update();
+    let previous_row = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT {ROLE_COLS} FROM core.roles WHERE id = $1{}",
+                for_update
+            ),
+            params![role_id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "update_role: read"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("Rôle {role_id}")))?;
+    let previous = role_from_row(&previous_row)?;
 
-    let before_privileges = privileges_of(&mut tx, role_id).await?;
+    // Read on the pool: no write has happened in this transaction yet, so the
+    // committed state is the correct "before" snapshot.
+    let before_privileges = privileges_of(&state.db, role_id).await?;
 
     // A system role's privilege set is frozen: the four seeded roles are what
     // the escalation guards and the documentation reason about, and silently
@@ -336,53 +413,76 @@ pub async fn update_role(
     }
 
     if let Some(privileges) = dto.privileges.as_ref() {
-        validate_privileges(&mut tx, privileges).await?;
+        validate_privileges(&state.db, privileges).await?;
     }
 
-    let role = sqlx::query_as::<_, Role>(
-        "UPDATE core.roles SET name = COALESCE($1, name), \
-                description = CASE WHEN $2::text IS NOT NULL THEN $2 ELSE description END \
-         WHERE id = $3 \
-         RETURNING id, slug, name, description, is_system, is_superuser, created_at, updated_at",
-    )
-    .bind(dto.name.as_deref().map(str::trim).filter(|s| !s.is_empty()))
-    .bind(dto.description.as_deref())
-    .bind(role_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "update_role: écriture"); AppError::Database(e) })?;
+    // Whether the description is touched is decided in Rust, so the statement
+    // needs no NULL-typed cast and reuses no placeholder.
+    let name_opt = dto.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let now = Utc::now();
+    if dto.description.is_some() {
+        tx.execute(
+            "UPDATE core.roles SET name = COALESCE($1, name), updated_at = $2, description = $3 WHERE id = $4",
+            params![name_opt, now, dto.description.as_deref(), role_id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "update_role: write"); AppError::Database(e) })?;
+    } else {
+        tx.execute(
+            "UPDATE core.roles SET name = COALESCE($1, name), updated_at = $2 WHERE id = $3",
+            params![name_opt, now, role_id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "update_role: write"); AppError::Database(e) })?;
+    }
+
+    // No portable `RETURNING`: read the updated row back within the transaction.
+    let role = {
+        let row = tx
+            .fetch_optional_row(
+                &format!("SELECT {ROLE_COLS} FROM core.roles WHERE id = $1"),
+                params![role_id],
+            )
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "update_role: reselect"); AppError::Database(e) })?
+            .ok_or_else(|| AppError::NotFound(format!("Rôle {role_id}")))?;
+        role_from_row(&row)?
+    };
 
     if let Some(privileges) = dto.privileges.as_ref() {
-        sqlx::query("DELETE FROM core.role_privileges WHERE role_id = $1")
-            .bind(role_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| { tracing::error!(error = %e, "update_role: purge"); AppError::Database(e) })?;
+        tx.execute(
+            "DELETE FROM core.role_privileges WHERE role_id = $1",
+            params![role_id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "update_role: purge"); AppError::Database(e) })?;
         for key in privileges {
-            sqlx::query("INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)")
-                .bind(role_id)
-                .bind(key)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| { tracing::error!(error = %e, key = %key, "update_role: privilège"); AppError::Database(e) })?;
+            tx.execute(
+                "INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)",
+                params![role_id, key],
+            )
+            .await
+            .map_err(|e| { tracing::error!(error = %e, key = %key, "update_role: privilege"); AppError::Database(e) })?;
         }
 
         // Widening a role can make an existing org-unit-scoped assignment carry a
         // non-scopable privilege — the exact situation the scopability rule
         // exists to prevent, arrived at by the back door. Refuse the edit rather
         // than leave the instance in a state the rule says is impossible.
-        let broken: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*)::bigint \
+        let broken_sql = format!(
+            "SELECT {} \
                FROM core.role_assignments a \
               WHERE a.role_id = $1 AND a.scope = 'org_unit' \
                 AND EXISTS (SELECT 1 FROM core.role_privileges rp \
-                              JOIN core.privileges p ON p.key = rp.privilege_key \
+                              JOIN core.privileges p ON p.\"key\" = rp.privilege_key \
                              WHERE rp.role_id = a.role_id AND NOT p.is_ou_scopable)",
-        )
-        .bind(role_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| { tracing::error!(error = %e, "update_role: contrôle des affectations"); AppError::Database(e) })?;
+            tx.backend().count_bigint("*"),
+        );
+        let broken: i64 = tx
+            .fetch_optional_scalar::<i64>(&broken_sql, params![role_id])
+            .await
+            .map_err(|e| { tracing::error!(error = %e, "update_role: assignment check"); AppError::Database(e) })?
+            .unwrap_or(0);
 
         if broken > 0 {
             let name = role.name.clone();
@@ -402,7 +502,17 @@ pub async fn update_role(
         }
     }
 
-    let after_privileges = privileges_of(&mut tx, role_id).await?;
+    // The resulting privilege set is known without another read: it is either the
+    // freshly written list (sorted as the old `ORDER BY privilege_key` read it) or
+    // — when the request left privileges untouched — the "before" set.
+    let after_privileges = match dto.privileges.as_ref() {
+        Some(p) => {
+            let mut v: Vec<String> = p.clone();
+            v.sort();
+            v
+        }
+        None => before_privileges.clone(),
+    };
 
     tx.commit(
         AuditEntry::new("core.roles.update")
@@ -428,17 +538,22 @@ pub async fn delete_role(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let role = sqlx::query_as::<_, Role>(
-        "SELECT id, slug, name, description, is_system, is_superuser, created_at, updated_at \
-         FROM core.roles WHERE id = $1 FOR UPDATE",
-    )
-    .bind(role_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "delete_role: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound(format!("Rôle {role_id}")))?;
+    let for_update = tx.backend().for_update();
+    let role_row = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT {ROLE_COLS} FROM core.roles WHERE id = $1{}",
+                for_update
+            ),
+            params![role_id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_role: read"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("Rôle {role_id}")))?;
+    let role = role_from_row(&role_row)?;
 
-    let privileges = privileges_of(&mut tx, role_id).await?;
+    // Committed state (no write yet in this transaction), read on the pool.
+    let privileges = privileges_of(&state.db, role_id).await?;
 
     if role.is_system {
         let name = role.name.clone();
@@ -453,9 +568,7 @@ pub async fn delete_role(
             .await);
     }
 
-    sqlx::query("DELETE FROM core.roles WHERE id = $1")
-        .bind(role_id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.roles WHERE id = $1", params![role_id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_role"); AppError::Database(e) })?;
 
@@ -513,21 +626,29 @@ pub async fn list_assignments(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::ROLES_READ)?;
 
-    let sql = concat!(
-        assignment_select!(),
-        " WHERE ($1::uuid IS NULL OR a.subject_user_id = $1) \
-           AND ($2::uuid IS NULL OR a.subject_group_id = $2) \
-           AND ($3::uuid IS NULL OR a.role_id = $3) \
-           AND ($4 OR a.expires_at IS NULL OR a.expires_at > NOW()) \
-         ORDER BY a.created_at DESC"
-    );
+    // Optional filters composed as a builder rather than the `$n::uuid IS NULL OR`
+    // trick (which both reuses a placeholder and casts it); the expiry cutoff is
+    // bound from Rust instead of spelled `NOW()`.
+    let mut qb = DbQueryBuilder::new(state.db.backend(), assignment_select!());
+    qb.push(" WHERE 1 = 1");
+    if let Some(user_id) = q.user_id {
+        qb.push(" AND a.subject_user_id = ").push_bind(user_id);
+    }
+    if let Some(group_id) = q.group_id {
+        qb.push(" AND a.subject_group_id = ").push_bind(group_id);
+    }
+    if let Some(role_id) = q.role_id {
+        qb.push(" AND a.role_id = ").push_bind(role_id);
+    }
+    if !q.include_expired {
+        qb.push(" AND (a.expires_at IS NULL OR a.expires_at > ")
+            .push_bind(Utc::now())
+            .push(")");
+    }
+    qb.push_order_by("a.created_at DESC");
 
-    let rows = sqlx::query_as::<_, AssignmentRow>(sql)
-        .bind(q.user_id)
-        .bind(q.group_id)
-        .bind(q.role_id)
-        .bind(q.include_expired)
-        .fetch_all(&state.db)
+    let rows: Vec<AssignmentRow> = qb
+        .fetch_all_as(&state.db)
         .await
         .map_err(|e| { tracing::error!(error = %e, "list_assignments"); AppError::Database(e) })?;
 
@@ -602,27 +723,31 @@ pub async fn create_assignment(
             )
             .denied(reason.to_string())
     };
-    if let Err(e) = ensure_scopable(&mut tx, dto.role_id, scope).await {
+    if let Err(e) = ensure_scopable(&state.db, dto.role_id, scope).await {
         return Err(tx.abort(&state.db, refusal(&e), e).await);
     }
-    if let Err(e) = ensure_can_grant(&mut tx, &ctx, dto.role_id, scope, dto.org_unit_id).await {
+    if let Err(e) = ensure_can_grant(&state.db, &ctx, dto.role_id, scope, dto.org_unit_id).await {
         return Err(tx.abort(&state.db, refusal(&e), e).await);
     }
 
-    let id: Uuid = sqlx::query_scalar(
+    // The primary key and creation stamp are produced in Rust (no `RETURNING`).
+    let id = new_id();
+    tx.execute(
         r#"INSERT INTO core.role_assignments
-               (role_id, subject_user_id, subject_group_id, scope, scope_org_unit_id, expires_at, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id"#,
+               (id, role_id, subject_user_id, subject_group_id, scope, scope_org_unit_id, expires_at, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+        params![
+            id,
+            dto.role_id,
+            dto.user_id,
+            dto.group_id,
+            scope.as_str(),
+            dto.org_unit_id,
+            dto.expires_at,
+            ctx.user_id,
+            Utc::now(),
+        ],
     )
-    .bind(dto.role_id)
-    .bind(dto.user_id)
-    .bind(dto.group_id)
-    .bind(scope.as_str())
-    .bind(dto.org_unit_id)
-    .bind(dto.expires_at)
-    .bind(ctx.user_id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         if e.to_string().contains("uniq_core_assign") {
@@ -635,11 +760,13 @@ pub async fn create_assignment(
         }
     })?;
 
-    let row = sqlx::query_as::<_, AssignmentRow>(concat!(assignment_select!(), " WHERE a.id = $1"))
-        .bind(id)
-        .fetch_one(&mut *tx)
+    // No portable `RETURNING`: reselect the joined row within the transaction.
+    let row_data = tx
+        .fetch_optional_row(&format!("{} WHERE a.id = $1", assignment_select!()), params![id])
         .await
-        .map_err(|e| { tracing::error!(error = %e, "create_assignment: relecture"); AppError::Database(e) })?;
+        .map_err(|e| { tracing::error!(error = %e, "create_assignment: reselect"); AppError::Database(e) })?
+        .ok_or_else(|| { tracing::error!("create_assignment: row vanished after insert"); AppError::Database(sqlx::Error::RowNotFound) })?;
+    let row = assignment_from_row(&row_data)?;
 
     // Keep `core.users.role` in step when the grant makes someone a
     // super-administrator.
@@ -704,16 +831,16 @@ pub async fn delete_assignment(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query_as::<_, AssignmentRow>(concat!(assignment_select!(), " WHERE a.id = $1"))
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "delete_assignment: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound(format!("Affectation {id}")))?;
+    let row_data = tx
+        .fetch_optional_row(&format!("{} WHERE a.id = $1", assignment_select!()), params![id])
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_assignment: read"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("Affectation {id}")))?;
+    let row = assignment_from_row(&row_data)?;
 
     let scope = AssignmentScope::parse(&row.scope)?;
     if let Err(e) =
-        ensure_can_grant(&mut tx, &ctx, row.role_id, scope, row.scope_org_unit_id).await
+        ensure_can_grant(&state.db, &ctx, row.role_id, scope, row.scope_org_unit_id).await
     {
         let entry = AuditEntry::new("core.role_assignments.delete")
             .target(
@@ -726,9 +853,7 @@ pub async fn delete_assignment(
         return Err(tx.abort(&state.db, entry, e).await);
     }
 
-    sqlx::query("DELETE FROM core.role_assignments WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.role_assignments WHERE id = $1", params![id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_assignment"); AppError::Database(e) })?;
 

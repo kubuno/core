@@ -13,7 +13,7 @@
 use chrono::{DateTime, Datelike, Duration, TimeZone, Utc};
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 pub const KEY_ENABLED: &str = "backup.enabled";
 pub const KEY_FREQUENCY: &str = "backup.frequency";
@@ -173,7 +173,7 @@ impl Policy {
 /// Never fails: a background worker that cannot start because one settings row
 /// is missing is a worse outcome than one that starts with the declared
 /// defaults, and every fallback here is the value the migration seeded.
-pub async fn load(db: &PgPool) -> Policy {
+pub async fn load(db: &DbPool) -> Policy {
     let d = Policy::default();
 
     let enabled = crate::settings::instance_value(db, KEY_ENABLED)
@@ -225,7 +225,7 @@ pub async fn load(db: &PgPool) -> Policy {
 ///
 /// Declarative by construction — see the setting's own description. Read here so
 /// the health check and the console cannot disagree about the date.
-pub async fn last_restore_test(db: &PgPool) -> Option<DateTime<Utc>> {
+pub async fn last_restore_test(db: &DbPool) -> Option<DateTime<Utc>> {
     crate::settings::instance_value(db, KEY_LAST_RESTORE_TEST)
         .await
         .as_ref()

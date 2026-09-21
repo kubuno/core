@@ -13,8 +13,35 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use kubuno_db::{params, DbRow};
 use serde_json::{json, Value};
 use uuid::Uuid;
+
+/// Map a raw row (a RETURNING or reselect on `core.oauth_providers`) into the
+/// full provider struct. Used inside audited transactions, where `DbTx` cannot
+/// decode structs directly.
+fn provider_from_row(row: &DbRow) -> Result<OAuthProvider, sqlx::Error> {
+    Ok(OAuthProvider {
+        id:                 row.try_get("id")?,
+        slug:               row.try_get("slug")?,
+        display_name:       row.try_get("display_name")?,
+        issuer_url:         row.try_get("issuer_url")?,
+        client_id:          row.try_get("client_id")?,
+        client_secret_enc:  row.try_get("client_secret_enc")?,
+        scopes:             row.try_get("scopes")?,
+        button_color:       row.try_get("button_color")?,
+        enabled:            row.try_get("enabled")?,
+        allow_signup:       row.try_get("allow_signup")?,
+        position:           row.try_get("position")?,
+        claim_username:     row.try_get("claim_username")?,
+        claim_email:        row.try_get("claim_email")?,
+        claim_display_name: row.try_get("claim_display_name")?,
+        claim_groups:       row.try_get("claim_groups")?,
+        sync_groups:        row.try_get("sync_groups")?,
+        created_at:         row.try_get("created_at")?,
+        updated_at:         row.try_get("updated_at")?,
+    })
+}
 
 fn validate_slug(slug: &str) -> Result<(), AppError> {
     let ok = (2..=40).contains(&slug.len())
@@ -64,11 +91,13 @@ pub async fn list_oauth_providers(
     ctx: AdminCtx,
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::AUTH_PROVIDERS_READ)?;
-    let rows = sqlx::query_as::<_, OAuthProvider>(
-        "SELECT * FROM core.oauth_providers ORDER BY position, display_name",
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let rows = state
+        .db
+        .fetch_all_as::<OAuthProvider>(
+            "SELECT * FROM core.oauth_providers ORDER BY position, display_name",
+            params![],
+        )
+        .await?;
 
     let providers: Vec<AdminOAuthProvider> = rows.into_iter().map(Into::into).collect();
     Ok(Json(json!({ "providers": providers })))
@@ -96,30 +125,39 @@ pub async fn create_oauth_provider(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let row = sqlx::query_as::<_, OAuthProvider>(
+    // The key is generated here rather than by the database: MySQL and SQLite
+    // have no `RETURNING`, so a process-side id is the only portable way to know
+    // the row's identity for the reselect and the audit target.
+    let id = kubuno_db::new_id();
+    let raw = kubuno_db::returning::insert_returning_row(
+        &mut tx,
         r#"INSERT INTO core.oauth_providers
-               (slug, display_name, issuer_url, client_id, client_secret_enc,
+               (id, slug, display_name, issuer_url, client_id, client_secret_enc,
                 scopes, button_color, enabled, allow_signup, position,
                 claim_username, claim_email, claim_display_name, claim_groups, sync_groups)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-           RETURNING *"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)"#,
+        params![
+            id,
+            &slug,
+            dto.display_name.trim(),
+            dto.issuer_url.trim(),
+            dto.client_id.trim(),
+            &secret_enc,
+            &scopes,
+            dto.button_color.as_deref(),
+            dto.enabled,
+            dto.allow_signup,
+            dto.position,
+            claim_or(dto.claim_username.as_deref(), "preferred_username"),
+            claim_or(dto.claim_email.as_deref(), "email"),
+            claim_or(dto.claim_display_name.as_deref(), "name"),
+            claim_or(dto.claim_groups.as_deref(), "groups"),
+            dto.sync_groups
+        ],
+        "*",
+        &kubuno_db::returning::reselect_by_id("core.oauth_providers", "*"),
+        params![id],
     )
-    .bind(&slug)
-    .bind(dto.display_name.trim())
-    .bind(dto.issuer_url.trim())
-    .bind(dto.client_id.trim())
-    .bind(&secret_enc)
-    .bind(&scopes)
-    .bind(dto.button_color.as_deref())
-    .bind(dto.enabled)
-    .bind(dto.allow_signup)
-    .bind(dto.position)
-    .bind(claim_or(dto.claim_username.as_deref(), "preferred_username"))
-    .bind(claim_or(dto.claim_email.as_deref(), "email"))
-    .bind(claim_or(dto.claim_display_name.as_deref(), "name"))
-    .bind(claim_or(dto.claim_groups.as_deref(), "groups"))
-    .bind(dto.sync_groups)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db) if db.is_unique_violation() => {
@@ -130,6 +168,7 @@ pub async fn create_oauth_provider(
             AppError::from(e)
         }
     })?;
+    let row = provider_from_row(&raw)?;
 
     // `AdminOAuthProvider` already drops the secret, and the whitelist drops it
     // again: the client secret has no path into the trail.
@@ -167,16 +206,22 @@ pub async fn update_oauth_provider(
 
     let mut tx = audit.begin(&state.db).await?;
 
-    let previous = sqlx::query_as::<_, OAuthProvider>(
-        "SELECT * FROM core.oauth_providers WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "update_oauth_provider: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound("Fournisseur SSO introuvable".into()))?;
+    let for_update = tx.backend().for_update();
+    let prev_raw = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT * FROM core.oauth_providers WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "update_oauth_provider: lecture"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound("Fournisseur SSO introuvable".into()))?;
+    let previous = provider_from_row(&prev_raw)?;
 
-    let row = sqlx::query_as::<_, OAuthProvider>(
+    let updated_raw = kubuno_db::returning::update_returning_row(
+        &mut tx,
         r#"UPDATE core.oauth_providers SET
                display_name      = COALESCE($2,  display_name),
                issuer_url        = COALESCE($3,  issuer_url),
@@ -192,28 +237,32 @@ pub async fn update_oauth_provider(
                claim_display_name = COALESCE($13, claim_display_name),
                claim_groups       = COALESCE($14, claim_groups),
                sync_groups        = COALESCE($15, sync_groups)
-           WHERE id = $1
-           RETURNING *"#,
+           WHERE id = $1"#,
+        params![
+            id,
+            dto.display_name.as_deref().map(str::trim),
+            dto.issuer_url.as_deref().map(str::trim),
+            dto.client_id.as_deref().map(str::trim),
+            dto.scopes.as_deref(),
+            dto.button_color.as_deref(),
+            dto.enabled,
+            dto.allow_signup,
+            dto.position,
+            secret_enc.as_deref(),
+            dto.claim_username.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            dto.claim_email.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            dto.claim_display_name.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            dto.claim_groups.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            dto.sync_groups
+        ],
+        "*",
+        &kubuno_db::returning::reselect_by_id("core.oauth_providers", "*"),
+        params![id],
     )
-    .bind(id)
-    .bind(dto.display_name.as_deref().map(str::trim))
-    .bind(dto.issuer_url.as_deref().map(str::trim))
-    .bind(dto.client_id.as_deref().map(str::trim))
-    .bind(dto.scopes.as_deref())
-    .bind(dto.button_color.as_deref())
-    .bind(dto.enabled)
-    .bind(dto.allow_signup)
-    .bind(dto.position)
-    .bind(secret_enc.as_deref())
-    .bind(dto.claim_username.as_deref().map(str::trim).filter(|s| !s.is_empty()))
-    .bind(dto.claim_email.as_deref().map(str::trim).filter(|s| !s.is_empty()))
-    .bind(dto.claim_display_name.as_deref().map(str::trim).filter(|s| !s.is_empty()))
-    .bind(dto.claim_groups.as_deref().map(str::trim).filter(|s| !s.is_empty()))
-    .bind(dto.sync_groups)
-    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| { tracing::error!(error = %e, "update_oauth_provider: écriture"); AppError::Database(e) })?
     .ok_or_else(|| AppError::NotFound("Fournisseur SSO introuvable".into()))?;
+    let row = provider_from_row(&updated_raw)?;
 
     let public = AdminOAuthProvider::from(row.clone());
     let mut entry = AuditEntry::new("core.auth_providers.update")
@@ -241,18 +290,21 @@ pub async fn delete_oauth_provider(
     ctx.require(keys::AUTH_PROVIDERS_MANAGE)?;
     let mut tx = audit.begin(&state.db).await?;
 
-    let previous = sqlx::query_as::<_, OAuthProvider>(
-        "SELECT * FROM core.oauth_providers WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "delete_oauth_provider: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound("Fournisseur SSO introuvable".into()))?;
+    let for_update = tx.backend().for_update();
+    let prev_raw = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT * FROM core.oauth_providers WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_oauth_provider: lecture"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound("Fournisseur SSO introuvable".into()))?;
+    let previous = provider_from_row(&prev_raw)?;
 
-    sqlx::query("DELETE FROM core.oauth_providers WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.oauth_providers WHERE id = $1", params![id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_oauth_provider"); AppError::Database(e) })?;
 
@@ -283,17 +335,18 @@ pub async fn test_oauth_provider(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::AUTH_PROVIDERS_READ)?;
 
-    let provider = sqlx::query_as::<_, OAuthProvider>(
-        "SELECT * FROM core.oauth_providers WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "test_oauth_provider: lecture");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Fournisseur SSO introuvable".into()))?;
+    let provider = state
+        .db
+        .fetch_optional_as::<OAuthProvider>(
+            "SELECT * FROM core.oauth_providers WHERE id = $1",
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "test_oauth_provider: lecture");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Fournisseur SSO introuvable".into()))?;
 
     let started = std::time::Instant::now();
     let http = reqwest::Client::builder()

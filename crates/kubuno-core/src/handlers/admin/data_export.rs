@@ -38,6 +38,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use kubuno_db::{params, DbQueryBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -85,15 +86,21 @@ pub async fn get_data_export(
     // The account count the console shows next to "toute l'instance", so the
     // operator knows the size of what they are about to produce before they
     // produce it.
-    let accounts: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM core.users WHERE is_active = TRUE AND deleted_at IS NULL",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "export: comptage des comptes impossible");
-        AppError::Database(e)
-    })?;
+    let backend = state.db.backend();
+    let accounts: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.users WHERE is_active = TRUE AND deleted_at IS NULL",
+                backend.count_bigint("*"),
+            ),
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "export: comptage des comptes impossible");
+            AppError::Database(e)
+        })?;
 
     // What the LIVE modules offer, asked now. Never a stored list: a module that
     // has just been uninstalled must stop being offered without a core release.
@@ -299,20 +306,25 @@ pub async fn request_export(
 
     // ── The subjects ────────────────────────────────────────────────────────
     let rows: Vec<(Uuid, String, String)> = if dto.scope == "instance" {
-        sqlx::query_as::<_, (Uuid, String, String)>(
-            "SELECT id, username, COALESCE(display_name, username) \
-               FROM core.users WHERE deleted_at IS NULL ORDER BY username",
-        )
-        .fetch_all(&state.db)
-        .await
+        state
+            .db
+            .fetch_all_as::<(Uuid, String, String)>(
+                "SELECT id, username, COALESCE(display_name, username) \
+                   FROM core.users WHERE deleted_at IS NULL ORDER BY username",
+                params![],
+            )
+            .await
     } else {
-        sqlx::query_as::<_, (Uuid, String, String)>(
+        // `= ANY($1)` has no cross-engine form; the id set becomes a variadic
+        // `IN (...)` built by the query builder.
+        let mut qb = DbQueryBuilder::new(
+            state.db.backend(),
             "SELECT id, username, COALESCE(display_name, username) \
-               FROM core.users WHERE id = ANY($1) AND deleted_at IS NULL ORDER BY username",
-        )
-        .bind(&dto.user_ids)
-        .fetch_all(&state.db)
-        .await
+               FROM core.users WHERE deleted_at IS NULL AND id",
+        );
+        qb.push_in(dto.user_ids.iter().copied());
+        qb.push_order_by("username");
+        qb.fetch_all_as::<(Uuid, String, String)>(&state.db).await
     }
     .map_err(|e| {
         tracing::error!(error = %e, "export: résolution des comptes impossible");

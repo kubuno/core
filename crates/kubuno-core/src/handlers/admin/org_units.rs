@@ -27,6 +27,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use kubuno_db::{dialect::SqlType, new_id, params, DbQueryBuilder, DbTx};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use sqlx::FromRow;
@@ -68,7 +69,6 @@ const MAX_NAME_CHARS: usize = 255;
 /// Bound handed to the recursive walkers. One level past the ceiling is enough
 /// to *observe* a violation: anything deeper is refused anyway, so paying for a
 /// full 64-level walk would buy nothing.
-const WALK_LIMIT: i32 = MAX_ORG_UNIT_DEPTH + 1;
 
 #[derive(Serialize, FromRow)]
 pub struct OrgUnit {
@@ -181,29 +181,37 @@ fn map_write_error(e: sqlx::Error, name: &str, context: &'static str) -> AppErro
 }
 
 /// Depth of `id` measured from the root, or `None` when the unit does not exist.
-async fn unit_depth(conn: &mut sqlx::PgConnection, id: Uuid) -> Result<Option<i32>, AppError> {
-    sqlx::query_scalar("SELECT MAX(a.depth) FROM core.org_unit_ancestors($1, $2) a")
-        .bind(id)
-        .bind(WALK_LIMIT)
-        .fetch_one(conn)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, %id, "org_units: calcul de la profondeur");
-            AppError::Database(e)
-        })
+async fn unit_depth(conn: &mut DbTx, id: Uuid) -> Result<Option<i32>, AppError> {
+    // A single aggregate row always comes back; its value is NULL for a missing
+    // unit, so it is decoded as `Option<i32>` and the outer option flattened.
+    // The ancestor walk is the portable recursive CTE of `database::compat`.
+    let sql = format!(
+        "SELECT MAX(a.depth) FROM {} a",
+        crate::database::compat::org_unit_ancestors(1)
+    );
+    conn.fetch_optional_scalar::<Option<i32>>(&sql, params![id])
+    .await
+    .map(Option::flatten)
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "org_units: computing the depth");
+        AppError::Database(e)
+    })
 }
 
 /// Height of the subtree rooted at `id`: 0 for a leaf.
-async fn subtree_height(conn: &mut sqlx::PgConnection, id: Uuid) -> Result<i32, AppError> {
-    sqlx::query_scalar("SELECT COALESCE(MAX(d.depth), 0) FROM core.org_unit_descendants($1, $2) d")
-        .bind(id)
-        .bind(WALK_LIMIT)
-        .fetch_one(conn)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, %id, "org_units: hauteur du sous-arbre");
-            AppError::Database(e)
-        })
+async fn subtree_height(conn: &mut DbTx, id: Uuid) -> Result<i32, AppError> {
+    // Portable recursive CTE (see `database::compat`).
+    let sql = format!(
+        "SELECT COALESCE(MAX(d.depth), 0) FROM {} d",
+        crate::database::compat::org_unit_descendants(1)
+    );
+    conn.fetch_optional_scalar::<i32>(&sql, params![id])
+    .await
+    .map(|v| v.unwrap_or(0))
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "org_units: subtree height");
+        AppError::Database(e)
+    })
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────────
@@ -236,16 +244,21 @@ pub async fn list_org_units(
     ctx.require(keys::ORG_UNITS_READ)?;
     let scope_units = ctx.subtree_filter(keys::ORG_UNITS_READ);
 
-    let units = sqlx::query_as::<_, OrgUnit>(
-        "SELECT id, name, parent_id, description
-           FROM core.org_units
-          WHERE $1::uuid[] IS NULL OR id = ANY($1)
-          ORDER BY name",
-    )
-    .bind(scope_units.as_deref())
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "list_org_units"); AppError::Database(e) })?;
+    // No restriction lists every unit; a scoped caller lists only the ids they
+    // cover (an empty set yields `IN (NULL)`, i.e. nothing — the intended
+    // outcome for a caller holding no scope).
+    let mut qb = DbQueryBuilder::new(
+        state.db.backend(),
+        "SELECT id, name, parent_id, description FROM core.org_units",
+    );
+    if let Some(ids) = scope_units.as_deref() {
+        qb.push(" WHERE id").push_in(ids.iter().copied());
+    }
+    qb.push_order_by("name");
+    let units: Vec<OrgUnit> = qb
+        .fetch_all_as(&state.db)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "list_org_units"); AppError::Database(e) })?;
 
     Ok(Json(json!({ "org_units": units })))
 }
@@ -289,19 +302,27 @@ pub struct DeletionImpact {
     pub setting_overrides: i64,
 }
 
-/// The five counts, read in one round trip because they are displayed together.
+/// The six counts, read in one round trip because they are displayed together.
 ///
-/// `$1` is the unit, `$2` the bound handed to the recursive walker.
-const IMPACT_COUNTS: &str = r#"SELECT
-       (SELECT COUNT(*) FROM core.org_units c WHERE c.parent_id = $1)             AS children,
-       (SELECT GREATEST(COUNT(*) - 1, 0) FROM core.org_unit_descendants($1, $2))  AS descendants,
-       (SELECT COUNT(*) FROM core.users u WHERE u.org_unit_id = $1)               AS users,
-       (SELECT COUNT(*) FROM core.role_assignments a WHERE a.scope_org_unit_id = $1)
-                                                                                  AS role_assignments,
-       (SELECT COUNT(*) FROM core.target_audience_policies p WHERE p.org_unit_id = $1)
-                                                                                  AS audience_policies,
-       (SELECT COUNT(*) FROM core.setting_values v
-         WHERE v.scope_type = 'org_unit' AND v.scope_id = $1)                     AS setting_overrides"#;
+/// Placeholders are the unit id, bound once per use (`$1..$6`): the portable
+/// placeholder scanner forbids reusing `$n`. The descendant walk is the portable
+/// recursive CTE of [`crate::database::compat`]; it counts the subtree including
+/// the unit itself, so one is subtracted for "descendants". A unit always has a
+/// row, so the count is never zero here.
+fn impact_counts_sql(backend: kubuno_db::Backend) -> String {
+    let c = backend.count_bigint("*");
+    let descendants = crate::database::compat::org_unit_descendants(2);
+    format!(
+        "SELECT \
+           (SELECT {c} FROM core.org_units ch WHERE ch.parent_id = $1) AS children, \
+           (SELECT {c} FROM {descendants} d) - 1 AS descendants, \
+           (SELECT {c} FROM core.users u WHERE u.org_unit_id = $3) AS users, \
+           (SELECT {c} FROM core.role_assignments a WHERE a.scope_org_unit_id = $4) AS role_assignments, \
+           (SELECT {c} FROM core.target_audience_policies p WHERE p.org_unit_id = $5) AS audience_policies, \
+           (SELECT {c} FROM core.setting_values v \
+             WHERE v.scope_type = 'org_unit' AND v.scope_id = $6) AS setting_overrides"
+    )
+}
 
 /// `GET /admin/org-units/:id/impact` — what `DELETE` on this unit would do.
 ///
@@ -318,23 +339,26 @@ pub async fn org_unit_impact(
     ctx.require(keys::ORG_UNITS_READ)?;
     ctx.require_for_unit(keys::ORG_UNITS_READ, Some(id))?;
 
-    let unit = sqlx::query_as::<_, OrgUnit>(
-        "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "org_unit_impact: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
-
-    let impact = sqlx::query_as::<_, DeletionImpact>(IMPACT_COUNTS)
-        .bind(id)
-        // The subtree of a legal tree never exceeds the ceiling; the bound is a
-        // safety net for a tree that predates it.
-        .bind(WALK_LIMIT)
-        .fetch_one(&state.db)
+    let unit = state
+        .db
+        .fetch_optional_as::<OrgUnit>(
+            "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1",
+            params![id],
+        )
         .await
-        .map_err(|e| { tracing::error!(error = %e, %id, "org_unit_impact: décompte"); AppError::Database(e) })?;
+        .map_err(|e| { tracing::error!(error = %e, "org_unit_impact: read"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
+
+    // The subtree of a legal tree never exceeds the ceiling; the bound is a
+    // safety net for a tree that predates it.
+    let impact = state
+        .db
+        .fetch_one_as::<DeletionImpact>(
+            &impact_counts_sql(state.db.backend()),
+            params![id, id, id, id, id, id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, %id, "org_unit_impact: count"); AppError::Database(e) })?;
 
     let is_root = unit.parent_id.is_none();
     Ok(Json(json!({
@@ -406,21 +430,25 @@ pub async fn create_org_unit(
         return Err(tx.abort(&state.db, refuse(), e).await);
     }
 
-    let insert = sqlx::query_as::<_, OrgUnit>(
-        "INSERT INTO core.org_units (name, parent_id, description) VALUES ($1, $2, $3) RETURNING id, name, parent_id, description",
-    )
-    .bind(name)
-    .bind(parent_id)
-    .bind(description)
-    .fetch_one(&mut *tx)
-    .await;
-
-    let unit = match insert {
-        Ok(unit) => unit,
-        Err(e) => {
-            let err = map_write_error(e, name, "create_org_unit");
-            return Err(tx.abort(&state.db, refuse(), err).await);
-        }
+    // The primary key is generated in Rust (no `RETURNING`, which MySQL lacks);
+    // every column of the new row is already known, so the struct is built
+    // directly rather than read back.
+    let unit_id = new_id();
+    if let Err(e) = tx
+        .execute(
+            "INSERT INTO core.org_units (id, name, parent_id, description) VALUES ($1, $2, $3, $4)",
+            params![unit_id, name, parent_id, description],
+        )
+        .await
+    {
+        let err = map_write_error(e, name, "create_org_unit");
+        return Err(tx.abort(&state.db, refuse(), err).await);
+    }
+    let unit = OrgUnit {
+        id:          unit_id,
+        name:        name.to_string(),
+        parent_id:   Some(parent_id),
+        description: description.map(str::to_string),
     };
 
     tx.commit(
@@ -483,15 +511,26 @@ pub async fn update_org_unit(
     let mut tx = audit.begin(&state.db).await?;
 
     // Snapshot taken inside the transaction, row locked: the `before` side of
-    // the diff cannot drift between the read and the write.
-    let previous = sqlx::query_as::<_, OrgUnit>(
-        "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "update_org_unit: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
+    // the diff cannot drift between the read and the write. A struct read in a
+    // transaction is mapped column by column (a `DbTx` reads rows, not structs).
+    let for_update = tx.backend().for_update();
+    let previous_row = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "update_org_unit: read"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
+    let previous = OrgUnit {
+        id:          previous_row.try_get("id")?,
+        name:        previous_row.try_get("name")?,
+        parent_id:   previous_row.try_get("parent_id")?,
+        description: previous_row.try_get("description")?,
+    };
 
     // A refused move is a signal of its own: record it, then roll back.
     // `abort` fills in the outcome and the reason from the error.
@@ -521,15 +560,15 @@ pub async fn update_org_unit(
             // cycle (A → B → A): the tree would stop being a tree, and every
             // recursive traversal would only be saved by its depth guard. Refuse
             // before writing.
-            let creates_cycle: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1, $2) d WHERE d.id = $3)",
-            )
-            .bind(id)
-            .bind(WALK_LIMIT)
-            .bind(new_parent)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| { tracing::error!(error = %e, "update_org_unit cycle check"); AppError::Database(e) })?;
+            let cycle_sql = format!(
+                "SELECT EXISTS (SELECT 1 FROM {} d WHERE d.id = $2)",
+                crate::database::compat::org_unit_descendants(1)
+            );
+            let creates_cycle: bool = tx
+                .fetch_optional_scalar::<bool>(&cycle_sql, params![id, new_parent])
+                .await
+                .map_err(|e| { tracing::error!(error = %e, "update_org_unit cycle check"); AppError::Database(e) })?
+                .unwrap_or(false);
 
             if creates_cycle {
                 let reason =
@@ -557,32 +596,51 @@ pub async fn update_org_unit(
 
     // `COALESCE` cannot express "set this to NULL": the flags do. `$2` / `$4`
     // say whether the field was present at all, `$3` / `$5` carry the value —
-    // which may legitimately be NULL.
-    let update = sqlx::query_as::<_, OrgUnit>(
-        r#"UPDATE core.org_units
-           SET name        = COALESCE($1, name),
-               parent_id   = CASE WHEN $2 THEN $3::uuid ELSE parent_id END,
-               description = CASE WHEN $4 THEN $5::text ELSE description END
-           WHERE id = $6
-           RETURNING id, name, parent_id, description"#,
-    )
-    .bind(name)
-    .bind(dto.parent_id.is_some())
-    .bind(dto.parent_id.flatten())
-    .bind(description.is_some())
-    .bind(description.flatten())
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await;
+    // which may legitimately be NULL. The row was locked above (`previous`), so
+    // it certainly still exists: the resulting row is composed in Rust rather
+    // than read back through a portable `RETURNING` we do not have.
+    let backend = state.db.backend();
+    let update_sql = format!(
+        "UPDATE core.org_units \
+            SET name        = COALESCE($1, name), \
+                parent_id   = CASE WHEN $2 THEN {parent_cast} ELSE parent_id END, \
+                description = CASE WHEN $4 THEN {desc_cast} ELSE description END \
+          WHERE id = $6",
+        parent_cast = backend.cast("$3", SqlType::Uuid),
+        desc_cast = backend.cast("$5", SqlType::Text),
+    );
+    if let Err(e) = tx
+        .execute(
+            &update_sql,
+            params![
+                name,
+                dto.parent_id.is_some(),
+                dto.parent_id.flatten(),
+                description.is_some(),
+                description.flatten(),
+                id,
+            ],
+        )
+        .await
+    {
+        let attempted = name.unwrap_or(previous.name.as_str());
+        let err = map_write_error(e, attempted, "update_org_unit");
+        return Err(tx.abort(&state.db, refuse(), err).await);
+    }
 
-    let unit = match update {
-        Ok(Some(unit)) => unit,
-        Ok(None) => return Err(AppError::NotFound(format!("Unité {id}"))),
-        Err(e) => {
-            let attempted = name.unwrap_or(previous.name.as_str());
-            let err = map_write_error(e, attempted, "update_org_unit");
-            return Err(tx.abort(&state.db, refuse(), err).await);
-        }
+    let unit = OrgUnit {
+        id,
+        name:        name.map(str::to_string).unwrap_or_else(|| previous.name.clone()),
+        parent_id:   if dto.parent_id.is_some() {
+            dto.parent_id.flatten()
+        } else {
+            previous.parent_id
+        },
+        description: if description.is_some() {
+            description.flatten().map(str::to_string)
+        } else {
+            previous.description.clone()
+        },
     };
 
     // A move shows up in the diff as `parent_id` before → after: same entry,
@@ -615,14 +673,24 @@ pub async fn delete_org_unit(
     require_manage(&ctx)?;
     let mut tx = audit.begin(&state.db).await?;
 
-    let unit = sqlx::query_as::<_, OrgUnit>(
-        "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "delete_org_unit: lecture"); AppError::Database(e) })?
-    .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
+    let for_update = tx.backend().for_update();
+    let unit_row = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT id, name, parent_id, description FROM core.org_units WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_org_unit: read"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
+    let unit = OrgUnit {
+        id:          unit_row.try_get("id")?,
+        name:        unit_row.try_get("name")?,
+        parent_id:   unit_row.try_get("parent_id")?,
+        description: unit_row.try_get("description")?,
+    };
 
     // The root unit (parent_id IS NULL) cannot be deleted — there is nowhere to
     // lift its children and members to. Since creation now requires a parent and
@@ -646,12 +714,21 @@ pub async fn delete_org_unit(
     // the row is locked. Read *before* the writes below because reparenting the
     // children changes two of these numbers, and the audit entry has to describe
     // what was destroyed, not what survived.
-    let impact = sqlx::query_as::<_, DeletionImpact>(IMPACT_COUNTS)
-        .bind(id)
-        .bind(WALK_LIMIT)
-        .fetch_one(&mut *tx)
+    // Read as a row and mapped by hand: a `DbTx` reads rows, not structs.
+    let impact_sql = impact_counts_sql(tx.backend());
+    let impact_row = tx
+        .fetch_optional_row(&impact_sql, params![id, id, id, id, id, id])
         .await
-        .map_err(|e| { tracing::error!(error = %e, %id, "delete_org_unit: décompte"); AppError::Database(e) })?;
+        .map_err(|e| { tracing::error!(error = %e, %id, "delete_org_unit: count"); AppError::Database(e) })?
+        .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
+    let impact = DeletionImpact {
+        children:          impact_row.try_get("children")?,
+        descendants:       impact_row.try_get("descendants")?,
+        users:             impact_row.try_get("users")?,
+        role_assignments:  impact_row.try_get("role_assignments")?,
+        audience_policies: impact_row.try_get("audience_policies")?,
+        setting_overrides: impact_row.try_get("setting_overrides")?,
+    };
 
     // Reparent children and move users up to the parent, then delete — the
     // three writes and the audit entry land in the same commit.
@@ -660,13 +737,14 @@ pub async fn delete_org_unit(
     // (unique index of migration 000106). That is a 409 the caller can act on,
     // not a 500: `GET /org-units/:id/impact` tells them how many children are
     // about to move.
-    let children = match sqlx::query("UPDATE core.org_units SET parent_id = $1 WHERE parent_id = $2")
-        .bind(parent_id)
-        .bind(id)
-        .execute(&mut *tx)
+    let children = match tx
+        .execute(
+            "UPDATE core.org_units SET parent_id = $1 WHERE parent_id = $2",
+            params![parent_id, id],
+        )
         .await
     {
-        Ok(done) => done.rows_affected(),
+        Ok(done) => done,
         Err(e) => {
             let err = if matches!(&e, sqlx::Error::Database(db) if db.is_unique_violation()) {
                 AppError::Conflict(
@@ -688,16 +766,19 @@ pub async fn delete_org_unit(
                 .await);
         }
     };
-    let members = sqlx::query("UPDATE core.users SET org_unit_id = $1 WHERE org_unit_id = $2")
-        .bind(parent_id)
-        .bind(id)
-        .execute(&mut *tx)
+    let members = tx
+        .execute(
+            "UPDATE core.users SET org_unit_id = $1 WHERE org_unit_id = $2",
+            params![parent_id, id],
+        )
         .await
-        .map_err(|e| { tracing::error!(error = %e, "delete_org_unit: réaffectation des comptes"); AppError::Database(e) })?
-        .rows_affected();
-    sqlx::query("DELETE FROM core.org_units WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+        .map_err(|e| { tracing::error!(error = %e, "delete_org_unit: reassigning accounts"); AppError::Database(e) })?;
+    // Purge the unit's own setting overrides — the `setting_values_purge_scope`
+    // trigger does this on PostgreSQL; the helper is a no-op there.
+    crate::settings::store::purge_setting_values_for_scope(&mut tx, "org_unit", id)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_org_unit: purge des réglages d'unité"); AppError::Database(e) })?;
+    tx.execute("DELETE FROM core.org_units WHERE id = $1", params![id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_org_unit"); AppError::Database(e) })?;
 
@@ -811,12 +892,16 @@ mod tests {
         const { assert!(MAX_ORG_UNIT_DEPTH < 64, "le plafond doit rester sous la falaise de 000060") };
     }
 
-    /// The bound handed to the recursive walkers must let a violation be *seen*:
+    /// The portable walker's depth guard must let a violation be *seen*:
     /// stopping at the ceiling would report the ceiling and accept the write.
     #[test]
     fn the_walk_limit_sees_one_level_past_the_ceiling() {
-        assert_eq!(WALK_LIMIT, MAX_ORG_UNIT_DEPTH + 1);
-        const { assert!(WALK_LIMIT <= 64, "la garde de 000041 vaut 64") };
+        const {
+            assert!(
+                crate::database::compat::MAX_TREE_DEPTH > MAX_ORG_UNIT_DEPTH,
+                "le garde-fou de la marche doit dépasser le plafond pour voir une violation"
+            )
+        };
     }
 
     // ── The double option, which is the whole point of the update DTO ────────

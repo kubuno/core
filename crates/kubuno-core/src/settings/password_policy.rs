@@ -39,8 +39,8 @@
 //! person just typed, so the evaluation happens there, once, and nothing about
 //! the password is persisted.
 
+use kubuno_db::{params, DbPool, DbTx};
 use serde_json::Value;
-use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use super::chain;
@@ -104,8 +104,8 @@ impl Default for PasswordPolicy {
 /// (`handlers::admin::settings`), and a policy that fails *open* because a row
 /// holds an out-of-range number would be worse than one that reads it as the
 /// nearest legal value.
-async fn resolve_int<'e, E: PgExecutor<'e>>(
-    db: E,
+async fn resolve_int(
+    db: &DbPool,
     key: &str,
     scope: &SettingScope,
     fallback: i64,
@@ -121,8 +121,8 @@ async fn resolve_int<'e, E: PgExecutor<'e>>(
     Ok(raw.clamp(min, max))
 }
 
-async fn resolve_bool<'e, E: PgExecutor<'e>>(
-    db: E,
+async fn resolve_bool(
+    db: &DbPool,
     key: &str,
     scope: &SettingScope,
     fallback: bool,
@@ -144,10 +144,7 @@ impl PasswordPolicy {
     /// (administrative creation, public sign-up) resolves at the unit it is
     /// about to land in — which is the most specific level that can be known
     /// before the row exists.
-    pub async fn resolve<'e, E>(db: E, scope: &SettingScope) -> Result<Self, AppError>
-    where
-        E: PgExecutor<'e> + Copy,
-    {
+    pub async fn resolve(db: &DbPool, scope: &SettingScope) -> Result<Self, AppError> {
         let d = Self::default();
         Ok(Self {
             min_length: resolve_int(
@@ -177,20 +174,17 @@ impl PasswordPolicy {
     }
 
     /// Resolves for an existing account.
-    pub async fn for_user<'e, E>(db: E, user_id: Uuid) -> Result<Self, AppError>
-    where
-        E: PgExecutor<'e> + Copy,
-    {
+    pub async fn for_user(db: &DbPool, user_id: Uuid) -> Result<Self, AppError> {
         Self::resolve(db, &SettingScope::user(user_id)).await
     }
 
     /// Resolves for an account that does not exist yet, from the unit it is
     /// being created in. `None` — an instance whose tree is not reachable —
     /// falls back to the instance scope rather than to the factory default.
-    pub async fn for_new_account<'e, E>(db: E, org_unit_id: Option<Uuid>) -> Result<Self, AppError>
-    where
-        E: PgExecutor<'e> + Copy,
-    {
+    pub async fn for_new_account(
+        db: &DbPool,
+        org_unit_id: Option<Uuid>,
+    ) -> Result<Self, AppError> {
         let scope = match org_unit_id {
             Some(id) => SettingScope::org_unit(id),
             None => SettingScope::INSTANCE,
@@ -304,8 +298,8 @@ fn is_trivial_run(candidate: &str) -> bool {
 /// No-op when the policy allows reuse — the history is still *written* in that
 /// case, so that turning the rule back on is immediately effective instead of
 /// starting from an empty memory.
-pub async fn reject_reuse<'e, E: PgExecutor<'e>>(
-    db: E,
+pub async fn reject_reuse(
+    db: &DbPool,
     policy: &PasswordPolicy,
     user_id: Uuid,
     candidate: &str,
@@ -314,18 +308,22 @@ pub async fn reject_reuse<'e, E: PgExecutor<'e>>(
         return Ok(());
     }
 
-    let hashes: Vec<String> = sqlx::query_scalar(
-        "SELECT password_hash FROM core.password_history \
-         WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-    )
-    .bind(user_id)
-    .bind(policy.history_depth as i64)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "password_policy: lecture de l'historique");
-        AppError::Database(e)
-    })?;
+    // Single-column result read through a 1-tuple: the pool has no
+    // `fetch_all_scalar`, and `(String,)` satisfies `FromRow` on every engine.
+    let hashes: Vec<String> = db
+        .fetch_all_as::<(String,)>(
+            "SELECT password_hash FROM core.password_history \
+             WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+            params![user_id, policy.history_depth as i64],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "password_policy: lecture de l'historique");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|(hash,)| hash)
+        .collect();
 
     if hashes.is_empty() {
         return Ok(());
@@ -367,34 +365,32 @@ pub async fn reject_reuse<'e, E: PgExecutor<'e>>(
 /// The trim keeps `depth` rows even when reuse is currently allowed, so the
 /// table never grows without bound on an instance that changed its mind twice.
 pub async fn remember(
-    tx: &mut sqlx::PgConnection,
+    tx: &mut DbTx,
     user_id: Uuid,
     password_hash: &str,
     depth: usize,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    tx.execute(
         "INSERT INTO core.password_history (user_id, password_hash) VALUES ($1, $2)",
+        params![user_id, password_hash],
     )
-    .bind(user_id)
-    .bind(password_hash)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, user_id = %user_id, "password_policy: écriture de l'historique");
         AppError::Database(e)
     })?;
 
-    sqlx::query(
+    // `user_id` feeds two placeholders ($1, $2); the engine-agnostic layer
+    // numbers placeholders strictly and never reuses one, so it is bound twice.
+    tx.execute(
         "DELETE FROM core.password_history \
           WHERE user_id = $1 \
             AND id NOT IN ( \
                 SELECT id FROM core.password_history \
-                 WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 \
+                 WHERE user_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3 \
             )",
+        params![user_id, user_id, depth as i64],
     )
-    .bind(user_id)
-    .bind(depth as i64)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, user_id = %user_id, "password_policy: purge de l'historique");
@@ -415,10 +411,7 @@ pub async fn remember(
 /// `true` — the behaviour the route had before this key existed — because the
 /// alternative is a silent, instance-wide loss of the recovery path on a
 /// transient error.
-pub async fn self_service_recovery_allowed<'e, E: PgExecutor<'e>>(
-    db: E,
-    user_id: Uuid,
-) -> bool {
+pub async fn self_service_recovery_allowed(db: &DbPool, user_id: Uuid) -> bool {
     let scope = SettingScope::user(user_id);
     match chain::resolve_for(db, KEY_SELF_SERVICE_RECOVERY, &scope).await {
         Ok(resolution) => resolution

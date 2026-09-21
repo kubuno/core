@@ -7,9 +7,16 @@
 
 use std::time::Duration;
 
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 
 use crate::config::Settings;
+
+/// One `core.settings` row read for the security TTLs.
+#[derive(sqlx::FromRow)]
+struct SettingRow {
+    key:   String,
+    value: serde_json::Value,
+}
 
 #[derive(Debug, Clone)]
 pub struct SecurityTtls {
@@ -25,7 +32,7 @@ fn as_i64(v: &serde_json::Value) -> Option<i64> {
 }
 
 /// Lit les durées de session depuis `core.settings`, avec repli sur `settings`.
-pub async fn security_ttls(db: &PgPool, settings: &Settings) -> SecurityTtls {
+pub async fn security_ttls(db: &DbPool, settings: &Settings) -> SecurityTtls {
     let mut out = SecurityTtls {
         access_ttl:   settings.auth.access_token_ttl,
         refresh_ttl:  settings.auth.refresh_token_ttl,
@@ -33,18 +40,19 @@ pub async fn security_ttls(db: &PgPool, settings: &Settings) -> SecurityTtls {
         idle_timeout: None,
     };
 
-    let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT key, value FROM core.settings
-         WHERE key IN ('security.jwt_access_ttl_s',
-                       'security.jwt_refresh_ttl_d',
-                       'security.max_sessions',
-                       'security.session_idle_timeout_min')",
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+    let rows = db
+        .fetch_all_as::<SettingRow>(
+            "SELECT \"key\", value FROM core.settings \
+             WHERE \"key\" IN ('security.jwt_access_ttl_s', \
+                           'security.jwt_refresh_ttl_d', \
+                           'security.max_sessions', \
+                           'security.session_idle_timeout_min')",
+            params![],
+        )
+        .await
+        .unwrap_or_default();
 
-    for (key, value) in rows {
+    for SettingRow { key, value } in rows {
         match key.as_str() {
             "security.jwt_access_ttl_s" => {
                 if let Some(n) = as_i64(&value) {
@@ -77,21 +85,27 @@ pub async fn security_ttls(db: &PgPool, settings: &Settings) -> SecurityTtls {
 /// en conservant les plus RÉCEMMENT UTILISÉES (last_used_at). Trier par activité —
 /// et non par date de création — évite de déconnecter une session ancienne mais
 /// active au profit d'une nouvelle (= déconnexions « aléatoires »).
-pub async fn enforce_max_sessions(db: &PgPool, user_id: uuid::Uuid, max_sessions: i64) {
+pub async fn enforce_max_sessions(db: &DbPool, user_id: uuid::Uuid, max_sessions: i64) {
     if max_sessions <= 0 { return; }
-    let _ = sqlx::query(
-        r#"UPDATE core.refresh_tokens
-           SET revoked_at = NOW(), revoke_reason = 'max_sessions'
-           WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
-             AND id NOT IN (
-               SELECT id FROM core.refresh_tokens
-               WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
-               ORDER BY last_used_at DESC, created_at DESC
-               LIMIT $2
-             )"#,
-    )
-    .bind(user_id)
-    .bind(max_sessions)
-    .execute(db)
-    .await;
+    let now = db.backend().now();
+    // Placeholders strictly increasing and never reused: the revocation instant
+    // is bound once ($1), `user_id` twice ($2 and $3), the keep count ($4).
+    // The inner set is wrapped in a derived table `t` so MySQL accepts selecting
+    // from the very table being updated.
+    let sql = format!(
+        "UPDATE core.refresh_tokens \
+           SET revoked_at = $1, revoke_reason = 'max_sessions' \
+           WHERE user_id = $2 AND revoked_at IS NULL AND expires_at > {now} \
+             AND id NOT IN ( \
+               SELECT id FROM ( \
+                 SELECT id FROM core.refresh_tokens \
+                 WHERE user_id = $3 AND revoked_at IS NULL AND expires_at > {now} \
+                 ORDER BY last_used_at DESC, created_at DESC \
+                 LIMIT $4 \
+               ) t \
+             )"
+    );
+    let _ = db
+        .execute(&sql, params![chrono::Utc::now(), user_id, user_id, max_sessions])
+        .await;
 }

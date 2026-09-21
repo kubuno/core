@@ -22,6 +22,85 @@ number at release time, and CI publishes that section as the GitHub Release note
   prefix set (the default) nothing changes at all: an existing instance behaves
   exactly as before. The prefix must be lowercase letters, digits and
   underscores; an invalid value is refused at start-up with a clear message.
+- **A fresh MySQL/MariaDB or SQLite install starts fully set up.** The built-in
+  catalogue — every administrative setting and its default, the permission list,
+  the built-in roles and their grants, the base user groups, the "everyone"
+  audience, the root organisation unit and the sensitive-content detectors — is
+  now seeded on these engines exactly as on PostgreSQL, so the admin console,
+  permissions and settings work on the first boot instead of showing empty
+  lists. Each installation also mints its own unique instance identity on first
+  start.
+
+- **The installation assistant installs on MySQL/MariaDB and SQLite, not only
+  PostgreSQL.** The "test the database" step now checks the engine you chose —
+  reaching a PostgreSQL or MySQL server and reporting whether the database exists
+  and can be created, or that a SQLite directory is writable — and completing the
+  install creates the database (or SQLite file), applies the matching schema,
+  creates the first administrator and writes the engine into the configuration,
+  whichever of the three you picked.
+
+- **Automatic and manual backups run on MySQL/MariaDB and SQLite, and can be
+  restored without any external tool.** Scheduled and on-demand backups
+  previously produced a file only on PostgreSQL; they now write a portable
+  data-only backup of the `core` schema on MySQL/MariaDB and SQLite as well.
+  `kubuno db:backup` writes that portable file on those engines, and
+  `kubuno db:restore` loads it back in process — a backup taken on one of the two
+  even restores onto the other. PostgreSQL keeps its existing `pg_dump`/`psql`
+  format.
+
+### Changed
+
+- **Administration, permissions and settings inheritance work on MySQL/MariaDB
+  and SQLite.** The organisation-unit tree (a unit's sub-units and its parent
+  chain), delegated administration confined to a subtree, the "who is a full
+  administrator" checks, shared labels, and the per-scope settings inheritance
+  (factory default → instance → organisation unit → group → account, locks
+  included) previously ran only on PostgreSQL because they relied on
+  PostgreSQL-only database functions. They now run on all three supported
+  engines, so a delegated administrator sees the right accounts, a scoped
+  setting resolves to the right value, and the account directory, session list
+  and administrative pages load whichever engine the instance uses. When an
+  organisation unit, group or account is deleted, the setting overrides that
+  belonged to it are removed on every engine, and a setting changed in the admin
+  console is reflected everywhere it is read.
+
+- **Settings and other reserved-word columns work on MySQL/MariaDB.** The
+  database session now quotes identifiers the same way as PostgreSQL and SQLite,
+  so tables and columns whose names are MySQL reserved words (such as the
+  settings `key`) are read and written correctly on MySQL/MariaDB.
+
+- **The whole server runs on the database engine you choose.** The core now
+  opens its database through the run-time engine layer instead of a PostgreSQL-
+  only connection, so an administrator can install on PostgreSQL, MySQL/MariaDB
+  or SQLite by naming the engine in configuration — the same binary connects to
+  whichever is chosen, applies the matching schema, and reads and writes through
+  it everywhere.
+- **Modules inherit the server's database engine.** When the core launches an
+  installed module it now passes on which engine (and, for SQLite, which file
+  location) it is using, so a module always connects to the same kind of
+  database as the server rather than assuming PostgreSQL.
+
+- **Background work runs on every database engine.** Scheduled and retried
+  background jobs — sending an invitation, running a backup, an export — no
+  longer depend on a PostgreSQL-only locking trick to hand each job to exactly
+  one worker. The same queue now behaves identically on PostgreSQL, MySQL/MariaDB
+  and SQLite, so a smaller instance can run on SQLite with no loss of function.
+- **Live updates reach you without PostgreSQL.** The event bus that pushes
+  changes between the server's parts (and on to modules and open browser tabs)
+  used a PostgreSQL-only notification channel. On MySQL/MariaDB and SQLite those
+  events are now recorded and delivered by a background reader instead, each
+  event delivered exactly once even when several server processes share one
+  database — so nothing is silently lost on a non-PostgreSQL install.
+- **The server's own schema is prepared per engine.** The core's database
+  schema is split so the right form is applied for the engine an administrator
+  chooses; the existing PostgreSQL form is unchanged and keeps its history.
+- **MySQL/MariaDB and SQLite installs get the complete core schema.** The whole
+  server schema — every table an administrator's instance needs (accounts,
+  sessions, API tokens, the module catalogue, roles and rules, jobs, audit,
+  devices, domains, alerts, holidays, storage accounting, settings and the rest)
+  — is now authored for MySQL/MariaDB and SQLite as a single consolidated form
+  matching the PostgreSQL one, so a fresh install on either engine builds the
+  same structure the PostgreSQL install has always had.
 - **A module's PostgreSQL migrations keep working untouched.** The engine puts
   the module's schema on PostgreSQL's search path on every connection, as each
   module's own start-up used to. A migration written before multi-engine
@@ -83,14 +162,62 @@ number at release time, and CI publishes that section as the GitHub Release note
   from the application, so a module written once syncs correctly whichever
   engine the server runs, with the counter proven collision-free under
   concurrent writers on every engine.
+- **The administration console's reads and maintenance run on every engine.**
+  The device and session inventory and its search (including the client
+  address), the label browser, the "edit my profile" update, the personal-data
+  export (account and instance sheets), and the retention purges of the audit
+  trail and the rule-threshold hits no longer depend on PostgreSQL-only SQL
+  (native arrays, `json_agg`/`row_to_json`, the `inet` address accessor,
+  `make_interval`, per-row `FOR UPDATE`, or a stored function). They are
+  assembled in the application where needed and behave identically on
+  PostgreSQL, MySQL/MariaDB and SQLite. On SQLite, a row's "last updated"
+  timestamp is now kept current by a trigger, matching PostgreSQL's function and
+  MySQL's `ON UPDATE`.
+- **The last PostgreSQL-only reporting views and the re-encryption tool now run
+  on every engine.** The target-audience reach and member figures, the per-domain
+  account count, the administration dashboard's daily sign-up/sign-in/event
+  charts, the audit drill-down's record listing (with its cell truncation and
+  timestamps), and the `security:rekey` command all behaved on PostgreSQL only.
+  They no longer depend on PostgreSQL-specific SQL (`LATERAL` joins, `SPLIT_PART`,
+  `generate_series`/`to_char`, `left(...)`, `to_jsonb`, and inline `::type`
+  casts): the counts are correlated sub-queries, the address split is spelled per
+  engine, the date buckets are built in the application, and the JSON secret value
+  round-trips through portable helpers — so every administration page and the
+  key-rotation tool now work identically on PostgreSQL, MySQL/MariaDB and SQLite.
+
+### Fixed
+
+- **The first administrator actually receives its privileges on MySQL/MariaDB
+  and SQLite.** Granting the instance super-administrator role relied on the
+  database filling in the assignment's identifier, which only PostgreSQL does; on
+  MySQL/MariaDB and SQLite the grant failed, so an account created by the
+  installation assistant on those engines was flagged administrator yet admitted
+  to the console holding nothing. The identifier is now generated by the server,
+  so the first administrator holds real administrative rights on every engine,
+  and the same repair runs at start-up for any account previously left without
+  them.
+
+- **The tamper-evident administrative audit trail is written and verified on
+  every engine.** Recording an administrative action and re-checking the audit
+  hash chain now work on PostgreSQL, MySQL/MariaDB and SQLite: the engine-
+  assigned entry id is read back the correct way for each engine, and the
+  reserved-word columns and the client address are spelled per engine — so
+  actions are logged, and can be checked for tampering, whichever database the
+  instance runs on.
 
 ### Known limitations
 
-- On MySQL and SQLite, events a module publishes are recorded durably but not
-  yet delivered: the core still listens only to PostgreSQL's notification
-  channel and needs a reader for the new event table. The background job queue
-  and the compile-time-checked queries of the core, media and drive are
-  PostgreSQL-only for now.
+- **Backups are portable across MySQL/MariaDB and SQLite, but not onto
+  PostgreSQL.** On PostgreSQL a backup is still the fast `COPY` text file, loaded
+  by `psql`. On MySQL/MariaDB and SQLite it is a portable file that either engine
+  can also load — a MySQL backup restores onto SQLite and the reverse — but that
+  portable file cannot be loaded onto PostgreSQL (PostgreSQL's constraints are
+  not deferrable, so the loader cannot empty and refill the tables in one go);
+  restore a PostgreSQL `.sql` backup on PostgreSQL instead.
+- PostgreSQL still uses its own `LISTEN/NOTIFY` channel for live updates, by
+  design; MySQL/MariaDB and SQLite deliver the same events through the durable
+  event table and its reader, so no functionality depends on the PostgreSQL
+  channel.
 
 ### Security
 

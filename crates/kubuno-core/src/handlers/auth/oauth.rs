@@ -21,6 +21,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use kubuno_db::{params, Backend, DbPool};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -35,12 +36,11 @@ fn oidc_http_client() -> Result<reqwest::Client, AppError> {
 }
 
 /// Load an enabled provider by slug, 404 otherwise.
-async fn load_enabled_provider(db: &sqlx::PgPool, slug: &str) -> Result<OAuthProvider, AppError> {
-    sqlx::query_as::<_, OAuthProvider>(
+async fn load_enabled_provider(db: &DbPool, slug: &str) -> Result<OAuthProvider, AppError> {
+    db.fetch_optional_as::<OAuthProvider>(
         "SELECT * FROM core.oauth_providers WHERE slug = $1 AND enabled = TRUE",
+        params![slug],
     )
-    .bind(slug)
-    .fetch_optional(db)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("Fournisseur SSO inconnu ou désactivé: {slug}")))
 }
@@ -71,11 +71,13 @@ pub async fn public_auth_methods(
 pub async fn list_public_oauth_providers(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let providers = sqlx::query_as::<_, OAuthProvider>(
-        "SELECT * FROM core.oauth_providers WHERE enabled = TRUE ORDER BY position, display_name",
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let providers = state
+        .db
+        .fetch_all_as::<OAuthProvider>(
+            "SELECT * FROM core.oauth_providers WHERE enabled = TRUE ORDER BY position, display_name",
+            params![],
+        )
+        .await?;
 
     let list: Vec<PublicOAuthProvider> = providers
         .into_iter()
@@ -300,23 +302,36 @@ pub async fn oauth_callback(
         return Err(AppError::Forbidden);
     }
 
-    sqlx::query(
+    // NOTE (migration consolidation): `::inet` is a PostgreSQL-only cast; the
+    // other engines store `ip_address` as text, so the cast is dropped there.
+    let inet = if matches!(state.db.backend(), Backend::Postgres) {
+        "::inet"
+    } else {
+        ""
+    };
+    let insert_sql = format!(
         r#"INSERT INTO core.refresh_tokens
            (user_id, token_hash, device_name, device_type, ip_address, user_agent, expires_at,
             device_id, country, auth_strength)
-           VALUES ($1, $2, $3, 'web', $4::inet, $5, $6, $7, $8, $9)"#,
-    )
-    .bind(user.id)
-    .bind(&refresh_hash)
-    .bind(&device_name)
-    .bind(ip)
-    .bind(ua)
-    .bind(expires_at)
-    .bind(touched.device_id)
-    .bind(country.as_deref())
-    .bind(crate::devices::AuthStrength::Sso.as_str())
-    .execute(&state.db)
-    .await?;
+           VALUES ($1, $2, $3, 'web', $4{inet}, $5, $6, $7, $8, $9)"#
+    );
+    state
+        .db
+        .execute(
+            &insert_sql,
+            params![
+                user.id,
+                &refresh_hash,
+                &device_name,
+                ip,
+                ua,
+                expires_at,
+                touched.device_id,
+                country.as_deref(),
+                crate::devices::AuthStrength::Sso.as_str(),
+            ],
+        )
+        .await?;
 
     crate::devices::correlate::record_event(
         &state.db,
@@ -330,9 +345,12 @@ pub async fn oauth_callback(
     )
     .await;
 
-    sqlx::query("UPDATE core.users SET last_login_at = NOW() WHERE id = $1")
-        .bind(user.id)
-        .execute(&state.db)
+    state
+        .db
+        .execute(
+            "UPDATE core.users SET last_login_at = $1 WHERE id = $2",
+            params![Utc::now(), user.id],
+        )
         .await?;
 
     let secure = if state.settings.server.secure_cookies { "; Secure" } else { "" };

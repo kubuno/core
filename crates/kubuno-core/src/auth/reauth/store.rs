@@ -5,7 +5,7 @@
 //! working session is not interrogated at every gesture.
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use std::net::IpAddr;
 use uuid::Uuid;
 
@@ -35,16 +35,17 @@ fn as_i64(v: &serde_json::Value) -> Option<i64> {
 }
 
 /// Reads the policy, falling back to [`ReauthPolicy::default`] key by key.
-pub async fn policy(db: &PgPool) -> ReauthPolicy {
+pub async fn policy(db: &DbPool) -> ReauthPolicy {
     let mut out = ReauthPolicy::default();
 
-    let rows = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT key, value FROM core.settings
-          WHERE key IN ('security.reauth_token_ttl_s', 'security.reauth_grace_s')",
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+    let rows = db
+        .fetch_all_as::<(String, serde_json::Value)>(
+            "SELECT \"key\", value FROM core.settings
+          WHERE \"key\" IN ('security.reauth_token_ttl_s', 'security.reauth_grace_s')",
+            params![],
+        )
+        .await
+        .unwrap_or_default();
 
     for (key, value) in rows {
         let Some(n) = as_i64(&value) else { continue };
@@ -62,7 +63,7 @@ pub async fn policy(db: &PgPool) -> ReauthPolicy {
 
 /// Records a passed challenge. Returns the grant's `jti`, which the token embeds.
 pub async fn grant(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     method: ReauthMethod,
     ip: Option<IpAddr>,
@@ -76,65 +77,72 @@ pub async fn grant(
     let grace_until = now + ChronoDuration::seconds(policy.grace_s.max(policy.token_ttl_s));
     let ip_text = ip.map(|a| a.to_string());
 
-    sqlx::query(
+    // The `$6::inet` cast is dropped: `ip_address` is bound as text (the
+    // consolidated migration stores it in a portable text column, not PostgreSQL
+    // `INET`).
+    db.execute(
         "INSERT INTO core.reauth_grants (user_id, jti, method, expires_at, grace_until, ip_address)
-         VALUES ($1, $2, $3, $4, $5, $6::inet)",
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        params![
+            user_id,
+            jti,
+            method.as_str(),
+            expires_at,
+            grace_until,
+            ip_text.as_deref(),
+        ],
     )
-    .bind(user_id)
-    .bind(jti)
-    .bind(method.as_str())
-    .bind(expires_at)
-    .bind(grace_until)
-    .bind(ip_text.as_deref())
-    .execute(db)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "reauth: enregistrement du droit");
+        tracing::error!(error = %e, user_id = %user_id, "reauth: recording the grant");
         AppError::Database(e)
     })?;
 
     // Opportunistic housekeeping, cheap and bounded: keeps the table from growing
-    // without needing a scheduled job of its own.
-    let _ = sqlx::query(
-        "DELETE FROM core.reauth_grants WHERE user_id = $1 AND grace_until < NOW() - INTERVAL '1 day'",
-    )
-    .bind(user_id)
-    .execute(db)
-    .await;
+    // without needing a scheduled job of its own. The one-day cutoff is computed
+    // in Rust instead of `NOW() - INTERVAL '1 day'`.
+    let day_ago = now - ChronoDuration::days(1);
+    let _ = db
+        .execute(
+            "DELETE FROM core.reauth_grants WHERE user_id = $1 AND grace_until < $2",
+            params![user_id, day_ago],
+        )
+        .await;
 
     Ok(jti)
 }
 
 /// True while the grant behind `jti` is still honoured (exists, not expired).
-pub async fn is_live(db: &PgPool, jti: Uuid, user_id: Uuid) -> Result<bool, AppError> {
-    let found: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM core.reauth_grants
-          WHERE jti = $1 AND user_id = $2 AND expires_at > NOW()",
-    )
-    .bind(jti)
-    .bind(user_id)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "reauth: vérification du droit");
-        AppError::Database(e)
-    })?;
+pub async fn is_live(db: &DbPool, jti: Uuid, user_id: Uuid) -> Result<bool, AppError> {
+    let now = Utc::now();
+    let found: Option<Uuid> = db
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT id FROM core.reauth_grants
+          WHERE jti = $1 AND user_id = $2 AND expires_at > $3",
+            params![jti, user_id, now],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "reauth: verifying the grant");
+            AppError::Database(e)
+        })?;
     Ok(found.is_some())
 }
 
 /// End of the account's current grace window, if any is open.
-pub async fn grace_until(db: &PgPool, user_id: Uuid) -> Result<Option<DateTime<Utc>>, AppError> {
-    let until: Option<DateTime<Utc>> = sqlx::query_scalar(
-        "SELECT MAX(grace_until) FROM core.reauth_grants
-          WHERE user_id = $1 AND grace_until > NOW()",
-    )
-    .bind(user_id)
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "reauth: lecture de la fenêtre de grâce");
-        AppError::Database(e)
-    })?;
+pub async fn grace_until(db: &DbPool, user_id: Uuid) -> Result<Option<DateTime<Utc>>, AppError> {
+    let now = Utc::now();
+    let until: Option<DateTime<Utc>> = db
+        .fetch_scalar::<Option<DateTime<Utc>>>(
+            "SELECT MAX(grace_until) FROM core.reauth_grants
+          WHERE user_id = $1 AND grace_until > $2",
+            params![user_id, now],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "reauth: reading the grace window");
+            AppError::Database(e)
+        })?;
     Ok(until)
 }
 
@@ -142,12 +150,14 @@ pub async fn grace_until(db: &PgPool, user_id: Uuid) -> Result<Option<DateTime<U
 ///
 /// Called when the session ends or the password changes: a step-up proof must not
 /// survive the credential it was layered on top of.
-pub async fn revoke_all(db: &PgPool, user_id: Uuid) {
-    if let Err(e) = sqlx::query("DELETE FROM core.reauth_grants WHERE user_id = $1")
-        .bind(user_id)
-        .execute(db)
+pub async fn revoke_all(db: &DbPool, user_id: Uuid) {
+    if let Err(e) = db
+        .execute(
+            "DELETE FROM core.reauth_grants WHERE user_id = $1",
+            params![user_id],
+        )
         .await
     {
-        tracing::error!(error = %e, user_id = %user_id, "reauth: révocation des droits");
+        tracing::error!(error = %e, user_id = %user_id, "reauth: revoking the grants");
     }
 }

@@ -6,8 +6,8 @@
 //! only in this process, and reported to the API as a single boolean.
 
 use crate::crypto::datakey;
+use kubuno_db::{DbPool, DbQueryBuilder};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 
 use crate::{crypto::encryption, errors::AppError};
 
@@ -152,16 +152,15 @@ pub fn quote_display_name(name: &str) -> String {
 impl MailConfig {
     /// Loads the relay configuration. A missing key falls back to its default,
     /// so an instance whose migration ran halfway still boots.
-    pub async fn load(db: &PgPool, jwt_secret: &str) -> Result<Self, AppError> {
+    pub async fn load(db: &DbPool, jwt_secret: &str) -> Result<Self, AppError> {
+        let mut qb =
+            DbQueryBuilder::new(db.backend(), "SELECT \"key\", value FROM core.settings WHERE \"key\"");
+        qb.push_in(ALL_KEYS.iter().copied());
         let rows: Vec<(String, serde_json::Value)> =
-            sqlx::query_as("SELECT key, value FROM core.settings WHERE key = ANY($1)")
-                .bind(ALL_KEYS)
-                .fetch_all(db)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "mailer: lecture de la configuration SMTP");
-                    AppError::Database(e)
-                })?;
+            qb.fetch_all_as(db).await.map_err(|e| {
+                tracing::error!(error = %e, "mailer: reading the SMTP configuration");
+                AppError::Database(e)
+            })?;
 
         let mut cfg = Self {
             enabled:      false,

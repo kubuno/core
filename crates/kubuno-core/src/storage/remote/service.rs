@@ -1,11 +1,11 @@
-//! Service de montages distants — cache de connecteurs + chiffrement des configs.
-//! La clé dérive de l'internal_secret partagé (MÊME dérivation que l'ancien module
-//! drive → les configs migrées restent déchiffrables sans re-chiffrement).
+//! Remote-mount service — connector cache + config encryption.
+//! The key derives from the shared internal_secret (SAME derivation as the former
+//! drive module → migrated configs stay decryptable without a re-seal).
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -16,7 +16,7 @@ use super::{build_connector, ConnectorConfig, RemoteConnector, RemoteError};
 const HKDF_INFO_CONFIG: &[u8] = b"kubuno:v1:core:remote-mount-config-aes256";
 
 pub struct RemoteMountService {
-    db:    PgPool,
+    db:    DbPool,
     /// Current key: HKDF-SHA256 (RFC 5869) of the internal secret. Used for every
     /// new seal, and tried first when opening.
     key:   [u8; 32],
@@ -28,7 +28,7 @@ pub struct RemoteMountService {
 }
 
 impl RemoteMountService {
-    pub fn new(db: PgPool, internal_secret: &str) -> Self {
+    pub fn new(db: DbPool, internal_secret: &str) -> Self {
         use hkdf::Hkdf;
         use sha2::{Digest, Sha256};
 
@@ -52,7 +52,7 @@ impl RemoteMountService {
         Self { db, key, key_legacy, cache: RwLock::new(HashMap::new()) }
     }
 
-    pub fn db(&self) -> &PgPool { &self.db }
+    pub fn db(&self) -> &DbPool { &self.db }
 
     /// Seal a config with AES-256-GCM (96-bit random nonce, `nonce ‖ ciphertext`).
     /// Returns an error rather than an empty blob on failure: a silent
@@ -90,23 +90,24 @@ impl RemoteMountService {
         None
     }
 
-    /// Construit un connecteur depuis un provider + une config en clair.
+    /// Builds a connector from a provider + a plaintext config.
     pub fn connector_from(&self, provider: &str, config: &serde_json::Value) -> Result<Arc<dyn RemoteConnector>, RemoteError> {
         let cfg: ConnectorConfig = serde_json::from_value(config.clone())
             .map_err(|e| RemoteError::Auth(format!("config invalide: {e}")))?;
         build_connector(provider, &cfg)
     }
 
-    /// Charge (et met en cache) le connecteur d'un montage possédé.
+    /// Loads (and caches) the connector of an owned mount.
     pub async fn get_connector(&self, id: Uuid, owner: Uuid) -> Result<Arc<dyn RemoteConnector>, RemoteError> {
         if let Some(c) = self.cache.read().await.get(&id) { return Ok(c.clone()); }
-        let row = sqlx::query_as::<_, (String, Vec<u8>)>(
-            "SELECT provider, config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
-        )
-        .bind(id).bind(owner)
-        .fetch_optional(&self.db).await
-        .map_err(|e| RemoteError::Provider(e.to_string()))?
-        .ok_or_else(|| RemoteError::NotFound(format!("Montage {id}")))?;
+        let row = self.db
+            .fetch_optional_as::<(String, Vec<u8>)>(
+                "SELECT provider, config_enc FROM core.remote_mounts WHERE id = $1 AND owner_id = $2",
+                params![id, owner],
+            )
+            .await
+            .map_err(|e| RemoteError::Provider(e.to_string()))?
+            .ok_or_else(|| RemoteError::NotFound(format!("Mount {id}")))?;
 
         let config = self.decrypt_config(&row.1)
             .ok_or(RemoteError::ConfigUnreadable)?;

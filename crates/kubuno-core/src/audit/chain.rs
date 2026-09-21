@@ -31,8 +31,8 @@ use std::sync::OnceLock;
 use chrono::{DateTime, Utc};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
+use kubuno_db::{params, DbPool};
 use sha2::Sha256;
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use super::model::{AuditContext, AuditEntry};
@@ -172,6 +172,34 @@ pub fn canonical_of_write<'a>(
     }
 }
 
+/// One chained row as read back for verification. `ip_text` is the text form of
+/// the stored address (`host(ip_address)` on PostgreSQL), matching what was
+/// hashed at write time.
+#[derive(sqlx::FromRow)]
+struct RawChainRow {
+    id: i64,
+    occurred_at: DateTime<Utc>,
+    actor_id: Option<Uuid>,
+    actor_label: String,
+    actor_role: Option<String>,
+    actor_origin: String,
+    actor_token_id: Option<Uuid>,
+    ip_text: Option<String>,
+    user_agent: Option<String>,
+    action: String,
+    module_id: Option<String>,
+    target_type: Option<String>,
+    target_id: Option<String>,
+    target_label: Option<String>,
+    before: Option<serde_json::Value>,
+    after: Option<serde_json::Value>,
+    outcome: String,
+    detail: Option<String>,
+    reversible: bool,
+    prev_hash: Vec<u8>,
+    row_hash: Vec<u8>,
+}
+
 /// Outcome of a full-chain verification.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ChainReport {
@@ -188,7 +216,7 @@ pub struct ChainReport {
 /// Recompute the chain and report the first break. Reads the chained rows
 /// (`row_hash IS NOT NULL`) oldest-first; rows written before the feature existed
 /// (NULL hash) are outside the chain and skipped.
-pub async fn verify_chain(db: &PgPool) -> Result<ChainReport, sqlx::Error> {
+pub async fn verify_chain(db: &DbPool) -> Result<ChainReport, sqlx::Error> {
     let Some(key) = audit_key() else {
         return Ok(ChainReport {
             checked: 0,
@@ -198,67 +226,54 @@ pub async fn verify_chain(db: &PgPool) -> Result<ChainReport, sqlx::Error> {
         });
     };
 
-    let rows = sqlx::query(
-        r#"SELECT id, occurred_at, actor_id, actor_label, actor_role, actor_origin,
-                  actor_token_id, host(ip_address) AS ip_text, user_agent,
-                  action, module_id, target_type, target_id, target_label,
-                  before, after, outcome, detail, reversible, prev_hash, row_hash
-             FROM core.admin_audit
-            WHERE row_hash IS NOT NULL
-            ORDER BY id ASC"#,
-    )
-    .fetch_all(db)
-    .await?;
+    // The chain reproduces the exact text hashed at write time. `host(ip_address)`
+    // is spelled per engine (`Backend::inet_text`); `"before"`/`"after"` are
+    // reserved words quoted for MySQL (harmless identifiers on the others).
+    let rows = db
+        .fetch_all_as::<RawChainRow>(
+            &format!(
+                r#"SELECT id, occurred_at, actor_id, actor_label, actor_role, actor_origin,
+                      actor_token_id, {ip} AS ip_text, user_agent,
+                      action, module_id, target_type, target_id, target_label,
+                      "before", "after", outcome, detail, reversible, prev_hash, row_hash
+                 FROM core.admin_audit
+                WHERE row_hash IS NOT NULL
+                ORDER BY id ASC"#,
+                ip = db.backend().inet_text("ip_address")
+            ),
+            params![],
+        )
+        .await?;
 
     let mut prev: Vec<u8> = GENESIS.to_vec();
     let mut checked = 0i64;
     for r in &rows {
-        // Bind owned values first: `CanonFields` borrows them, so they must
-        // outlive it (a `r.get(...).as_deref()` inline would dangle).
-        let id: i64 = r.get("id");
-        let occurred_at: DateTime<Utc> = r.get("occurred_at");
-        let actor_id: Option<Uuid> = r.get("actor_id");
-        let actor_label: String = r.get("actor_label");
-        let actor_role: Option<String> = r.get("actor_role");
-        let actor_origin: String = r.get("actor_origin");
-        let actor_token_id: Option<Uuid> = r.get("actor_token_id");
-        let ip_text: Option<String> = r.get("ip_text");
-        let user_agent: Option<String> = r.get("user_agent");
-        let action: String = r.get("action");
-        let module_id: Option<String> = r.get("module_id");
-        let target_type: Option<String> = r.get("target_type");
-        let target_id: Option<String> = r.get("target_id");
-        let target_label: Option<String> = r.get("target_label");
-        let before: Option<serde_json::Value> = r.get("before");
-        let after: Option<serde_json::Value> = r.get("after");
-        let outcome: String = r.get("outcome");
-        let detail: Option<String> = r.get("detail");
-        let reversible: bool = r.get("reversible");
-        let stored_prev: Vec<u8> = r.get("prev_hash");
-        let stored_hash: Vec<u8> = r.get("row_hash");
+        let id = r.id;
+        let stored_prev = &r.prev_hash;
+        let stored_hash = &r.row_hash;
 
         let fields = CanonFields {
-            occurred_at,
-            actor_id,
-            actor_label: &actor_label,
-            actor_role: actor_role.as_deref(),
-            actor_origin: &actor_origin,
-            actor_token_id,
-            ip_address: ip_text.as_deref(),
-            user_agent: user_agent.as_deref(),
-            action: &action,
-            module_id: module_id.as_deref(),
-            target_type: target_type.as_deref(),
-            target_id: target_id.as_deref(),
-            target_label: target_label.as_deref(),
-            before: before.as_ref(),
-            after: after.as_ref(),
-            outcome: &outcome,
-            detail: detail.as_deref(),
-            reversible,
+            occurred_at: r.occurred_at,
+            actor_id: r.actor_id,
+            actor_label: &r.actor_label,
+            actor_role: r.actor_role.as_deref(),
+            actor_origin: &r.actor_origin,
+            actor_token_id: r.actor_token_id,
+            ip_address: r.ip_text.as_deref(),
+            user_agent: r.user_agent.as_deref(),
+            action: &r.action,
+            module_id: r.module_id.as_deref(),
+            target_type: r.target_type.as_deref(),
+            target_id: r.target_id.as_deref(),
+            target_label: r.target_label.as_deref(),
+            before: r.before.as_ref(),
+            after: r.after.as_ref(),
+            outcome: &r.outcome,
+            detail: r.detail.as_deref(),
+            reversible: r.reversible,
         };
 
-        if stored_prev != prev {
+        if *stored_prev != prev {
             return Ok(ChainReport {
                 checked,
                 ok: false,
@@ -267,7 +282,7 @@ pub async fn verify_chain(db: &PgPool) -> Result<ChainReport, sqlx::Error> {
             });
         }
         let expected = row_hash(key, &canonical(&fields), &prev);
-        if expected != stored_hash {
+        if &expected != stored_hash {
             return Ok(ChainReport {
                 checked,
                 ok: false,
@@ -275,7 +290,7 @@ pub async fn verify_chain(db: &PgPool) -> Result<ChainReport, sqlx::Error> {
                 reason: Some("content".into()),
             });
         }
-        prev = stored_hash;
+        prev = stored_hash.clone();
         checked += 1;
     }
 

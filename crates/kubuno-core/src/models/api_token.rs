@@ -18,6 +18,9 @@ pub struct ApiToken {
     #[serde(skip_serializing)]
     pub token_hash:   String,
     /// Privilege keys the bearer may exercise. Empty **only** for a legacy token.
+    /// Stored as a JSON array (portable across engines); the PostgreSQL column
+    /// is migrated `TEXT[]` → `JSONB` on the schema-consolidation side.
+    #[sqlx(json)]
     pub scopes:       Vec<String>,
     /// Issued before scopes existed; runs on a grace window.
     pub is_legacy:    bool,

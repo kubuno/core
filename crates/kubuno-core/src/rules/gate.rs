@@ -58,7 +58,7 @@ use std::time::{Duration, Instant};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -117,7 +117,7 @@ impl FailMode {
         }
     }
 
-    pub async fn from_settings(db: &PgPool) -> Self {
+    pub async fn from_settings(db: &DbPool) -> Self {
         Self::parse(&detect::store::setting_str(db, "rules.gate.fail_mode", "open").await)
     }
 }
@@ -242,7 +242,7 @@ pub fn new_reference() -> String {
 /// write. A module applies the same policy to the HTTP call itself; between the
 /// two, neither a slow core nor an unreachable one can hold a user's send button
 /// hostage.
-pub async fn decide(db: &PgPool, request: GateRequest) -> GateResponse {
+pub async fn decide(db: &DbPool, request: GateRequest) -> GateResponse {
     let started = Instant::now();
 
     if !detect::store::setting_bool(db, "rules.gate.enabled", true).await {
@@ -339,7 +339,7 @@ struct GateOutcome {
 }
 
 /// Evaluates every rule of the trigger and returns the strongest verdict.
-async fn evaluate(db: &PgPool, request: &GateRequest) -> Result<GateOutcome, AppError> {
+async fn evaluate(db: &DbPool, request: &GateRequest) -> Result<GateOutcome, AppError> {
     if !store::engine_enabled(db).await {
         return Ok(GateOutcome {
             decision: Decision::Allow,
@@ -460,7 +460,7 @@ async fn evaluate(db: &PgPool, request: &GateRequest) -> Result<GateOutcome, App
 /// per-keystroke path would grow a table nobody asked for. Scope and rollout are
 /// the two that carry over, and they carry over unchanged.
 async fn decide_rule(
-    db: &PgPool,
+    db: &DbPool,
     rule: &Rule,
     facts: &Facts,
     evidence: &Evidence,

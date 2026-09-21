@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, Json};
+use kubuno_db::params;
 use serde_json::json;
-use sqlx::Row;
 
 use crate::{
     authz::{keys, AdminCtx},
@@ -18,6 +18,14 @@ use crate::{
     state::AppState,
 };
 
+/// Local install state of a module, joined against the remote catalog.
+#[derive(sqlx::FromRow)]
+struct ModuleState {
+    id:         String,
+    version:    String,
+    is_enabled: bool,
+}
+
 /// `GET /api/v1/admin/marketplace` — catalogue distant + état d'installation local.
 pub async fn list_marketplace(
     State(state): State<AppState>,
@@ -27,13 +35,14 @@ pub async fn list_marketplace(
     ctx.require(keys::MARKETPLACE_MANAGE)?;
     let catalog = marketplace::fetch_catalog().await?;
 
-    // État local : version installée + activé, par id de module.
-    let rows = sqlx::query("SELECT id, version, is_enabled FROM core.modules")
-        .fetch_all(&state.db)
+    // Local state: installed version + enabled flag, keyed by module id.
+    let rows = state
+        .db
+        .fetch_all_as::<ModuleState>("SELECT id, version, is_enabled FROM core.modules", params![])
         .await?;
     let installed: HashMap<String, (String, bool)> = rows
         .into_iter()
-        .map(|r| (r.get::<String, _>("id"), (r.get::<String, _>("version"), r.get::<bool, _>("is_enabled"))))
+        .map(|r| (r.id, (r.version, r.is_enabled)))
         .collect();
 
     let modules: Vec<_> = catalog
@@ -145,12 +154,14 @@ pub async fn uninstall_marketplace(
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     ctx.require_superuser("désinstallation d'un module")?;
-    let previous: Option<(String, String)> =
-        sqlx::query_as("SELECT display_name, version FROM core.modules WHERE id = $1")
-            .bind(&id)
-            .fetch_optional(&state.db)
-            .await
-            .map_err(|e| { tracing::error!(error = %e, module_id = %id, "uninstall_marketplace: lecture"); AppError::Database(e) })?;
+    let previous: Option<(String, String)> = state
+        .db
+        .fetch_optional_as::<(String, String)>(
+            "SELECT display_name, version FROM core.modules WHERE id = $1",
+            params![&id],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, module_id = %id, "uninstall_marketplace: lecture"); AppError::Database(e) })?;
 
     // `uninstall` removes files from disk as well as rows: it is not
     // transactional, so the entry is written right after it succeeds.

@@ -13,6 +13,7 @@ use axum::{
     Json,
 };
 use futures::stream;
+use kubuno_db::params;
 use serde_json::json;
 
 use crate::{
@@ -89,27 +90,41 @@ pub async fn audit_facets(
     ctx: AdminCtx,
 ) -> Result<Json<serde_json::Value>, AppError> {
     ctx.require(keys::AUDIT_READ)?;
-    let actions: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT action FROM core.admin_audit ORDER BY action LIMIT 200",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "audit_facets: actions"); AppError::Database(e) })?;
+    // Single-column reads go through a one-field tuple: the pool has no
+    // `fetch_all` for a bare scalar, only `fetch_all_as` over a `FromRow` type.
+    let actions: Vec<String> = state
+        .db
+        .fetch_all_as::<(String,)>(
+            "SELECT DISTINCT action FROM core.admin_audit ORDER BY action LIMIT 200",
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "audit_facets: actions"); AppError::Database(e) })?
+        .into_iter()
+        .map(|(a,)| a)
+        .collect();
 
-    let target_types: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT target_type FROM core.admin_audit WHERE target_type IS NOT NULL ORDER BY 1 LIMIT 100",
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "audit_facets: cibles"); AppError::Database(e) })?;
+    let target_types: Vec<String> = state
+        .db
+        .fetch_all_as::<(String,)>(
+            "SELECT DISTINCT target_type FROM core.admin_audit WHERE target_type IS NOT NULL ORDER BY 1 LIMIT 100",
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "audit_facets: cibles"); AppError::Database(e) })?
+        .into_iter()
+        .map(|(t,)| t)
+        .collect();
 
-    let actors: Vec<(uuid::Uuid, String)> = sqlx::query_as(
-        r#"SELECT DISTINCT actor_id, actor_label FROM core.admin_audit
-           WHERE actor_id IS NOT NULL ORDER BY actor_label LIMIT 200"#,
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| { tracing::error!(error = %e, "audit_facets: acteurs"); AppError::Database(e) })?;
+    let actors: Vec<(uuid::Uuid, String)> = state
+        .db
+        .fetch_all_as::<(uuid::Uuid, String)>(
+            r#"SELECT DISTINCT actor_id, actor_label FROM core.admin_audit
+               WHERE actor_id IS NOT NULL ORDER BY actor_label LIMIT 200"#,
+            params![],
+        )
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "audit_facets: acteurs"); AppError::Database(e) })?;
 
     Ok(Json(json!({
         "actions":      actions,
@@ -227,8 +242,13 @@ pub async fn audit_retention(
 ) -> Result<Json<serde_json::Value>, AppError> {
     ctx.require(keys::AUDIT_READ)?;
     let days = crate::audit::retention::configured_days(&state.db).await;
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM core.admin_audit")
-        .fetch_one(&state.db)
+    let backend = state.db.backend();
+    let total: i64 = state
+        .db
+        .fetch_scalar::<i64>(
+            &format!("SELECT {} FROM core.admin_audit", backend.count_bigint("*")),
+            params![],
+        )
         .await
         .map_err(|e| { tracing::error!(error = %e, "audit_retention: comptage"); AppError::Database(e) })?;
 

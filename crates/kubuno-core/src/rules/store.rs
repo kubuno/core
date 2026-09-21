@@ -5,7 +5,7 @@
 //!
 //! ## Writing a rule always writes a version
 //!
-//! [`insert_rule`] and [`update_rule`] take a live connection — in practice the
+//! [`insert_rule`] and [`update_rule`] take a live transaction — in practice the
 //! [`crate::audit::AuditTx`] the handler opened — and write the snapshot in the
 //! **same transaction** as the rule. There is no code path that produces a rule
 //! row without the matching `core.rule_versions` row, because the two statements
@@ -15,8 +15,9 @@
 
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
-use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
+
+use kubuno_db::{params, DbPool, DbQueryBuilder, DbRow, DbTx};
 
 use crate::errors::AppError;
 
@@ -27,10 +28,10 @@ use super::model::{ActionSpec, ExecutionRow, Mode, Outcome, Rule, Scope, Subject
 /// listens and rebuilds its memory index; nothing queries on the hot path.
 pub const RULES_CHANNEL: &str = "kubuno_rules";
 
-// The column list every read and every RETURNING clause shares. A macro rather
-// than a `const` so call sites can splice it with `concat!`: the result is a
-// single `&'static str` literal, which the driver accepts without an audit
-// escape hatch — no query text here is ever built at run time.
+// The column list every read shares. A macro rather than a `const` so call sites
+// can splice it with `concat!`: the result is a single `&'static str` literal,
+// which the driver accepts without an audit escape hatch — no query text here is
+// ever built at run time.
 macro_rules! select_rule {
     () => {
         r#"
@@ -41,82 +42,129 @@ macro_rules! select_rule {
     };
 }
 
-fn map_rule(r: &sqlx::postgres::PgRow) -> Rule {
-    let conditions: Value = r.get("conditions");
-    let actions: Value = r.get("actions");
-    let scope: Value = r.get("scope");
-    let mode: String = r.get("mode");
-    Rule {
-        id: r.get("id"),
-        name: r.get("name"),
-        description: r.get("description"),
-        trigger_key: r.get("trigger_key"),
-        // A tree stored by an older or newer core that this build cannot read
-        // degrades to "matches everything" — never to a panic on the hot path.
-        // The console shows the raw JSON so the drift is visible.
-        conditions: serde_json::from_value(conditions).unwrap_or_default(),
-        actions: serde_json::from_value(actions).unwrap_or_default(),
-        mode: Mode::parse(&mode).unwrap_or(Mode::Inactive),
-        scope: serde_json::from_value(scope).unwrap_or_default(),
-        threshold_count: r.get("threshold_count"),
-        threshold_window_s: r.get("threshold_window_s"),
-        rollout_percent: r.get("rollout_percent"),
-        severity: r.get("severity"),
-        priority: r.get("priority"),
-        version: r.get("version"),
-        created_at: r.get("created_at"),
-        updated_at: r.get("updated_at"),
+/// The raw shape of a `core.rules` row, decoded by the driver before the JSON
+/// columns are parsed into their strong types.
+#[derive(sqlx::FromRow)]
+struct RawRuleRow {
+    id: Uuid,
+    name: String,
+    description: Option<String>,
+    trigger_key: String,
+    conditions: Value,
+    actions: Value,
+    mode: String,
+    scope: Value,
+    threshold_count: Option<i32>,
+    threshold_window_s: Option<i32>,
+    rollout_percent: i16,
+    severity: String,
+    priority: i32,
+    version: i32,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl RawRuleRow {
+    fn into_rule(self) -> Rule {
+        Rule {
+            id: self.id,
+            name: self.name,
+            description: self.description,
+            trigger_key: self.trigger_key,
+            // A tree stored by an older or newer core that this build cannot read
+            // degrades to "matches everything" — never to a panic on the hot path.
+            // The console shows the raw JSON so the drift is visible.
+            conditions: serde_json::from_value(self.conditions).unwrap_or_default(),
+            actions: serde_json::from_value(self.actions).unwrap_or_default(),
+            mode: Mode::parse(&self.mode).unwrap_or(Mode::Inactive),
+            scope: serde_json::from_value(self.scope).unwrap_or_default(),
+            threshold_count: self.threshold_count,
+            threshold_window_s: self.threshold_window_s,
+            rollout_percent: self.rollout_percent,
+            severity: self.severity,
+            priority: self.priority,
+            version: self.version,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
     }
+}
+
+/// Hand-maps a rule row read inside a transaction (where `fetch_*_as` is not
+/// available), applying the same graceful JSON degradation as [`RawRuleRow`].
+fn row_to_rule(r: &DbRow) -> Result<Rule, sqlx::Error> {
+    Ok(Rule {
+        id: r.try_get("id")?,
+        name: r.try_get("name")?,
+        description: r.try_get("description")?,
+        trigger_key: r.try_get("trigger_key")?,
+        conditions: serde_json::from_value(r.try_get::<Value>("conditions")?).unwrap_or_default(),
+        actions: serde_json::from_value(r.try_get::<Value>("actions")?).unwrap_or_default(),
+        mode: Mode::parse(&r.try_get::<String>("mode")?).unwrap_or(Mode::Inactive),
+        scope: serde_json::from_value(r.try_get::<Value>("scope")?).unwrap_or_default(),
+        threshold_count: r.try_get("threshold_count")?,
+        threshold_window_s: r.try_get("threshold_window_s")?,
+        rollout_percent: r.try_get("rollout_percent")?,
+        severity: r.try_get("severity")?,
+        priority: r.try_get("priority")?,
+        version: r.try_get("version")?,
+        created_at: r.try_get("created_at")?,
+        updated_at: r.try_get("updated_at")?,
+    })
 }
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
 /// Every rule that is not inactive, ordered as the engine runs them.
-pub async fn load_active(db: &PgPool) -> Result<Vec<Rule>, AppError> {
-    let rows = sqlx::query(concat!(
-        "SELECT ",
-        select_rule!(),
-        " FROM core.rules WHERE mode <> 'inactive' ORDER BY priority, created_at"
-    ))
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "rules: chargement des règles actives");
-        AppError::Database(e)
-    })?;
-    Ok(rows.iter().map(map_rule).collect())
+pub async fn load_active(db: &DbPool) -> Result<Vec<Rule>, AppError> {
+    let rows = db
+        .fetch_all_as::<RawRuleRow>(
+            concat!(
+                "SELECT ",
+                select_rule!(),
+                " FROM core.rules WHERE mode <> 'inactive' ORDER BY priority, created_at"
+            ),
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "rules: chargement des règles actives");
+            AppError::Database(e)
+        })?;
+    Ok(rows.into_iter().map(RawRuleRow::into_rule).collect())
 }
 
-pub async fn list_rules(db: &PgPool) -> Result<Vec<Rule>, AppError> {
-    let rows = sqlx::query(concat!(
-        "SELECT ",
-        select_rule!(),
-        " FROM core.rules ORDER BY priority, created_at"
-    ))
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "rules: lecture des règles");
-        AppError::Database(e)
-    })?;
-    Ok(rows.iter().map(map_rule).collect())
+pub async fn list_rules(db: &DbPool) -> Result<Vec<Rule>, AppError> {
+    let rows = db
+        .fetch_all_as::<RawRuleRow>(
+            concat!(
+                "SELECT ",
+                select_rule!(),
+                " FROM core.rules ORDER BY priority, created_at"
+            ),
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "rules: lecture des règles");
+            AppError::Database(e)
+        })?;
+    Ok(rows.into_iter().map(RawRuleRow::into_rule).collect())
 }
 
-pub async fn get_rule(db: &PgPool, id: Uuid) -> Result<Rule, AppError> {
-    let row = sqlx::query(concat!(
-        "SELECT ",
-        select_rule!(),
-        " FROM core.rules WHERE id = $1"
-    ))
-        .bind(id)
-        .fetch_optional(db)
+pub async fn get_rule(db: &DbPool, id: Uuid) -> Result<Rule, AppError> {
+    let row = db
+        .fetch_optional_as::<RawRuleRow>(
+            concat!("SELECT ", select_rule!(), " FROM core.rules WHERE id = $1"),
+            params![id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, rule_id = %id, "rules: lecture d'une règle");
             AppError::Database(e)
         })?
         .ok_or_else(|| AppError::NotFound("règle".into()))?;
-    Ok(map_rule(&row))
+    Ok(row.into_rule())
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────
@@ -162,89 +210,117 @@ impl RuleDraft {
 
 /// Creates a rule and its first version, atomically.
 pub async fn insert_rule(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     draft: &RuleDraft,
     author: Option<Uuid>,
     note: Option<&str>,
 ) -> Result<Rule, AppError> {
-    let row = sqlx::query(concat!(
+    // The primary key is invented in Rust so the write needs no RETURNING and
+    // the row can be re-read by id on every engine.
+    let id = kubuno_db::new_id();
+    tx.execute(
         r#"INSERT INTO core.rules
-               (name, description, trigger_key, conditions, actions, mode, scope,
+               (id, name, description, trigger_key, conditions, actions, mode, scope,
                 threshold_count, threshold_window_s, rollout_percent, severity, priority,
                 version, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $13)
-           RETURNING "#,
-        select_rule!()
-    ))
-    .bind(&draft.name)
-    .bind(draft.description.as_deref())
-    .bind(&draft.trigger_key)
-    .bind(serde_json::to_value(&draft.conditions).unwrap_or_default())
-    .bind(serde_json::to_value(&draft.actions).unwrap_or_default())
-    .bind(draft.mode.as_str())
-    .bind(serde_json::to_value(&draft.scope).unwrap_or_default())
-    .bind(draft.threshold_count)
-    .bind(draft.threshold_window_s)
-    .bind(draft.rollout_percent)
-    .bind(&draft.severity)
-    .bind(draft.priority)
-    .bind(author)
-    .fetch_one(&mut *conn)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 1, $14, $15)"#,
+        params![
+            id,
+            &draft.name,
+            draft.description.as_deref(),
+            &draft.trigger_key,
+            serde_json::to_value(&draft.conditions).unwrap_or_default(),
+            serde_json::to_value(&draft.actions).unwrap_or_default(),
+            draft.mode.as_str(),
+            serde_json::to_value(&draft.scope).unwrap_or_default(),
+            draft.threshold_count,
+            draft.threshold_window_s,
+            draft.rollout_percent,
+            &draft.severity,
+            draft.priority,
+            author,
+            author
+        ],
+    )
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "rules: création d'une règle");
         AppError::Database(e)
     })?;
 
-    let rule = map_rule(&row);
-    insert_version(conn, rule.id, 1, &draft.snapshot(1), author, note).await?;
+    let row = tx
+        .fetch_optional_row(
+            concat!("SELECT ", select_rule!(), " FROM core.rules WHERE id = $1"),
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "rules: relecture d'une règle");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("règle".into()))?;
+    let rule = row_to_rule(&row).map_err(AppError::Database)?;
+    insert_version(tx, rule.id, 1, &draft.snapshot(1), author, note).await?;
     Ok(rule)
 }
 
 /// Replaces a rule's definition, bumping its version and writing the snapshot in
 /// the same transaction.
 pub async fn update_rule(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     id: Uuid,
     draft: &RuleDraft,
     author: Option<Uuid>,
     note: Option<&str>,
 ) -> Result<Rule, AppError> {
-    let row = sqlx::query(concat!(
-        r#"UPDATE core.rules
-              SET name = $2, description = $3, trigger_key = $4, conditions = $5,
-                  actions = $6, mode = $7, scope = $8, threshold_count = $9,
-                  threshold_window_s = $10, rollout_percent = $11, severity = $12,
-                  priority = $13, version = version + 1, updated_by = $14
-            WHERE id = $1
-        RETURNING "#,
-        select_rule!()
-    ))
-    .bind(id)
-    .bind(&draft.name)
-    .bind(draft.description.as_deref())
-    .bind(&draft.trigger_key)
-    .bind(serde_json::to_value(&draft.conditions).unwrap_or_default())
-    .bind(serde_json::to_value(&draft.actions).unwrap_or_default())
-    .bind(draft.mode.as_str())
-    .bind(serde_json::to_value(&draft.scope).unwrap_or_default())
-    .bind(draft.threshold_count)
-    .bind(draft.threshold_window_s)
-    .bind(draft.rollout_percent)
-    .bind(&draft.severity)
-    .bind(draft.priority)
-    .bind(author)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, rule_id = %id, "rules: mise à jour d'une règle");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("règle".into()))?;
+    let affected = tx
+        .execute(
+            r#"UPDATE core.rules
+                  SET name = $2, description = $3, trigger_key = $4, conditions = $5,
+                      actions = $6, mode = $7, scope = $8, threshold_count = $9,
+                      threshold_window_s = $10, rollout_percent = $11, severity = $12,
+                      priority = $13, version = version + 1, updated_by = $14
+                WHERE id = $1"#,
+            params![
+                id,
+                &draft.name,
+                draft.description.as_deref(),
+                &draft.trigger_key,
+                serde_json::to_value(&draft.conditions).unwrap_or_default(),
+                serde_json::to_value(&draft.actions).unwrap_or_default(),
+                draft.mode.as_str(),
+                serde_json::to_value(&draft.scope).unwrap_or_default(),
+                draft.threshold_count,
+                draft.threshold_window_s,
+                draft.rollout_percent,
+                &draft.severity,
+                draft.priority,
+                author
+            ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, rule_id = %id, "rules: mise à jour d'une règle");
+            AppError::Database(e)
+        })?;
+    if affected == 0 {
+        return Err(AppError::NotFound("règle".into()));
+    }
 
-    let rule = map_rule(&row);
+    let row = tx
+        .fetch_optional_row(
+            concat!("SELECT ", select_rule!(), " FROM core.rules WHERE id = $1"),
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, rule_id = %id, "rules: relecture d'une règle");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("règle".into()))?;
+    let rule = row_to_rule(&row).map_err(AppError::Database)?;
     insert_version(
-        conn,
+        tx,
         rule.id,
         rule.version,
         &draft.snapshot(rule.version),
@@ -256,23 +332,18 @@ pub async fn update_rule(
 }
 
 async fn insert_version(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     rule_id: Uuid,
     version: i32,
     snapshot: &Value,
     author: Option<Uuid>,
     note: Option<&str>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    tx.execute(
         r#"INSERT INTO core.rule_versions (rule_id, version, snapshot, change_note, changed_by)
            VALUES ($1, $2, $3, $4, $5)"#,
+        params![rule_id, version, snapshot.clone(), note, author],
     )
-    .bind(rule_id)
-    .bind(version)
-    .bind(snapshot)
-    .bind(note)
-    .bind(author)
-    .execute(&mut *conn)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, rule_id = %rule_id, version, "rules: écriture d'une version");
@@ -281,58 +352,41 @@ async fn insert_version(
     Ok(())
 }
 
-pub async fn delete_rule(conn: &mut PgConnection, id: Uuid) -> Result<(), AppError> {
-    let affected = sqlx::query("DELETE FROM core.rules WHERE id = $1")
-        .bind(id)
-        .execute(&mut *conn)
+pub async fn delete_rule(tx: &mut DbTx, id: Uuid) -> Result<(), AppError> {
+    let affected = tx
+        .execute("DELETE FROM core.rules WHERE id = $1", params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, rule_id = %id, "rules: suppression d'une règle");
             AppError::Database(e)
-        })?
-        .rows_affected();
+        })?;
     if affected == 0 {
         return Err(AppError::NotFound("règle".into()));
     }
     Ok(())
 }
 
-pub async fn versions(db: &PgPool, rule_id: Uuid) -> Result<Vec<VersionRow>, AppError> {
-    let rows = sqlx::query(
+pub async fn versions(db: &DbPool, rule_id: Uuid) -> Result<Vec<VersionRow>, AppError> {
+    db.fetch_all_as::<VersionRow>(
         r#"SELECT v.version, v.snapshot, v.change_note, v.changed_by, v.created_at,
                   COALESCE(NULLIF(u.display_name, ''), u.username) AS changed_by_label
              FROM core.rule_versions v
              LEFT JOIN core.users u ON u.id = v.changed_by
             WHERE v.rule_id = $1
             ORDER BY v.version DESC"#,
+        params![rule_id],
     )
-    .bind(rule_id)
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, rule_id = %rule_id, "rules: lecture des versions");
         AppError::Database(e)
-    })?;
-
-    Ok(rows
-        .iter()
-        .map(|r| VersionRow {
-            version: r.get("version"),
-            snapshot: r.get("snapshot"),
-            change_note: r.get("change_note"),
-            changed_by: r.get("changed_by"),
-            changed_by_label: r.get("changed_by_label"),
-            created_at: r.get("created_at"),
-        })
-        .collect())
+    })
 }
 
-/// Wakes every core process so it rebuilds its memory index.
-pub async fn notify_reload(db: &PgPool) {
-    if let Err(e) = sqlx::query("SELECT pg_notify($1, '')")
-        .bind(RULES_CHANNEL)
-        .execute(db)
-        .await
+/// Wakes every core process so it rebuilds its memory index. On PostgreSQL this
+/// is a `pg_notify`; on the other engines it lands in the event outbox.
+pub async fn notify_reload(db: &DbPool) {
+    if let Err(e) = kubuno_db::events::notify(db, crate::database::SCHEMA, RULES_CHANNEL, "").await
     {
         tracing::error!(error = %e, "rules: pg_notify sur le canal des règles");
     }
@@ -388,59 +442,75 @@ impl NewExecution {
     }
 }
 
-pub async fn record_execution(db: &PgPool, exec: &NewExecution) -> Result<i64, AppError> {
-    sqlx::query_scalar::<_, i64>(
+pub async fn record_execution(db: &DbPool, exec: &NewExecution) -> Result<i64, AppError> {
+    // `core.rule_executions.id` is engine-assigned (BIGSERIAL / AUTO_INCREMENT /
+    // rowid), so it is learnt after the write: PostgreSQL and SQLite read it back
+    // with `RETURNING id`, MySQL from `SELECT LAST_INSERT_ID()`. Both statements
+    // must run on the same connection, so the insert is wrapped in a short
+    // transaction (`insert_returning_scalar` picks the per-engine path).
+    let mut tx = db.begin().await.map_err(|e| {
+        tracing::error!(error = %e, rule_id = %exec.rule_id, "rules: ouverture du journal d'exécution");
+        AppError::Database(e)
+    })?;
+    let id = kubuno_db::returning::insert_returning_scalar::<i64>(
+        &mut tx,
         r#"INSERT INTO core.rule_executions
                (rule_id, rule_version, mode, outcome, event_type, actor_user_id,
                 org_unit_id, resource_type, resource_id, detail,
                 actions_total, actions_ok, actions_failed, depth, duration_ms,
                 gate_reference)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-           RETURNING id"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)"#,
+        params![
+            exec.rule_id,
+            exec.rule_version,
+            exec.mode.as_str(),
+            exec.outcome.as_str(),
+            &exec.event_type,
+            exec.actor_user_id,
+            exec.org_unit_id,
+            exec.resource_type.as_deref(),
+            exec.resource_id.as_deref(),
+            exec.detail.clone(),
+            exec.actions_total,
+            exec.actions_ok,
+            exec.actions_failed,
+            exec.depth,
+            exec.duration_ms,
+            exec.gate_reference.as_deref()
+        ],
+        "id",
+        "SELECT CAST(LAST_INSERT_ID() AS SIGNED)",
+        params![],
     )
-    .bind(exec.rule_id)
-    .bind(exec.rule_version)
-    .bind(exec.mode.as_str())
-    .bind(exec.outcome.as_str())
-    .bind(&exec.event_type)
-    .bind(exec.actor_user_id)
-    .bind(exec.org_unit_id)
-    .bind(exec.resource_type.as_deref())
-    .bind(exec.resource_id.as_deref())
-    .bind(&exec.detail)
-    .bind(exec.actions_total)
-    .bind(exec.actions_ok)
-    .bind(exec.actions_failed)
-    .bind(exec.depth)
-    .bind(exec.duration_ms)
-    .bind(exec.gate_reference.as_deref())
-    .fetch_one(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, rule_id = %exec.rule_id, "rules: écriture du journal d'exécution");
         AppError::Database(e)
-    })
+    })?;
+    tx.commit().await.map_err(|e| {
+        tracing::error!(error = %e, rule_id = %exec.rule_id, "rules: commit du journal d'exécution");
+        AppError::Database(e)
+    })?;
+    Ok(id)
 }
 
 /// Updates the action counters of an execution once the dispatcher is done.
 pub async fn settle_execution(
-    db: &PgPool,
+    db: &DbPool,
     execution_id: i64,
     ok: i16,
     failed: i16,
     detail: &Value,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    // The CASE re-reads `failed` and `ok`; each placeholder is bound exactly once
+    // (kubuno_db rewrites `$n` positionally), so the two values are bound twice.
+    db.execute(
         r#"UPDATE core.rule_executions
               SET actions_ok = $2, actions_failed = $3, detail = $4,
-                  outcome = CASE WHEN $3 > 0 AND $2 = 0 THEN 'error' ELSE outcome END
+                  outcome = CASE WHEN $5 > 0 AND $6 = 0 THEN 'error' ELSE outcome END
             WHERE id = $1"#,
+        params![execution_id, ok, failed, detail.clone(), failed, ok],
     )
-    .bind(execution_id)
-    .bind(ok)
-    .bind(failed)
-    .bind(detail)
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, execution_id, "rules: clôture d'une exécution");
@@ -465,60 +535,46 @@ pub struct ExecutionQuery {
 pub const MAX_EXECUTION_LIMIT: i64 = 200;
 
 pub async fn list_executions(
-    db: &PgPool,
+    db: &DbPool,
     q: &ExecutionQuery,
 ) -> Result<Vec<ExecutionRow>, AppError> {
     let limit = q.limit.unwrap_or(50).clamp(1, MAX_EXECUTION_LIMIT);
-    let rows = sqlx::query(
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
         r#"SELECT e.id, e.rule_id, r.name AS rule_name, e.rule_version, e.mode, e.outcome,
                   e.event_type, e.actor_user_id, e.org_unit_id, e.resource_type, e.resource_id,
                   e.detail, e.actions_total, e.actions_ok, e.actions_failed, e.depth,
                   e.duration_ms, e.occurred_at, e.gate_reference
              FROM core.rule_executions e
              LEFT JOIN core.rules r ON r.id = e.rule_id
-            WHERE ($1::uuid IS NULL OR e.rule_id = $1)
-              AND ($2::text IS NULL OR e.mode    = $2)
-              AND ($3::text IS NULL OR e.outcome = $3)
-              AND ($4::text IS NULL OR e.gate_reference = UPPER($4))
-            ORDER BY e.occurred_at DESC, e.id DESC
-            LIMIT $5"#,
-    )
-    .bind(q.rule_id)
-    .bind(q.mode.as_deref())
-    .bind(q.outcome.as_deref())
-    .bind(q.reference.as_deref().map(str::trim).filter(|s| !s.is_empty()))
-    .bind(limit)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
+            WHERE 1 = 1"#,
+    );
+    if let Some(rule_id) = q.rule_id {
+        qb.push(" AND e.rule_id = ").push_bind(rule_id);
+    }
+    if let Some(mode) = q.mode.as_deref() {
+        qb.push(" AND e.mode = ").push_bind(mode);
+    }
+    if let Some(outcome) = q.outcome.as_deref() {
+        qb.push(" AND e.outcome = ").push_bind(outcome);
+    }
+    if let Some(reference) = q
+        .reference
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        qb.push(" AND e.gate_reference = UPPER(")
+            .push_bind(reference)
+            .push(")");
+    }
+    qb.push_order_by("e.occurred_at DESC, e.id DESC");
+    qb.push_limit_offset(limit, 0);
+
+    qb.fetch_all_as::<ExecutionRow>(db).await.map_err(|e| {
         tracing::error!(error = %e, "rules: lecture du journal d'exécution");
         AppError::Database(e)
-    })?;
-
-    Ok(rows
-        .iter()
-        .map(|r| ExecutionRow {
-            id: r.get("id"),
-            rule_id: r.get("rule_id"),
-            rule_name: r.get("rule_name"),
-            rule_version: r.get("rule_version"),
-            mode: r.get("mode"),
-            outcome: r.get("outcome"),
-            event_type: r.get("event_type"),
-            actor_user_id: r.get("actor_user_id"),
-            org_unit_id: r.get("org_unit_id"),
-            resource_type: r.get("resource_type"),
-            resource_id: r.get("resource_id"),
-            detail: r.get("detail"),
-            actions_total: r.get("actions_total"),
-            actions_ok: r.get("actions_ok"),
-            actions_failed: r.get("actions_failed"),
-            depth: r.get("depth"),
-            duration_ms: r.get("duration_ms"),
-            occurred_at: r.get("occurred_at"),
-            gate_reference: r.get("gate_reference"),
-        })
-        .collect())
+    })
 }
 
 // ── Thresholds ───────────────────────────────────────────────────────────────
@@ -540,7 +596,7 @@ pub async fn list_executions(
 /// caught it. Two statements in one transaction cost one extra round trip and
 /// are simply correct.
 pub async fn hit_and_count(
-    db: &PgPool,
+    db: &DbPool,
     rule_id: Uuid,
     subject_key: &str,
     window_s: i32,
@@ -550,30 +606,36 @@ pub async fn hit_and_count(
         AppError::Database(e)
     })?;
 
-    sqlx::query("INSERT INTO core.rule_hits (rule_id, subject_key) VALUES ($1, $2)")
-        .bind(rule_id)
-        .bind(subject_key)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, rule_id = %rule_id, "rules: écriture d'une occurrence de seuil");
-            AppError::Database(e)
-        })?;
-
-    let count = sqlx::query_scalar::<_, i64>(
-        r#"SELECT COUNT(*) FROM core.rule_hits
-            WHERE rule_id = $1 AND subject_key = $2
-              AND occurred_at > NOW() - make_interval(secs => $3::double precision)"#,
+    // FLAG: `core.rule_hits.id` is BIGSERIAL; the insert leans on the database to
+    // supply the key (no RETURNING is needed here). PostgreSQL-shaped.
+    tx.execute(
+        "INSERT INTO core.rule_hits (rule_id, subject_key) VALUES ($1, $2)",
+        params![rule_id, subject_key],
     )
-    .bind(rule_id)
-    .bind(subject_key)
-    .bind(f64::from(window_s))
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, rule_id = %rule_id, "rules: comptage du seuil");
+        tracing::error!(error = %e, rule_id = %rule_id, "rules: écriture d'une occurrence de seuil");
         AppError::Database(e)
     })?;
+
+    // The window edge is computed in Rust and bound, so the query carries no
+    // engine-specific interval arithmetic.
+    let cutoff = Utc::now() - chrono::Duration::seconds(i64::from(window_s));
+    let count = tx
+        .fetch_optional_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.rule_hits \
+                  WHERE rule_id = $1 AND subject_key = $2 AND occurred_at > $3",
+                db.backend().count_bigint("*")
+            ),
+            params![rule_id, subject_key, cutoff],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, rule_id = %rule_id, "rules: comptage du seuil");
+            AppError::Database(e)
+        })?
+        .unwrap_or(0);
 
     tx.commit().await.map_err(|e| {
         tracing::error!(error = %e, rule_id = %rule_id, "rules: commit du comptage du seuil");
@@ -585,113 +647,151 @@ pub async fn hit_and_count(
 
 /// Drops hits older than the widest window any rule declares. Called by the
 /// maintenance job; the table is otherwise unbounded.
-pub async fn purge_hits(db: &PgPool) -> Result<u64, AppError> {
-    let rows = sqlx::query(
-        r#"DELETE FROM core.rule_hits h
-            USING core.rules r
-            WHERE h.rule_id = r.id
-              AND h.occurred_at < NOW()
-                  - make_interval(secs => COALESCE(r.threshold_window_s, 0)::double precision)
-                  - INTERVAL '1 hour'"#,
-    )
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "rules: purge des occurrences de seuil");
-        AppError::Database(e)
-    })?
-    .rows_affected();
-    Ok(rows)
+pub async fn purge_hits(db: &DbPool) -> Result<u64, AppError> {
+    // The retention window is per rule (its threshold window plus one hour), so
+    // there is no single cut-off. In place of the PostgreSQL-only
+    // `DELETE … USING … make_interval`, each rule's window is read, the cut-off
+    // is computed in Rust, and the rules are grouped by window so there is one
+    // `DELETE … WHERE rule_id IN (…) AND occurred_at < $cutoff` per distinct
+    // window (a handful) rather than one statement per rule.
+    let rules = db
+        .fetch_all_as::<(Uuid, Option<i32>)>(
+            "SELECT id, threshold_window_s FROM core.rules",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "rules: lecture des fenêtres de seuil");
+            AppError::Database(e)
+        })?;
+
+    let now = Utc::now();
+    let mut by_window: std::collections::HashMap<i64, Vec<Uuid>> = std::collections::HashMap::new();
+    for (id, window) in rules {
+        // The `+ 3600` keeps the original one-hour grace past the window.
+        let secs = i64::from(window.unwrap_or(0).max(0)) + 3_600;
+        by_window.entry(secs).or_default().push(id);
+    }
+
+    let mut total: u64 = 0;
+    for (secs, ids) in by_window {
+        if ids.is_empty() {
+            continue;
+        }
+        let cutoff = now - chrono::Duration::seconds(secs);
+        let mut qb =
+            DbQueryBuilder::new(db.backend(), "DELETE FROM core.rule_hits WHERE occurred_at < ");
+        qb.push_bind(cutoff);
+        qb.push(" AND rule_id");
+        qb.push_in(ids);
+        total += qb.execute(db).await.map_err(|e| {
+            tracing::error!(error = %e, "rules: purge des occurrences de seuil");
+            AppError::Database(e)
+        })?;
+    }
+    Ok(total)
 }
 
 /// Drops executions past the configured retention.
-pub async fn purge_executions(db: &PgPool, days: i64) -> Result<u64, AppError> {
-    let rows = sqlx::query(
-        "DELETE FROM core.rule_executions WHERE occurred_at < NOW() - make_interval(days => $1::int)",
-    )
-    .bind(days.clamp(1, 3_650) as i32)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "rules: purge du journal d'exécution");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+pub async fn purge_executions(db: &DbPool, days: i64) -> Result<u64, AppError> {
+    let cutoff = Utc::now() - chrono::Duration::days(days.clamp(1, 3_650));
+    let rows = db
+        .execute(
+            "DELETE FROM core.rule_executions WHERE occurred_at < $1",
+            params![cutoff],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "rules: purge du journal d'exécution");
+            AppError::Database(e)
+        })?;
     Ok(rows)
 }
 
 // ── Subject resolution ───────────────────────────────────────────────────────
 
-/// Everything a scope test needs about an account, in one query.
+/// Everything a scope test needs about an account.
 ///
 /// Called **only after a rule's conditions matched and its scope is non-empty**.
 /// The hot path — deciding which rules an event concerns — is served entirely
 /// from the memory index and never touches the database.
-pub async fn resolve_subject(db: &PgPool, user_id: Uuid) -> Result<Subject, AppError> {
-    let row = sqlx::query(
-        r#"SELECT u.id,
-                  u.org_unit_id,
-                  COALESCE(
-                      (SELECT array_agg(a.id) FROM core.org_unit_ancestors(u.org_unit_id, $2) a),
-                      ARRAY[]::uuid[]
-                  ) AS unit_chain,
-                  COALESCE(
-                      (SELECT array_agg(gm.group_id) FROM core.user_group_members gm WHERE gm.user_id = u.id),
-                      ARRAY[]::uuid[]
-                  ) AS group_ids
-             FROM core.users u
-            WHERE u.id = $1"#,
-    )
-    .bind(user_id)
-    // The ceiling the console enforces, not a literal of our own: a bound
-    // shorter than the tree an operator may legally build would truncate the
-    // ancestor chain, and a rule scoped near the top would stop firing for the
-    // deepest accounts without anything failing. One invariant, one constant.
-    .bind(crate::handlers::admin::org_units::MAX_ORG_UNIT_DEPTH)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
+///
+/// Rebuilt as portable steps: the original folded the ancestor chain with the
+/// PostgreSQL-only `core.org_unit_ancestors(...)` and `jsonb_agg`. The ancestor
+/// walk now runs through the portable recursive CTE of `database::compat`, whose
+/// depth guard (64) comfortably exceeds the console's org-unit ceiling, so the
+/// chain is never truncated for a legal tree.
+pub async fn resolve_subject(db: &DbPool, user_id: Uuid) -> Result<Subject, AppError> {
+    let fail = |e: sqlx::Error| {
         tracing::error!(error = %e, user_id = %user_id, "rules: résolution du sujet");
         AppError::Database(e)
-    })?;
+    };
 
-    let Some(row) = row else {
-        // The account vanished between the event and the evaluation. An unknown
-        // subject is covered by nothing that names anybody.
+    // The account and its unit. A vanished account (no row) is covered by
+    // nothing that names anybody.
+    let Some(org_unit_id) = db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(fail)?
+    else {
         return Ok(Subject::default());
     };
 
-    let org_unit_id: Option<Uuid> = row.get("org_unit_id");
-    let mut unit_chain: Vec<Uuid> = row.get("unit_chain");
-    // `org_unit_ancestors` walks upwards from the unit itself; the defensive
-    // insert keeps the chain correct even if that ever stops being true.
+    // Every group the account belongs to.
+    let group_ids: Vec<Uuid> = db
+        .fetch_all_as::<(Uuid,)>(
+            "SELECT group_id FROM core.user_group_members WHERE user_id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(fail)?
+        .into_iter()
+        .map(|(g,)| g)
+        .collect();
+
+    // The unit's ancestor chain (itself included), nearest first.
+    let mut unit_chain: Vec<Uuid> = Vec::new();
     if let Some(own) = org_unit_id {
+        let sql = format!(
+            "SELECT a.id FROM {} a ORDER BY a.depth",
+            crate::database::compat::org_unit_ancestors(1)
+        );
+        unit_chain = db
+            .fetch_all_as::<(Uuid,)>(&sql, params![own])
+            .await
+            .map_err(fail)?
+            .into_iter()
+            .map(|(id,)| id)
+            .collect();
+        // The walk starts at the unit itself; the defensive insert keeps the
+        // chain correct even if that ever stops being true.
         if !unit_chain.contains(&own) {
             unit_chain.push(own);
         }
     }
 
     Ok(Subject {
-        user_id: Some(row.get("id")),
+        user_id: Some(user_id),
         org_unit_id,
         unit_chain,
-        group_ids: row.get("group_ids"),
+        group_ids,
     })
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 /// Reads one numeric knob from `core.settings`, clamped to a sane range.
-pub async fn setting_u64(db: &PgPool, key: &str, default: u64, min: u64, max: u64) -> u64 {
-    let raw: Option<Value> = sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1")
-        .bind(key)
-        .fetch_optional(db)
+pub async fn setting_u64(db: &DbPool, key: &str, default: u64, min: u64, max: u64) -> u64 {
+    let raw: Option<Value> = db
+        .fetch_optional_scalar::<Value>("SELECT value FROM core.settings WHERE \"key\" = $1", params![key])
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, key = %key, "rules: lecture d'un réglage");
             None
-        })
-        .flatten();
+        });
 
     raw.as_ref()
         .and_then(Value::as_u64)
@@ -700,22 +800,23 @@ pub async fn setting_u64(db: &PgPool, key: &str, default: u64, min: u64, max: u6
 }
 
 /// Is the engine armed at all?
-pub async fn engine_enabled(db: &PgPool) -> bool {
-    let raw: Option<Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'rules.enabled'")
-            .fetch_optional(db)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!(error = %e, "rules: lecture de rules.enabled");
-                None
-            })
-            .flatten();
+pub async fn engine_enabled(db: &DbPool) -> bool {
+    let raw: Option<Value> = db
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE \"key\" = 'rules.enabled'",
+            params![],
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "rules: lecture de rules.enabled");
+            None
+        });
     raw.as_ref().and_then(Value::as_bool).unwrap_or(true)
 }
 
 // ── Backtests ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
 pub struct BacktestRow {
     pub id: Uuid,
     pub rule_id: Uuid,
@@ -729,111 +830,89 @@ pub struct BacktestRow {
     pub completed_at: Option<DateTime<Utc>>,
 }
 
-fn map_backtest(r: &sqlx::postgres::PgRow) -> BacktestRow {
-    BacktestRow {
-        id: r.get("id"),
-        rule_id: r.get("rule_id"),
-        rule_version: r.get("rule_version"),
-        window_from: r.get("window_from"),
-        window_to: r.get("window_to"),
-        status: r.get("status"),
-        report: r.get("report"),
-        error: r.get("error"),
-        created_at: r.get("created_at"),
-        completed_at: r.get("completed_at"),
-    }
-}
+const BACKTEST_COLS: &str = r#"id, rule_id, rule_version, window_from, window_to, status,
+                  report, error, created_at, completed_at"#;
 
 pub async fn create_backtest(
-    db: &PgPool,
+    db: &DbPool,
     rule: &Rule,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
     requested_by: Option<Uuid>,
 ) -> Result<BacktestRow, AppError> {
-    let row = sqlx::query(
+    // UUID primary key generated in Rust: the write needs no RETURNING and the
+    // row is re-read by id.
+    let id = kubuno_db::new_id();
+    db.execute(
         r#"INSERT INTO core.rule_backtests
-               (rule_id, rule_version, window_from, window_to, requested_by)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, rule_id, rule_version, window_from, window_to, status,
-                     report, error, created_at, completed_at"#,
+               (id, rule_id, rule_version, window_from, window_to, requested_by)
+           VALUES ($1, $2, $3, $4, $5, $6)"#,
+        params![id, rule.id, rule.version, from, to, requested_by],
     )
-    .bind(rule.id)
-    .bind(rule.version)
-    .bind(from)
-    .bind(to)
-    .bind(requested_by)
-    .fetch_one(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, rule_id = %rule.id, "rules: création d'un test rétrospectif");
         AppError::Database(e)
     })?;
-    Ok(map_backtest(&row))
+    get_backtest(db, id).await
 }
 
-pub async fn get_backtest(db: &PgPool, id: Uuid) -> Result<BacktestRow, AppError> {
-    let row = sqlx::query(
-        r#"SELECT id, rule_id, rule_version, window_from, window_to, status,
-                  report, error, created_at, completed_at
-             FROM core.rule_backtests WHERE id = $1"#,
+pub async fn get_backtest(db: &DbPool, id: Uuid) -> Result<BacktestRow, AppError> {
+    db.fetch_optional_as::<BacktestRow>(
+        &format!("SELECT {BACKTEST_COLS} FROM core.rule_backtests WHERE id = $1"),
+        params![id],
     )
-    .bind(id)
-    .fetch_optional(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, backtest_id = %id, "rules: lecture d'un test rétrospectif");
         AppError::Database(e)
     })?
-    .ok_or_else(|| AppError::NotFound("test rétrospectif".into()))?;
-    Ok(map_backtest(&row))
+    .ok_or_else(|| AppError::NotFound("test rétrospectif".into()))
 }
 
-pub async fn list_backtests(db: &PgPool, rule_id: Uuid) -> Result<Vec<BacktestRow>, AppError> {
-    let rows = sqlx::query(
-        r#"SELECT id, rule_id, rule_version, window_from, window_to, status,
-                  report, error, created_at, completed_at
-             FROM core.rule_backtests WHERE rule_id = $1
-            ORDER BY created_at DESC LIMIT 20"#,
+pub async fn list_backtests(db: &DbPool, rule_id: Uuid) -> Result<Vec<BacktestRow>, AppError> {
+    db.fetch_all_as::<BacktestRow>(
+        &format!(
+            "SELECT {BACKTEST_COLS} FROM core.rule_backtests WHERE rule_id = $1 \
+             ORDER BY created_at DESC LIMIT 20"
+        ),
+        params![rule_id],
     )
-    .bind(rule_id)
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, rule_id = %rule_id, "rules: lecture des tests rétrospectifs");
         AppError::Database(e)
-    })?;
-    Ok(rows.iter().map(map_backtest).collect())
+    })
 }
 
-pub async fn mark_backtest_running(db: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("UPDATE core.rule_backtests SET status = 'running' WHERE id = $1")
-        .bind(id)
-        .execute(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, backtest_id = %id, "rules: passage en cours d'un test rétrospectif");
-            AppError::Database(e)
-        })?;
+pub async fn mark_backtest_running(db: &DbPool, id: Uuid) -> Result<(), AppError> {
+    db.execute(
+        "UPDATE core.rule_backtests SET status = 'running' WHERE id = $1",
+        params![id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, backtest_id = %id, "rules: passage en cours d'un test rétrospectif");
+        AppError::Database(e)
+    })?;
     Ok(())
 }
 
 pub async fn finish_backtest(
-    db: &PgPool,
+    db: &DbPool,
     id: Uuid,
     report: &Value,
     error: Option<&str>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    // The CASE re-reads the error, so it is bound a second time; the completion
+    // timestamp is computed in Rust rather than with `NOW()`.
+    db.execute(
         r#"UPDATE core.rule_backtests
-              SET status = CASE WHEN $3::text IS NULL THEN 'done' ELSE 'failed' END,
-                  report = $2, error = $3, completed_at = NOW()
+              SET status = CASE WHEN $4 IS NULL THEN 'done' ELSE 'failed' END,
+                  report = $2, error = $3, completed_at = $5
             WHERE id = $1"#,
+        params![id, report.clone(), error, error, Utc::now()],
     )
-    .bind(id)
-    .bind(report)
-    .bind(error)
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, backtest_id = %id, "rules: clôture d'un test rétrospectif");

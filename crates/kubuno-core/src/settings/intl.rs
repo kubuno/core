@@ -35,8 +35,8 @@
 
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
+use kubuno_db::DbPool;
 use serde_json::Value;
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::chain;
@@ -100,7 +100,7 @@ fn scope_of(user_id: Option<Uuid>) -> SettingScope {
 /// Every caller here has a hard fallback, and a chain query that fails must not
 /// take a password-reset message down with it. The error is logged by
 /// [`chain::resolve_for`] before it gets here.
-async fn resolved_string(db: &PgPool, key: &str, user_id: Option<Uuid>) -> Option<String> {
+async fn resolved_string(db: &DbPool, key: &str, user_id: Option<Uuid>) -> Option<String> {
     let scope = scope_of(user_id);
     let resolution = chain::resolve_for(db, key, &scope).await.ok()?;
     resolution
@@ -117,7 +117,7 @@ async fn resolved_string(db: &PgPool, key: &str, user_id: Option<Uuid>) -> Optio
 ///
 /// Falls back to English, which is the factory value: an instance whose locale
 /// row was deleted still speaks a language.
-pub async fn locale_for(db: &PgPool, user_id: Option<Uuid>) -> &'static str {
+pub async fn locale_for(db: &DbPool, user_id: Option<Uuid>) -> &'static str {
     match resolved_string(db, LOCALE_KEY, user_id).await {
         Some(raw) => match normalise_locale(&raw) {
             Some(locale) => locale,
@@ -137,7 +137,7 @@ pub async fn locale_for(db: &PgPool, user_id: Option<Uuid>) -> &'static str {
 ///
 /// Falls back to UTC *and says so in the log*: silently dating messages in the
 /// wrong zone is precisely the failure the health check exists to surface.
-pub async fn timezone_for(db: &PgPool, user_id: Option<Uuid>) -> Tz {
+pub async fn timezone_for(db: &DbPool, user_id: Option<Uuid>) -> Tz {
     match resolved_string(db, TIMEZONE_KEY, user_id).await {
         Some(raw) => match parse_timezone(&raw) {
             Some(tz) => tz,
@@ -154,12 +154,12 @@ pub async fn timezone_for(db: &PgPool, user_id: Option<Uuid>) -> Tz {
 }
 
 /// The instance-wide language, with nobody in particular in mind.
-pub async fn instance_locale(db: &PgPool) -> &'static str {
+pub async fn instance_locale(db: &DbPool) -> &'static str {
     locale_for(db, None).await
 }
 
 /// The instance-wide time zone.
-pub async fn instance_timezone(db: &PgPool) -> Tz {
+pub async fn instance_timezone(db: &DbPool) -> Tz {
     timezone_for(db, None).await
 }
 

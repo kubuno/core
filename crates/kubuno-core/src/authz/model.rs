@@ -15,10 +15,6 @@ pub const VERBS: &[&str] = &["read", "create", "update", "delete", "manage", "ex
 /// Namespace the core owns. A module may never declare under it.
 pub const CORE_NAMESPACE: &str = "core";
 
-/// Marker row returned by the resolution query for a superuser assignment.
-/// Not a valid key (a key has three segments), so it can never collide.
-pub(crate) const SUPERUSER_MARKER: &str = "*";
-
 /// The two scopes an assignment can carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -173,8 +169,9 @@ mod tests {
 
     #[test]
     fn the_superuser_marker_is_not_a_valid_key() {
-        // What makes it safe to mix into the resolution result set.
-        assert!(parse_key(SUPERUSER_MARKER).is_err());
+        // `*` (the superuser sentinel used by the resolver) is not a valid
+        // privilege key: a key has three segments, so the two can never collide.
+        assert!(parse_key("*").is_err());
     }
 
     #[test]

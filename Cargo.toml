@@ -79,6 +79,7 @@ kubuno-storage     = { path = "crates/kubuno-storage" }
 kubuno-mcp         = { path = "crates/kubuno-mcp" }
 kubuno-seccomp     = { path = "crates/kubuno-seccomp" }
 kubuno-modauth     = { path = "crates/kubuno-modauth" }
+kubuno-db          = { path = "crates/kubuno-db" }
 
 # Erreurs
 thiserror = "1"

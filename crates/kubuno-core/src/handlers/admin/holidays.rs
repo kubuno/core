@@ -26,9 +26,9 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::{new_id, params, DbPool};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row as _;
 use uuid::Uuid;
 
 use crate::{
@@ -69,7 +69,7 @@ pub struct ListParams {
 /// installed in English still has administrators reading a French console, and
 /// the names of two hundred countries are exactly what they need in their own
 /// language. Falls back to the instance locale when the caller says nothing.
-async fn console_locale(db: &sqlx::PgPool, asked: Option<&str>) -> &'static str {
+async fn console_locale(db: &DbPool, asked: Option<&str>) -> &'static str {
     match asked.and_then(intl::normalise_locale) {
         Some(locale) => locale,
         None => intl::instance_locale(db).await,
@@ -161,6 +161,19 @@ pub async fn calendar_detail(
     })))
 }
 
+/// The eight referential counts the overview reports.
+#[derive(sqlx::FromRow)]
+struct OverviewCounts {
+    calendars:          i64,
+    countries:          i64,
+    disabled_calendars: i64,
+    holidays:           i64,
+    overridden:         i64,
+    custom:             i64,
+    orphans:            i64,
+    unit_prefs:         i64,
+}
+
 /// `GET /admin/holidays/overview` — what is loaded, and how much of it.
 pub async fn overview(
     State(state): State<AppState>,
@@ -169,38 +182,49 @@ pub async fn overview(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::HOLIDAYS_READ)?;
 
-    let row = sqlx::query(
-        r#"SELECT (SELECT COUNT(*) FROM core.holiday_calendars)::bigint                     AS calendars,
-                  (SELECT COUNT(*) FROM core.holiday_calendars WHERE parent_id IS NULL)::bigint AS countries,
-                  (SELECT COUNT(*) FROM core.holiday_calendars WHERE NOT enabled)::bigint   AS disabled_calendars,
-                  (SELECT COUNT(*) FROM core.holidays)::bigint                              AS holidays,
-                  (SELECT COUNT(*) FROM core.holidays WHERE is_overridden)::bigint          AS overridden,
-                  (SELECT COUNT(*) FROM core.holidays WHERE NOT is_builtin)::bigint         AS custom,
-                  (SELECT COUNT(*) FROM core.holidays WHERE is_orphan)::bigint              AS orphans,
-                  (SELECT COUNT(*) FROM core.holiday_unit_prefs)::bigint                    AS unit_prefs"#,
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: état du référentiel");
-        AppError::Database(e)
-    })?;
+    // Each count decodes as `i64` on every engine (`count_bigint` applies the
+    // per-dialect cast PostgreSQL used to spell `::bigint`).
+    let cnt = state.db.backend().count_bigint("*");
+    let sql = format!(
+        "SELECT (SELECT {cnt} FROM core.holiday_calendars)                       AS calendars, \
+                (SELECT {cnt} FROM core.holiday_calendars WHERE parent_id IS NULL) AS countries, \
+                (SELECT {cnt} FROM core.holiday_calendars WHERE NOT enabled)     AS disabled_calendars, \
+                (SELECT {cnt} FROM core.holidays)                               AS holidays, \
+                (SELECT {cnt} FROM core.holidays WHERE is_overridden)           AS overridden, \
+                (SELECT {cnt} FROM core.holidays WHERE NOT is_builtin)          AS custom, \
+                (SELECT {cnt} FROM core.holidays WHERE is_orphan)               AS orphans, \
+                (SELECT {cnt} FROM core.holiday_unit_prefs)                     AS unit_prefs"
+    );
+    let row = state
+        .db
+        .fetch_one_as::<OverviewCounts>(&sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: referential status");
+            AppError::Database(e)
+        })?;
 
-    let loaded: Option<String> = sqlx::query_scalar("SELECT value #>> '{}' FROM core.settings WHERE key = 'intl.holidays_dataset'")
-        .fetch_optional(&state.db)
+    // The whole stored JSON value as text — PostgreSQL's `value #>> '{}'`.
+    let loaded_sql = format!(
+        "SELECT {} FROM core.settings WHERE \"key\" = 'intl.holidays_dataset'",
+        state.db.backend().json_text("value", &[]),
+    );
+    let loaded: Option<String> = state
+        .db
+        .fetch_optional_scalar::<Option<String>>(&loaded_sql, params![])
         .await
         .map_err(AppError::Database)?
         .flatten();
 
     Ok(Json(json!({
-        "calendars":          row.get::<i64, _>("calendars"),
-        "countries":          row.get::<i64, _>("countries"),
-        "disabled_calendars": row.get::<i64, _>("disabled_calendars"),
-        "holidays":           row.get::<i64, _>("holidays"),
-        "overridden":         row.get::<i64, _>("overridden"),
-        "custom":             row.get::<i64, _>("custom"),
-        "orphans":            row.get::<i64, _>("orphans"),
-        "unit_prefs":         row.get::<i64, _>("unit_prefs"),
+        "calendars":          row.calendars,
+        "countries":          row.countries,
+        "disabled_calendars": row.disabled_calendars,
+        "holidays":           row.holidays,
+        "overridden":         row.overridden,
+        "custom":             row.custom,
+        "orphans":            row.orphans,
+        "unit_prefs":         row.unit_prefs,
         "dataset_loaded":     loaded,
         "dataset_shipped":    seed::shipped_version(),
     })))
@@ -291,7 +315,7 @@ fn parse_holiday(dto: &HolidayDto) -> Result<ParsedHoliday, AppError> {
 /// Prefixed rather than derived from the name alone: a locally-created
 /// "Christmas Day" must never collide with the shipped `christmas-day`, or the
 /// next re-seed would take the local row for a shipped one and rewrite it.
-async fn custom_key(db: &sqlx::PgPool, calendar_id: Uuid, name: &str) -> Result<String, AppError> {
+async fn custom_key(db: &DbPool, calendar_id: Uuid, name: &str) -> Result<String, AppError> {
     let slug: String = name
         .to_lowercase()
         .chars()
@@ -306,14 +330,13 @@ async fn custom_key(db: &sqlx::PgPool, calendar_id: Uuid, name: &str) -> Result<
 
     for suffix in 0..50 {
         let candidate = if suffix == 0 { base.clone() } else { format!("{base}-{suffix}") };
-        let taken: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM core.holidays WHERE calendar_id = $1 AND key = $2)",
-        )
-        .bind(calendar_id)
-        .bind(&candidate)
-        .fetch_one(db)
-        .await
-        .map_err(AppError::Database)?;
+        let taken: bool = db
+            .fetch_scalar::<bool>(
+                "SELECT EXISTS(SELECT 1 FROM core.holidays WHERE calendar_id = $1 AND \"key\" = $2)",
+                params![calendar_id, &candidate],
+            )
+            .await
+            .map_err(AppError::Database)?;
         if !taken {
             return Ok(candidate);
         }
@@ -338,32 +361,34 @@ pub async fn create_holiday(
     let key = custom_key(&state.db, calendar_id, &parsed.name).await?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let row = sqlx::query(
+    // The primary key is generated in Rust (no `RETURNING`, which MySQL lacks).
+    let id = new_id();
+    tx.execute(
         r#"INSERT INTO core.holidays
-               (calendar_id, key, name, names, category, kind, rule, observance,
+               (id, calendar_id, "key", name, names, category, kind, rule, observance,
                 from_year, to_year, color, is_builtin, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE, $12)
-           RETURNING id"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, FALSE, $13)"#,
+        params![
+            id,
+            calendar_id,
+            &key,
+            &parsed.name,
+            parsed.names.clone(),
+            parsed.category.as_str(),
+            parsed.rule.kind(),
+            parsed.rule.params(),
+            parsed.observance.as_str(),
+            dto.from_year,
+            dto.to_year,
+            parsed.color.clone(),
+            audit.admin.id,
+        ],
     )
-    .bind(calendar_id)
-    .bind(&key)
-    .bind(&parsed.name)
-    .bind(&parsed.names)
-    .bind(parsed.category.as_str())
-    .bind(parsed.rule.kind())
-    .bind(parsed.rule.params())
-    .bind(parsed.observance.as_str())
-    .bind(dto.from_year)
-    .bind(dto.to_year)
-    .bind(&parsed.color)
-    .bind(audit.admin.id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "holidays: création d'une journée");
+        tracing::error!(error = %e, "holidays: creating a day");
         AppError::Database(e)
     })?;
-    let id: Uuid = row.get("id");
 
     tx.commit(
         AuditEntry::new("core.holidays.create")
@@ -398,46 +423,51 @@ pub async fn update_holiday(
     let parsed = parse_holiday(&dto)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let before = sqlx::query(
-        "SELECT name, category, kind, rule, observance, from_year, to_year, color, is_builtin \
-           FROM core.holidays WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(AppError::Database)?
-    .ok_or_else(|| AppError::NotFound("Journée introuvable".into()))?;
+    let for_update = tx.backend().for_update();
+    let before = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT name, category, kind, rule, observance, from_year, to_year, color, is_builtin \
+                   FROM core.holidays WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Journée introuvable".into()))?;
 
     let before_json = json!({
-        "name": before.get::<String, _>("name"),
-        "category": before.get::<String, _>("category"),
-        "kind": before.get::<String, _>("kind"),
-        "rule": before.get::<Value, _>("rule"),
-        "observance": before.get::<String, _>("observance"),
+        "name": before.try_get::<String>("name")?,
+        "category": before.try_get::<String>("category")?,
+        "kind": before.try_get::<String>("kind")?,
+        "rule": before.try_get::<Value>("rule")?,
+        "observance": before.try_get::<String>("observance")?,
     });
 
-    sqlx::query(
+    tx.execute(
         r#"UPDATE core.holidays
               SET name = $2, names = $3, category = $4, kind = $5, rule = $6,
                   observance = $7, from_year = $8, to_year = $9, color = $10,
                   -- Shipped rows detach here, and only here.
                   is_overridden = CASE WHEN is_builtin THEN TRUE ELSE is_overridden END
             WHERE id = $1"#,
+        params![
+            id,
+            &parsed.name,
+            parsed.names.clone(),
+            parsed.category.as_str(),
+            parsed.rule.kind(),
+            parsed.rule.params(),
+            parsed.observance.as_str(),
+            dto.from_year,
+            dto.to_year,
+            parsed.color.clone(),
+        ],
     )
-    .bind(id)
-    .bind(&parsed.name)
-    .bind(&parsed.names)
-    .bind(parsed.category.as_str())
-    .bind(parsed.rule.kind())
-    .bind(parsed.rule.params())
-    .bind(parsed.observance.as_str())
-    .bind(dto.from_year)
-    .bind(dto.to_year)
-    .bind(&parsed.color)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "holidays: modification d'une journée");
+        tracing::error!(error = %e, "holidays: modifying a day");
         AppError::Database(e)
     })?;
 
@@ -473,16 +503,20 @@ pub async fn set_holiday_enabled(
     ctx.require(keys::HOLIDAYS_MANAGE)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let row = sqlx::query(
-        "UPDATE core.holidays SET enabled = $2 WHERE id = $1 RETURNING name, enabled",
+    // No portable `RETURNING`: apply the change, then read the name back by id
+    // (a missing row updates nothing and re-selects to `None` → 404).
+    tx.execute(
+        "UPDATE core.holidays SET enabled = $2 WHERE id = $1",
+        params![id, dto.enabled],
     )
-    .bind(id)
-    .bind(dto.enabled)
-    .fetch_optional(&mut *tx)
     .await
-    .map_err(AppError::Database)?
-    .ok_or_else(|| AppError::NotFound("Journée introuvable".into()))?;
-    let name: String = row.get("name");
+    .map_err(AppError::Database)?;
+    let row = tx
+        .fetch_optional_row("SELECT name FROM core.holidays WHERE id = $1", params![id])
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Journée introuvable".into()))?;
+    let name: String = row.try_get("name")?;
 
     tx.commit(
         AuditEntry::new("core.holidays.update")
@@ -510,15 +544,21 @@ pub async fn delete_holiday(
     ctx.require(keys::HOLIDAYS_MANAGE)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let row = sqlx::query("SELECT name, is_builtin FROM core.holidays WHERE id = $1 FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let for_update = tx.backend().for_update();
+    let row = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT name, is_builtin FROM core.holidays WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Journée introuvable".into()))?;
 
-    let name: String = row.get("name");
-    if row.get::<bool, _>("is_builtin") {
+    let name: String = row.try_get("name")?;
+    if row.try_get::<bool>("is_builtin")? {
         return Err(AppError::Validation(
             "Cette journée provient du référentiel livré : désactivez-la plutôt que de la supprimer \
              (une suppression serait rétablie au prochain chargement du référentiel)."
@@ -526,9 +566,7 @@ pub async fn delete_holiday(
         ));
     }
 
-    sqlx::query("DELETE FROM core.holidays WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.holidays WHERE id = $1", params![id])
         .await
         .map_err(AppError::Database)?;
 
@@ -552,25 +590,27 @@ pub async fn reset_holiday(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::HOLIDAYS_MANAGE)?;
 
-    let row = sqlx::query(
-        "SELECT h.key, h.name, h.is_builtin, c.code AS calendar_code \
-           FROM core.holidays h JOIN core.holiday_calendars c ON c.id = h.calendar_id \
-          WHERE h.id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(AppError::Database)?
-    .ok_or_else(|| AppError::NotFound("Journée introuvable".into()))?;
+    let row = state
+        .db
+        .fetch_optional_row(
+            "SELECT h.\"key\", h.name, h.is_builtin, c.code AS calendar_code \
+               FROM core.holidays h JOIN core.holiday_calendars c ON c.id = h.calendar_id \
+              WHERE h.id = $1",
+            params![id],
+        )
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Journée introuvable".into()))?;
 
-    if !row.get::<bool, _>("is_builtin") {
+    if !row.try_get::<bool>("is_builtin")? {
         return Err(AppError::Validation(
             "Cette journée a été créée ici : il n'y a pas de version d'origine à rétablir.".into(),
         ));
     }
 
-    let calendar_code: String = row.get("calendar_code");
-    let key: String = row.get("key");
+    let before_name: String = row.try_get("name")?;
+    let calendar_code: String = row.try_get("calendar_code")?;
+    let key: String = row.try_get("key")?;
     let shipped = seed::shipped_holiday(&calendar_code, &key).ok_or_else(|| {
         AppError::Validation(
             "Le référentiel livré ne contient plus cette journée : elle ne peut pas être rétablie.".into(),
@@ -578,33 +618,34 @@ pub async fn reset_holiday(
     })?;
 
     let mut tx = audit.begin(&state.db).await?;
-    sqlx::query(
+    tx.execute(
         r#"UPDATE core.holidays
               SET name = $2, names = $3, category = $4, kind = $5, rule = $6, observance = $7,
                   from_year = $8, to_year = $9, color = NULL,
                   is_overridden = FALSE
             WHERE id = $1"#,
+        params![
+            id,
+            &shipped.name,
+            shipped.names.clone(),
+            &shipped.category,
+            &shipped.kind,
+            shipped.rule.clone(),
+            &shipped.observance,
+            shipped.from_year,
+            shipped.to_year,
+        ],
     )
-    .bind(id)
-    .bind(&shipped.name)
-    .bind(&shipped.names)
-    .bind(&shipped.category)
-    .bind(&shipped.kind)
-    .bind(&shipped.rule)
-    .bind(&shipped.observance)
-    .bind(shipped.from_year)
-    .bind(shipped.to_year)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "holidays: rétablissement d'une journée");
+        tracing::error!(error = %e, "holidays: restoring a day");
         AppError::Database(e)
     })?;
 
     tx.commit(
         AuditEntry::new("core.holidays.update")
             .target(target::HOLIDAY, id, shipped.name.clone())
-            .before(json!({ "name": row.get::<String, _>("name"), "is_overridden": true }))
+            .before(json!({ "name": before_name, "is_overridden": true }))
             .after(json!({ "name": shipped.name, "is_overridden": false })),
     )
     .await?;
@@ -665,17 +706,20 @@ pub async fn create_calendar(
     };
 
     let mut tx = audit.begin(&state.db).await?;
-    let row = sqlx::query(
-        r#"INSERT INTO core.holiday_calendars (code, country_code, name, is_builtin, enabled, created_by)
-           VALUES ($1, $2, $3, FALSE, $4, $5)
-           RETURNING id"#,
+    // The primary key is generated in Rust (no `RETURNING`, which MySQL lacks).
+    let id = new_id();
+    tx.execute(
+        r#"INSERT INTO core.holiday_calendars (id, code, country_code, name, is_builtin, enabled, created_by)
+           VALUES ($1, $2, $3, $4, FALSE, $5, $6)"#,
+        params![
+            id,
+            &code,
+            country.clone(),
+            name,
+            dto.enabled.unwrap_or(true),
+            audit.admin.id,
+        ],
     )
-    .bind(&code)
-    .bind(&country)
-    .bind(name)
-    .bind(dto.enabled.unwrap_or(true))
-    .bind(audit.admin.id)
-    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         if let sqlx::Error::Database(db) = &e {
@@ -683,10 +727,9 @@ pub async fn create_calendar(
                 return AppError::Conflict(format!("Un calendrier « {code} » existe déjà."));
             }
         }
-        tracing::error!(error = %e, "holidays: création d'un calendrier");
+        tracing::error!(error = %e, "holidays: creating a calendar");
         AppError::Database(e)
     })?;
-    let id: Uuid = row.get("id");
 
     tx.commit(
         AuditEntry::new("core.holiday_calendars.create")
@@ -723,33 +766,42 @@ pub async fn update_calendar(
     };
 
     let mut tx = audit.begin(&state.db).await?;
-    let row = sqlx::query(
-        r#"UPDATE core.holiday_calendars
-              SET name          = COALESCE($2, name),
-                  enabled       = COALESCE($3, enabled),
-                  -- Renaming detaches the wording from the dataset; switching
-                  -- the calendar off does not.
-                  is_overridden = CASE WHEN $2::text IS NOT NULL AND is_builtin
-                                       THEN TRUE ELSE is_overridden END
-            WHERE id = $1
-        RETURNING name, enabled, code"#,
-    )
-    .bind(id)
-    .bind(name.as_deref())
-    .bind(dto.enabled)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: modification d'un calendrier");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Calendrier introuvable".into()))?;
+    // Renaming detaches the wording from the dataset; switching the calendar off
+    // does not. The `is_overridden` flip therefore rides on whether a new name
+    // was supplied — decided in Rust, so the statement needs no NULL-typed cast.
+    let override_clause = if name.is_some() {
+        ", is_overridden = CASE WHEN is_builtin THEN TRUE ELSE is_overridden END"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "UPDATE core.holiday_calendars \
+            SET name = COALESCE($2, name), enabled = COALESCE($3, enabled){override_clause} \
+          WHERE id = $1"
+    );
+    tx.execute(&sql, params![id, name.as_deref(), dto.enabled])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: modifying a calendar");
+            AppError::Database(e)
+        })?;
 
-    let final_name: String = row.get("name");
+    // No portable `RETURNING`: read the resulting name/enabled back by id.
+    let row = tx
+        .fetch_optional_row(
+            "SELECT name, enabled FROM core.holiday_calendars WHERE id = $1",
+            params![id],
+        )
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Calendrier introuvable".into()))?;
+
+    let final_name: String = row.try_get("name")?;
+    let final_enabled: bool = row.try_get("enabled")?;
     tx.commit(
         AuditEntry::new("core.holiday_calendars.update")
             .target(target::HOLIDAY_CALENDAR, id, final_name.clone())
-            .after(json!({ "name": final_name, "enabled": row.get::<bool, _>("enabled") })),
+            .after(json!({ "name": final_name, "enabled": final_enabled })),
     )
     .await?;
 
@@ -767,30 +819,35 @@ pub async fn delete_calendar(
     ctx.require(keys::HOLIDAYS_MANAGE)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let row = sqlx::query("SELECT name, code, is_builtin FROM core.holiday_calendars WHERE id = $1 FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    let for_update = tx.backend().for_update();
+    let row = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT name, code, is_builtin FROM core.holiday_calendars WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Calendrier introuvable".into()))?;
 
-    if row.get::<bool, _>("is_builtin") {
+    if row.try_get::<bool>("is_builtin")? {
         return Err(AppError::Validation(
             "Ce calendrier fait partie du référentiel livré : désactivez-le plutôt que de le supprimer.".into(),
         ));
     }
-    let name: String = row.get("name");
+    let name: String = row.try_get("name")?;
+    let code: String = row.try_get("code")?;
 
-    sqlx::query("DELETE FROM core.holiday_calendars WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+    tx.execute("DELETE FROM core.holiday_calendars WHERE id = $1", params![id])
         .await
         .map_err(AppError::Database)?;
 
     tx.commit(
         AuditEntry::new("core.holiday_calendars.delete")
             .target(target::HOLIDAY_CALENDAR, id, name.clone())
-            .before(json!({ "id": id, "name": name, "code": row.get::<String, _>("code") })),
+            .before(json!({ "id": id, "name": name, "code": code })),
     )
     .await?;
 
@@ -823,20 +880,19 @@ pub async fn set_exclusions(
     }
 
     let mut tx = audit.begin(&state.db).await?;
-    sqlx::query("DELETE FROM core.holiday_exclusions WHERE calendar_id = $1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::Database)?;
+    tx.execute(
+        "DELETE FROM core.holiday_exclusions WHERE calendar_id = $1",
+        params![id],
+    )
+    .await
+    .map_err(AppError::Database)?;
+    let conflict = tx.backend().on_conflict_do_nothing(&["calendar_id", "key"]);
+    let insert_sql =
+        format!("INSERT INTO core.holiday_exclusions (calendar_id, \"key\") VALUES ($1, $2){conflict}");
     for key in &dto.keys {
-        sqlx::query(
-            "INSERT INTO core.holiday_exclusions (calendar_id, key) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        )
-        .bind(id)
-        .bind(key)
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::Database)?;
+        tx.execute(&insert_sql, params![id, key])
+            .await
+            .map_err(AppError::Database)?;
     }
 
     tx.commit(
@@ -851,6 +907,19 @@ pub async fn set_exclusions(
 
 // ── The organisational-unit overlay ──────────────────────────────────────────
 
+/// One row of a unit's holiday overlay.
+#[derive(sqlx::FromRow)]
+struct UnitOverlayRow {
+    id:                    Uuid,
+    calendar_id:           Option<Uuid>,
+    holiday_id:            Option<Uuid>,
+    enabled:               bool,
+    calendar_code:         Option<String>,
+    calendar_name:         Option<String>,
+    holiday_name:          Option<String>,
+    holiday_calendar_code: Option<String>,
+}
+
 /// `GET /admin/holidays/units/:unit_id`
 pub async fn unit_overlay(
     State(state): State<AppState>,
@@ -860,39 +929,40 @@ pub async fn unit_overlay(
 ) -> Result<Json<Value>, AppError> {
     ctx.require(keys::HOLIDAYS_READ)?;
 
-    let rows = sqlx::query(
-        r#"SELECT p.id, p.calendar_id, p.holiday_id, p.enabled, p.org_unit_id,
-                  u.name AS unit_name,
-                  c.code AS calendar_code, c.name AS calendar_name,
-                  h.name AS holiday_name, hc.code AS holiday_calendar_code
-             FROM core.holiday_unit_prefs p
-             JOIN core.org_units u ON u.id = p.org_unit_id
-             LEFT JOIN core.holiday_calendars c ON c.id = p.calendar_id
-             LEFT JOIN core.holidays h ON h.id = p.holiday_id
-             LEFT JOIN core.holiday_calendars hc ON hc.id = h.calendar_id
-            WHERE p.org_unit_id = $1
-            ORDER BY c.name NULLS LAST, h.name"#,
-    )
-    .bind(unit_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: lecture de la surcouche d'unité");
-        AppError::Database(e)
-    })?;
+    let rows = state
+        .db
+        .fetch_all_as::<UnitOverlayRow>(
+            r#"SELECT p.id, p.calendar_id, p.holiday_id, p.enabled, p.org_unit_id,
+                      u.name AS unit_name,
+                      c.code AS calendar_code, c.name AS calendar_name,
+                      h.name AS holiday_name, hc.code AS holiday_calendar_code
+                 FROM core.holiday_unit_prefs p
+                 JOIN core.org_units u ON u.id = p.org_unit_id
+                 LEFT JOIN core.holiday_calendars c ON c.id = p.calendar_id
+                 LEFT JOIN core.holidays h ON h.id = p.holiday_id
+                 LEFT JOIN core.holiday_calendars hc ON hc.id = h.calendar_id
+                WHERE p.org_unit_id = $1
+                ORDER BY (c.name IS NULL), c.name, h.name"#,
+            params![unit_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: reading the unit overlay");
+            AppError::Database(e)
+        })?;
 
     let prefs: Vec<Value> = rows
         .iter()
         .map(|row| {
             json!({
-                "id":           row.get::<Uuid, _>("id"),
-                "calendar_id":  row.get::<Option<Uuid>, _>("calendar_id"),
-                "holiday_id":   row.get::<Option<Uuid>, _>("holiday_id"),
-                "enabled":      row.get::<bool, _>("enabled"),
-                "calendar_code": row.get::<Option<String>, _>("calendar_code"),
-                "calendar_name": row.get::<Option<String>, _>("calendar_name"),
-                "holiday_name":  row.get::<Option<String>, _>("holiday_name"),
-                "holiday_calendar_code": row.get::<Option<String>, _>("holiday_calendar_code"),
+                "id":           row.id,
+                "calendar_id":  row.calendar_id,
+                "holiday_id":   row.holiday_id,
+                "enabled":      row.enabled,
+                "calendar_code": row.calendar_code,
+                "calendar_name": row.calendar_name,
+                "holiday_name":  row.holiday_name,
+                "holiday_calendar_code": row.holiday_calendar_code,
             })
         })
         .collect();
@@ -931,45 +1001,56 @@ pub async fn set_unit_pref(
     let mut tx = audit.begin(&state.db).await?;
     match dto.enabled {
         None => {
-            sqlx::query(
+            // NOTE (multi-engine): `IS NOT DISTINCT FROM` is a null-safe equality
+            // PostgreSQL supports directly; MySQL spells it `<=>` and SQLite `IS`.
+            // Kept PostgreSQL-shaped for now — flagged for the dialect layer.
+            tx.execute(
                 "DELETE FROM core.holiday_unit_prefs \
                   WHERE org_unit_id = $1 \
                     AND calendar_id IS NOT DISTINCT FROM $2 \
                     AND holiday_id  IS NOT DISTINCT FROM $3",
+                params![unit_id, dto.calendar_id, dto.holiday_id],
             )
-            .bind(unit_id)
-            .bind(dto.calendar_id)
-            .bind(dto.holiday_id)
-            .execute(&mut *tx)
             .await
             .map_err(AppError::Database)?;
         }
         Some(enabled) => {
+            // The primary key is generated in Rust (no reliance on a DB default).
+            let id = new_id();
             // Two partial unique indexes, so the conflict target depends on
             // which of the two is set.
+            //
+            // NOTE (multi-engine): the `ON CONFLICT (...) WHERE ...` inference
+            // predicate is PostgreSQL-only (a partial unique index cannot be
+            // named through `Backend::upsert`, which emits no predicate). Kept
+            // PostgreSQL-shaped for now — flagged for the dialect layer.
             let statement = if dto.calendar_id.is_some() {
-                r#"INSERT INTO core.holiday_unit_prefs (org_unit_id, calendar_id, holiday_id, enabled, created_by)
-                   VALUES ($1, $2, $3, $4, $5)
+                r#"INSERT INTO core.holiday_unit_prefs (id, org_unit_id, calendar_id, holiday_id, enabled, created_by)
+                   VALUES ($1, $2, $3, $4, $5, $6)
                    ON CONFLICT (org_unit_id, calendar_id) WHERE calendar_id IS NOT NULL
                    DO UPDATE SET enabled = EXCLUDED.enabled"#
             } else {
-                r#"INSERT INTO core.holiday_unit_prefs (org_unit_id, calendar_id, holiday_id, enabled, created_by)
-                   VALUES ($1, $2, $3, $4, $5)
+                r#"INSERT INTO core.holiday_unit_prefs (id, org_unit_id, calendar_id, holiday_id, enabled, created_by)
+                   VALUES ($1, $2, $3, $4, $5, $6)
                    ON CONFLICT (org_unit_id, holiday_id) WHERE holiday_id IS NOT NULL
                    DO UPDATE SET enabled = EXCLUDED.enabled"#
             };
-            sqlx::query(statement)
-                .bind(unit_id)
-                .bind(dto.calendar_id)
-                .bind(dto.holiday_id)
-                .bind(enabled)
-                .bind(audit.admin.id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "holidays: écriture de la surcouche d'unité");
-                    AppError::Database(e)
-                })?;
+            tx.execute(
+                statement,
+                params![
+                    id,
+                    unit_id,
+                    dto.calendar_id,
+                    dto.holiday_id,
+                    enabled,
+                    audit.admin.id,
+                ],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "holidays: writing the unit overlay");
+                AppError::Database(e)
+            })?;
         }
     }
 

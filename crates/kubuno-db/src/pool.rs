@@ -229,6 +229,16 @@ async fn open_mysql(s: &DbSettings, eff_schema: &str, prefix: SchemaPrefix) -> R
                 // Case- and accent-sensitive, so a UNIQUE key does not fold two
                 // distinct values into one (the default utf8mb4_0900_ai_ci does).
                 conn.execute("SET NAMES utf8mb4 COLLATE utf8mb4_bin").await?;
+                // ANSI_QUOTES makes `"ident"` a quoted identifier (as on
+                // PostgreSQL and SQLite) instead of a string literal. Kubuno's
+                // SQL is written PostgreSQL-first, so every `"…"` already means
+                // an identifier and every string uses `'…'`; turning this on
+                // lets one query text run on all three engines and, in
+                // particular, lets reserved words such as the settings `"key"`
+                // column be quoted the same way everywhere. Appended to the
+                // existing sql_mode so the server's other modes are preserved.
+                conn.execute("SET SESSION sql_mode = CONCAT(@@sql_mode, ',ANSI_QUOTES')")
+                    .await?;
                 Ok(())
             })
         })

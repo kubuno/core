@@ -84,6 +84,28 @@ impl DbPool {
     pub fn schema_prefix(&self) -> &SchemaPrefix {
         &self.prefix
     }
+
+    /// The underlying PostgreSQL pool, or `None` on MySQL/SQLite. For the few
+    /// irreducibly PostgreSQL-only fast paths a caller keeps (`LISTEN`/`NOTIFY`
+    /// listeners, `pg_dump`-style logical dumps); every portable operation goes
+    /// through the engine-agnostic methods instead. Cheap to clone when an owned
+    /// `PgPool` is needed (it is an `Arc` inside).
+    pub fn as_pg(&self) -> Option<&sqlx::PgPool> {
+        match &self.kind {
+            PoolKind::Pg(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// The underlying MySQL/MariaDB pool, or `None` on PostgreSQL/SQLite. Same
+    /// escape hatch as [`Self::as_pg`], for the rare MySQL-only path (e.g. a
+    /// portability test that lists `information_schema` tables directly).
+    pub fn as_mysql(&self) -> Option<&sqlx::MySqlPool> {
+        match &self.kind {
+            PoolKind::My(p) => Some(p),
+            _ => None,
+        }
+    }
 }
 
 /// SQLite's pool plus the single-writer gate. Cloneable: every clone shares the
@@ -390,6 +412,47 @@ impl DbPool {
                             .fetch_optional(&pool)
                             .await?
                             .map(DbRow::Sq))
+                    }
+                })
+                .await
+            }
+        }
+    }
+
+    /// Every row of a query, without a target struct — for callers that map
+    /// columns by name at run time (the portable backup writer). On SQLite this
+    /// retries a transient `BUSY`/`LOCKED`.
+    pub async fn fetch_all_row(
+        &self,
+        sql: &str,
+        params: Vec<DbValue>,
+    ) -> Result<Vec<DbRow>, sqlx::Error> {
+        let prepared = self.prepare(sql)?;
+        match &self.kind {
+            PoolKind::Pg(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+                .fetch_all(p)
+                .await?
+                .into_iter()
+                .map(DbRow::Pg)
+                .collect()),
+            PoolKind::My(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+                .fetch_all(p)
+                .await?
+                .into_iter()
+                .map(DbRow::My)
+                .collect()),
+            PoolKind::Sq(h) => {
+                with_sqlite_retry(|| {
+                    let sql = prepared.clone();
+                    let params = params.clone();
+                    let pool = h.pool.clone();
+                    async move {
+                        Ok(bind_all!(sqlx::query(safe(sql)), params)
+                            .fetch_all(&pool)
+                            .await?
+                            .into_iter()
+                            .map(DbRow::Sq)
+                            .collect())
                     }
                 })
                 .await

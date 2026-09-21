@@ -1,6 +1,7 @@
-use crate::{config::{DbCredentials, Settings}, errors::AppError};
+use crate::{config::{database_credentials, DbCredentials, Settings}, errors::AppError};
 use chrono::Utc;
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::{params, DbPool};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -31,23 +32,20 @@ pub fn stop_module(module_id: &str) -> bool {
 
 // ── Statut DB ────────────────────────────────────────────────────
 
-pub async fn mark_healthy(db: &PgPool, instance_id: uuid::Uuid) -> Result<(), AppError> {
-    sqlx::query(
+pub async fn mark_healthy(db: &DbPool, instance_id: uuid::Uuid) -> Result<(), AppError> {
+    db.execute(
         "UPDATE core.module_instances SET status = 'healthy', last_heartbeat = $1 WHERE id = $2",
+        params![Utc::now(), instance_id],
     )
-    .bind(Utc::now())
-    .bind(instance_id)
-    .execute(db)
     .await?;
     Ok(())
 }
 
-pub async fn mark_stopped(db: &PgPool, module_id: &str) -> Result<(), AppError> {
-    sqlx::query(
+pub async fn mark_stopped(db: &DbPool, module_id: &str) -> Result<(), AppError> {
+    db.execute(
         "UPDATE core.module_instances SET status = 'stopped' WHERE module_id = $1",
+        params![module_id],
     )
-    .bind(module_id)
-    .execute(db)
     .await?;
     Ok(())
 }
@@ -60,42 +58,70 @@ pub async fn mark_stopped(db: &PgPool, module_id: &str) -> Result<(), AppError> 
 /// - Modules connus   : metadata mise à jour, is_enabled PRÉSERVÉ (choix de l'admin).
 ///
 /// Retourne `true` si le module doit être démarré.
-async fn sync_to_db(db: &PgPool, manifest: &ModuleManifest) -> bool {
+async fn sync_to_db(db: &DbPool, manifest: &ModuleManifest) -> bool {
     let m = &manifest.module;
+    let backend = db.backend();
 
-    let result = sqlx::query_scalar::<_, bool>(
-        r#"
-        INSERT INTO core.modules
-            (id, display_name, version, description, author, license,
-             homepage_url, runtime, dependencies, is_enabled, is_core_module)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10)
-        ON CONFLICT (id) DO UPDATE SET
-            display_name   = EXCLUDED.display_name,
-            version        = EXCLUDED.version,
-            description    = EXCLUDED.description,
-            author         = EXCLUDED.author,
-            license        = EXCLUDED.license,
-            homepage_url   = EXCLUDED.homepage_url,
-            runtime        = EXCLUDED.runtime,
-            dependencies   = EXCLUDED.dependencies,
-            -- "Sticky": once internal, stays internal (a later re-register can't unset it).
-            is_core_module = core.modules.is_core_module OR EXCLUDED.is_core_module,
-            updated_at     = NOW()
-        RETURNING is_enabled
-        "#,
-    )
-    .bind(&m.id)
-    .bind(&m.display_name)
-    .bind(&m.version)
-    .bind(m.description.as_deref())
-    .bind(m.author.as_deref())
-    .bind(m.license.as_deref())
-    .bind(m.homepage_url.as_deref())
-    .bind(&m.runtime)
-    .bind(&m.dependencies[..])
-    .bind(m.internal)
-    .fetch_one(db)
-    .await;
+    // MySQL has no RETURNING, so the upsert runs first and `is_enabled` is
+    // reselected by primary key: on conflict the row keeps its stored
+    // `is_enabled` (it is not in the SET list), so the reselect returns the
+    // admin's choice, and a freshly inserted row returns TRUE.
+    //
+    // NOTE (migration consolidation): `dependencies` is a PostgreSQL `TEXT[]`
+    // column, bound here as a JSON array. The MySQL/SQLite schema stores it as
+    // JSON; the PostgreSQL column must be migrated `TEXT[]` → `JSONB` for this
+    // bind to be accepted there. Flagged for the schema-consolidation step.
+    let conflict = backend.upsert(
+        "core.modules",
+        &["id"],
+        &[
+            Assign::Incoming("display_name"),
+            Assign::Incoming("version"),
+            Assign::Incoming("description"),
+            Assign::Incoming("author"),
+            Assign::Incoming("license"),
+            Assign::Incoming("homepage_url"),
+            Assign::Incoming("runtime"),
+            Assign::Incoming("dependencies"),
+            // "Sticky": once internal, stays internal (a later re-register can't unset it).
+            Assign::Expr { col: "is_core_module", expr: "{cur} OR {new}" },
+            Assign::Incoming("updated_at"),
+        ],
+    );
+    let sql = format!(
+        "INSERT INTO core.modules \
+            (id, display_name, version, description, author, license, \
+             homepage_url, runtime, dependencies, is_enabled, is_core_module, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10, $11){conflict}"
+    );
+    let now = Utc::now();
+    let write = db
+        .execute(
+            &sql,
+            params![
+                m.id.clone(),
+                m.display_name.clone(),
+                m.version.clone(),
+                m.description.as_deref(),
+                m.author.as_deref(),
+                m.license.as_deref(),
+                m.homepage_url.as_deref(),
+                m.runtime.clone(),
+                m.dependencies.clone(),
+                m.internal,
+                now,
+            ],
+        )
+        .await;
+    let result = match write {
+        Ok(_) => db
+            .fetch_scalar::<bool>(
+                "SELECT is_enabled FROM core.modules WHERE id = $1",
+                params![m.id.clone()],
+            )
+            .await,
+        Err(e) => Err(e),
+    };
 
     match result {
         Ok(enabled) => {
@@ -128,7 +154,7 @@ async fn sync_to_db(db: &PgPool, manifest: &ModuleManifest) -> bool {
 ///   KUBUNO_CONFIG_DIR      → /etc/kubuno/modules/<id>/
 ///   KUBUNO_DATA_DIR        → /var/lib/kubuno/modules/<id>/
 ///   KUBUNO_DB_HOST/PORT/USER/PASSWORD/NAME → Credentials PostgreSQL
-pub async fn start_all(settings: Arc<Settings>, modules_dir: &Path, db: PgPool) {
+pub async fn start_all(settings: Arc<Settings>, modules_dir: &Path, db: DbPool) {
     // On scanne DEUX emplacements : les paquets système (`modules_dir`) ET les modules
     // installés à l'exécution depuis la marketplace (`modules_install_dir`, inscriptible
     // par le core). En cas de doublon d'id, l'installation marketplace a la priorité
@@ -181,7 +207,7 @@ pub async fn spawn_module(
     settings: Arc<Settings>,
     module_dir: PathBuf,
     manifest: ModuleManifest,
-    db: PgPool,
+    db: DbPool,
 ) -> bool {
     let enabled = sync_to_db(&db, &manifest).await;
     if !enabled {
@@ -194,7 +220,7 @@ pub async fn spawn_module(
         if settings.server.host == "0.0.0.0" { "127.0.0.1" } else { &settings.server.host },
         settings.server.port
     );
-    let db_credentials = match settings.database.credentials() {
+    let db_credentials = match database_credentials(&settings.database) {
         Ok(c) => c,
         Err(e) => {
             tracing::error!(error = %e, module_id = %manifest.module.id, "Credentials DB indisponibles — module non démarré");
@@ -239,7 +265,7 @@ async fn supervise(
     core_url:           String,
     internal_secret:    String,
     db_credentials:     DbCredentials,
-    db:                 PgPool,
+    db:                 DbPool,
     modules_config_dir: String,
     modules_data_dir:   String,
     mut stop_rx:        watch::Receiver<bool>,
@@ -299,11 +325,15 @@ async fn supervise(
             .env("KUBUNO_MODULE_DIR",      module_dir.to_str().unwrap_or(""))
             .env("KUBUNO_CONFIG_DIR",      &config_dir)
             .env("KUBUNO_DATA_DIR",        &data_dir)
+            // The engine (and, for SQLite, the file directory) is transported so
+            // the module opens the SAME kind of database as the core.
+            .env("KUBUNO_DB_ENGINE",       &db_credentials.engine)
             .env("KUBUNO_DB_HOST",         &db_credentials.host)
             .env("KUBUNO_DB_PORT",         db_credentials.port.to_string())
             .env("KUBUNO_DB_USER",         &db_credentials.user)
             .env("KUBUNO_DB_PASSWORD",     &db_credentials.password)
             .env("KUBUNO_DB_NAME",         &db_credentials.database)
+            .env("KUBUNO_DB_PATH",         &db_credentials.path)
             .current_dir(&work_dir)
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());

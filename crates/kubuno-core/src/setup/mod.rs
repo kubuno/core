@@ -46,7 +46,13 @@ pub fn missing(s: &Settings) -> Vec<&'static str> {
     let db_by_url = s.database.url.as_deref().map(|u| !u.trim().is_empty()).unwrap_or(false);
     let db_by_fields = s.database.user.as_deref().map(|u| !u.trim().is_empty()).unwrap_or(false)
         && s.database.database.as_deref().map(|d| !d.trim().is_empty()).unwrap_or(false);
-    if !db_by_url && !db_by_fields {
+    // SQLite needs neither a URL nor credentials — only a file, and its directory
+    // has a default — so an SQLite engine is configured as soon as it is chosen.
+    let is_sqlite = matches!(
+        kubuno_db::Backend::parse(&s.database.engine),
+        Some(kubuno_db::Backend::Sqlite)
+    );
+    if !db_by_url && !db_by_fields && !is_sqlite {
         out.push("database");
     }
     if is_placeholder(&s.server.internal_secret) {
@@ -90,28 +96,19 @@ pub async fn needs_setup(s: &Settings) -> bool {
 /// administrator? `false` whenever we cannot tell — the caller only ever uses
 /// this to hold the wizard back.
 async fn already_installed(s: &Settings) -> bool {
-    let Ok(opts) = s.database.connect_options() else {
+    // Connect with whichever engine is configured. An unreachable database, or a
+    // `core.users` table that does not exist yet, both surface here as "cannot
+    // tell" — the count query errors and we fall back to `false`, which only
+    // ever holds the wizard back.
+    let Ok(pool) = kubuno_db::connect(&s.database, crate::database::SCHEMA).await else {
         return false;
     };
-    let pool = match sqlx::postgres::PgPoolOptions::new()
-        .max_connections(1)
-        .acquire_timeout(std::time::Duration::from_secs(5))
-        .connect_with(opts)
-        .await
-    {
-        Ok(p) => p,
-        Err(_) => return false, // base injoignable : on ne conclut rien
-    };
-    let installed: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM information_schema.tables \
-          WHERE table_schema = 'core' AND table_name = 'users') \
-         AND EXISTS(SELECT 1 FROM core.users WHERE role = 'admin')",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-    pool.close().await;
-    installed
+    let sql = format!(
+        "SELECT {} FROM core.users WHERE role = 'admin'",
+        pool.backend().count_bigint("*")
+    );
+    let admins: i64 = pool.fetch_scalar(&sql, kubuno_db::params![]).await.unwrap_or(0);
+    admins > 0
 }
 
 /// Serves the installation wizard until it succeeds.

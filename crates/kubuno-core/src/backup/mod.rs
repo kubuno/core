@@ -63,6 +63,7 @@
 pub mod dump;
 pub mod jobs;
 pub mod policy;
+pub mod portable;
 pub mod runs;
 
 pub use policy::{Frequency, Policy};

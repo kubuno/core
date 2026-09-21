@@ -17,7 +17,8 @@ use instant_acme::{
     Account, AccountCredentials, AuthorizationStatus, ChallengeType, Identifier, NewAccount,
     NewOrder, OrderStatus, RetryPolicy,
 };
-use sqlx::{PgPool, Row};
+use kubuno_db::dialect::Assign;
+use kubuno_db::{params, DbPool};
 
 use crate::{errors::AppError, state::AppState};
 
@@ -42,7 +43,7 @@ pub struct AcmeConfig {
 }
 
 impl AcmeConfig {
-    pub async fn load(db: &PgPool) -> Self {
+    pub async fn load(db: &DbPool) -> Self {
         let s = |v: Option<serde_json::Value>| {
             v.and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
         };
@@ -85,12 +86,13 @@ pub struct AcmeState {
 }
 
 /// Reads the recorded state (never the credentials).
-pub async fn state(db: &PgPool) -> AcmeState {
-    match sqlx::query(
-        "SELECT last_order_status, last_order_detail, last_attempt_at FROM core.acme_state WHERE id = TRUE",
-    )
-    .fetch_optional(db)
-    .await
+pub async fn state(db: &DbPool) -> AcmeState {
+    match db
+        .fetch_optional_row(
+            "SELECT last_order_status, last_order_detail, last_attempt_at FROM core.acme_state WHERE id = TRUE",
+            params![],
+        )
+        .await
     {
         Ok(Some(row)) => AcmeState {
             last_order_status: row.try_get("last_order_status").ok(),
@@ -109,7 +111,7 @@ fn stored_credentials(paths: &super::store::Paths) -> Option<AccountCredentials>
 }
 
 async fn store_credentials(
-    db: &PgPool,
+    db: &DbPool,
     paths: &super::store::Paths,
     directory_url: &str,
     email: &str,
@@ -121,40 +123,53 @@ async fn store_credentials(
     // The account key goes to disk, mode 0600; the database only records which
     // directory and contact the account was created against, for the console.
     super::store::write_acme_account(paths, &json)?;
-    sqlx::query(
+    // The timestamp is bound from Rust rather than `NOW()`, and the single-row
+    // upsert is spelled per engine by the dialect layer.
+    let now = chrono::Utc::now();
+    let sql = format!(
         "INSERT INTO core.acme_state (id, directory_url, email, updated_at) \
-         VALUES (TRUE, $1, $2, NOW()) \
-         ON CONFLICT (id) DO UPDATE SET \
-             directory_url = EXCLUDED.directory_url, \
-             email = EXCLUDED.email, \
-             updated_at = NOW()",
-    )
-    .bind(directory_url)
-    .bind(email)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "acme : enregistrement du compte");
-        AppError::Database(e)
-    })?;
+         VALUES (TRUE, $1, $2, $3){}",
+        db.backend().upsert(
+            "core.acme_state",
+            &["id"],
+            &[
+                Assign::Incoming("directory_url"),
+                Assign::Incoming("email"),
+                Assign::Incoming("updated_at"),
+            ],
+        )
+    );
+    db.execute(&sql, params![directory_url, email, now])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "acme: recording the account");
+            AppError::Database(e)
+        })?;
     Ok(())
 }
 
-async fn record_outcome(db: &PgPool, status: &str, detail: Option<&str>) {
-    let _ = sqlx::query(
+async fn record_outcome(db: &DbPool, status: &str, detail: Option<&str>) {
+    // Both `last_attempt_at` and `updated_at` take the same instant, bound
+    // twice (each placeholder is distinct); no `NOW()` in the SQL.
+    let now = chrono::Utc::now();
+    let sql = format!(
         "INSERT INTO core.acme_state (id, last_order_status, last_order_detail, last_attempt_at, updated_at) \
-         VALUES (TRUE, $1, $2, NOW(), NOW()) \
-         ON CONFLICT (id) DO UPDATE SET \
-             last_order_status = EXCLUDED.last_order_status, \
-             last_order_detail = EXCLUDED.last_order_detail, \
-             last_attempt_at = EXCLUDED.last_attempt_at, \
-             updated_at = NOW()",
-    )
-    .bind(status)
-    .bind(detail)
-    .execute(db)
-    .await
-    .map_err(|e| tracing::error!(error = %e, "acme : enregistrement de l'issue de commande"));
+         VALUES (TRUE, $1, $2, $3, $4){}",
+        db.backend().upsert(
+            "core.acme_state",
+            &["id"],
+            &[
+                Assign::Incoming("last_order_status"),
+                Assign::Incoming("last_order_detail"),
+                Assign::Incoming("last_attempt_at"),
+                Assign::Incoming("updated_at"),
+            ],
+        )
+    );
+    let _ = db
+        .execute(&sql, params![status, detail, now, now])
+        .await
+        .map_err(|e| tracing::error!(error = %e, "acme: recording the order outcome"));
 }
 
 fn acme_err(context: &str, e: impl std::fmt::Display) -> AppError {

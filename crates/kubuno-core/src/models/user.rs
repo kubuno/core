@@ -42,8 +42,8 @@ const MAX_QUOTA_BYTES: i64 = 1_125_899_906_842_624; // 1 PiB
 ///
 /// Never fails: a storage default that cannot be read must not stop somebody
 /// from signing up. The failure is logged and [`DEFAULT_QUOTA_BYTES`] applies.
-pub async fn default_quota_for<'e, E: sqlx::PgExecutor<'e>>(
-    db: E,
+pub async fn default_quota_for(
+    db: &kubuno_db::DbPool,
     org_unit: Option<Uuid>,
 ) -> i64 {
     let scope = match org_unit {

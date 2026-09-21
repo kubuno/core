@@ -26,6 +26,9 @@
 //! ```
 
 pub mod builtin;
+/// Engine-agnostic queue operations on `kubuno_db::DbPool` (the portable form of
+/// [`queue`], staged for the runtime-engine switch).
+pub mod portable;
 pub mod queue;
 pub mod registry;
 pub mod runner;

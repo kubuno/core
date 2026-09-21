@@ -371,6 +371,80 @@ impl Backend {
         }
     }
 
+    /// A `" FOR UPDATE"` row lock, or the empty string on SQLite, which has no
+    /// such clause. SQLite serializes writes at the database level (a write
+    /// transaction holds an exclusive lock), so the pessimistic lock a
+    /// `SELECT ... FOR UPDATE` takes on PostgreSQL/MySQL is already implied there
+    /// — dropping the clause keeps the same "no concurrent writer sees a stale
+    /// row" guarantee. Where the lock backs a work-queue claim, keep the
+    /// `UPDATE ... WHERE status = 'pending'` + `rows_affected == 1` check as the
+    /// real arbiter; this clause is only an optimization on the engines that have
+    /// it.
+    pub fn for_update(self) -> &'static str {
+        match self {
+            Backend::Postgres | Backend::MySql => " FOR UPDATE",
+            Backend::Sqlite => "",
+        }
+    }
+
+    /// The client address as text. PostgreSQL stores it as `inet`, whose
+    /// canonical text form is reached through `host(col)::text`; MySQL and SQLite
+    /// keep it as a plain string column, so the column is returned unchanged.
+    pub fn inet_text(self, col: &'static str) -> String {
+        match self {
+            Backend::Postgres => format!("host({col})::text"),
+            Backend::MySql | Backend::Sqlite => col.to_string(),
+        }
+    }
+
+    /// The domain half of an email address — everything after the `@`, the
+    /// portable stand-in for PostgreSQL's `SPLIT_PART(col, '@', 2)`.
+    ///
+    /// `col` is a column reference written in source (`&'static str`); no request
+    /// data is spliced. A well-formed address has exactly one `@`, so all three
+    /// spellings agree on it — the second field is the part after the separator.
+    ///
+    /// * PostgreSQL: `SPLIT_PART(col, '@', 2)`.
+    /// * MySQL/MariaDB: `SUBSTRING_INDEX(SUBSTRING_INDEX(col, '@', 2), '@', -1)`
+    ///   — the outer `-1` trims the first field the inner call keeps, so a value
+    ///   with no `@` yields the empty string rather than the whole address.
+    /// * SQLite: `substr(col, instr(col, '@') + 1)`.
+    pub fn email_domain(self, col: &'static str) -> String {
+        match self {
+            Backend::Postgres => format!("SPLIT_PART({col}, '@', 2)"),
+            Backend::MySql => {
+                format!("SUBSTRING_INDEX(SUBSTRING_INDEX({col}, '@', 2), '@', -1)")
+            }
+            Backend::Sqlite => format!("substr({col}, instr({col}, '@') + 1)"),
+        }
+    }
+
+    /// Wraps a bound text value as a JSON **string** scalar (`"…"`), for storing
+    /// it in a JSON column — PostgreSQL's `to_jsonb($n::text)`. `n` is the
+    /// placeholder number, bound as plain text; it is never interpolated.
+    ///
+    /// * PostgreSQL: `to_jsonb($n::text)`.
+    /// * MySQL/MariaDB: `JSON_QUOTE($n)`.
+    /// * SQLite: `json_quote($n)` (the column is `TEXT` holding JSON text).
+    pub fn json_string(self, n: usize) -> String {
+        match self {
+            Backend::Postgres => format!("to_jsonb(${n}::text)"),
+            Backend::MySql => format!("JSON_QUOTE(${n})"),
+            Backend::Sqlite => format!("json_quote(${n})"),
+        }
+    }
+
+    /// Boolean OR over a group — PostgreSQL's `bool_or`. MySQL and SQLite store
+    /// booleans as `0`/`1` and have no `bool_or`, but `MAX` over those integers
+    /// is the same fold and decodes back to `bool`. PostgreSQL rejects
+    /// `MAX(boolean)`, so the spelling genuinely differs.
+    pub fn bool_or(self, expr: &'static str) -> String {
+        match self {
+            Backend::Postgres => format!("bool_or({expr})"),
+            Backend::MySql | Backend::Sqlite => format!("MAX({expr})"),
+        }
+    }
+
     /// Concatenation of a group's values. `separator` is a literal.
     pub fn string_agg(self, expr: &'static str, separator: &'static str) -> String {
         debug_assert!(!separator.contains('\''), "separator must not contain a quote");
@@ -471,6 +545,13 @@ mod tests {
     }
 
     #[test]
+    fn for_update_is_empty_only_on_sqlite() {
+        assert_eq!(Backend::Postgres.for_update(), " FOR UPDATE");
+        assert_eq!(Backend::MySql.for_update(), " FOR UPDATE");
+        assert_eq!(Backend::Sqlite.for_update(), "");
+    }
+
+    #[test]
     fn returning_is_empty_only_on_mysql() {
         for b in ALL {
             assert_eq!(b.returning("id").is_empty(), b == Backend::MySql);
@@ -491,6 +572,26 @@ mod tests {
             Backend::Sqlite.json_array_contains("tags", 3),
             "EXISTS (SELECT 1 FROM json_each(tags) WHERE value = $3)"
         );
+    }
+
+    #[test]
+    fn email_domain_spells_each_engine() {
+        assert_eq!(Backend::Postgres.email_domain("u.email"), "SPLIT_PART(u.email, '@', 2)");
+        assert_eq!(
+            Backend::MySql.email_domain("u.email"),
+            "SUBSTRING_INDEX(SUBSTRING_INDEX(u.email, '@', 2), '@', -1)"
+        );
+        assert_eq!(
+            Backend::Sqlite.email_domain("u.email"),
+            "substr(u.email, instr(u.email, '@') + 1)"
+        );
+    }
+
+    #[test]
+    fn json_string_wraps_a_bound_text() {
+        assert_eq!(Backend::Postgres.json_string(1), "to_jsonb($1::text)");
+        assert_eq!(Backend::MySql.json_string(1), "JSON_QUOTE($1)");
+        assert_eq!(Backend::Sqlite.json_string(1), "json_quote($1)");
     }
 
     #[test]
@@ -533,6 +634,9 @@ mod tests {
                 b.interval_before(7, Unit::Day),
                 b.ilike("name", 1),
                 b.string_agg("name", ", "),
+                b.email_domain("u.email"),
+                b.json_string(1),
+                format!("SELECT 1{}", b.for_update()),
             ];
             for f in fragments {
                 let sql = format!("SELECT {f}");

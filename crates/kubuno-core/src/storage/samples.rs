@@ -25,7 +25,8 @@
 //! days would put growth on a chart that nobody observed, in the one place an
 //! operator goes to decide whether to buy a disk.
 
-use sqlx::PgPool;
+use kubuno_db::dialect::{Assign, SqlType};
+use kubuno_db::{params, DbPool};
 
 use crate::errors::AppError;
 
@@ -33,27 +34,58 @@ use crate::errors::AppError;
 ///
 /// Never fails the caller's own work: the alert scan calls it and logs the
 /// error, because a missing point on a curve is not worth losing an alert over.
-pub async fn capture(db: &PgPool) -> Result<(), AppError> {
-    sqlx::query(
-        r#"INSERT INTO core.storage_samples (day, used_bytes, quota_bytes, accounts, over_quota, captured_at)
-           SELECT CURRENT_DATE,
-                  COALESCE(SUM(used_bytes), 0)::bigint,
-                  COALESCE(SUM(quota_bytes), 0)::bigint,
-                  COUNT(*)::int,
-                  COUNT(*) FILTER (WHERE quota_bytes > 0 AND used_bytes >= quota_bytes)::int,
-                  NOW()
-             FROM core.users
-           ON CONFLICT (day) DO UPDATE
-               SET used_bytes  = EXCLUDED.used_bytes,
-                   quota_bytes = EXCLUDED.quota_bytes,
-                   accounts    = EXCLUDED.accounts,
-                   over_quota  = EXCLUDED.over_quota,
-                   captured_at = EXCLUDED.captured_at"#,
+pub async fn capture(db: &DbPool) -> Result<(), AppError> {
+    let backend = db.backend();
+
+    // Compute the day's aggregates portably. The former `COUNT(*) FILTER (WHERE
+    // ...)` is spelled as a `SUM(CASE ...)` so every engine can run it, and the
+    // widths are made explicit with an engine-aware cast to BIGINT.
+    let agg_sql = format!(
+        "SELECT {used}, {quota}, {accounts}, {over_quota} FROM core.users",
+        used = backend.sum_bigint("used_bytes"),
+        quota = backend.sum_bigint("quota_bytes"),
+        accounts = backend.count_bigint("*"),
+        over_quota = backend.cast(
+            "COALESCE(SUM(CASE WHEN quota_bytes > 0 AND used_bytes >= quota_bytes THEN 1 ELSE 0 END), 0)",
+            SqlType::BigInt,
+        ),
+    );
+
+    let (used_bytes, quota_bytes, accounts, over_quota): (i64, i64, i64, i64) = db
+        .fetch_one_as(&agg_sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage: daily sample aggregates not computed");
+            AppError::Database(e)
+        })?;
+
+    // One row per day, upserted on `day`. The date and capture instant are
+    // computed in Rust rather than with `CURRENT_DATE`/`NOW()`.
+    let today = chrono::Utc::now().date_naive();
+    let now = chrono::Utc::now();
+    let upsert = backend.upsert(
+        "core.storage_samples",
+        &["day"],
+        &[
+            Assign::Incoming("used_bytes"),
+            Assign::Incoming("quota_bytes"),
+            Assign::Incoming("accounts"),
+            Assign::Incoming("over_quota"),
+            Assign::Incoming("captured_at"),
+        ],
+    );
+    let insert_sql = format!(
+        "INSERT INTO core.storage_samples (day, used_bytes, quota_bytes, accounts, over_quota, captured_at) \
+         VALUES ($1, $2, $3, $4, $5, $6){upsert}"
+    );
+
+    db.execute(
+        &insert_sql,
+        params![today, used_bytes, quota_bytes, accounts, over_quota, now],
     )
-    .execute(db)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "storage: échantillon quotidien non enregistré");
+        tracing::error!(error = %e, "storage: daily sample not recorded");
         AppError::Database(e)
     })?;
 

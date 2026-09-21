@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 
 use crate::config::Settings;
 use crate::jobs::queue::{self, NewJob};
@@ -29,16 +29,18 @@ const DEFAULT_INTERVAL_S: u64 = 300;
 const MIN_INTERVAL_S: u64 = 30;
 const MAX_INTERVAL_S: u64 = 6 * 3_600;
 
-async fn interval(db: &PgPool) -> Duration {
-    let raw: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'alerts.scan_interval_s'")
-            .fetch_optional(db)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!(error = %e, "alerts: lecture de l'intervalle d'analyse");
-                None
-            })
-            .flatten();
+async fn interval(db: &DbPool) -> Duration {
+    let raw: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<Option<serde_json::Value>>(
+            "SELECT value FROM core.settings WHERE \"key\" = 'alerts.scan_interval_s'",
+            params![],
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "alerts: reading the scan interval");
+            None
+        })
+        .flatten();
 
     let secs = raw
         .as_ref()
@@ -69,7 +71,7 @@ pub fn register(registry: &mut JobRegistry, settings: Arc<Settings>) {
 
 /// Arms the scan at startup. Idempotent across restarts and across several core
 /// processes — `ensure_scheduled` refuses to pile up duplicates.
-pub async fn schedule(db: &PgPool) {
+pub async fn schedule(db: &DbPool) {
     match queue::ensure_scheduled(db, NewJob::new(SCAN)).await {
         Ok(Some(id)) => tracing::info!(job_id = %id, "Analyse du centre d'alertes planifiée"),
         Ok(None) => tracing::debug!("Analyse du centre d'alertes déjà planifiée"),

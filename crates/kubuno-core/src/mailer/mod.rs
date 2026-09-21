@@ -44,7 +44,7 @@ pub use send::{Outgoing, SendError};
 pub use templates::{render, Stamp, Template};
 
 use chrono_tz::Tz;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -52,15 +52,17 @@ use crate::settings::intl;
 
 /// Instance name shown in messages: `instance.name` from the settings, falling
 /// back to the product name rather than to an empty subject line.
-pub async fn instance_name(db: &PgPool) -> String {
-    let value: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'instance.name'")
-            .fetch_optional(db)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!(error = %e, "mailer: lecture de instance.name");
-                None
-            });
+pub async fn instance_name(db: &DbPool) -> String {
+    let value: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<serde_json::Value>(
+            "SELECT value FROM core.settings WHERE \"key\" = 'instance.name'",
+            params![],
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "mailer: reading instance.name");
+            None
+        });
 
     value
         .as_ref()
@@ -142,7 +144,7 @@ impl Audience {
 /// account's `preferences` document — pass `&Value::Null` when writing to an
 /// address that belongs to no account.
 pub async fn audience(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Option<Uuid>,
     preferences: &serde_json::Value,
 ) -> Audience {
@@ -156,7 +158,7 @@ pub async fn audience(
 /// Renders and queues a password-reset message. Returns whether it was queued;
 /// **callers on public routes must ignore that answer** (see [`job::enqueue`]).
 pub async fn queue_password_reset(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &MailConfig,
     instance: &str,
     to: &Recipient,
@@ -187,7 +189,7 @@ pub async fn queue_password_reset(
 
 /// Renders and queues an invitation message.
 pub async fn queue_invite(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &MailConfig,
     instance: &str,
     to: &Recipient,
@@ -224,7 +226,7 @@ pub async fn queue_invite(
 /// to change it. The password is *never* written to a log or to the audit trail
 /// on this path — only the fact that a notice was queued.
 pub async fn queue_admin_password_reset(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &MailConfig,
     instance: &str,
     to: &Recipient,
@@ -256,7 +258,7 @@ pub async fn queue_admin_password_reset(
 }
 
 /// Loads the relay configuration for a handler.
-pub async fn load_config(db: &PgPool, jwt_secret: &str) -> Result<MailConfig, AppError> {
+pub async fn load_config(db: &DbPool, jwt_secret: &str) -> Result<MailConfig, AppError> {
     MailConfig::load(db, jwt_secret).await
 }
 

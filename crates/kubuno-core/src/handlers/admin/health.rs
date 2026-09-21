@@ -9,6 +9,7 @@ use axum::{
     http::HeaderMap,
     Json,
 };
+use kubuno_db::{dialect::Assign, params};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::net::SocketAddr;
@@ -138,18 +139,25 @@ pub async fn mute_check(
     }
 
     let mut tx = audit.begin(&state.db).await?;
-    sqlx::query(
-        r#"INSERT INTO core.health_check_mutes (check_id, muted_by, muted_at, reason)
-           VALUES ($1, $2, NOW(), $3)
-           ON CONFLICT (check_id) DO UPDATE
-               SET muted_by = EXCLUDED.muted_by,
-                   muted_at = EXCLUDED.muted_at,
-                   reason   = EXCLUDED.reason"#,
+    let backend = state.db.backend();
+    let muted_at = chrono::Utc::now();
+    let insert_sql = format!(
+        "INSERT INTO core.health_check_mutes (check_id, muted_by, muted_at, reason) \
+         VALUES ($1, $2, $3, $4){}",
+        backend.upsert(
+            "core.health_check_mutes",
+            &["check_id"],
+            &[
+                Assign::Incoming("muted_by"),
+                Assign::Incoming("muted_at"),
+                Assign::Incoming("reason"),
+            ],
+        )
+    );
+    tx.execute(
+        &insert_sql,
+        params![&id, audit.admin.id, muted_at, reason.as_deref()],
     )
-    .bind(&id)
-    .bind(audit.admin.id)
-    .bind(&reason)
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, check = %id, "health: enregistrement du contrôle ignoré");
@@ -179,15 +187,16 @@ pub async fn unmute_check(
     ctx.require(keys::SETTINGS_MANAGE)?;
 
     let mut tx = audit.begin(&state.db).await?;
-    let deleted = sqlx::query("DELETE FROM core.health_check_mutes WHERE check_id = $1")
-        .bind(&id)
-        .execute(&mut *tx)
+    let deleted = tx
+        .execute(
+            "DELETE FROM core.health_check_mutes WHERE check_id = $1",
+            params![&id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, check = %id, "health: retrait du contrôle ignoré");
             AppError::Database(e)
-        })?
-        .rows_affected();
+        })?;
 
     if deleted == 0 {
         // Nothing to undo. Rolled back rather than committed with an empty

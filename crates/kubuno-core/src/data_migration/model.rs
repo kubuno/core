@@ -122,6 +122,9 @@ pub struct Campaign {
     pub source_port:     i32,
     pub source_security: String,
     pub since_date:      Option<NaiveDate>,
+    // PostgreSQL `TEXT[]` today; read as a JSON array (portable) — the column is
+    // migrated `TEXT[]` → `JSONB` on the schema-consolidation side.
+    #[sqlx(json)]
     pub exclude_folders: Vec<String>,
     pub status:          String,
     pub created_by:      Option<Uuid>,

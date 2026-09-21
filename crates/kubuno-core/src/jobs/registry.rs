@@ -11,14 +11,14 @@ use std::future::Future;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use super::Job;
 
 /// Everything a handler gets besides the job itself.
 #[derive(Clone)]
 pub struct JobContext {
-    pub db: PgPool,
+    pub db: DbPool,
 }
 
 /// A unit of background work. Returning `Err` schedules a retry (see

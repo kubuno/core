@@ -9,8 +9,9 @@
 //! into dates happens in memory afterwards, where it is pure arithmetic.
 
 use chrono::NaiveDate;
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use serde_json::Value;
-use sqlx::{postgres::PgRow, PgPool, Row};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 use super::model::{self, Category, Holiday, HolidayCalendar, Observance, Occurrence, Rule};
@@ -33,51 +34,134 @@ pub struct CalendarSummary {
     pub display_name: String,
 }
 
-fn calendar_from_row(row: &PgRow) -> Result<HolidayCalendar, sqlx::Error> {
-    Ok(HolidayCalendar {
-        id: row.try_get("id")?,
-        code: row.try_get("code")?,
-        country_code: row.try_get("country_code")?,
-        subdivision: row.try_get("subdivision")?,
-        parent_id: row.try_get("parent_id")?,
-        name: row.try_get("name")?,
-        names: row.try_get("names")?,
-        is_builtin: row.try_get("is_builtin")?,
-        enabled: row.try_get("enabled")?,
-        coverage_from: row.try_get("coverage_from")?,
-        coverage_to: row.try_get("coverage_to")?,
-    })
+// ── Raw row shapes ────────────────────────────────────────────────────────────
+//
+// `HolidayCalendar` and `Holiday` carry parsed value types (`Category`, `Rule`,
+// …) that no `FromRow` can build directly, and `kubuno_db` has no
+// `fetch_all_row`. Every read therefore lands in one of these raw structs first
+// and is folded into the domain type in Rust.
+
+/// The base columns of a `core.holiday_calendars` row.
+#[derive(Debug, Clone, FromRow)]
+struct CalendarRow {
+    id: Uuid,
+    code: String,
+    country_code: Option<String>,
+    subdivision: Option<String>,
+    parent_id: Option<Uuid>,
+    name: String,
+    names: Value,
+    is_builtin: bool,
+    enabled: bool,
+    coverage_from: Option<i32>,
+    coverage_to: Option<i32>,
 }
 
-fn holiday_from_row(row: &PgRow) -> Result<Holiday, AppError> {
-    let kind: String = row.try_get("kind").map_err(AppError::Database)?;
-    let params: Value = row.try_get("rule").map_err(AppError::Database)?;
-    let category: String = row.try_get("category").map_err(AppError::Database)?;
-    let observance: String = row.try_get("observance").map_err(AppError::Database)?;
-    Ok(Holiday {
-        id: row.try_get("id").map_err(AppError::Database)?,
-        calendar_id: row.try_get("calendar_id").map_err(AppError::Database)?,
-        key: row.try_get("key").map_err(AppError::Database)?,
-        name: row.try_get("name").map_err(AppError::Database)?,
-        names: row.try_get("names").map_err(AppError::Database)?,
-        category: Category::parse(&category)?,
-        rule: Rule::from_parts(&kind, &params)?,
-        observance: Observance::parse(&observance)?,
-        from_year: row.try_get("from_year").map_err(AppError::Database)?,
-        to_year: row.try_get("to_year").map_err(AppError::Database)?,
-        color: row.try_get("color").map_err(AppError::Database)?,
-        enabled: row.try_get("enabled").map_err(AppError::Database)?,
-        is_builtin: row.try_get("is_builtin").map_err(AppError::Database)?,
-        is_overridden: row.try_get("is_overridden").map_err(AppError::Database)?,
-        is_orphan: row.try_get("is_orphan").map_err(AppError::Database)?,
-    })
+impl CalendarRow {
+    fn into_calendar(self) -> HolidayCalendar {
+        HolidayCalendar {
+            id: self.id,
+            code: self.code,
+            country_code: self.country_code,
+            subdivision: self.subdivision,
+            parent_id: self.parent_id,
+            name: self.name,
+            names: self.names,
+            is_builtin: self.is_builtin,
+            enabled: self.enabled,
+            coverage_from: self.coverage_from,
+            coverage_to: self.coverage_to,
+        }
+    }
+}
+
+/// A calendar row plus the console's four counts.
+#[derive(Debug, FromRow)]
+struct CalendarSummaryRow {
+    #[sqlx(flatten)]
+    calendar: CalendarRow,
+    holiday_count: i64,
+    inherited_count: i64,
+    overridden_count: i64,
+    subdivision_count: i64,
+}
+
+/// The raw columns of a `core.holidays` row.
+#[derive(Debug, Clone, FromRow)]
+struct HolidayRaw {
+    id: Uuid,
+    calendar_id: Uuid,
+    key: String,
+    name: String,
+    names: Value,
+    category: String,
+    kind: String,
+    rule: Value,
+    observance: String,
+    from_year: Option<i32>,
+    to_year: Option<i32>,
+    color: Option<String>,
+    enabled: bool,
+    is_builtin: bool,
+    is_overridden: bool,
+    is_orphan: bool,
+}
+
+impl HolidayRaw {
+    fn into_holiday(self) -> Result<Holiday, AppError> {
+        Ok(Holiday {
+            id: self.id,
+            calendar_id: self.calendar_id,
+            key: self.key,
+            name: self.name,
+            names: self.names,
+            category: Category::parse(&self.category)?,
+            rule: Rule::from_parts(&self.kind, &self.rule)?,
+            observance: Observance::parse(&self.observance)?,
+            from_year: self.from_year,
+            to_year: self.to_year,
+            color: self.color,
+            enabled: self.enabled,
+            is_builtin: self.is_builtin,
+            is_overridden: self.is_overridden,
+            is_orphan: self.is_orphan,
+        })
+    }
+}
+
+/// A holiday row with the "is this inherited from the parent" flag.
+#[derive(Debug, FromRow)]
+struct HolidayInheritedRow {
+    #[sqlx(flatten)]
+    holiday: HolidayRaw,
+    inherited: bool,
+}
+
+/// A holiday row carrying the requested (root) calendar's identity.
+#[derive(Debug, FromRow)]
+struct FeedRow {
+    #[sqlx(flatten)]
+    holiday: HolidayRaw,
+    root_id: Uuid,
+    root_code: String,
+    root_name: String,
+    root_names: Value,
+}
+
+/// One row of the organisational-unit overlay walk.
+#[derive(Debug, FromRow)]
+struct UnitPrefRow {
+    calendar_id: Option<Uuid>,
+    holiday_id: Option<Uuid>,
+    enabled: bool,
+    depth: i32,
 }
 
 /// Every calendar, with its counts. `search` matches the code and every
 /// localised name, so an operator typing "Maroc" finds `MA` in a French console
 /// and one typing "Morocco" finds it in an English one.
 pub async fn list_calendars(
-    db: &PgPool,
+    db: &DbPool,
     search: Option<&str>,
     countries_only: bool,
     only_enabled: bool,
@@ -88,50 +172,61 @@ pub async fn list_calendars(
         .filter(|s| !s.is_empty())
         .map(|s| format!("%{}%", s.to_lowercase()));
 
-    let rows = sqlx::query(
-        r#"
+    // NOTE (multi-DBMS): `jsonb_each_text(c.names)` is PostgreSQL-only and kept
+    // verbatim (flagged in the port report) — iterating a JSON object's values
+    // has no shared spelling across the three engines. `NULLS FIRST` is replaced
+    // by `(parent_id IS NOT NULL)` (false sorts first), redundant `::bigint`/
+    // `::bool`/`::text` casts are dropped, and `needle` is bound once per use so
+    // no placeholder is reused.
+    let rows = db
+        .fetch_all_as::<CalendarSummaryRow>(
+            r#"
         SELECT c.id, c.code, c.country_code, c.subdivision, c.parent_id, c.name, c.names,
                c.is_builtin, c.enabled, c.coverage_from, c.coverage_to,
-               (SELECT COUNT(*) FROM core.holidays h WHERE h.calendar_id = c.id)::bigint AS holiday_count,
+               (SELECT COUNT(*) FROM core.holidays h WHERE h.calendar_id = c.id) AS holiday_count,
                (SELECT COUNT(*) FROM core.holidays h
                  WHERE h.calendar_id = c.parent_id
                    AND NOT EXISTS (SELECT 1 FROM core.holiday_exclusions e
-                                    WHERE e.calendar_id = c.id AND e.key = h.key))::bigint AS inherited_count,
+                                    WHERE e.calendar_id = c.id AND e."key" = h."key")) AS inherited_count,
                (SELECT COUNT(*) FROM core.holidays h
-                 WHERE h.calendar_id = c.id AND h.is_overridden)::bigint AS overridden_count,
-               (SELECT COUNT(*) FROM core.holiday_calendars s WHERE s.parent_id = c.id)::bigint AS subdivision_count
+                 WHERE h.calendar_id = c.id AND h.is_overridden) AS overridden_count,
+               (SELECT COUNT(*) FROM core.holiday_calendars s WHERE s.parent_id = c.id) AS subdivision_count
           FROM core.holiday_calendars c
-         WHERE ($1::bool IS NOT TRUE OR c.parent_id IS NULL)
-           AND ($3::bool IS NOT TRUE OR c.enabled)
-           AND ($2::text IS NULL
-                OR LOWER(c.code) LIKE $2
-                OR LOWER(c.name) LIKE $2
+         WHERE ($1 IS NOT TRUE OR c.parent_id IS NULL)
+           AND ($2 IS NOT TRUE OR c.enabled)
+           AND ($3 IS NULL
+                OR LOWER(c.code) LIKE $4
+                OR LOWER(c.name) LIKE $5
                 -- Every translated name, so the search speaks the reader's
                 -- language without the console shipping a country list of its own.
-                OR EXISTS (SELECT 1 FROM jsonb_each_text(c.names) t WHERE LOWER(t.value) LIKE $2))
-         ORDER BY c.parent_id NULLS FIRST, LOWER(c.name)
+                OR EXISTS (SELECT 1 FROM jsonb_each_text(c.names) t WHERE LOWER(t.value) LIKE $6))
+         ORDER BY (c.parent_id IS NOT NULL), LOWER(c.name)
         "#,
-    )
-    .bind(countries_only)
-    .bind(needle.as_deref())
-    .bind(only_enabled)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: liste des calendriers");
-        AppError::Database(e)
-    })?;
+            params![
+                countries_only,
+                only_enabled,
+                needle.as_deref(),
+                needle.as_deref(),
+                needle.as_deref(),
+                needle.as_deref()
+            ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: liste des calendriers");
+            AppError::Database(e)
+        })?;
 
-    rows.iter()
+    rows.into_iter()
         .map(|row| {
-            let calendar = calendar_from_row(row).map_err(AppError::Database)?;
+            let calendar = row.calendar.into_calendar();
             let display_name = calendar.localized_name(locale);
             Ok(CalendarSummary {
                 display_name,
-                holiday_count: row.try_get("holiday_count").map_err(AppError::Database)?,
-                inherited_count: row.try_get("inherited_count").map_err(AppError::Database)?,
-                overridden_count: row.try_get("overridden_count").map_err(AppError::Database)?,
-                subdivision_count: row.try_get("subdivision_count").map_err(AppError::Database)?,
+                holiday_count: row.holiday_count,
+                inherited_count: row.inherited_count,
+                overridden_count: row.overridden_count,
+                subdivision_count: row.subdivision_count,
                 calendar,
             })
         })
@@ -139,21 +234,21 @@ pub async fn list_calendars(
 }
 
 /// One calendar by its id.
-pub async fn calendar(db: &PgPool, id: Uuid) -> Result<HolidayCalendar, AppError> {
-    let row = sqlx::query(
-        "SELECT id, code, country_code, subdivision, parent_id, name, names, is_builtin, enabled, \
+pub async fn calendar(db: &DbPool, id: Uuid) -> Result<HolidayCalendar, AppError> {
+    let row = db
+        .fetch_optional_as::<CalendarRow>(
+            "SELECT id, code, country_code, subdivision, parent_id, name, names, is_builtin, enabled, \
                 coverage_from, coverage_to \
            FROM core.holiday_calendars WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: lecture d'un calendrier");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Calendrier introuvable".into()))?;
-    calendar_from_row(&row).map_err(AppError::Database)
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: lecture d'un calendrier");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Calendrier introuvable".into()))?;
+    Ok(row.into_calendar())
 }
 
 /// The days declared on one calendar, and — when `include_inherited` — the ones
@@ -162,53 +257,60 @@ pub async fn calendar(db: &PgPool, id: Uuid) -> Result<HolidayCalendar, AppError
 /// Returns `(holiday, inherited)` so the console can show an inherited row as
 /// what it is: readable, and edited on the country rather than here.
 pub async fn holidays_of(
-    db: &PgPool,
+    db: &DbPool,
     calendar_id: Uuid,
     include_inherited: bool,
 ) -> Result<Vec<(Holiday, bool)>, AppError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT h.id, h.calendar_id, h.key, h.name, h.names, h.category, h.kind, h.rule,
+    // `calendar_id` is bound once per appearance (no reused placeholder).
+    let rows = db
+        .fetch_all_as::<HolidayInheritedRow>(
+            r#"
+        SELECT h.id, h.calendar_id, h."key", h.name, h.names, h.category, h.kind, h.rule,
                h.observance, h.from_year, h.to_year, h.color, h.enabled,
                h.is_builtin, h.is_overridden, h.is_orphan,
                (h.calendar_id <> $1) AS inherited
           FROM core.holidays h
-         WHERE h.calendar_id = $1
-            OR ($2 AND h.calendar_id = (SELECT parent_id FROM core.holiday_calendars WHERE id = $1)
+         WHERE h.calendar_id = $2
+            OR ($3 AND h.calendar_id = (SELECT parent_id FROM core.holiday_calendars WHERE id = $4)
                    AND NOT EXISTS (SELECT 1 FROM core.holiday_exclusions e
-                                    WHERE e.calendar_id = $1 AND e.key = h.key))
+                                    WHERE e.calendar_id = $5 AND e."key" = h."key"))
          ORDER BY inherited, LOWER(h.name)
         "#,
-    )
-    .bind(calendar_id)
-    .bind(include_inherited)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: liste des journées");
-        AppError::Database(e)
-    })?;
+            params![
+                calendar_id,
+                calendar_id,
+                include_inherited,
+                calendar_id,
+                calendar_id
+            ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: liste des journées");
+            AppError::Database(e)
+        })?;
 
-    rows.iter()
+    rows.into_iter()
         .map(|row| {
-            let inherited: bool = row.try_get("inherited").map_err(AppError::Database)?;
-            Ok((holiday_from_row(row)?, inherited))
+            let inherited = row.inherited;
+            Ok((row.holiday.into_holiday()?, inherited))
         })
         .collect()
 }
 
 /// The keys of the parent's days a subdivision does not observe.
-pub async fn exclusions(db: &PgPool, calendar_id: Uuid) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT key FROM core.holiday_exclusions WHERE calendar_id = $1 ORDER BY key",
-    )
-    .bind(calendar_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: lecture des exclusions");
-        AppError::Database(e)
-    })
+pub async fn exclusions(db: &DbPool, calendar_id: Uuid) -> Result<Vec<String>, AppError> {
+    let rows = db
+        .fetch_all_as::<(String,)>(
+            "SELECT \"key\" FROM core.holiday_exclusions WHERE calendar_id = $1 ORDER BY \"key\"",
+            params![calendar_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: lecture des exclusions");
+            AppError::Database(e)
+        })?;
+    Ok(rows.into_iter().map(|(key,)| key).collect())
 }
 
 /// What one organisational unit turns on or off, closest ancestor first.
@@ -217,11 +319,12 @@ pub async fn exclusions(db: &PgPool, calendar_id: Uuid) -> Result<Vec<String>, A
 /// answer wins over theirs — the same rule as `core.setting_values`, so an
 /// operator does not have to hold two inheritance models in their head.
 pub async fn unit_prefs(
-    db: &PgPool,
+    db: &DbPool,
     org_unit_id: Uuid,
 ) -> Result<Vec<(Option<Uuid>, Option<Uuid>, bool, i32)>, AppError> {
-    let rows = sqlx::query(
-        r#"
+    let rows = db
+        .fetch_all_as::<UnitPrefRow>(
+            r#"
         WITH RECURSIVE chain AS (
             SELECT id, parent_id, 0 AS depth FROM core.org_units WHERE id = $1
             UNION ALL
@@ -235,25 +338,18 @@ pub async fn unit_prefs(
           JOIN chain c ON c.id = p.org_unit_id
          ORDER BY c.depth
         "#,
-    )
-    .bind(org_unit_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "holidays: lecture de la surcouche d'unité");
-        AppError::Database(e)
-    })?;
+            params![org_unit_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "holidays: lecture de la surcouche d'unité");
+            AppError::Database(e)
+        })?;
 
-    rows.iter()
-        .map(|row| {
-            Ok((
-                row.try_get("calendar_id").map_err(AppError::Database)?,
-                row.try_get("holiday_id").map_err(AppError::Database)?,
-                row.try_get("enabled").map_err(AppError::Database)?,
-                row.try_get("depth").map_err(AppError::Database)?,
-            ))
-        })
-        .collect()
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.calendar_id, r.holiday_id, r.enabled, r.depth))
+        .collect())
 }
 
 /// What a request asks the feed for.
@@ -274,7 +370,7 @@ pub struct FeedQuery<'a> {
 }
 
 /// Every occurrence in the range, for the calendars that apply.
-pub async fn feed(db: &PgPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, AppError> {
+pub async fn feed(db: &DbPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, AppError> {
     if query.codes.is_empty() || query.from > query.to {
         return Ok(Vec::new());
     }
@@ -285,13 +381,22 @@ pub async fn feed(db: &PgPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, 
     // The recursive part walks from the requested calendar up to its country,
     // carrying the *requested* calendar's identity along: a French inherited day
     // shown for `FR-6AE` must still say it is displayed under Alsace-Moselle.
-    let rows = sqlx::query(
+    //
+    // `= ANY($n)` over the text arrays becomes a portable `IN (...)` list, and the
+    // PostgreSQL `cardinality($3::text[]) = 0` guard becomes a Rust-side test that
+    // simply omits the category filter when none was asked for.
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
         r#"
         WITH RECURSIVE wanted AS (
             SELECT c.id, c.parent_id, c.enabled, c.id AS root_id, c.code AS root_code,
                    c.name AS root_name, c.names AS root_names, 0 AS depth
               FROM core.holiday_calendars c
-             WHERE UPPER(c.code) = ANY($1)
+             WHERE UPPER(c.code)"#,
+    );
+    qb.push_in(codes);
+    qb.push(
+        r#"
             UNION ALL
             SELECT p.id, p.parent_id, p.enabled, w.root_id, w.root_code,
                    w.root_name, w.root_names, w.depth + 1
@@ -299,7 +404,7 @@ pub async fn feed(db: &PgPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, 
               JOIN wanted w ON p.id = w.parent_id
              WHERE w.depth < 8
         )
-        SELECT h.id, h.calendar_id, h.key, h.name, h.names, h.category, h.kind, h.rule,
+        SELECT h.id, h.calendar_id, h."key", h.name, h.names, h.category, h.kind, h.rule,
                h.observance, h.from_year, h.to_year, h.color, h.enabled,
                h.is_builtin, h.is_overridden, h.is_orphan,
                w.root_id, w.root_code, w.root_name, w.root_names
@@ -307,19 +412,23 @@ pub async fn feed(db: &PgPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, 
           JOIN core.holidays h ON h.calendar_id = w.id
          WHERE h.enabled
            AND w.enabled
-           AND (h.is_builtin IS NOT TRUE OR $2)
-           AND (cardinality($3::text[]) = 0 OR h.category = ANY($3))
+           AND (h.is_builtin IS NOT TRUE OR "#,
+    );
+    qb.push_bind(query.builtin_enabled);
+    qb.push(")");
+    if !categories.is_empty() {
+        qb.push(" AND h.category");
+        qb.push_in(categories);
+    }
+    qb.push(
+        r#"
            -- A day the requested calendar explicitly does not observe.
            AND NOT EXISTS (SELECT 1 FROM core.holiday_exclusions e
-                            WHERE e.calendar_id = w.root_id AND e.key = h.key)
+                            WHERE e.calendar_id = w.root_id AND e."key" = h."key")
         "#,
-    )
-    .bind(&codes)
-    .bind(query.builtin_enabled)
-    .bind(&categories)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
+    );
+
+    let rows = qb.fetch_all_as::<FeedRow>(db).await.map_err(|e| {
         tracing::error!(error = %e, "holidays: flux");
         AppError::Database(e)
     })?;
@@ -338,15 +447,15 @@ pub async fn feed(db: &PgPool, query: FeedQuery<'_>) -> Result<Vec<Occurrence>, 
     };
 
     let mut out = Vec::new();
-    for row in &rows {
-        let holiday = holiday_from_row(row)?;
-        let root_id: Uuid = row.try_get("root_id").map_err(AppError::Database)?;
+    for row in rows {
+        let root_id = row.root_id;
+        let root_code = row.root_code;
+        let root_name = row.root_name;
+        let root_names = row.root_names;
+        let holiday = row.holiday.into_holiday()?;
         if pref_for(root_id, holiday.id) == Some(false) {
             continue;
         }
-        let root_code: String = row.try_get("root_code").map_err(AppError::Database)?;
-        let root_name: String = row.try_get("root_name").map_err(AppError::Database)?;
-        let root_names: Value = row.try_get("root_names").map_err(AppError::Database)?;
         let calendar_name = model::localized_name(&root_names, &root_name, query.locale);
 
         let name = holiday.localized_name(query.locale);

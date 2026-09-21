@@ -114,7 +114,7 @@ pub mod keys {
 
 use std::sync::Arc;
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::events::EventBus;
 
@@ -124,7 +124,7 @@ use crate::events::EventBus;
 /// Every failure here is logged and tolerated. An instance whose rules cannot be
 /// loaded must still serve its users — the engine is an operator's convenience,
 /// not a dependency of signing in.
-pub async fn start(db: PgPool, bus: Arc<EventBus>) {
+pub async fn start(db: DbPool, bus: Arc<EventBus>) {
     if let Err(e) = declare::register(&db).await {
         tracing::error!(error = %e, "rules: déclaration du catalogue du core impossible");
     }

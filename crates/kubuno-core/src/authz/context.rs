@@ -26,10 +26,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::Serialize;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
-use super::model::{AssignmentScope, SUPERUSER_MARKER};
+use super::model::AssignmentScope;
 use crate::audit::ActorOrigin;
 use crate::errors::AppError;
 
@@ -309,7 +309,7 @@ const MAX_HOLDERS: usize = 4096;
 /// Answered from the process-global roster, which costs one query per instance
 /// per TTL rather than one per caller. A `false` here means the caller's context
 /// is empty and needs no resolution — the fast path `/me` relies on.
-pub async fn holds_any_assignment(db: &PgPool, user_id: Uuid) -> Result<bool, AppError> {
+pub async fn holds_any_assignment(db: &DbPool, user_id: Uuid) -> Result<bool, AppError> {
     use super::cache::Roster;
 
     let roster = match super::cache::get_roster() {
@@ -330,31 +330,35 @@ pub async fn holds_any_assignment(db: &PgPool, user_id: Uuid) -> Result<bool, Ap
 }
 
 /// Loads the set of accounts holding at least one live assignment.
-async fn load_roster(db: &PgPool) -> Result<super::cache::Roster, AppError> {
+async fn load_roster(db: &DbPool) -> Result<super::cache::Roster, AppError> {
     use super::cache::Roster;
 
+    // `NOW()` is spelled per engine by the dialect layer (structural text, not a
+    // bind), so no engine-specific date function is hard-coded.
+    let now = db.backend().now();
     // One row over the cap is enough to know the cap is exceeded.
-    let rows: Vec<Uuid> = sqlx::query_scalar(
-        r#"
-        SELECT a.subject_user_id
-          FROM core.role_assignments a
-         WHERE a.subject_user_id IS NOT NULL
-           AND (a.expires_at IS NULL OR a.expires_at > NOW())
-        UNION
-        SELECT m.user_id
-          FROM core.role_assignments a
-          JOIN core.user_group_members m ON m.group_id = a.subject_group_id
-         WHERE (a.expires_at IS NULL OR a.expires_at > NOW())
-         LIMIT $1
-        "#,
-    )
-    .bind(MAX_HOLDERS as i64 + 1)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "authz: chargement du registre des détenteurs d'affectation");
-        AppError::Database(e)
-    })?;
+    let sql = format!(
+        "SELECT a.subject_user_id \
+          FROM core.role_assignments a \
+         WHERE a.subject_user_id IS NOT NULL \
+           AND (a.expires_at IS NULL OR a.expires_at > {now}) \
+        UNION \
+        SELECT m.user_id \
+          FROM core.role_assignments a \
+          JOIN core.user_group_members m ON m.group_id = a.subject_group_id \
+         WHERE (a.expires_at IS NULL OR a.expires_at > {now}) \
+         LIMIT $1"
+    );
+    let rows: Vec<Uuid> = db
+        .fetch_all_as::<HolderRow>(&sql, params![MAX_HOLDERS as i64 + 1])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "authz: chargement du registre des détenteurs d'affectation");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|r| r.subject_user_id)
+        .collect();
 
     if rows.len() > MAX_HOLDERS {
         tracing::warn!(
@@ -373,93 +377,130 @@ async fn load_roster(db: &PgPool) -> Result<super::cache::Roster, AppError> {
 /// filtered out, org-unit subtrees expanded. The superuser flag rides along as a
 /// marker row rather than a second statement.
 pub async fn resolve(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     origin: ActorOrigin,
     token_id: Option<Uuid>,
 ) -> Result<AdminContext, AppError> {
-    // (privilege_key, scope, org_unit_id, caller's own unit)
-    let rows: Vec<(String, String, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
-        r#"
-        WITH mine AS (
-            SELECT a.id, a.role_id, a.scope, a.scope_org_unit_id
-              FROM core.role_assignments a
-             WHERE (a.expires_at IS NULL OR a.expires_at > NOW())
-               AND (
-                     a.subject_user_id = $1
-                  OR a.subject_group_id IN (
-                        SELECT m.group_id FROM core.user_group_members m WHERE m.user_id = $1
-                     )
-                   )
-        ),
-        own_unit AS (
-            SELECT org_unit_id FROM core.users WHERE id = $1
-        )
-        -- Explicit privileges, with the assignment's subtree already flattened.
-        SELECT rp.privilege_key,
-               mine.scope,
-               d.id,
-               (SELECT org_unit_id FROM own_unit)
-          FROM mine
-          JOIN core.role_privileges rp ON rp.role_id = mine.role_id
-          LEFT JOIN LATERAL core.org_unit_descendants(mine.scope_org_unit_id) d ON TRUE
-        UNION ALL
-        -- Superuser marker. '*' is not a valid privilege key, so it cannot be
-        -- confused with one.
-        SELECT '*',
-               mine.scope,
-               NULL::uuid,
-               (SELECT org_unit_id FROM own_unit)
-          FROM mine
-          JOIN core.roles r ON r.id = mine.role_id
-         WHERE r.is_superuser
-        "#,
-    )
-    .bind(user_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
+    // Rebuilt as a few portable steps rather than one PostgreSQL query: the
+    // original expanded each grant's org-unit subtree through
+    // `LEFT JOIN LATERAL core.org_unit_descendants(...)`, and neither the
+    // set-returning function nor `LATERAL` exists on MySQL/SQLite. The subtree
+    // expansion now runs through the portable multi-root recursive CTE of
+    // `database::compat`, and the privilege/superuser rows through plain joins.
+    let now = db.backend().now();
+    let fail = |e: sqlx::Error| {
         tracing::error!(error = %e, user_id = %user_id, "authz: résolution des privilèges effectifs");
         AppError::Database(e)
-    })?;
+    };
 
     let mut ctx = AdminContext::empty(user_id, origin, token_id);
 
-    for (key, scope, unit, own_unit) in rows {
-        ctx.org_unit_id = own_unit;
+    // The caller's own unit, needed by scope comparisons even with no grant.
+    ctx.org_unit_id = db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "authz: lecture de l'unité de l'appelant");
+            AppError::Database(e)
+        })?
+        .flatten();
 
-        // A superuser role only counts at instance scope: confining "holds
-        // everything" to a subtree is meaningless and would be a trap.
-        if key == SUPERUSER_MARKER {
-            if scope == AssignmentScope::Instance.as_str() {
-                ctx.is_superuser = true;
-            }
-            continue;
-        }
+    // The caller's non-expired assignments — direct or carried by a group —
+    // joined to the privilege keys of each assignment's role. `$1`/`$2` are both
+    // the caller (a positional placeholder is never reused across engines).
+    let mine_cte = format!(
+        "WITH mine AS ( \
+            SELECT a.role_id, a.scope, a.scope_org_unit_id \
+              FROM core.role_assignments a \
+             WHERE (a.expires_at IS NULL OR a.expires_at > {now}) \
+               AND ( a.subject_user_id = $1 \
+                  OR a.subject_group_id IN ( \
+                        SELECT m.group_id FROM core.user_group_members m WHERE m.user_id = $2 ) ) \
+        ) "
+    );
+    let priv_sql = format!(
+        "{mine_cte} SELECT rp.privilege_key, mine.scope, mine.scope_org_unit_id \
+           FROM mine JOIN core.role_privileges rp ON rp.role_id = mine.role_id"
+    );
+    let priv_rows: Vec<PrivilegeRow> = db
+        .fetch_all_as::<PrivilegeRow>(&priv_sql, params![user_id, user_id])
+        .await
+        .map_err(fail)?;
 
-        let entry = ctx.privileges.entry(key).or_default();
+    // A super-user role only counts at instance scope: confining "holds
+    // everything" to a subtree is meaningless and would be a trap.
+    let su_sql = format!(
+        "{mine_cte} SELECT DISTINCT mine.scope \
+           FROM mine JOIN core.roles r ON r.id = mine.role_id WHERE r.is_superuser"
+    );
+    let su_scopes: Vec<(String,)> = db
+        .fetch_all_as::<(String,)>(&su_sql, params![user_id, user_id])
+        .await
+        .map_err(fail)?;
+    for (scope,) in su_scopes {
         if scope == AssignmentScope::Instance.as_str() {
-            entry.instance = true;
-        } else if let Some(id) = unit {
-            entry.units.insert(id);
+            ctx.is_superuser = true;
         }
     }
 
-    // The caller's own unit is not resolved by the query above when they hold no
-    // assignment at all; fill it in so guards that compare scopes still work.
-    if ctx.privileges.is_empty() && !ctx.is_superuser {
-        ctx.org_unit_id = sqlx::query_scalar("SELECT org_unit_id FROM core.users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, user_id = %user_id, "authz: lecture de l'unité de l'appelant");
-                AppError::Database(e)
-            })?
-            .flatten();
+    // Expand the subtree of every unit a scoped grant covers, in one recursive
+    // walk, then map each descendant back to the grant's root unit.
+    let roots: Vec<Uuid> = priv_rows
+        .iter()
+        .filter(|r| r.scope != AssignmentScope::Instance.as_str())
+        .filter_map(|r| r.scope_org_unit_id)
+        .collect::<HashSet<Uuid>>()
+        .into_iter()
+        .collect();
+    let mut subtree: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    if !roots.is_empty() {
+        let sql = format!(
+            "SELECT root, id FROM {} w",
+            crate::database::compat::org_unit_descendants_with_root(1, roots.len())
+        );
+        let binds: Vec<kubuno_db::DbValue> = roots.iter().map(|u| (*u).into()).collect();
+        let pairs: Vec<(Uuid, Uuid)> =
+            db.fetch_all_as::<(Uuid, Uuid)>(&sql, binds).await.map_err(fail)?;
+        for (root, id) in pairs {
+            subtree.entry(root).or_default().push(id);
+        }
+    }
+
+    for r in priv_rows {
+        let entry = ctx.privileges.entry(r.privilege_key).or_default();
+        if r.scope == AssignmentScope::Instance.as_str() {
+            entry.instance = true;
+        } else if let Some(root) = r.scope_org_unit_id {
+            // The walk includes the root itself at depth 0, so the grant's own
+            // unit and every descendant are covered.
+            if let Some(ids) = subtree.get(&root) {
+                for id in ids {
+                    entry.units.insert(*id);
+                }
+            }
+        }
     }
 
     Ok(ctx)
+}
+
+/// One holder id from the roster query.
+#[derive(sqlx::FromRow)]
+struct HolderRow {
+    subject_user_id: Uuid,
+}
+
+/// One row of a role's privilege granted to the caller: the key, the assignment
+/// scope, and the org unit the grant is scoped to (`NULL` at instance scope).
+#[derive(sqlx::FromRow)]
+struct PrivilegeRow {
+    privilege_key:    String,
+    scope:            String,
+    scope_org_unit_id: Option<Uuid>,
 }
 
 #[cfg(test)]

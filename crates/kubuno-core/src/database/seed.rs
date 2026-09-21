@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 use crate::crypto::password::hash_password;
@@ -26,12 +26,13 @@ use crate::crypto::password::hash_password;
 /// anyway — the invariant is enforced by the database, this function only makes
 /// the intention visible at the call site and lets the quota resolve from the
 /// right unit.
-pub async fn root_org_unit<'e, E: sqlx::PgExecutor<'e>>(db: E) -> Option<Uuid> {
-    match sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM core.org_units WHERE parent_id IS NULL ORDER BY created_at, id LIMIT 1",
-    )
-    .fetch_optional(db)
-    .await
+pub async fn root_org_unit(db: &DbPool) -> Option<Uuid> {
+    match db
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT id FROM core.org_units WHERE parent_id IS NULL ORDER BY created_at, id LIMIT 1",
+            params![],
+        )
+        .await
     {
         Ok(unit) => unit,
         Err(e) => {
@@ -90,7 +91,7 @@ fn generate_initial_password() -> String {
 /// administrator — an unattended deployment, typically. A fresh installation
 /// goes through the setup wizard instead, where the operator picks the password
 /// on screen and nothing is ever generated.
-pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
+pub async fn ensure_default_admin(pool: &DbPool) -> Result<()> {
     let username = env_or("KUBUNO_ADMIN_USER", "admin");
     let (password, is_generated) = match env_value("KUBUNO_ADMIN_PASSWORD") {
         Some(v) => (v, false),
@@ -100,16 +101,21 @@ pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
 
     // Seed only when no admin exists yet, so a renamed/removed default admin is
     // not silently recreated on every boot.
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM core.users WHERE role = 'admin')")
-            .fetch_one(pool)
-            .await
-            .inspect_err(|e| {
-                tracing::error!(error = %e, "Checking for an existing admin account failed");
-            })
-            .context("Checking for an existing admin account")?;
+    let admin_count: i64 = pool
+        .fetch_scalar(
+            &format!(
+                "SELECT {} FROM core.users WHERE role = 'admin'",
+                pool.backend().count_bigint("*")
+            ),
+            params![],
+        )
+        .await
+        .inspect_err(|e| {
+            tracing::error!(error = %e, "Checking for an existing admin account failed");
+        })
+        .context("Checking for an existing admin account")?;
 
-    if exists {
+    if admin_count > 0 {
         warn_if_password_change_pending(pool).await;
         return Ok(());
     }
@@ -124,21 +130,24 @@ pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
     // relying on the trigger keeps the intention readable.
     let root_unit = root_org_unit(pool).await;
 
-    sqlx::query(
-        r#"
-        INSERT INTO core.users
-            (email, username, password_hash, display_name, role, email_verified, is_active,
-             must_change_password, org_unit_id)
-        VALUES
-            ($1, $2, $3, 'Administrateur', 'admin', TRUE, TRUE, $4, $5)
-        "#,
+    // The id is minted in Rust (no `RETURNING`): MySQL cannot read a
+    // DB-generated key back, and the account is reselected by email just below.
+    let new_user_id = kubuno_db::new_id();
+    pool.execute(
+        "INSERT INTO core.users \
+            (id, email, username, password_hash, display_name, role, email_verified, is_active, \
+             must_change_password, org_unit_id) \
+         VALUES \
+            ($1, $2, $3, $4, 'Administrateur', 'admin', TRUE, TRUE, $5, $6)",
+        params![
+            new_user_id,
+            &email,
+            &username,
+            &password_hash,
+            is_generated,
+            root_unit,
+        ],
     )
-    .bind(&email)
-    .bind(&username)
-    .bind(&password_hash)
-    .bind(is_generated)
-    .bind(root_unit)
-    .execute(pool)
     .await
     .inspect_err(|e| {
         tracing::error!(error = %e, "Creating the initial administrator account failed");
@@ -149,12 +158,10 @@ pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
     // ASSIGNMENT. Without this the first administrator is admitted to the
     // console holding nothing, sees the two or three pages that require no
     // privilege and gets a 403 on all the rest.
-    let admin_id: Option<uuid::Uuid> =
-        sqlx::query_scalar("SELECT id FROM core.users WHERE email = $1")
-            .bind(&email)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
+    let admin_id: Option<uuid::Uuid> = pool
+        .fetch_optional_scalar("SELECT id FROM core.users WHERE email = $1", params![&email])
+        .await
+        .unwrap_or(None);
     if let Some(id) = admin_id {
         if let Err(e) = crate::authz::bootstrap::grant_instance_superadmin(pool, id).await {
             tracing::error!(error = %e, "Attribution de la super-administration à l'administrateur initial");
@@ -197,19 +204,21 @@ pub async fn ensure_default_admin(pool: &PgPool) -> Result<()> {
 
 /// Emits a loud warning at boot while at least one account still carries a
 /// password it did not choose. The password itself is never logged.
-async fn warn_if_password_change_pending(pool: &PgPool) {
-    let pending: Result<Vec<String>, sqlx::Error> = sqlx::query_scalar(
-        "SELECT username FROM core.users
-         WHERE must_change_password = TRUE AND is_active = TRUE
-         ORDER BY created_at ASC",
-    )
-    .fetch_all(pool)
-    .await;
+async fn warn_if_password_change_pending(pool: &DbPool) {
+    let pending: Result<Vec<UsernameRow>, sqlx::Error> = pool
+        .fetch_all_as(
+            "SELECT username FROM core.users \
+             WHERE must_change_password = TRUE AND is_active = TRUE \
+             ORDER BY created_at ASC",
+            params![],
+        )
+        .await;
 
     match pending {
         Ok(users) if !users.is_empty() => {
+            let names = users.iter().map(|u| u.username.as_str()).collect::<Vec<_>>().join(", ");
             tracing::warn!(
-                accounts = %users.join(", "),
+                accounts = %names,
                 "SECURITY: these accounts still use the built-in default password. \
                  Sign in and change it — administrative writes are refused until then. \
                  Set KUBUNO_ADMIN_PASSWORD before the first boot to avoid this."
@@ -220,6 +229,12 @@ async fn warn_if_password_change_pending(pool: &PgPool) {
             tracing::error!(error = %e, "Checking for pending password changes failed");
         }
     }
+}
+
+/// A single `username` column, for the pending-password-change scan.
+#[derive(sqlx::FromRow)]
+struct UsernameRow {
+    username: String,
 }
 
 /// Reads an environment variable, trimming whitespace and ignoring empty values.
@@ -233,4 +248,45 @@ fn env_value(key: &str) -> Option<String> {
 /// Reads an environment variable, falling back to `default`.
 fn env_or(key: &str, default: &str) -> String {
     env_value(key).unwrap_or_else(|| default.to_string())
+}
+
+/// Ensures the single-row instance identity exists.
+///
+/// PostgreSQL's migration `000120` seeds this row with a `uuid_generate_v4()`
+/// default, but the consolidated MySQL/SQLite schema cannot express a random
+/// per-install default for a `BINARY(16)`/`BLOB` primary identity. So the row
+/// is written here in Rust after the migrations run: a brand-new random
+/// `instance_id`, drawn once per installation. Idempotent — an install that
+/// already has the row (every PostgreSQL one, and any MySQL/SQLite one past its
+/// first boot) is left untouched, so the identity is never re-minted. Never
+/// fatal: an instance must still boot if this write races or fails.
+pub async fn ensure_instance_identity(db: &DbPool) {
+    // Only the presence of the single row matters; read it without assuming the
+    // engine seeded it.
+    let existing = db
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT instance_id FROM core.instance_identity WHERE only_row = TRUE",
+            params![],
+        )
+        .await;
+    match existing {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            let id = Uuid::new_v4();
+            // `installed_at` carries its column default (NOW()/CURRENT_TIMESTAMP)
+            // on every engine; `only_row` is the constant TRUE primary key.
+            if let Err(e) = db
+                .execute(
+                    "INSERT INTO core.instance_identity (only_row, instance_id) VALUES ($1, $2)",
+                    params![true, id],
+                )
+                .await
+            {
+                tracing::error!(error = %e, "Seeding the instance identity failed");
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Reading the instance identity failed");
+        }
+    }
 }

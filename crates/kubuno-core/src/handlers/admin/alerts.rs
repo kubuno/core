@@ -14,6 +14,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -254,11 +255,15 @@ pub async fn comment_alert(
     store::get(&state.db, id, &ctx).await?;
 
     let label = actor_label(&audit.admin);
-    let mut conn = state.db.acquire().await.map_err(|e| {
+    let mut tx = state.db.begin().await.map_err(|e| {
         tracing::error!(error = %e, "alerts: connexion pour l'ajout d'un commentaire");
         AppError::Database(e)
     })?;
-    store::add_comment(&mut conn, id, &body, audit.admin.id, &label).await?;
+    store::add_comment(&mut tx, id, &body, audit.admin.id, &label).await?;
+    tx.commit().await.map_err(|e| {
+        tracing::error!(error = %e, "alerts: validation de l'ajout d'un commentaire");
+        AppError::Database(e)
+    })?;
 
     Ok(Json(json!({ "ok": true })))
 }
@@ -412,20 +417,20 @@ pub async fn retry_dead_jobs(
     ctx.require(keys::ALERTS_MANAGE)?;
     let (alert, job_type) = dead_letter_job_type(&state, &ctx, id).await?;
 
-    let requeued = sqlx::query(
-        r#"UPDATE core.jobs
-              SET status = 'pending', attempts = 0, run_after = NOW(),
-                  error = NULL, started_at = NULL, done_at = NULL
-            WHERE status = 'failed' AND job_type = $1"#,
-    )
-    .bind(&job_type)
-    .execute(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, job_type = %job_type, "alerts: remise en file des tâches en échec");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+    let requeued = state
+        .db
+        .execute(
+            r#"UPDATE core.jobs
+                  SET status = 'pending', attempts = 0, run_after = $2,
+                      error = NULL, started_at = NULL, done_at = NULL
+                WHERE status = 'failed' AND job_type = $1"#,
+            params![&job_type, chrono::Utc::now()],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, job_type = %job_type, "alerts: remise en file des tâches en échec");
+            AppError::Database(e)
+        })?;
 
     queue::notify_runners(&state.db).await;
 
@@ -481,15 +486,17 @@ pub async fn discard_dead_jobs(
     ctx.require(keys::ALERTS_MANAGE)?;
     let (alert, job_type) = dead_letter_job_type(&state, &ctx, id).await?;
 
-    let discarded = sqlx::query("DELETE FROM core.jobs WHERE status = 'failed' AND job_type = $1")
-        .bind(&job_type)
-        .execute(&state.db)
+    let discarded = state
+        .db
+        .execute(
+            "DELETE FROM core.jobs WHERE status = 'failed' AND job_type = $1",
+            params![&job_type],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, job_type = %job_type, "alerts: abandon des tâches en échec");
             AppError::Database(e)
-        })?
-        .rows_affected();
+        })?;
 
     let label = actor_label(&audit.admin);
     let note = format!("{discarded} tâche(s) « {job_type} » abandonnée(s).");

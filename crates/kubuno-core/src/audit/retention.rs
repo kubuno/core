@@ -13,7 +13,7 @@
 
 use crate::audit::model::{AuditContext, AuditEntry};
 use crate::errors::AppError;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 
 /// Lowest retention an administrator may configure.
 pub const MIN_RETENTION_DAYS: i64 = 90;
@@ -53,14 +53,15 @@ pub fn validate_retention(value: &serde_json::Value) -> Result<i64, AppError> {
 /// Reads the configured window, falling back to the default and applying the
 /// floor defensively (a row edited straight in the database still cannot shrink
 /// the effective window).
-pub async fn configured_days(db: &PgPool) -> i64 {
-    let raw: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1")
-            .bind(RETENTION_SETTING_KEY)
-            .fetch_optional(db)
-            .await
-            .unwrap_or(None)
-            .flatten();
+pub async fn configured_days(db: &DbPool) -> i64 {
+    let raw: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<Option<serde_json::Value>>(
+            "SELECT value FROM core.settings WHERE \"key\" = $1",
+            params![RETENTION_SETTING_KEY],
+        )
+        .await
+        .unwrap_or(None)
+        .flatten();
 
     let days = raw.and_then(|v| v.as_i64()).unwrap_or(DEFAULT_RETENTION_DAYS);
     clamp_retention(days)
@@ -72,12 +73,19 @@ pub async fn configured_days(db: &PgPool) -> i64 {
 ///
 /// **Not scheduled here.** The daily cadence is owned by the job runner: see
 /// [`crate::jobs::builtin::PURGE_ADMIN_AUDIT`].
-pub async fn purge_expired(db: &PgPool) -> Result<u64, AppError> {
+pub async fn purge_expired(db: &DbPool) -> Result<u64, AppError> {
     let days = configured_days(db).await;
 
-    let deleted: i64 = sqlx::query_scalar("SELECT core.purge_admin_audit($1)")
-        .bind(days as i32)
-        .fetch_one(db)
+    // The append-only guard is a `BEFORE UPDATE` trigger only — DELETE is
+    // deliberately allowed for retention — so the purge is a plain, portable
+    // `DELETE` with the cut-off computed in Rust, in place of the former
+    // PostgreSQL stored function `core.purge_admin_audit` (`make_interval`).
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+    let deleted: u64 = db
+        .execute(
+            "DELETE FROM core.admin_audit WHERE occurred_at < $1",
+            params![cutoff],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "audit: purge de rétention impossible");
@@ -98,7 +106,7 @@ pub async fn purge_expired(db: &PgPool) -> Result<u64, AppError> {
         .await;
     }
 
-    Ok(deleted.max(0) as u64)
+    Ok(deleted)
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use kubuno_core::{
     config::Settings,
-    database::{migrations, notify::start_pg_listener, pool::create_pool, seed},
+    database::{migrations, outbox::start_event_source, pool::create_pool, seed},
     events::EventBus,
     modules::registry::ModuleRegistry,
     router::builder,
@@ -111,6 +111,11 @@ async fn main() -> Result<()> {
         migrations::run(&pool).await?;
     }
 
+    // Instance identity: PostgreSQL seeds it in a migration, but the random
+    // per-install id cannot be a static default in the consolidated MySQL/SQLite
+    // schema, so mint it here (idempotent, never re-minted once present).
+    seed::ensure_instance_identity(&pool).await;
+
     // Réglages anti-DDoS : amorce env puis source de vérité = core.settings
     // (pilotables à chaud depuis le panneau d'administration).
     kubuno_core::auth::ddos::seed_from_env();
@@ -149,10 +154,12 @@ async fn main() -> Result<()> {
         .await
         .context("Initialisation du backend de stockage")?;
 
-    // PgListener pour pub/sub inter-modules
-    start_pg_listener(&pool, Arc::clone(&event_bus))
+    // Source d'événements inter-modules : PgListener (LISTEN/NOTIFY) sur
+    // PostgreSQL, poller d'outbox sur MySQL/SQLite. Le choix se fait au run time
+    // selon le moteur du pool ; le reste du core ignore lequel tourne.
+    start_event_source(&pool, Arc::clone(&event_bus))
         .await
-        .context("Démarrage du PgListener")?;
+        .context("Démarrage de la source d'événements")?;
 
     // Worker EventBus → WebSocket
     tokio::spawn(event_to_ws_worker(Arc::clone(&event_bus), Arc::clone(&ws_hub)));
@@ -621,7 +628,7 @@ async fn serve_http(
 /// Seeds the HSTS header holder from the instance's `network.*` settings, for a
 /// server that is about to serve over HTTPS.
 async fn set_hsts_from_db(
-    db: &sqlx::PgPool,
+    db: &kubuno_db::DbPool,
     tls_runtime: &std::sync::Arc<kubuno_core::network::TlsRuntime>,
 ) {
     let net = kubuno_core::network::NetworkConfig::load(db).await;

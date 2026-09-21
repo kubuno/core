@@ -14,9 +14,9 @@
 //! connection string: `file_name` is a base name and `error` is composed from
 //! the failing step, never from an input.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use kubuno_db::{new_id, params, DbPool, DbQueryBuilder};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -56,7 +56,7 @@ impl Trigger {
 }
 
 /// One row of the history, as the API serves it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct BackupRun {
     pub id: Uuid,
     pub trigger_kind: String,
@@ -77,28 +77,6 @@ pub struct BackupRun {
     pub file_pruned: bool,
 }
 
-impl BackupRun {
-    fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        Ok(Self {
-            id: row.try_get("id")?,
-            trigger_kind: row.try_get("trigger_kind")?,
-            triggered_by: row.try_get("triggered_by")?,
-            actor_label: row.try_get("actor_label")?,
-            status: row.try_get("status")?,
-            started_at: row.try_get("started_at")?,
-            finished_at: row.try_get("finished_at")?,
-            duration_ms: row.try_get("duration_ms")?,
-            file_name: row.try_get("file_name")?,
-            destination: row.try_get("destination")?,
-            size_bytes: row.try_get("size_bytes")?,
-            tables_count: row.try_get("tables_count")?,
-            rows_count: row.try_get("rows_count")?,
-            error: row.try_get("error")?,
-            file_pruned: row.try_get("file_pruned")?,
-        })
-    }
-}
-
 fn truncate(message: &str) -> String {
     if message.len() <= MAX_ERROR_LEN {
         return message.to_string();
@@ -112,7 +90,7 @@ fn truncate(message: &str) -> String {
 
 /// Opens a run. Returns its id, which is the only handle the caller needs.
 pub async fn open(
-    db: &PgPool,
+    db: &DbPool,
     trigger: Trigger,
     actor: Option<(Uuid, String)>,
     destination: &str,
@@ -122,42 +100,44 @@ pub async fn open(
         None => (None, None),
     };
 
-    sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO core.backup_runs (trigger_kind, triggered_by, actor_label, destination) \
-         VALUES ($1, $2, $3, $4) RETURNING id",
+    // The id is generated in Rust and bound explicitly: no engine but PostgreSQL
+    // has a `gen_random_uuid()` default, and MySQL has no `RETURNING`.
+    let id = new_id();
+    db.execute(
+        "INSERT INTO core.backup_runs (id, trigger_kind, triggered_by, actor_label, destination) \
+         VALUES ($1, $2, $3, $4, $5)",
+        params![id, trigger.as_str(), actor_id, actor_label.as_deref(), destination],
     )
-    .bind(trigger.as_str())
-    .bind(actor_id)
-    .bind(actor_label.as_deref())
-    .bind(destination)
-    .fetch_one(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "backup: ouverture d'une exécution impossible");
         AppError::Database(e)
-    })
+    })?;
+    Ok(id)
 }
 
 /// Closes a run as successful.
 pub async fn succeed(
-    db: &PgPool,
+    db: &DbPool,
     id: Uuid,
     outcome: &super::dump::DumpOutcome,
     duration_ms: i64,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    db.execute(
         "UPDATE core.backup_runs \
-            SET status = 'success', finished_at = NOW(), duration_ms = $2, \
+            SET status = 'success', finished_at = $1, duration_ms = $2, \
                 file_name = $3, size_bytes = $4, tables_count = $5, rows_count = $6, error = NULL \
-          WHERE id = $1",
+          WHERE id = $7",
+        params![
+            Utc::now(),
+            duration_ms.max(0),
+            &outcome.file_name,
+            outcome.size_bytes as i64,
+            outcome.tables as i32,
+            outcome.rows as i64,
+            id
+        ],
     )
-    .bind(id)
-    .bind(duration_ms.max(0))
-    .bind(&outcome.file_name)
-    .bind(outcome.size_bytes as i64)
-    .bind(outcome.tables as i32)
-    .bind(outcome.rows as i64)
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, run_id = %id, "backup: clôture d'une exécution réussie impossible");
@@ -168,16 +148,13 @@ pub async fn succeed(
 
 /// Closes a run as failed. The message is the operator's only clue, so it is
 /// stored verbatim (truncated) rather than reduced to a code.
-pub async fn fail(db: &PgPool, id: Uuid, error: &str, duration_ms: i64) -> Result<(), AppError> {
-    sqlx::query(
+pub async fn fail(db: &DbPool, id: Uuid, error: &str, duration_ms: i64) -> Result<(), AppError> {
+    db.execute(
         "UPDATE core.backup_runs \
-            SET status = 'failed', finished_at = NOW(), duration_ms = $2, error = $3 \
-          WHERE id = $1",
+            SET status = 'failed', finished_at = $1, duration_ms = $2, error = $3 \
+          WHERE id = $4",
+        params![Utc::now(), duration_ms.max(0), truncate(error), id],
     )
-    .bind(id)
-    .bind(duration_ms.max(0))
-    .bind(truncate(error))
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, run_id = %id, "backup: clôture d'une exécution en échec impossible");
@@ -192,22 +169,24 @@ pub async fn fail(db: &PgPool, id: Uuid, error: &str, duration_ms: i64) -> Resul
 /// rather than the queue: without it the console would keep showing "a backup is
 /// running" for a process that stopped last month, and the concurrency guard
 /// below would refuse every new run for ever.
-pub async fn close_stalled(db: &PgPool) -> Result<u64, AppError> {
-    let rows = sqlx::query(
+pub async fn close_stalled(db: &DbPool) -> Result<u64, AppError> {
+    // The "older than N hours" cutoff is computed in Rust and bound, rather than
+    // expressed with `NOW() - make_interval(...)` which no other engine has.
+    let now = Utc::now();
+    let cutoff = now - Duration::hours(STALE_RUN_HOURS);
+    db.execute(
         "UPDATE core.backup_runs \
-            SET status = 'failed', finished_at = NOW(), \
+            SET status = 'failed', finished_at = $1, \
                 error = 'Sauvegarde interrompue (processus arrêté en cours d''exécution)' \
           WHERE status = 'running' \
-            AND started_at < NOW() - make_interval(hours => $1::int)",
+            AND started_at < $2",
+        params![now, cutoff],
     )
-    .bind(STALE_RUN_HOURS as i32)
-    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "backup: reprise des exécutions interrompues impossible");
         AppError::Database(e)
-    })?;
-    Ok(rows.rows_affected())
+    })
 }
 
 /// Is a run already in flight?
@@ -215,11 +194,11 @@ pub async fn close_stalled(db: &PgPool) -> Result<u64, AppError> {
 /// Two dumps at once are not a corruption — the file names differ to the second
 /// — but they double the I/O of the one operation an instance runs precisely
 /// when it is least able to afford it.
-pub async fn is_running(db: &PgPool) -> Result<bool, AppError> {
-    sqlx::query_scalar::<_, bool>(
+pub async fn is_running(db: &DbPool) -> Result<bool, AppError> {
+    db.fetch_scalar::<bool>(
         "SELECT EXISTS (SELECT 1 FROM core.backup_runs WHERE status = 'running')",
+        params![],
     )
-    .fetch_one(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "backup: lecture des exécutions en cours impossible");
@@ -228,45 +207,39 @@ pub async fn is_running(db: &PgPool) -> Result<bool, AppError> {
 }
 
 /// Marks the rows whose file the retention pass has just removed.
-pub async fn mark_pruned(db: &PgPool, file_names: &[String]) -> Result<(), AppError> {
+pub async fn mark_pruned(db: &DbPool, file_names: &[String]) -> Result<(), AppError> {
     if file_names.is_empty() {
         return Ok(());
     }
-    sqlx::query("UPDATE core.backup_runs SET file_pruned = TRUE WHERE file_name = ANY($1)")
-        .bind(file_names)
-        .execute(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "backup: marquage des fichiers supprimés impossible");
-            AppError::Database(e)
-        })?;
+    // `file_name = ANY($1)` over an array becomes a variadic `IN (...)`, which
+    // every engine has.
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        "UPDATE core.backup_runs SET file_pruned = TRUE WHERE file_name",
+    );
+    qb.push_in(file_names.iter().map(String::as_str));
+    qb.execute(db).await.map_err(|e| {
+        tracing::error!(error = %e, "backup: marquage des fichiers supprimés impossible");
+        AppError::Database(e)
+    })?;
     Ok(())
 }
 
 /// The most recent runs, newest first.
-pub async fn list(db: &PgPool, limit: i64) -> Result<Vec<BackupRun>, AppError> {
+pub async fn list(db: &DbPool, limit: i64) -> Result<Vec<BackupRun>, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(
+    db.fetch_all_as::<BackupRun>(
         "SELECT id, trigger_kind, triggered_by, actor_label, status, started_at, finished_at, \
                 duration_ms, file_name, destination, size_bytes, tables_count, rows_count, \
                 error, file_pruned \
            FROM core.backup_runs ORDER BY started_at DESC LIMIT $1",
+        params![limit],
     )
-    .bind(limit)
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "backup: lecture de l'historique impossible");
         AppError::Database(e)
-    })?;
-
-    rows.iter()
-        .map(BackupRun::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, "backup: décodage de l'historique impossible");
-            AppError::Database(e)
-        })
+    })
 }
 
 /// What the health check and the alert producer both need, in one round trip.
@@ -287,8 +260,15 @@ pub struct RunStats {
     pub total_runs: i64,
 }
 
-pub async fn stats(db: &PgPool) -> Result<RunStats, AppError> {
-    let row = sqlx::query(
+pub async fn stats(db: &DbPool) -> Result<RunStats, AppError> {
+    // `COUNT(*)::bigint` becomes the engine-agnostic `count_bigint`, and the
+    // `-infinity` floor of the "failures since the last success" window is bound
+    // from Rust as the minimum timestamp rather than expressed with a
+    // PostgreSQL-only literal.
+    let backend = db.backend();
+    let count = backend.count_bigint("*");
+    let floor = DateTime::<Utc>::MIN_UTC;
+    let sql = format!(
         r#"WITH last_ok AS (
                SELECT finished_at, size_bytes, file_name
                  FROM core.backup_runs
@@ -309,28 +289,32 @@ pub async fn stats(db: &PgPool) -> Result<RunStats, AppError> {
                   (SELECT status      FROM last_any)                       AS last_status,
                   (SELECT started_at  FROM last_any)                       AS last_attempt_at,
                   (SELECT error       FROM last_any)                       AS last_error,
-                  (SELECT COUNT(*)::bigint FROM core.backup_runs
+                  (SELECT {count} FROM core.backup_runs
                     WHERE status = 'failed'
-                      AND started_at > COALESCE((SELECT finished_at FROM last_ok),
-                                                TIMESTAMPTZ '-infinity'))  AS consecutive_failures,
-                  (SELECT COUNT(*)::bigint FROM core.backup_runs)          AS total_runs"#,
-    )
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "backup: lecture de l'état des sauvegardes impossible");
-        AppError::Database(e)
-    })?;
+                      AND started_at > COALESCE((SELECT finished_at FROM last_ok), $1)) AS consecutive_failures,
+                  (SELECT {count} FROM core.backup_runs)                   AS total_runs"#
+    );
+
+    let row = db
+        .fetch_optional_row(&sql, params![floor])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "backup: lecture de l'état des sauvegardes impossible");
+            AppError::Database(e)
+        })?;
+    let Some(row) = row else {
+        return Ok(RunStats::default());
+    };
 
     Ok(RunStats {
-        last_success_at: row.try_get("last_success_at").unwrap_or(None),
-        last_success_bytes: row.try_get("last_success_bytes").unwrap_or(None),
-        last_success_file: row.try_get("last_success_file").unwrap_or(None),
-        last_status: row.try_get("last_status").unwrap_or(None),
-        last_attempt_at: row.try_get("last_attempt_at").unwrap_or(None),
-        last_error: row.try_get("last_error").unwrap_or(None),
-        consecutive_failures: row.try_get("consecutive_failures").unwrap_or(0),
-        total_runs: row.try_get("total_runs").unwrap_or(0),
+        last_success_at: row.try_get::<Option<DateTime<Utc>>>("last_success_at").unwrap_or(None),
+        last_success_bytes: row.try_get::<Option<i64>>("last_success_bytes").unwrap_or(None),
+        last_success_file: row.try_get::<Option<String>>("last_success_file").unwrap_or(None),
+        last_status: row.try_get::<Option<String>>("last_status").unwrap_or(None),
+        last_attempt_at: row.try_get::<Option<DateTime<Utc>>>("last_attempt_at").unwrap_or(None),
+        last_error: row.try_get::<Option<String>>("last_error").unwrap_or(None),
+        consecutive_failures: row.try_get::<i64>("consecutive_failures").unwrap_or(0),
+        total_runs: row.try_get::<i64>("total_runs").unwrap_or(0),
     })
 }
 

@@ -15,6 +15,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use kubuno_db::{dialect::Assign, new_id, params};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -146,35 +147,49 @@ pub async fn register_module(
         "icon":            module_icon(&dto.sidebar_items),
     });
     let cli_commands = serde_json::Value::Array(dto.cli_commands.clone());
-    sqlx::query(
-        r#"INSERT INTO core.modules (id, display_name, description, version, runtime, is_enabled, config, cli_commands, is_core_module)
-           VALUES ($1, $2, $3, $4, 'rust', TRUE, $5, $6, $7)
-           ON CONFLICT (id) DO UPDATE
-               SET version        = EXCLUDED.version,
-                   display_name   = EXCLUDED.display_name,
-                   description    = EXCLUDED.description,
-                   config         = EXCLUDED.config,
-                   cli_commands   = EXCLUDED.cli_commands,
-                   is_core_module = core.modules.is_core_module OR EXCLUDED.is_core_module,
-                   updated_at     = NOW()"#,
-    )
-    .bind(&dto.module_id)
-    .bind(display_name)
-    .bind(dto.description.as_deref())
-    .bind(&dto.version)
-    .bind(&config)
-    .bind(&cli_commands)
-    .bind(dto.internal)
-    .execute(&state.db)
-    .await?;
+    let backend = state.db.backend();
+    let modules_clause = backend.upsert(
+        "core.modules",
+        &["id"],
+        &[
+            Assign::Incoming("version"),
+            Assign::Incoming("display_name"),
+            Assign::Incoming("description"),
+            Assign::Incoming("config"),
+            Assign::Incoming("cli_commands"),
+            Assign::Expr { col: "is_core_module", expr: "{cur} OR {new}" },
+            Assign::Incoming("updated_at"),
+        ],
+    );
+    let modules_sql = format!(
+        r#"INSERT INTO core.modules (id, display_name, description, version, runtime, is_enabled, config, cli_commands, is_core_module, updated_at)
+           VALUES ($1, $2, $3, $4, 'rust', TRUE, $5, $6, $7, $8){modules_clause}"#
+    );
+    state
+        .db
+        .execute(
+            &modules_sql,
+            params![
+                &dto.module_id,
+                display_name,
+                dto.description.as_deref(),
+                &dto.version,
+                config,
+                cli_commands,
+                dto.internal,
+                Utc::now()
+            ],
+        )
+        .await?;
 
     // Vérifier si le module est activé — FALSE uniquement si l'admin l'a désactivé après coup
-    let is_enabled: bool = sqlx::query_scalar(
-        "SELECT is_enabled FROM core.modules WHERE id = $1",
-    )
-    .bind(&dto.module_id)
-    .fetch_one(&state.db)
-    .await?;
+    let is_enabled: bool = state
+        .db
+        .fetch_scalar::<bool>(
+            "SELECT is_enabled FROM core.modules WHERE id = $1",
+            params![&dto.module_id],
+        )
+        .await?;
 
     if !is_enabled {
         tracing::info!(module_id = %dto.module_id, "Module désactivé, enregistrement refusé");
@@ -194,22 +209,29 @@ pub async fn register_module(
 
     // Remplace l'instance précédente du module (un seul processus actif à la fois)
     let mut tx = state.db.begin().await?;
-    sqlx::query("DELETE FROM core.module_instances WHERE module_id = $1")
-        .bind(&dto.module_id)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query(
-        r#"INSERT INTO core.module_instances
-           (module_id, base_url, routes, sidebar_items, subscribed_events, mcp_tools, status, pid, registered_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 'healthy', NULL, NOW())"#,
+    tx.execute(
+        "DELETE FROM core.module_instances WHERE module_id = $1",
+        params![&dto.module_id],
     )
-    .bind(&dto.module_id)
-    .bind(&dto.base_url)
-    .bind(serde_json::to_value(&instance.routes).unwrap_or_default())
-    .bind(serde_json::to_value(&instance.sidebar_items).unwrap_or_default())
-    .bind(&instance.subscribed_events)
-    .bind(serde_json::Value::Array(dto.mcp_tools.clone()))
-    .execute(&mut *tx)
+    .await?;
+    // No RETURNING: the instance id is generated in Rust. `subscribed_events` was
+    // a PostgreSQL TEXT[] column and is now bound as a JSON array (the migration
+    // to a JSON column is handled separately).
+    tx.execute(
+        r#"INSERT INTO core.module_instances
+           (id, module_id, base_url, routes, sidebar_items, subscribed_events, mcp_tools, status, pid, registered_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'healthy', NULL, $8)"#,
+        params![
+            new_id(),
+            &dto.module_id,
+            &dto.base_url,
+            serde_json::to_value(&instance.routes).unwrap_or_default(),
+            serde_json::to_value(&instance.sidebar_items).unwrap_or_default(),
+            instance.subscribed_events.clone(),
+            serde_json::Value::Array(dto.mcp_tools.clone()),
+            now
+        ],
+    )
     .await?;
 
     // Seed the DECLARATION of every setting into core.settings, which since
@@ -224,6 +246,30 @@ pub async fn register_module(
     // User-scoped settings are seeded too, unlike before: without a row in the
     // schema table they have no foreign key to hang a per-account value on, and
     // the per-scope resolution could not see them at all.
+    let settings_clause = backend.upsert(
+        "core.settings",
+        &["key"],
+        &[
+            Assign::Incoming("default_value"),
+            Assign::Incoming("category"),
+            Assign::Incoming("label"),
+            Assign::Incoming("description"),
+            Assign::Incoming("is_public"),
+            Assign::Incoming("scope"),
+            Assign::Incoming("value_type"),
+            Assign::Incoming("allowed_values"),
+            Assign::Incoming("module_id"),
+        ],
+    );
+    // `value` is bound to the factory default at $2 and `default_value` to the
+    // same value at $3 — a positional placeholder is never reused across engines,
+    // so the value is passed twice rather than pointing two columns at one $2.
+    let settings_sql = format!(
+        r#"INSERT INTO core.settings
+               ("key", value, default_value, category, label, description, is_public,
+                scope, value_type, allowed_values, module_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11){settings_clause}"#
+    );
     for def in &dto.settings_schema {
         if !VALID_SCOPES.contains(&def.scope.as_str()) {
             tracing::warn!(module_id = %dto.module_id, key = %def.key, scope = %def.scope,
@@ -242,33 +288,22 @@ pub async fn register_module(
         let full_key = format!("{}.{}", dto.module_id, def.key);
         let category = def.category.clone().unwrap_or_else(|| dto.module_id.clone());
         let allowed  = def.values.clone().map(serde_json::Value::Array);
-        sqlx::query(
-            r#"INSERT INTO core.settings
-                   (key, value, default_value, category, label, description, is_public,
-                    scope, value_type, allowed_values, module_id)
-               VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-               ON CONFLICT (key) DO UPDATE SET
-                   default_value  = EXCLUDED.default_value,
-                   category       = EXCLUDED.category,
-                   label          = EXCLUDED.label,
-                   description    = EXCLUDED.description,
-                   is_public      = EXCLUDED.is_public,
-                   scope          = EXCLUDED.scope,
-                   value_type     = EXCLUDED.value_type,
-                   allowed_values = EXCLUDED.allowed_values,
-                   module_id      = EXCLUDED.module_id"#,
+        tx.execute(
+            &settings_sql,
+            params![
+                full_key,
+                def.default.clone(),
+                def.default.clone(),
+                category,
+                def.label.as_deref(),
+                def.description.as_deref(),
+                is_public,
+                &def.scope,
+                &def.value_type,
+                allowed,
+                &dto.module_id
+            ],
         )
-        .bind(&full_key)
-        .bind(&def.default)
-        .bind(&category)
-        .bind(def.label.as_deref())
-        .bind(def.description.as_deref())
-        .bind(is_public)
-        .bind(&def.scope)
-        .bind(&def.value_type)
-        .bind(allowed.as_ref())
-        .bind(&dto.module_id)
-        .execute(&mut *tx)
         .await?;
     }
 
@@ -369,12 +404,13 @@ pub async fn get_module_config(
     use crate::settings::{chain, ScopeKind, SettingScope};
 
     // 1. Schéma déclaré (durable, lu depuis core.modules.config).
-    let config: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT config FROM core.modules WHERE id = $1",
-    )
-    .bind(&module_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let config: Option<serde_json::Value> = state
+        .db
+        .fetch_optional_scalar::<serde_json::Value>(
+            "SELECT config FROM core.modules WHERE id = $1",
+            params![&module_id],
+        )
+        .await?;
 
     let schema: Vec<SettingDef> = config
         .as_ref()

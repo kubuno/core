@@ -24,8 +24,10 @@
 //! `core.devices.id`, a public UUID that grants nothing on its own.
 
 use chrono::{DateTime, Utc};
+use kubuno_db::dialect::Assign;
+use kubuno_db::{new_id, params, Backend, DbPool, DbTx};
 use sha2::{Digest, Sha256};
-use sqlx::{PgExecutor, PgPool};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 use super::model::{event_kind, AuthStrength};
@@ -155,14 +157,30 @@ pub struct Touched {
     pub created: bool,
 }
 
+/// The reselected identity of a just-upserted device row.
+#[derive(FromRow)]
+struct TouchedRow {
+    id: Uuid,
+    approval: String,
+    first_seen_at: DateTime<Utc>,
+    last_seen_at: DateTime<Utc>,
+}
+
 /// Creates or refreshes the inventory row for a device that just authenticated.
 ///
 /// Observed fields are always refreshed (a laptop that moved country must say
 /// so). Declared fields are never touched here — only the declaration route
 /// writes them, and only when the operator switched declarations on.
+///
+/// The old `RETURNING` is replaced by an insert-then-reselect: the row is keyed
+/// by `(user_id, correlation_hash)`, so after the upsert the same key reads back
+/// the durable `id` (which, on a conflict, is the pre-existing one rather than
+/// the id we generated). `created` still follows the invariant that a freshly
+/// inserted row has `first_seen_at == last_seen_at` because both are bound from
+/// the same instant, while a conflicting row keeps its older `first_seen_at`.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     key: &DeviceKey,
     normalised: &Normalised,
@@ -171,47 +189,88 @@ pub async fn upsert(
     ip: Option<&str>,
     country: Option<&str>,
 ) -> Result<Touched, AppError> {
-    let row: (Uuid, String, DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(
+    let backend = db.backend();
+    let id = new_id();
+    let now = Utc::now();
+    let hash = key.hash();
+
+    // NOTE (multi-DBMS): `$12::inet` is PostgreSQL-only; the cast is applied only
+    // on PostgreSQL (where `last_ip` is an `inet`) and dropped elsewhere. Flagged
+    // in the port report — the column needs a portable (TEXT) form on MySQL/SQLite.
+    let ip_placeholder = match backend {
+        Backend::Postgres => "$12::inet",
+        _ => "$12",
+    };
+    let conflict = backend.upsert(
+        "core.devices",
+        &["user_id", "correlation_hash"],
+        &[
+            Assign::Incoming("device_type"),
+            Assign::Incoming("client_kind"),
+            Assign::Incoming("platform"),
+            Assign::Incoming("platform_version"),
+            Assign::Incoming("browser"),
+            Assign::Incoming("browser_version"),
+            Assign::Incoming("user_agent"),
+            Assign::Incoming("last_ip"),
+            Assign::Expr {
+                col: "last_country",
+                expr: "COALESCE({new}, {cur})",
+            },
+            Assign::Incoming("last_seen_at"),
+        ],
+    );
+    let insert_sql = format!(
         r#"INSERT INTO core.devices
-               (user_id, correlation_hash, correlation_kind, device_type, client_kind,
+               (id, user_id, correlation_hash, correlation_kind, device_type, client_kind,
                 platform, platform_version, browser, browser_version, user_agent,
-                last_ip, last_country)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::inet, $12)
-           ON CONFLICT (user_id, correlation_hash) DO UPDATE SET
-               device_type      = EXCLUDED.device_type,
-               client_kind      = EXCLUDED.client_kind,
-               platform         = EXCLUDED.platform,
-               platform_version = EXCLUDED.platform_version,
-               browser          = EXCLUDED.browser,
-               browser_version  = EXCLUDED.browser_version,
-               user_agent       = EXCLUDED.user_agent,
-               last_ip          = EXCLUDED.last_ip,
-               last_country     = COALESCE(EXCLUDED.last_country, core.devices.last_country),
-               last_seen_at     = NOW()
-           RETURNING id, approval, first_seen_at, last_seen_at"#,
+                last_ip, last_country, first_seen_at, last_seen_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, {ip_placeholder}, $13, $14, $15){conflict}"#
+    );
+
+    db.execute(
+        &insert_sql,
+        params![
+            id,
+            user_id,
+            hash.clone(),
+            key.kind,
+            &normalised.device_type,
+            client_type,
+            normalised.platform.as_deref(),
+            normalised.platform_version.as_deref(),
+            normalised.browser.as_deref(),
+            normalised.browser_version.as_deref(),
+            raw_ua,
+            ip,
+            country,
+            now,
+            now
+        ],
     )
-    .bind(user_id)
-    .bind(key.hash())
-    .bind(key.kind)
-    .bind(&normalised.device_type)
-    .bind(client_type)
-    .bind(normalised.platform.as_deref())
-    .bind(normalised.platform_version.as_deref())
-    .bind(normalised.browser.as_deref())
-    .bind(normalised.browser_version.as_deref())
-    .bind(raw_ua)
-    .bind(ip)
-    .bind(country)
-    .fetch_one(db)
     .await
     .map_err(|e| {
         // The key is not in this log line, and must never be added to it.
-        tracing::error!(error = %e, user_id = %user_id, "devices: upsert de l'appareil");
+        tracing::error!(error = %e, user_id = %user_id, "devices: device upsert");
         AppError::Database(e)
     })?;
 
-    let (device_id, approval, first_seen, last_seen) = row;
-    let created = first_seen == last_seen;
+    let row = db
+        .fetch_one_as::<TouchedRow>(
+            "SELECT id, approval, first_seen_at, last_seen_at
+               FROM core.devices
+              WHERE user_id = $1 AND correlation_hash = $2",
+            params![user_id, hash],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "devices: device upsert reselect");
+            AppError::Database(e)
+        })?;
+
+    let device_id = row.id;
+    let approval = row.approval;
+    let created = row.first_seen_at == row.last_seen_at;
     if created {
         record_event(
             db,
@@ -235,26 +294,24 @@ pub async fn upsert(
 
 /// Ties a freshly issued session to its device and records what the request
 /// revealed about it.
-pub async fn attach_session<'e, E: PgExecutor<'e>>(
-    executor: E,
+pub async fn attach_session(
+    db: &DbPool,
     session_id: Uuid,
     device_id: Uuid,
     country: Option<&str>,
     strength: AuthStrength,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    // Placeholders must appear once each in ascending order (portable rewrite),
+    // so the WHERE key is numbered after the SET assignments.
+    db.execute(
         "UPDATE core.refresh_tokens
-            SET device_id = $2, country = $3, auth_strength = $4
-          WHERE id = $1",
+            SET device_id = $1, country = $2, auth_strength = $3
+          WHERE id = $4",
+        params![device_id, country, strength.as_str(), session_id],
     )
-    .bind(session_id)
-    .bind(device_id)
-    .bind(country)
-    .bind(strength.as_str())
-    .execute(executor)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, session_id = %session_id, "devices: rattachement de la session");
+        tracing::error!(error = %e, session_id = %session_id, "devices: attaching the session");
         AppError::Database(e)
     })?;
     Ok(())
@@ -268,7 +325,7 @@ pub async fn attach_session<'e, E: PgExecutor<'e>>(
 /// on every operator action.
 #[allow(clippy::too_many_arguments)]
 pub async fn record_event(
-    db: &PgPool,
+    db: &DbPool,
     device_id: Uuid,
     kind: &str,
     ip: Option<&str>,
@@ -277,50 +334,49 @@ pub async fn record_event(
     actor_label: Option<&str>,
     detail: Option<&str>,
 ) {
-    let result = sqlx::query(
+    // NOTE (multi-DBMS): the `$3::inet` cast is PostgreSQL-only and applied only
+    // there; flagged in the port report (the `ip_address` column needs a portable
+    // form on MySQL/SQLite).
+    let ip_placeholder = match db.backend() {
+        Backend::Postgres => "$3::inet",
+        _ => "$3",
+    };
+    let sql = format!(
         "INSERT INTO core.device_events
              (device_id, kind, ip_address, country, actor_id, actor_label, detail)
-         VALUES ($1, $2, $3::inet, $4, $5, $6, $7)",
-    )
-    .bind(device_id)
-    .bind(kind)
-    .bind(ip)
-    .bind(country)
-    .bind(actor_id)
-    .bind(actor_label)
-    .bind(detail)
-    .execute(db)
-    .await;
+         VALUES ($1, $2, {ip_placeholder}, $4, $5, $6, $7)"
+    );
+    let result = db
+        .execute(
+            &sql,
+            params![device_id, kind, ip, country, actor_id, actor_label, detail],
+        )
+        .await;
 
     if let Err(e) = result {
-        tracing::error!(error = %e, device_id = %device_id, kind = %kind, "devices: écriture d'un événement d'appareil");
+        tracing::error!(error = %e, device_id = %device_id, kind = %kind, "devices: writing a device event");
     }
 }
 
 /// Same, inside a caller-supplied transaction, so an administrative act and its
 /// timeline line commit together.
 #[allow(clippy::too_many_arguments)]
-pub async fn record_event_tx<'e, E: PgExecutor<'e>>(
-    executor: E,
+pub async fn record_event_tx(
+    tx: &mut DbTx,
     device_id: Uuid,
     kind: &str,
     actor_id: Option<Uuid>,
     actor_label: Option<&str>,
     detail: Option<&str>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    tx.execute(
         "INSERT INTO core.device_events (device_id, kind, actor_id, actor_label, detail)
          VALUES ($1, $2, $3, $4, $5)",
+        params![device_id, kind, actor_id, actor_label, detail],
     )
-    .bind(device_id)
-    .bind(kind)
-    .bind(actor_id)
-    .bind(actor_label)
-    .bind(detail)
-    .execute(executor)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, device_id = %device_id, kind = %kind, "devices: événement d'appareil (transaction)");
+        tracing::error!(error = %e, device_id = %device_id, kind = %kind, "devices: device event (transaction)");
         AppError::Database(e)
     })?;
     Ok(())
@@ -338,22 +394,28 @@ pub async fn record_event_tx<'e, E: PgExecutor<'e>>(
 /// One row of the backfill scan: `(session, account, user agent, client, address)`.
 type LegacySession = (Uuid, Uuid, Option<String>, Option<String>, Option<String>);
 
-pub async fn backfill(db: &PgPool) -> Result<u64, AppError> {
-    let rows: Vec<LegacySession> = sqlx::query_as(
-        r#"SELECT id, user_id, user_agent, client_type, host(ip_address)::text
+pub async fn backfill(db: &DbPool) -> Result<u64, AppError> {
+    // `host(ip_address)` is spelled per engine (`Backend::inet_text`); `NOW()` is
+    // replaced by a bound instant.
+    let rows: Vec<LegacySession> = db
+        .fetch_all_as::<LegacySession>(
+            &format!(
+                r#"SELECT id, user_id, user_agent, client_type, {ip}
              FROM core.refresh_tokens
             WHERE device_id IS NULL
               AND revoked_at IS NULL
-              AND expires_at > NOW()
+              AND expires_at > $1
             ORDER BY created_at
             LIMIT 5000"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "devices: lecture des sessions à rattacher");
-        AppError::Database(e)
-    })?;
+                ip = db.backend().inet_text("ip_address")
+            ),
+            params![Utc::now()],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "devices: reading sessions to attach");
+            AppError::Database(e)
+        })?;
 
     if rows.is_empty() {
         return Ok(0);

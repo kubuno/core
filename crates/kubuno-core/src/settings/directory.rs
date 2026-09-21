@@ -26,9 +26,9 @@
 //! propagated: refusing a profile change because the policy could not be read is
 //! recoverable, silently allowing one is not.
 
+use kubuno_db::DbPool;
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use super::chain;
@@ -150,8 +150,8 @@ impl ProfileField {
 /// of `false` there would turn an unmigrated instance into one with no
 /// directory and no editable profile, so the caller passes the value that
 /// reproduces the pre-`000110` behaviour.
-async fn resolve_bool<'e, E: PgExecutor<'e>>(
-    db: E,
+async fn resolve_bool(
+    db: &DbPool,
     key: &str,
     user_id: Uuid,
     fallback: bool,
@@ -215,10 +215,7 @@ impl SharingPolicy {
     /// `is_admin` is passed in rather than re-read: the caller already holds the
     /// authenticated account, and a second round trip to learn a column it has
     /// in hand would be one per directory search.
-    pub async fn resolve<'e, E>(db: E, user_id: Uuid, is_admin: bool) -> Result<Self, AppError>
-    where
-        E: PgExecutor<'e> + Copy,
-    {
+    pub async fn resolve(db: &DbPool, user_id: Uuid, is_admin: bool) -> Result<Self, AppError> {
         let share_email = resolve_bool(db, KEY_SHARE_EMAIL, user_id, false).await?;
         if is_admin {
             return Ok(Self::administrator(share_email));
@@ -247,8 +244,8 @@ impl SharingPolicy {
 /// existing "a setting forbids this write" refusal: 403, free-form message,
 /// error code `SETTING_LOCKED` — which is precisely the situation, since the
 /// administrator may indeed have locked the key.
-pub async fn ensure_may_edit<'e, E: PgExecutor<'e>>(
-    db: E,
+pub async fn ensure_may_edit(
+    db: &DbPool,
     user_id: Uuid,
     field: ProfileField,
 ) -> Result<(), AppError> {

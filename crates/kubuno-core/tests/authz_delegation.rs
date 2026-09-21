@@ -15,8 +15,29 @@ use kubuno_core::authz::{
     guards,
     model::AssignmentScope,
 };
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use uuid::Uuid;
+
+#[derive(sqlx::FromRow)]
+struct IdRow {
+    id: Uuid,
+}
+
+#[derive(sqlx::FromRow)]
+struct KeyRow {
+    key: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct PrivKeyRow {
+    privilege_key: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct SystemRoleRow {
+    slug: String,
+    is_superuser: bool,
+}
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -26,50 +47,50 @@ fn tag() -> String {
     Uuid::new_v4().simple().to_string()[..12].to_string()
 }
 
-async fn make_unit(db: &PgPool, name: &str, parent: Option<Uuid>) -> Uuid {
-    sqlx::query_scalar("INSERT INTO core.org_units (name, parent_id) VALUES ($1, $2) RETURNING id")
-        .bind(name)
-        .bind(parent)
-        .fetch_one(db)
-        .await
-        .expect("création d'unité")
-}
-
-async fn make_user(db: &PgPool, tag: &str, who: &str, unit: Option<Uuid>) -> Uuid {
-    sqlx::query_scalar(
-        "INSERT INTO core.users (email, username, password_hash, role, org_unit_id) \
-         VALUES ($1, $2, 'x', 'user', $3) RETURNING id",
+async fn make_unit(db: &DbPool, name: &str, parent: Option<Uuid>) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.org_units (id, name, parent_id) VALUES ($1, $2, $3)",
+        params![id, name, parent],
     )
-    .bind(format!("{who}.{tag}@test.local"))
-    .bind(format!("{who}_{tag}"))
-    .bind(unit)
-    .fetch_one(db)
     .await
-    .expect("création d'utilisateur")
+    .expect("création d'unité");
+    id
 }
 
-async fn make_role(db: &PgPool, tag: &str, slug: &str, privileges: &[&str]) -> Uuid {
-    let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.roles (slug, name) VALUES ($1, $2) RETURNING id",
+async fn make_user(db: &DbPool, tag: &str, who: &str, unit: Option<Uuid>) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role, org_unit_id) \
+         VALUES ($1, $2, $3, 'x', 'user', $4)",
+        params![id, format!("{who}.{tag}@test.local"), format!("{who}_{tag}"), unit],
     )
-    .bind(format!("{slug}-{tag}"))
-    .bind(slug)
-    .fetch_one(db)
+    .await
+    .expect("création d'utilisateur");
+    id
+}
+
+async fn make_role(db: &DbPool, tag: &str, slug: &str, privileges: &[&str]) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.roles (id, slug, name) VALUES ($1, $2, $3)",
+        params![id, format!("{slug}-{tag}"), slug],
+    )
     .await
     .expect("création de rôle");
     for key in privileges {
-        sqlx::query("INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)")
-            .bind(id)
-            .bind(key)
-            .execute(db)
-            .await
-            .expect("privilège du rôle");
+        db.execute(
+            "INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)",
+            params![id, *key],
+        )
+        .await
+        .expect("privilège du rôle");
     }
     id
 }
 
 async fn assign(
-    db: &PgPool,
+    db: &DbPool,
     role: Uuid,
     user: Option<Uuid>,
     group: Option<Uuid>,
@@ -77,52 +98,44 @@ async fn assign(
     unit: Option<Uuid>,
     expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Uuid {
-    sqlx::query_scalar(
+    let id = kubuno_db::new_id();
+    db.execute(
         "INSERT INTO core.role_assignments \
-             (role_id, subject_user_id, subject_group_id, scope, scope_org_unit_id, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+             (id, role_id, subject_user_id, subject_group_id, scope, scope_org_unit_id, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        params![id, role, user, group, scope.as_str(), unit, expires_at],
     )
-    .bind(role)
-    .bind(user)
-    .bind(group)
-    .bind(scope.as_str())
-    .bind(unit)
-    .bind(expires_at)
-    .fetch_one(db)
     .await
-    .expect("affectation")
+    .expect("affectation");
+    id
 }
 
-async fn resolve(db: &PgPool, user: Uuid) -> AdminContext {
+async fn resolve(db: &DbPool, user: Uuid) -> AdminContext {
     context::resolve(db, user, ActorOrigin::Session, None)
         .await
         .expect("résolution")
 }
 
 /// Removes everything a test created, in dependency order.
-async fn cleanup(db: &PgPool, tag: &str) {
-    let _ = sqlx::query(
-        "DELETE FROM core.role_assignments WHERE subject_user_id IN \
+async fn cleanup(db: &DbPool, tag: &str) {
+    let _ = db
+        .execute(
+            "DELETE FROM core.role_assignments WHERE subject_user_id IN \
             (SELECT id FROM core.users WHERE username LIKE '%_' || $1)",
-    )
-    .bind(tag)
-    .execute(db)
-    .await;
-    let _ = sqlx::query("DELETE FROM core.roles WHERE slug LIKE '%-' || $1")
-        .bind(tag)
-        .execute(db)
+            params![tag],
+        )
         .await;
-    let _ = sqlx::query("DELETE FROM core.users WHERE username LIKE '%_' || $1")
-        .bind(tag)
-        .execute(db)
+    let _ = db
+        .execute("DELETE FROM core.roles WHERE slug LIKE '%-' || $1", params![tag])
         .await;
-    let _ = sqlx::query("DELETE FROM core.user_groups WHERE name LIKE 'grp-' || $1")
-        .bind(tag)
-        .execute(db)
+    let _ = db
+        .execute("DELETE FROM core.users WHERE username LIKE '%_' || $1", params![tag])
         .await;
-    let _ = sqlx::query("DELETE FROM core.org_units WHERE name LIKE 'ou-%-' || $1")
-        .bind(tag)
-        .execute(db)
+    let _ = db
+        .execute("DELETE FROM core.user_groups WHERE name LIKE 'grp-' || $1", params![tag])
+        .await;
+    let _ = db
+        .execute("DELETE FROM core.org_units WHERE name LIKE 'ou-%-' || $1", params![tag])
         .await;
 }
 
@@ -145,16 +158,14 @@ async fn a_role_mixing_scopable_and_non_scopable_privileges_cannot_be_scoped_to_
     )
     .await;
 
-    let mut conn = db.acquire().await.expect("connexion");
-
     assert!(
-        guards::ensure_scopable(&mut conn, clean, AssignmentScope::OrgUnit)
+        guards::ensure_scopable(&db, clean, AssignmentScope::OrgUnit)
             .await
             .is_ok(),
         "un rôle entièrement restreignable doit pouvoir être délégué sur une unité"
     );
 
-    let refusal = guards::ensure_scopable(&mut conn, mixed, AssignmentScope::OrgUnit)
+    let refusal = guards::ensure_scopable(&db, mixed, AssignmentScope::OrgUnit)
         .await
         .expect_err("un rôle mixte doit être refusé sur une unité");
     let message = refusal.to_string();
@@ -166,24 +177,25 @@ async fn a_role_mixing_scopable_and_non_scopable_privileges_cannot_be_scoped_to_
     // The same mixed role is perfectly fine instance-wide: the rule is about the
     // scope being honest, not about the role being forbidden.
     assert!(
-        guards::ensure_scopable(&mut conn, mixed, AssignmentScope::Instance)
+        guards::ensure_scopable(&db, mixed, AssignmentScope::Instance)
             .await
             .is_ok()
     );
 
     // And a superuser role is never confinable, whatever it contains.
-    let super_role: Uuid =
-        sqlx::query_scalar("SELECT id FROM core.roles WHERE slug = 'super-admin'")
-            .fetch_one(&db)
-            .await
-            .expect("rôle système semé");
+    let super_role: Uuid = db
+        .fetch_scalar::<Uuid>(
+            "SELECT id FROM core.roles WHERE slug = 'super-admin'",
+            params![],
+        )
+        .await
+        .expect("rôle système semé");
     assert!(
-        guards::ensure_scopable(&mut conn, super_role, AssignmentScope::OrgUnit)
+        guards::ensure_scopable(&db, super_role, AssignmentScope::OrgUnit)
             .await
             .is_err()
     );
 
-    drop(conn);
     let _ = unit;
     cleanup(&db, &t).await;
 }
@@ -206,19 +218,19 @@ async fn privileges_arrive_through_groups_and_subtrees_are_pre_expanded() {
     let role = make_role(&db, &t, "readers", &["core.users.read"]).await;
 
     // Granted to a GROUP, not to Alice: the resolution has to find it anyway.
-    let group: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.user_groups (name) VALUES ($1) RETURNING id",
+    let group = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.user_groups (id, name) VALUES ($1, $2)",
+        params![group, format!("grp-{t}")],
     )
-    .bind(format!("grp-{t}"))
-    .fetch_one(&db)
     .await
     .expect("groupe");
-    sqlx::query("INSERT INTO core.user_group_members (group_id, user_id) VALUES ($1, $2)")
-        .bind(group)
-        .bind(alice)
-        .execute(&db)
-        .await
-        .expect("adhésion");
+    db.execute(
+        "INSERT INTO core.user_group_members (group_id, user_id) VALUES ($1, $2)",
+        params![group, alice],
+    )
+    .await
+    .expect("adhésion");
 
     assign(&db, role, None, Some(group), AssignmentScope::OrgUnit, Some(branch), None).await;
 
@@ -268,19 +280,23 @@ async fn the_listing_filter_matches_the_subtree_and_nothing_else() {
         .subtree_filter("core.users.read")
         .expect("un délégué doit être restreint");
 
-    // Exactly the query `list_users` runs.
-    let visible: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM core.users \
-          WHERE ($1::uuid[] IS NULL OR (org_unit_id IS NOT NULL AND org_unit_id = ANY($1))) \
-            AND username LIKE '%_' || $2",
-    )
-    .bind(&filter)
-    .bind(&t)
-    .fetch_all(&db)
-    .await
-    .expect("listing filtré");
-
-    let visible: HashSet<Uuid> = visible.into_iter().collect();
+    // The perimeter query `list_users` runs, in its engine-agnostic form: the
+    // delegate is restricted, so `filter` is a non-empty subtree and the row is
+    // kept only when its unit is one of those, and the account belongs to this
+    // test run.
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        "SELECT id FROM core.users WHERE org_unit_id IS NOT NULL AND org_unit_id",
+    );
+    qb.push_in(filter.clone());
+    qb.push(" AND username LIKE '%_' || ").push_bind(t.clone());
+    let visible: HashSet<Uuid> = qb
+        .fetch_all_as::<IdRow>(&db)
+        .await
+        .expect("listing filtré")
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
     assert!(visible.contains(&inside), "le compte de l'unité déléguée");
     assert!(visible.contains(&deep), "le compte d'une sous-unité");
     assert!(!visible.contains(&outside), "une branche voisine reste invisible");
@@ -314,12 +330,12 @@ async fn an_expired_assignment_grants_nothing() {
 
     // Pushed into the future, the very same row grants again.
     let future = chrono::Utc::now() + chrono::Duration::hours(1);
-    sqlx::query("UPDATE core.role_assignments SET expires_at = $1 WHERE id = $2")
-        .bind(future)
-        .bind(expired)
-        .execute(&db)
-        .await
-        .expect("prolongation");
+    db.execute(
+        "UPDATE core.role_assignments SET expires_at = $1 WHERE id = $2",
+        params![future, expired],
+    )
+    .await
+    .expect("prolongation");
 
     let ctx = resolve(&db, temp).await;
     assert!(ctx.has("core.users.read"), "une délégation en cours donne le privilège");
@@ -365,11 +381,10 @@ async fn guard_2_you_cannot_grant_what_you_do_not_hold() {
     let same = make_role(&db, &t, "same", &["core.users.read"]).await;
 
     let ctx = resolve(&db, delegate).await;
-    let mut conn = db.acquire().await.expect("connexion");
 
     // (a) A privilege they do not hold at all.
     assert!(
-        guards::ensure_can_grant(&mut conn, &ctx, wider, AssignmentScope::OrgUnit, Some(branch))
+        guards::ensure_can_grant(&db, &ctx, wider, AssignmentScope::OrgUnit, Some(branch))
             .await
             .is_err(),
         "core.users.delete n'est pas détenu : l'octroi doit être refusé"
@@ -377,7 +392,7 @@ async fn guard_2_you_cannot_grant_what_you_do_not_hold() {
 
     // (b) A privilege they hold, over a subtree they do not administer.
     assert!(
-        guards::ensure_can_grant(&mut conn, &ctx, same, AssignmentScope::OrgUnit, Some(elsewhere))
+        guards::ensure_can_grant(&db, &ctx, same, AssignmentScope::OrgUnit, Some(elsewhere))
             .await
             .is_err(),
         "hors de leur sous-arbre : refusé"
@@ -385,7 +400,7 @@ async fn guard_2_you_cannot_grant_what_you_do_not_hold() {
 
     // (c) A privilege they hold, but instance-wide — strictly broader than their own scope.
     assert!(
-        guards::ensure_can_grant(&mut conn, &ctx, same, AssignmentScope::Instance, None)
+        guards::ensure_can_grant(&db, &ctx, same, AssignmentScope::Instance, None)
             .await
             .is_err(),
         "une portée instance dépasse leur propre portée : refusé"
@@ -393,24 +408,25 @@ async fn guard_2_you_cannot_grant_what_you_do_not_hold() {
 
     // (d) Exactly what they hold, where they hold it: allowed.
     assert!(
-        guards::ensure_can_grant(&mut conn, &ctx, same, AssignmentScope::OrgUnit, Some(branch))
+        guards::ensure_can_grant(&db, &ctx, same, AssignmentScope::OrgUnit, Some(branch))
             .await
             .is_ok()
     );
 
     // (e) A superuser role is never grantable by a non-superuser.
-    let super_role: Uuid =
-        sqlx::query_scalar("SELECT id FROM core.roles WHERE slug = 'super-admin'")
-            .fetch_one(&db)
-            .await
-            .expect("rôle système semé");
+    let super_role: Uuid = db
+        .fetch_scalar::<Uuid>(
+            "SELECT id FROM core.roles WHERE slug = 'super-admin'",
+            params![],
+        )
+        .await
+        .expect("rôle système semé");
     assert!(
-        guards::ensure_can_grant(&mut conn, &ctx, super_role, AssignmentScope::Instance, None)
+        guards::ensure_can_grant(&db, &ctx, super_role, AssignmentScope::Instance, None)
             .await
             .is_err()
     );
 
-    drop(conn);
     cleanup(&db, &t).await;
 }
 
@@ -438,11 +454,13 @@ async fn guard_3_you_cannot_touch_an_account_holding_a_role_you_do_not_hold() {
     let ordinary = make_user(&db, &t, "ordinary", Some(root)).await;
 
     let boss = make_user(&db, &t, "boss", Some(root)).await;
-    let super_role: Uuid =
-        sqlx::query_scalar("SELECT id FROM core.roles WHERE slug = 'super-admin'")
-            .fetch_one(&db)
-            .await
-            .expect("rôle système semé");
+    let super_role: Uuid = db
+        .fetch_scalar::<Uuid>(
+            "SELECT id FROM core.roles WHERE slug = 'super-admin'",
+            params![],
+        )
+        .await
+        .expect("rôle système semé");
     assign(&db, super_role, Some(boss), None, AssignmentScope::Instance, None, None).await;
 
     let peer = make_user(&db, &t, "peer", Some(root)).await;
@@ -450,25 +468,24 @@ async fn guard_3_you_cannot_touch_an_account_holding_a_role_you_do_not_hold() {
     assign(&db, stronger, Some(peer), None, AssignmentScope::Instance, None, None).await;
 
     let ctx = resolve(&db, delegate).await;
-    let mut conn = db.acquire().await.expect("connexion");
 
     // The perimeter check alone would let all three through.
     assert!(ctx.has_for_unit("core.user_password.execute", Some(root)));
 
     assert!(
-        guards::ensure_can_act_on_user(&mut conn, &ctx, ordinary)
+        guards::ensure_can_act_on_user(&db, &ctx, ordinary)
             .await
             .is_ok(),
         "un compte ordinaire du sous-arbre reste administrable"
     );
     assert!(
-        guards::ensure_can_act_on_user(&mut conn, &ctx, boss)
+        guards::ensure_can_act_on_user(&db, &ctx, boss)
             .await
             .is_err(),
         "un super-administrateur n'est jamais administrable par un délégué"
     );
     assert!(
-        guards::ensure_can_act_on_user(&mut conn, &ctx, peer)
+        guards::ensure_can_act_on_user(&db, &ctx, peer)
             .await
             .is_err(),
         "un compte détenant core.settings.manage, que l'appelant n'a pas"
@@ -477,9 +494,8 @@ async fn guard_3_you_cannot_touch_an_account_holding_a_role_you_do_not_hold() {
     // A superuser is bound by neither.
     let mut root_ctx = AdminContext::empty(Uuid::new_v4(), ActorOrigin::Session, None);
     root_ctx.is_superuser = true;
-    assert!(guards::ensure_can_act_on_user(&mut conn, &root_ctx, boss).await.is_ok());
+    assert!(guards::ensure_can_act_on_user(&db, &root_ctx, boss).await.is_ok());
 
-    drop(conn);
     cleanup(&db, &t).await;
 }
 
@@ -488,33 +504,32 @@ async fn guard_4_the_last_superadmin_cannot_be_removed() {
     let Some(db) = common::test_pool().await else { return };
     let t = tag();
 
-    let super_role: Uuid =
-        sqlx::query_scalar("SELECT id FROM core.roles WHERE slug = 'super-admin'")
-            .fetch_one(&db)
-            .await
-            .expect("rôle système semé");
+    let super_role: Uuid = db
+        .fetch_scalar::<Uuid>(
+            "SELECT id FROM core.roles WHERE slug = 'super-admin'",
+            params![],
+        )
+        .await
+        .expect("rôle système semé");
 
     // The check is evaluated on the POST-state, inside the transaction, so the
     // test does the same: mutate, ask, roll back. Everything happens in one
     // transaction so the instance is left exactly as it was found.
     let mut tx = db.begin().await.expect("transaction");
 
-    let boss: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.users (email, username, password_hash, role) \
-         VALUES ($1, $2, 'x', 'admin') RETURNING id",
+    let boss = kubuno_db::new_id();
+    tx.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role) \
+         VALUES ($1, $2, $3, 'x', 'admin')",
+        params![boss, format!("boss.{t}@test.local"), format!("boss_{t}")],
     )
-    .bind(format!("boss.{t}@test.local"))
-    .bind(format!("boss_{t}"))
-    .fetch_one(&mut *tx)
     .await
     .expect("super-administrateur de test");
-    sqlx::query(
-        "INSERT INTO core.role_assignments (role_id, subject_user_id, scope) \
-         VALUES ($1, $2, 'instance')",
+    tx.execute(
+        "INSERT INTO core.role_assignments (id, role_id, subject_user_id, scope) \
+         VALUES ($1, $2, $3, 'instance')",
+        params![kubuno_db::new_id(), super_role, boss],
     )
-    .bind(super_role)
-    .bind(boss)
-    .execute(&mut *tx)
     .await
     .expect("affectation super-admin");
 
@@ -523,11 +538,12 @@ async fn guard_4_the_last_superadmin_cannot_be_removed() {
     assert!(guards::ensure_superadmin_remains(&mut tx).await.is_ok());
 
     // Remove every one of them: the guard must refuse.
-    sqlx::query("DELETE FROM core.role_assignments WHERE role_id = $1")
-        .bind(super_role)
-        .execute(&mut *tx)
-        .await
-        .expect("retrait");
+    tx.execute(
+        "DELETE FROM core.role_assignments WHERE role_id = $1",
+        params![super_role],
+    )
+    .await
+    .expect("retrait");
     assert_eq!(guards::superadmin_count(&mut tx).await.expect("comptage"), 0);
     let refusal = guards::ensure_superadmin_remains(&mut tx)
         .await
@@ -540,31 +556,28 @@ async fn guard_4_the_last_superadmin_cannot_be_removed() {
     // active accounts only, so a suspension is a removal as far as guard 4 is
     // concerned.
     let mut tx = db.begin().await.expect("transaction");
-    let boss: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.users (email, username, password_hash, role) \
-         VALUES ($1, $2, 'x', 'admin') RETURNING id",
+    let boss = kubuno_db::new_id();
+    tx.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role) \
+         VALUES ($1, $2, $3, 'x', 'admin')",
+        params![boss, format!("boss2.{t}@test.local"), format!("boss2_{t}")],
     )
-    .bind(format!("boss2.{t}@test.local"))
-    .bind(format!("boss2_{t}"))
-    .fetch_one(&mut *tx)
     .await
     .expect("super-administrateur de test");
-    sqlx::query(
-        "INSERT INTO core.role_assignments (role_id, subject_user_id, scope) \
-         VALUES ($1, $2, 'instance')",
+    tx.execute(
+        "INSERT INTO core.role_assignments (id, role_id, subject_user_id, scope) \
+         VALUES ($1, $2, $3, 'instance')",
+        params![kubuno_db::new_id(), super_role, boss],
     )
-    .bind(super_role)
-    .bind(boss)
-    .execute(&mut *tx)
     .await
     .expect("affectation super-admin");
     assert!(guards::ensure_superadmin_remains(&mut tx).await.is_ok());
 
-    sqlx::query(
+    tx.execute(
         "UPDATE core.users SET is_active = FALSE \
           WHERE id IN (SELECT user_id FROM core.superadmin_ids())",
+        params![],
     )
-    .execute(&mut *tx)
     .await
     .expect("désactivation");
     assert!(guards::ensure_superadmin_remains(&mut tx).await.is_err());
@@ -592,9 +605,7 @@ async fn revoking_an_assignment_invalidates_the_cache() {
     assert!(cache::get(user).expect("mise en cache").has("core.users.read"));
 
     // Revoke, exactly as the handler does.
-    sqlx::query("DELETE FROM core.role_assignments WHERE id = $1")
-        .bind(a)
-        .execute(&db)
+    db.execute("DELETE FROM core.role_assignments WHERE id = $1", params![a])
         .await
         .expect("révocation");
     cache::invalidate_all();
@@ -615,10 +626,16 @@ async fn the_seeded_catalogue_and_system_roles_are_coherent() {
     let Some(db) = common::test_pool().await else { return };
 
     // Every seeded key parses under the grammar.
-    let keys: Vec<String> = sqlx::query_scalar("SELECT key FROM core.privileges WHERE namespace = 'core'")
-        .fetch_all(&db)
+    let keys: Vec<String> = db
+        .fetch_all_as::<KeyRow>(
+            "SELECT key FROM core.privileges WHERE namespace = 'core'",
+            params![],
+        )
         .await
-        .expect("catalogue");
+        .expect("catalogue")
+        .into_iter()
+        .map(|r| r.key)
+        .collect();
     assert!(keys.len() >= 25, "socle core.* trop maigre : {}", keys.len());
     for key in &keys {
         kubuno_core::authz::model::parse_key(key)
@@ -627,12 +644,14 @@ async fn the_seeded_catalogue_and_system_roles_are_coherent() {
 
     // The seven system roles exist and exactly one of them is a superuser role:
     // four seeded by migration 000044, three narrow ones by 000054.
-    let system: Vec<(String, bool)> =
-        sqlx::query_as("SELECT slug, is_superuser FROM core.roles WHERE is_system ORDER BY slug")
-            .fetch_all(&db)
-            .await
-            .expect("rôles système");
-    let slugs: HashSet<&str> = system.iter().map(|(s, _)| s.as_str()).collect();
+    let system: Vec<SystemRoleRow> = db
+        .fetch_all_as::<SystemRoleRow>(
+            "SELECT slug, is_superuser FROM core.roles WHERE is_system ORDER BY slug",
+            params![],
+        )
+        .await
+        .expect("rôles système");
+    let slugs: HashSet<&str> = system.iter().map(|r| r.slug.as_str()).collect();
     for expected in [
         "super-admin",
         "user-admin",
@@ -645,21 +664,21 @@ async fn the_seeded_catalogue_and_system_roles_are_coherent() {
         assert!(slugs.contains(expected), "rôle système manquant : {expected}");
     }
     assert_eq!(system.len(), 7);
-    assert_eq!(system.iter().filter(|(_, s)| *s).count(), 1);
+    assert_eq!(system.iter().filter(|r| r.is_superuser).count(), 1);
 
     // The delegable roles: every privilege they carry is scopable, which is the
     // only thing that makes their "délégable par unité" badge true.
     for slug in ["user-admin", "support-admin", "directory-reader"] {
-        let non_scopable: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*)::bigint FROM core.role_privileges rp \
+        let non_scopable: i64 = db
+            .fetch_scalar::<i64>(
+                "SELECT COUNT(*)::bigint FROM core.role_privileges rp \
                JOIN core.roles r ON r.id = rp.role_id \
                JOIN core.privileges p ON p.key = rp.privilege_key \
               WHERE r.slug = $1 AND NOT p.is_ou_scopable",
-        )
-        .bind(slug)
-        .fetch_one(&db)
-        .await
-        .expect("contrôle");
+                params![slug],
+            )
+            .await
+            .expect("contrôle");
         assert_eq!(non_scopable, 0, "« {slug} » doit rester délégable sur une unité");
     }
 
@@ -667,14 +686,18 @@ async fn the_seeded_catalogue_and_system_roles_are_coherent() {
     // desk needs, and none of the destructive ones. Asserted by name because
     // "narrow" is the entire point of the role — a later addition of
     // `core.users.delete` must break this test, not pass unnoticed.
-    let support: Vec<String> = sqlx::query_scalar(
-        "SELECT rp.privilege_key FROM core.role_privileges rp \
+    let support: Vec<String> = db
+        .fetch_all_as::<PrivKeyRow>(
+            "SELECT rp.privilege_key FROM core.role_privileges rp \
            JOIN core.roles r ON r.id = rp.role_id \
           WHERE r.slug = 'support-admin' ORDER BY rp.privilege_key",
-    )
-    .fetch_all(&db)
-    .await
-    .expect("privilèges du support");
+            params![],
+        )
+        .await
+        .expect("privilèges du support")
+        .into_iter()
+        .map(|r| r.privilege_key)
+        .collect();
     assert_eq!(
         support,
         vec![
@@ -688,15 +711,13 @@ async fn the_seeded_catalogue_and_system_roles_are_coherent() {
     // …and the instance-only ones are deliberately so: `read-only-admin` reads
     // instance-wide things (audit, settings), `group-admin` administers groups,
     // which cross organisational units by construction.
-    let mut conn = db.acquire().await.expect("connexion");
     for slug in ["read-only-admin", "group-admin"] {
-        let role: Uuid = sqlx::query_scalar("SELECT id FROM core.roles WHERE slug = $1")
-            .bind(slug)
-            .fetch_one(&db)
+        let role: Uuid = db
+            .fetch_scalar::<Uuid>("SELECT id FROM core.roles WHERE slug = $1", params![slug])
             .await
             .expect("rôle système");
         assert!(
-            guards::ensure_scopable(&mut conn, role, AssignmentScope::OrgUnit)
+            guards::ensure_scopable(&db, role, AssignmentScope::OrgUnit)
                 .await
                 .is_err(),
             "« {slug} » ne peut pas être restreint à une unité"

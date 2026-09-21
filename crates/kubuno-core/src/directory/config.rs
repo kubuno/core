@@ -8,7 +8,7 @@
 //! never unlocks another.
 
 use crate::crypto::datakey;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 
 use crate::{crypto::encryption, errors::AppError};
 
@@ -69,7 +69,7 @@ pub fn decrypt_password(jwt_secret: &str, blob: &str) -> String {
 /// migration, and a half-applied migration that silently locked every directory
 /// account out would be diagnosed as "LDAP is broken" rather than as what it is.
 /// Turning directories off is an explicit act.
-pub async fn login_enabled(db: &PgPool) -> bool {
+pub async fn login_enabled(db: &DbPool) -> bool {
     crate::settings::instance_value(db, KEY_LOGIN_ENABLED)
         .await
         .and_then(|v| v.as_bool())
@@ -77,7 +77,7 @@ pub async fn login_enabled(db: &PgPool) -> bool {
 }
 
 /// May a successful bind by somebody unknown create an account?
-pub async fn provision_on_login(db: &PgPool) -> bool {
+pub async fn provision_on_login(db: &DbPool) -> bool {
     crate::settings::instance_value(db, KEY_PROVISION_ON_LOGIN)
         .await
         .and_then(|v| v.as_bool())
@@ -86,11 +86,11 @@ pub async fn provision_on_login(db: &PgPool) -> bool {
 
 /// Every enabled directory, in the order an operator arranged them. Sign-in
 /// walks this list, so the order is the order of attempts.
-pub async fn enabled_directories(db: &PgPool) -> Result<Vec<LdapDirectory>, AppError> {
-    sqlx::query_as::<_, LdapDirectory>(
+pub async fn enabled_directories(db: &DbPool) -> Result<Vec<LdapDirectory>, AppError> {
+    db.fetch_all_as::<LdapDirectory>(
         "SELECT * FROM core.ldap_directories WHERE enabled = TRUE ORDER BY position, display_name",
+        params![],
     )
-    .fetch_all(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "annuaire : lecture des annuaires actifs");
@@ -99,16 +99,17 @@ pub async fn enabled_directories(db: &PgPool) -> Result<Vec<LdapDirectory>, AppE
 }
 
 /// One directory by id, whatever its state.
-pub async fn load(db: &PgPool, id: uuid::Uuid) -> Result<LdapDirectory, AppError> {
-    sqlx::query_as::<_, LdapDirectory>("SELECT * FROM core.ldap_directories WHERE id = $1")
-        .bind(id)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "annuaire : lecture d'un annuaire");
-            AppError::Database(e)
-        })?
-        .ok_or_else(|| AppError::NotFound("Annuaire introuvable".into()))
+pub async fn load(db: &DbPool, id: uuid::Uuid) -> Result<LdapDirectory, AppError> {
+    db.fetch_optional_as::<LdapDirectory>(
+        "SELECT * FROM core.ldap_directories WHERE id = $1",
+        params![id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "annuaire : lecture d'un annuaire");
+        AppError::Database(e)
+    })?
+    .ok_or_else(|| AppError::NotFound("Annuaire introuvable".into()))
 }
 
 #[cfg(test)]

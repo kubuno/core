@@ -21,7 +21,7 @@
 //! the next synchronisation creates them a second account.
 
 use chrono::Utc;
-use sqlx::PgPool;
+use kubuno_db::{new_id, params, DbPool};
 use uuid::Uuid;
 
 use crate::{errors::AppError, models::user::User};
@@ -73,13 +73,14 @@ fn sanitise_username(base: &str) -> String {
 
 /// A username nobody else holds. Same shape as the OIDC path, deliberately: two
 /// external identity sources must not disagree about what a free handle is.
-async fn unique_username(db: &PgPool, base: &str) -> Result<String, AppError> {
+async fn unique_username(db: &DbPool, base: &str) -> Result<String, AppError> {
     let base = sanitise_username(base);
     let taken = |name: String| async move {
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM core.users WHERE username = $1)")
-            .bind(name)
-            .fetch_one(db)
-            .await
+        db.fetch_scalar::<bool>(
+            "SELECT EXISTS(SELECT 1 FROM core.users WHERE username = $1)",
+            params![name],
+        )
+        .await
     };
 
     if !taken(base.clone()).await.map_err(|e| {
@@ -111,40 +112,36 @@ async fn unique_username(db: &PgPool, base: &str) -> Result<String, AppError> {
 /// narrower than the next, and the address is last because it is the only one a
 /// directory administrator can reassign to somebody else.
 pub async fn find_existing(
-    db: &PgPool,
+    db: &DbPool,
     dir: &LdapDirectory,
     mapped: &MappedUser,
 ) -> Result<Option<User>, AppError> {
-    let fetch = |sql: &'static str| sql;
-
     if let Some(uid) = mapped.uid.as_deref() {
-        if let Some(u) = sqlx::query_as::<_, User>(fetch(
-            "SELECT * FROM core.users WHERE ldap_directory_id = $1 AND ldap_uid = $2",
-        ))
-        .bind(dir.id)
-        .bind(uid)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "annuaire : recherche par identifiant immuable");
-            AppError::Database(e)
-        })?
+        if let Some(u) = db
+            .fetch_optional_as::<User>(
+                "SELECT * FROM core.users WHERE ldap_directory_id = $1 AND ldap_uid = $2",
+                params![dir.id, uid],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "annuaire : recherche par identifiant immuable");
+                AppError::Database(e)
+            })?
         {
             return Ok(Some(u));
         }
     }
 
-    if let Some(u) = sqlx::query_as::<_, User>(fetch(
-        "SELECT * FROM core.users WHERE ldap_directory_id = $1 AND ldap_dn = $2",
-    ))
-    .bind(dir.id)
-    .bind(&mapped.dn)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "annuaire : recherche par DN");
-        AppError::Database(e)
-    })?
+    if let Some(u) = db
+        .fetch_optional_as::<User>(
+            "SELECT * FROM core.users WHERE ldap_directory_id = $1 AND ldap_dn = $2",
+            params![dir.id, &mapped.dn],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "annuaire : recherche par DN");
+            AppError::Database(e)
+        })?
     {
         return Ok(Some(u));
     }
@@ -152,14 +149,15 @@ pub async fn find_existing(
     let Some(email) = mapped.email.as_deref() else {
         return Ok(None);
     };
-    sqlx::query_as::<_, User>(fetch("SELECT * FROM core.users WHERE email = $1"))
-        .bind(email)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "annuaire : recherche par adresse");
-            AppError::Database(e)
-        })
+    db.fetch_optional_as::<User>(
+        "SELECT * FROM core.users WHERE email = $1",
+        params![email],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "annuaire : recherche par adresse");
+        AppError::Database(e)
+    })
 }
 
 /// Links (or refreshes) an existing account, or creates one.
@@ -168,7 +166,7 @@ pub async fn find_existing(
 /// instance switch and the directory's own flag before calling, and the
 /// synchroniser answers the same question from the same two places.
 pub async fn upsert(
-    db: &PgPool,
+    db: &DbPool,
     dir: &LdapDirectory,
     mapped: &MappedUser,
     allow_create: bool,
@@ -190,30 +188,46 @@ pub async fn upsert(
         // conspicuously absent from this list, and so is `is_active`: a
         // synchronisation reactivating somebody an operator suspended locally
         // would silently undo a deliberate decision.
-        let updated = sqlx::query_as::<_, User>(
+        //
+        // The old `RETURNING *` (which MySQL lacks) becomes an update-then-reselect
+        // by the known id. Placeholders are numbered ascending — SET first, the
+        // WHERE key last — and `NOW()` is bound from Rust.
+        db.execute(
             r#"UPDATE core.users SET
-                   ldap_directory_id = $2,
-                   ldap_dn           = $3,
-                   ldap_uid          = COALESCE($4, ldap_uid),
-                   ldap_synced_at    = NOW(),
+                   ldap_directory_id = $1,
+                   ldap_dn           = $2,
+                   ldap_uid          = COALESCE($3, ldap_uid),
+                   ldap_synced_at    = $4,
                    email             = $5,
                    display_name      = COALESCE($6, display_name),
                    email_verified    = TRUE
-               WHERE id = $1
-               RETURNING *"#,
+               WHERE id = $7"#,
+            params![
+                dir.id,
+                &mapped.dn,
+                mapped.uid.as_deref(),
+                Utc::now(),
+                &email,
+                mapped.display_name.as_deref(),
+                existing.id
+            ],
         )
-        .bind(existing.id)
-        .bind(dir.id)
-        .bind(&mapped.dn)
-        .bind(mapped.uid.as_deref())
-        .bind(&email)
-        .bind(mapped.display_name.as_deref())
-        .fetch_one(db)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %existing.id, "annuaire : mise à jour du compte lié");
             AppError::Database(e)
         })?;
+
+        let updated = db
+            .fetch_one_as::<User>(
+                "SELECT * FROM core.users WHERE id = $1",
+                params![existing.id],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, user_id = %existing.id, "annuaire : relecture du compte lié");
+                AppError::Database(e)
+            })?;
 
         let how = if was_linked { Provisioned::Matched } else { Provisioned::Linked };
         if how == Provisioned::Linked {
@@ -242,27 +256,43 @@ pub async fn upsert(
     // from that unit when there is one.
     let quota = crate::models::user::default_quota_for(db, unit).await;
 
-    let created = sqlx::query_as::<_, User>(
+    // The old `RETURNING *` becomes generate-id-in-Rust + reselect. `NOW()` is
+    // bound from Rust and `email_verified` stays the literal TRUE.
+    let new_user_id = new_id();
+    db.execute(
         r#"INSERT INTO core.users
-               (email, username, display_name, quota_bytes, email_verified,
+               (id, email, username, display_name, quota_bytes, email_verified,
                 ldap_directory_id, ldap_dn, ldap_uid, ldap_synced_at, org_unit_id)
-           VALUES ($1, $2, $3, $4, TRUE, $5, $6, $7, NOW(), $8)
-           RETURNING *"#,
+           VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8, $9, $10)"#,
+        params![
+            new_user_id,
+            &email,
+            &username,
+            mapped.display_name.as_deref(),
+            quota,
+            dir.id,
+            &mapped.dn,
+            mapped.uid.as_deref(),
+            Utc::now(),
+            unit
+        ],
     )
-    .bind(&email)
-    .bind(&username)
-    .bind(mapped.display_name.as_deref())
-    .bind(quota)
-    .bind(dir.id)
-    .bind(&mapped.dn)
-    .bind(mapped.uid.as_deref())
-    .bind(unit)
-    .fetch_one(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, directory = %dir.slug, "annuaire : création du compte");
         AppError::Database(e)
     })?;
+
+    let created = db
+        .fetch_one_as::<User>(
+            "SELECT * FROM core.users WHERE id = $1",
+            params![new_user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, directory = %dir.slug, "annuaire : relecture du compte créé");
+            AppError::Database(e)
+        })?;
 
     tracing::info!(
         user_id = %created.id,
@@ -272,16 +302,17 @@ pub async fn upsert(
     );
 
     // A new account joins the default groups like any other, so a directory
-    // account is not silently less capable than one created by hand.
-    if let Err(e) = sqlx::query(
-        "INSERT INTO core.user_group_members (group_id, user_id, source)
-         SELECT id, $1, 'directory' FROM core.user_groups WHERE is_default = TRUE
-         ON CONFLICT DO NOTHING",
-    )
-    .bind(created.id)
-    .execute(db)
-    .await
-    {
+    // account is not silently less capable than one created by hand. The bare
+    // `ON CONFLICT DO NOTHING` is expressed through the backend so MySQL uses
+    // `INSERT IGNORE`; the conflict key is the (group_id, user_id) membership PK.
+    let backend = db.backend();
+    let group_sql = format!(
+        "INSERT {}INTO core.user_group_members (group_id, user_id, source)
+         SELECT id, $1, 'directory' FROM core.user_groups WHERE is_default = TRUE{}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["group_id", "user_id"]),
+    );
+    if let Err(e) = db.execute(&group_sql, params![created.id]).await {
         tracing::error!(error = %e, user_id = %created.id, "annuaire : ajout aux groupes par défaut");
     }
 
@@ -289,10 +320,12 @@ pub async fn upsert(
 }
 
 /// Records that this account was seen in the directory during this run.
-pub async fn touch_seen(db: &PgPool, user_id: Uuid) {
-    if let Err(e) = sqlx::query("UPDATE core.users SET ldap_synced_at = NOW() WHERE id = $1")
-        .bind(user_id)
-        .execute(db)
+pub async fn touch_seen(db: &DbPool, user_id: Uuid) {
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.users SET ldap_synced_at = $1 WHERE id = $2",
+            params![Utc::now(), user_id],
+        )
         .await
     {
         tracing::error!(error = %e, user_id = %user_id, "annuaire : horodatage de synchronisation");

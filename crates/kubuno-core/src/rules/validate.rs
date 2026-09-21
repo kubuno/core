@@ -8,7 +8,7 @@
 
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -69,7 +69,7 @@ fn default_mode() -> String {
 }
 
 /// Turns a submitted rule into one that is safe to store and to run.
-pub async fn prepare(db: &PgPool, input: &RuleInput) -> Result<RuleDraft, AppError> {
+pub async fn prepare(db: &DbPool, input: &RuleInput) -> Result<RuleDraft, AppError> {
     let name = input.name.trim();
     if name.is_empty() || name.chars().count() > MAX_NAME_LEN {
         return Err(AppError::Validation(format!(
@@ -261,7 +261,7 @@ pub async fn prepare(db: &PgPool, input: &RuleInput) -> Result<RuleDraft, AppErr
 ///   is precisely the state an operator must never be able to reach by
 ///   accident.
 async fn check_detectors(
-    db: &PgPool,
+    db: &DbPool,
     trigger_key: &str,
     fields: &[catalog::FieldDef],
     conditions: &Condition,

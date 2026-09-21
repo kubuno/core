@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use serde_json::Value;
-use sqlx::{PgPool, Row};
 
 use crate::config::Settings;
 use crate::errors::AppError;
@@ -196,28 +196,37 @@ pub struct Facts {
 /// Reads everything. Errors from individual probes degrade the corresponding
 /// fact rather than failing the whole report: a health page that returns 500
 /// because one query is slow tells the operator nothing at all.
-pub async fn gather(db: &PgPool, settings: &Settings, probe: RequestProbe) -> Result<Facts, AppError> {
+pub async fn gather(db: &DbPool, settings: &Settings, probe: RequestProbe) -> Result<Facts, AppError> {
     let s = load_settings(db).await?;
 
     let pending_password_changes = count(
         db,
-        "SELECT COUNT(*)::bigint FROM core.users WHERE must_change_password = TRUE AND is_active = TRUE",
-        "comptes en attente de changement de mot de passe",
+        "SELECT COUNT(*) FROM core.users WHERE must_change_password = TRUE AND is_active = TRUE",
+        "accounts pending a password change",
     )
     .await?;
 
+    // Portable derived table (see `database::compat`) in place of the
+    // PostgreSQL-only `core.superadmin_ids()`.
+    let superadmin_ids = crate::database::compat::superadmin_ids(db.backend());
     let superadmins = count(
         db,
-        "SELECT COUNT(*)::bigint FROM core.superadmin_ids()",
-        "administrateurs complets",
+        &format!(
+            "SELECT {} FROM {superadmin_ids} s",
+            db.backend().count_bigint("*")
+        ),
+        "full administrators",
     )
     .await?;
 
     let superadmins_with_2fa = count(
         db,
-        "SELECT COUNT(*)::bigint FROM core.superadmin_ids() s \
-         JOIN core.users u ON u.id = s.user_id WHERE u.totp_enabled = TRUE",
-        "administrateurs avec double authentification",
+        &format!(
+            "SELECT {} FROM {superadmin_ids} s \
+             JOIN core.users u ON u.id = s.user_id WHERE u.totp_enabled = TRUE",
+            db.backend().count_bigint("*")
+        ),
+        "administrators with two-factor authentication",
     )
     .await?;
 
@@ -226,10 +235,13 @@ pub async fn gather(db: &PgPool, settings: &Settings, probe: RequestProbe) -> Re
     // legacy column cannot answer this.
     let non_admin_accounts = count(
         db,
-        "SELECT COUNT(*)::bigint FROM core.users u \
-         WHERE u.is_active = TRUE \
-           AND NOT EXISTS (SELECT 1 FROM core.superadmin_ids() s WHERE s.user_id = u.id)",
-        "comptes non administrateurs",
+        &format!(
+            "SELECT {} FROM core.users u \
+             WHERE u.is_active = TRUE \
+               AND NOT EXISTS (SELECT 1 FROM {superadmin_ids} s WHERE s.user_id = u.id)",
+            db.backend().count_bigint("*")
+        ),
+        "non-administrator accounts",
     )
     .await?;
 
@@ -238,16 +250,17 @@ pub async fn gather(db: &PgPool, settings: &Settings, probe: RequestProbe) -> Re
 
     // The setting is authoritative from now on; the audit trail answers for
     // tests performed before it existed. Whichever is later is the truth.
-    let audit_test = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
-        "SELECT MAX(occurred_at) FROM core.admin_audit \
+    let audit_test = db
+        .fetch_scalar::<Option<DateTime<Utc>>>(
+            "SELECT MAX(occurred_at) FROM core.admin_audit \
          WHERE action = 'core.mail.test' AND outcome = 'success'",
-    )
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "health: lecture du dernier test de relais dans le journal");
-        AppError::Database(e)
-    })?;
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "health: reading the last relay test from the audit log");
+            AppError::Database(e)
+        })?;
 
     let setting_test = s
         .get("mail.last_test_ok_at")
@@ -260,16 +273,17 @@ pub async fn gather(db: &PgPool, settings: &Settings, probe: RequestProbe) -> Re
         (a, b) => a.or(b),
     };
 
-    let mail_settings_changed_at = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
-        "SELECT MAX(updated_at) FROM core.settings \
-         WHERE category = 'mail' AND key <> 'mail.last_test_ok_at' AND updated_by IS NOT NULL",
-    )
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "health: lecture de la dernière modification du relais");
-        AppError::Database(e)
-    })?;
+    let mail_settings_changed_at = db
+        .fetch_scalar::<Option<DateTime<Utc>>>(
+            "SELECT MAX(updated_at) FROM core.settings \
+         WHERE category = 'mail' AND \"key\" <> 'mail.last_test_ok_at' AND updated_by IS NOT NULL",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "health: reading the last relay change");
+            AppError::Database(e)
+        })?;
 
     let data_path = settings.storage.local_path().to_string();
     let disk = disk::usage_of(Path::new(&data_path));
@@ -381,7 +395,7 @@ impl SettingMap {
     }
 }
 
-async fn load_settings(db: &PgPool) -> Result<SettingMap, AppError> {
+async fn load_settings(db: &DbPool) -> Result<SettingMap, AppError> {
     // "Chosen" is the EXISTENCE of an instance-scope row, not `settings.updated_by`.
     //
     // The two answer differently, and only one of them is right. `updated_by`
@@ -395,27 +409,23 @@ async fn load_settings(db: &PgPool) -> Result<SettingMap, AppError> {
     //
     // The scoped table has no such drift: reverting IS deleting the row, so the
     // absence of a row is exactly the absence of a decision.
-    let rows = sqlx::query(
-        "SELECT s.key, s.value, \
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        "SELECT s.\"key\", s.value, \
                 EXISTS ( \
                     SELECT 1 FROM core.setting_values v \
-                     WHERE v.key = s.key AND v.scope_type = 'instance' \
+                     WHERE v.\"key\" = s.\"key\" AND v.scope_type = 'instance' \
                 ) AS chosen \
-           FROM core.settings s WHERE s.key = ANY($1)",
-    )
-    .bind(SETTING_KEYS)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "health: lecture des réglages");
+           FROM core.settings s WHERE s.\"key\"",
+    );
+    qb.push_in(SETTING_KEYS.iter().copied());
+    let rows: Vec<(String, Value, bool)> = qb.fetch_all_as(db).await.map_err(|e| {
+        tracing::error!(error = %e, "health: reading the settings");
         AppError::Database(e)
     })?;
 
     let mut map = HashMap::with_capacity(rows.len());
-    for row in rows {
-        let key: String = row.get("key");
-        let value: Value = row.get("value");
-        let chosen: bool = row.get("chosen");
+    for (key, value, chosen) in rows {
         map.insert(key, SettingRow { value, chosen });
     }
     Ok(SettingMap(map))
@@ -423,12 +433,11 @@ async fn load_settings(db: &PgPool) -> Result<SettingMap, AppError> {
 
 // `sql` is `&'static str`: the four callers above each pass a literal written in
 // this file, so nothing here can be assembled at run time.
-async fn count(db: &PgPool, sql: &'static str, what: &str) -> Result<i64, AppError> {
-    sqlx::query_scalar::<_, i64>(sql)
-        .fetch_one(db)
+async fn count(db: &DbPool, sql: &str, what: &str) -> Result<i64, AppError> {
+    db.fetch_scalar::<i64>(sql, params![])
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, what = %what, "health: comptage");
+            tracing::error!(error = %e, what = %what, "health: counting");
             AppError::Database(e)
         })
 }
@@ -439,61 +448,73 @@ async fn count(db: &PgPool, sql: &'static str, what: &str) -> Result<i64, AppErr
 /// miss — it never registered, so it never had a status to degrade. Internal
 /// infrastructure modules are excluded, exactly as they are from the module
 /// list: they are not something an operator installed.
-async fn load_failing_modules(db: &PgPool) -> Result<Vec<FailingModule>, AppError> {
-    let rows = sqlx::query(
-        r#"SELECT m.id AS id,
-                  COALESCE(mi.status, 'never_registered') AS status
+async fn load_failing_modules(db: &DbPool) -> Result<Vec<FailingModule>, AppError> {
+    // The latest instance status per module, as a correlated scalar subquery so
+    // it works on every engine (the old form used a PostgreSQL LATERAL join).
+    let rows: Vec<(String, String)> = db
+        .fetch_all_as(
+            r#"SELECT m.id AS id,
+                  COALESCE(
+                      (SELECT status
+                         FROM core.module_instances
+                        WHERE module_id = m.id
+                        ORDER BY registered_at DESC
+                        LIMIT 1),
+                      'never_registered'
+                  ) AS status
              FROM core.modules m
-             LEFT JOIN LATERAL (
-                 SELECT status
-                   FROM core.module_instances
-                  WHERE module_id = m.id
-                  ORDER BY registered_at DESC
-                  LIMIT 1
-             ) mi ON TRUE
             WHERE m.is_enabled = TRUE
               AND m.is_core_module = FALSE
-              AND (mi.status IS NULL OR mi.status IN ('degraded', 'stopped'))
+              AND COALESCE(
+                      (SELECT status
+                         FROM core.module_instances
+                        WHERE module_id = m.id
+                        ORDER BY registered_at DESC
+                        LIMIT 1),
+                      'never_registered'
+                  ) IN ('never_registered', 'degraded', 'stopped')
             ORDER BY m.id"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "health: lecture des modules en échec");
-        AppError::Database(e)
-    })?;
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "health: reading the failing modules");
+            AppError::Database(e)
+        })?;
 
     Ok(rows
         .into_iter()
-        .map(|r| FailingModule { id: r.get("id"), status: r.get("status") })
+        .map(|(id, status)| FailingModule { id, status })
         .collect())
 }
 
-async fn load_mutes(db: &PgPool) -> Result<HashMap<String, Muted>, AppError> {
-    let rows = sqlx::query(
-        r#"SELECT h.check_id, h.muted_by, h.muted_at, h.reason,
+#[allow(clippy::type_complexity)]
+async fn load_mutes(db: &DbPool) -> Result<HashMap<String, Muted>, AppError> {
+    // (check_id, muted_by, muted_at, reason, by_label)
+    let rows: Vec<(String, Option<uuid::Uuid>, DateTime<Utc>, Option<String>, Option<String>)> = db
+        .fetch_all_as(
+            r#"SELECT h.check_id, h.muted_by, h.muted_at, h.reason,
                   COALESCE(NULLIF(u.display_name, ''), u.username) AS by_label
              FROM core.health_check_mutes h
              LEFT JOIN core.users u ON u.id = h.muted_by"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "health: lecture des contrôles ignorés");
-        AppError::Database(e)
-    })?;
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "health: reading the muted checks");
+            AppError::Database(e)
+        })?;
 
     Ok(rows
         .into_iter()
-        .map(|r| {
-            let id: String = r.get("check_id");
+        .map(|(id, by, at, reason, by_label)| {
             (
                 id,
                 Muted {
-                    by: r.get("muted_by"),
-                    by_label: r.get("by_label"),
-                    at: r.get("muted_at"),
-                    reason: r.get("reason"),
+                    by,
+                    by_label,
+                    at,
+                    reason,
                 },
             )
         })

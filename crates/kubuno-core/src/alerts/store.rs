@@ -11,9 +11,10 @@
 //! track, and no way to write two hundred rows about a module that has been down
 //! since Tuesday.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use kubuno_db::dialect::Assign;
+use kubuno_db::{new_id, params, Backend, DbPool, DbQueryBuilder, DbTx};
 use serde_json::Value;
-use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
 use super::catalog;
@@ -71,33 +72,56 @@ macro_rules! from_joins {
     };
 }
 
-fn map_row(r: &sqlx::postgres::PgRow) -> AlertRow {
-    let id: Uuid = r.get("id");
-    let kind: String = r.get("kind");
-    let payload: Value = r.get("payload");
-    let actions = catalog::actions_for(&kind, &payload, id);
+/// The raw alert row as the joins return it, before its actions are computed.
+#[derive(sqlx::FromRow)]
+struct RawAlert {
+    id: Uuid,
+    source: String,
+    kind: String,
+    severity: String,
+    status: String,
+    title: String,
+    summary: Option<String>,
+    payload: Value,
+    module_id: Option<String>,
+    subject_user_id: Option<Uuid>,
+    org_unit_id: Option<Uuid>,
+    is_simulation: bool,
+    occurrences: i32,
+    first_seen_at: DateTime<Utc>,
+    last_seen_at: DateTime<Utc>,
+    assignee_id: Option<Uuid>,
+    assigned_at: Option<DateTime<Utc>>,
+    closed_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    subject_label: Option<String>,
+    assignee_label: Option<String>,
+}
+
+fn map_raw(r: RawAlert) -> AlertRow {
+    let actions = catalog::actions_for(&r.kind, &r.payload, r.id);
     AlertRow {
-        id,
-        source: r.get("source"),
-        kind,
-        severity: r.get("severity"),
-        status: r.get("status"),
-        title: r.get("title"),
-        summary: r.get("summary"),
-        payload,
-        module_id: r.get("module_id"),
-        subject_user_id: r.get("subject_user_id"),
-        subject_label: r.get("subject_label"),
-        org_unit_id: r.get("org_unit_id"),
-        is_simulation: r.get("is_simulation"),
-        occurrences: r.get("occurrences"),
-        first_seen_at: r.get("first_seen_at"),
-        last_seen_at: r.get("last_seen_at"),
-        assignee_id: r.get("assignee_id"),
-        assignee_label: r.get("assignee_label"),
-        assigned_at: r.get("assigned_at"),
-        closed_at: r.get("closed_at"),
-        created_at: r.get("created_at"),
+        id: r.id,
+        source: r.source,
+        kind: r.kind,
+        severity: r.severity,
+        status: r.status,
+        title: r.title,
+        summary: r.summary,
+        payload: r.payload,
+        module_id: r.module_id,
+        subject_user_id: r.subject_user_id,
+        subject_label: r.subject_label,
+        org_unit_id: r.org_unit_id,
+        is_simulation: r.is_simulation,
+        occurrences: r.occurrences,
+        first_seen_at: r.first_seen_at,
+        last_seen_at: r.last_seen_at,
+        assignee_id: r.assignee_id,
+        assignee_label: r.assignee_label,
+        assigned_at: r.assigned_at,
+        closed_at: r.closed_at,
+        created_at: r.created_at,
         actions,
     }
 }
@@ -127,72 +151,103 @@ pub fn denied_kinds(ctx: &AdminContext) -> Vec<String> {
 
 /// States an observation, creating the alert or folding it into the existing one.
 ///
-/// The `ON CONFLICT` target is the partial unique index of migration `000056`:
-/// it covers every status except `resolved`, so
-///
-///   * an open or acknowledged alert absorbs the observation (counter up,
-///     `last_seen_at` moved, wording refreshed);
-///   * an **ignored** alert absorbs it too, silently — that is what the button
-///     promised;
-///   * a **resolved** alert does not: the problem came back, and a regression
-///     hidden inside somebody else's counter is a regression nobody sees.
-pub async fn raise(db: &PgPool, alert: NewAlert) -> Result<RaiseOutcome, AppError> {
+/// A pre-existing alert whose problem is not `resolved` absorbs the observation
+/// (counter up, `last_seen_at` moved, wording refreshed); an **ignored** alert
+/// absorbs it silently — that is what the button promised; a **resolved** alert
+/// does not, because the problem came back and a regression hidden inside
+/// somebody else's counter is a regression nobody sees.
+pub async fn raise(db: &DbPool, alert: NewAlert) -> Result<RaiseOutcome, AppError> {
     let mut tx = db.begin().await.map_err(|e| {
         tracing::error!(error = %e, kind = %alert.kind, "alerts: ouverture de la transaction de levée");
         AppError::Database(e)
     })?;
 
-    // `prev` is read in the same statement as the upsert so the severity the
-    // row had *before* this observation is known without a second round trip —
-    // it is what decides whether the timeline records an escalation.
-    let row = sqlx::query(
-        r#"
-        WITH prev AS (
-            SELECT id, severity FROM core.alerts
-             WHERE dedup_key = $10 AND status <> 'resolved'
-        ),
-        upserted AS (
-            INSERT INTO core.alerts
-                (source, kind, severity, title, summary, payload,
-                 module_id, subject_user_id, org_unit_id, dedup_key, is_simulation)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            ON CONFLICT (dedup_key) WHERE status <> 'resolved'
-            DO UPDATE SET
-                occurrences  = core.alerts.occurrences + 1,
-                last_seen_at = NOW(),
-                severity     = EXCLUDED.severity,
-                title        = EXCLUDED.title,
-                summary      = EXCLUDED.summary,
-                payload      = EXCLUDED.payload
-            RETURNING id, occurrences, severity, (xmax = 0) AS inserted
+    // The pre-existing open alert for this dedup key, read before the write so
+    // the severity the row had *before* this observation is known — it is what
+    // decides whether the timeline records an escalation. PostgreSQL folded the
+    // read and the upsert into a single CTE with `(xmax = 0)` to tell insert
+    // from update; neither the partial-index `ON CONFLICT` nor `xmax` has an
+    // engine-agnostic form, so the read and the write are done explicitly here.
+    let prev = tx
+        .fetch_optional_row(
+            "SELECT id, severity FROM core.alerts WHERE dedup_key = $1 AND status <> 'resolved'",
+            params![&alert.dedup_key],
         )
-        SELECT u.id, u.occurrences, u.severity, u.inserted, p.severity AS prev_severity
-          FROM upserted u
-          LEFT JOIN prev p ON p.id = u.id
-        "#,
-    )
-    .bind(alert.source)
-    .bind(alert.kind)
-    .bind(alert.severity.as_str())
-    .bind(&alert.title)
-    .bind(alert.summary.as_deref())
-    .bind(&alert.payload)
-    .bind(alert.module_id.as_deref())
-    .bind(alert.subject_user_id)
-    .bind(alert.org_unit_id)
-    .bind(&alert.dedup_key)
-    .bind(alert.is_simulation)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, kind = %alert.kind, "alerts: levée d'une alerte");
-        AppError::Database(e)
-    })?;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, kind = %alert.kind, "alerts: levée d'une alerte");
+            AppError::Database(e)
+        })?;
 
-    let id: Uuid = row.get("id");
-    let occurrences: i32 = row.get("occurrences");
-    let created: bool = row.get("inserted");
-    let prev_severity: Option<String> = row.get("prev_severity");
+    let now = Utc::now();
+    let (id, occurrences, created, prev_severity): (Uuid, i32, bool, Option<String>) =
+        if let Some(row) = prev {
+            let existing_id: Uuid = row.try_get("id").map_err(AppError::Database)?;
+            let before: String = row.try_get("severity").map_err(AppError::Database)?;
+            tx.execute(
+                r#"UPDATE core.alerts
+                      SET occurrences  = occurrences + 1,
+                          last_seen_at = $1,
+                          severity     = $2,
+                          title        = $3,
+                          summary      = $4,
+                          payload      = $5
+                    WHERE id = $6"#,
+                params![
+                    now,
+                    alert.severity.as_str(),
+                    &alert.title,
+                    alert.summary.as_deref(),
+                    alert.payload.clone(),
+                    existing_id
+                ],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, kind = %alert.kind, "alerts: levée d'une alerte");
+                AppError::Database(e)
+            })?;
+            let occ: i32 = tx
+                .fetch_optional_scalar::<i32>(
+                    "SELECT occurrences FROM core.alerts WHERE id = $1",
+                    params![existing_id],
+                )
+                .await
+                .map_err(AppError::Database)?
+                .unwrap_or(0);
+            (existing_id, occ, false, Some(before))
+        } else {
+            let fresh = new_id();
+            tx.execute(
+                r#"INSERT INTO core.alerts
+                       (id, source, kind, severity, title, summary, payload,
+                        module_id, subject_user_id, org_unit_id, dedup_key, is_simulation,
+                        occurrences, first_seen_at, last_seen_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $14)"#,
+                params![
+                    fresh,
+                    alert.source,
+                    alert.kind,
+                    alert.severity.as_str(),
+                    &alert.title,
+                    alert.summary.as_deref(),
+                    alert.payload.clone(),
+                    alert.module_id.as_deref(),
+                    alert.subject_user_id,
+                    alert.org_unit_id,
+                    &alert.dedup_key,
+                    alert.is_simulation,
+                    now,
+                    now
+                ],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, kind = %alert.kind, "alerts: levée d'une alerte");
+                AppError::Database(e)
+            })?;
+            (fresh, 1, true, None)
+        };
 
     if created {
         // No body: the summary is already the alert's own, rendered in the
@@ -251,6 +306,13 @@ pub async fn raise(db: &PgPool, alert: NewAlert) -> Result<RaiseOutcome, AppErro
     Ok(RaiseOutcome { id, created, occurrences })
 }
 
+/// The stale open alert, read before the transitions that resolve it.
+#[derive(sqlx::FromRow)]
+struct StaleRow {
+    id: Uuid,
+    status: String,
+}
+
 /// Closes the open alerts of `kind` whose problem is no longer observed.
 ///
 /// `live` is the exhaustive set of dedup keys the producer just saw. Anything
@@ -259,27 +321,23 @@ pub async fn raise(db: &PgPool, alert: NewAlert) -> Result<RaiseOutcome, AppErro
 /// with its reason, never as a silent delete.
 ///
 /// Returns the number of alerts closed.
-pub async fn auto_resolve(db: &PgPool, kind: &str, live: &[String]) -> Result<u64, AppError> {
-    let mut tx = db.begin().await.map_err(|e| {
-        tracing::error!(error = %e, "alerts: ouverture de la transaction de clôture automatique");
-        AppError::Database(e)
-    })?;
-
-    // Locked before the update so the status recorded on the timeline is the one
-    // that was actually replaced, and not a value another transaction moved in
-    // between the read and the write.
-    let stale: Vec<(Uuid, String)> = sqlx::query_as(
-        r#"SELECT id, status FROM core.alerts
-            WHERE kind = $1
-              AND status IN ('new', 'acknowledged')
-              AND dedup_key <> ALL($2)
-            FOR UPDATE"#,
-    )
-    .bind(kind)
-    .bind(live)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| {
+pub async fn auto_resolve(db: &DbPool, kind: &str, live: &[String]) -> Result<u64, AppError> {
+    // The stale open alerts of this kind. `live` is the set still observed;
+    // anything open outside it is stale. An empty `live` means the producer saw
+    // nothing, so every open alert of the kind is stale.
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        "SELECT id, status FROM core.alerts WHERE kind = ",
+    );
+    qb.push_bind(kind);
+    qb.push(" AND status").push_in([
+        Status::New.as_str().to_string(),
+        Status::Acknowledged.as_str().to_string(),
+    ]);
+    if !live.is_empty() {
+        qb.push(" AND dedup_key NOT").push_in(live.iter().cloned());
+    }
+    let stale: Vec<StaleRow> = qb.fetch_all_as::<StaleRow>(db).await.map_err(|e| {
         tracing::error!(error = %e, kind = %kind, "alerts: recherche des alertes obsolètes");
         AppError::Database(e)
     })?;
@@ -288,29 +346,41 @@ pub async fn auto_resolve(db: &PgPool, kind: &str, live: &[String]) -> Result<u6
         return Ok(0);
     }
 
-    let ids: Vec<Uuid> = stale.iter().map(|(id, _)| *id).collect();
+    let mut tx = db.begin().await.map_err(|e| {
+        tracing::error!(error = %e, "alerts: ouverture de la transaction de clôture automatique");
+        AppError::Database(e)
+    })?;
 
-    for (id, previous) in &stale {
-        sqlx::query("UPDATE core.alerts SET status = 'resolved', closed_at = NOW() WHERE id = $1")
-            .bind(id)
-            .execute(&mut *tx)
+    let now = Utc::now();
+    let mut closed = 0u64;
+    for row in &stale {
+        // The status guard replaces the former `FOR UPDATE`: the row transitions
+        // only if it is still open, so a concurrent change cannot be overwritten.
+        let affected = tx
+            .execute(
+                "UPDATE core.alerts SET status = 'resolved', closed_at = $1 \
+                  WHERE id = $2 AND status IN ('new', 'acknowledged')",
+                params![now, row.id],
+            )
             .await
             .map_err(|e| {
-                tracing::error!(error = %e, alert_id = %id, "alerts: clôture automatique");
+                tracing::error!(error = %e, alert_id = %row.id, "alerts: clôture automatique");
                 AppError::Database(e)
             })?;
-
-        record_event(
-            &mut tx,
-            *id,
-            EventKind::StatusChanged,
-            None,
-            SYSTEM_ACTOR,
-            Some(previous),
-            Some(Status::Resolved.as_str()),
-            Some("La condition n'est plus observée."),
-        )
-        .await?;
+        if affected == 1 {
+            record_event(
+                &mut tx,
+                row.id,
+                EventKind::StatusChanged,
+                None,
+                SYSTEM_ACTOR,
+                Some(&row.status),
+                Some(Status::Resolved.as_str()),
+                Some("La condition n'est plus observée."),
+            )
+            .await?;
+            closed += 1;
+        }
     }
 
     tx.commit().await.map_err(|e| {
@@ -318,20 +388,33 @@ pub async fn auto_resolve(db: &PgPool, kind: &str, live: &[String]) -> Result<u6
         AppError::Database(e)
     })?;
 
-    tracing::info!(kind = %kind, closed = ids.len(), "Alertes closes automatiquement");
-    Ok(ids.len() as u64)
+    tracing::info!(kind = %kind, closed, "Alertes closes automatiquement");
+    Ok(closed)
 }
 
 // ── Timeline ─────────────────────────────────────────────────────────────────
 
+/// One timeline row as stored, before it becomes an [`AlertEventRow`].
+#[derive(sqlx::FromRow)]
+struct RawEvent {
+    id: i64,
+    kind: String,
+    actor_id: Option<Uuid>,
+    actor_label: String,
+    from_value: Option<String>,
+    to_value: Option<String>,
+    body: Option<String>,
+    occurred_at: DateTime<Utc>,
+}
+
 /// Appends one line to an alert's history.
 ///
-/// Takes a connection rather than a pool so a transition and its timeline entry
+/// Takes a transaction rather than a pool so a transition and its timeline entry
 /// land in the same commit as the mutation — the same discipline as
 /// [`crate::audit::AuditTx`], for the same reason.
 #[allow(clippy::too_many_arguments)]
 pub async fn record_event(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     alert_id: Uuid,
     kind: EventKind,
     actor_id: Option<Uuid>,
@@ -340,19 +423,20 @@ pub async fn record_event(
     to_value: Option<&str>,
     body: Option<&str>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    tx.execute(
         r#"INSERT INTO core.alert_events
                (alert_id, kind, actor_id, actor_label, from_value, to_value, body)
            VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+        params![
+            alert_id,
+            kind.as_str(),
+            actor_id,
+            actor_label,
+            from_value,
+            to_value,
+            body
+        ],
     )
-    .bind(alert_id)
-    .bind(kind.as_str())
-    .bind(actor_id)
-    .bind(actor_label)
-    .bind(from_value)
-    .bind(to_value)
-    .bind(body)
-    .execute(conn)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, alert_id = %alert_id, "alerts: écriture d'un événement de fil");
@@ -361,33 +445,33 @@ pub async fn record_event(
     Ok(())
 }
 
-pub async fn timeline(db: &PgPool, alert_id: Uuid) -> Result<Vec<AlertEventRow>, AppError> {
-    let rows = sqlx::query(
-        r#"SELECT id, kind, actor_id, actor_label, from_value, to_value, body, occurred_at
-             FROM core.alert_events
-            WHERE alert_id = $1
-            ORDER BY occurred_at ASC, id ASC
-            LIMIT 500"#,
-    )
-    .bind(alert_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, alert_id = %alert_id, "alerts: lecture du fil chronologique");
-        AppError::Database(e)
-    })?;
+pub async fn timeline(db: &DbPool, alert_id: Uuid) -> Result<Vec<AlertEventRow>, AppError> {
+    let rows = db
+        .fetch_all_as::<RawEvent>(
+            r#"SELECT id, kind, actor_id, actor_label, from_value, to_value, body, occurred_at
+                 FROM core.alert_events
+                WHERE alert_id = $1
+                ORDER BY occurred_at ASC, id ASC
+                LIMIT 500"#,
+            params![alert_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, alert_id = %alert_id, "alerts: lecture du fil chronologique");
+            AppError::Database(e)
+        })?;
 
     Ok(rows
-        .iter()
+        .into_iter()
         .map(|r| AlertEventRow {
-            id: r.get("id"),
-            kind: r.get("kind"),
-            actor_id: r.get("actor_id"),
-            actor_label: r.get("actor_label"),
-            from_value: r.get("from_value"),
-            to_value: r.get("to_value"),
-            body: r.get("body"),
-            occurred_at: r.get("occurred_at"),
+            id: r.id,
+            kind: r.kind,
+            actor_id: r.actor_id,
+            actor_label: r.actor_label,
+            from_value: r.from_value,
+            to_value: r.to_value,
+            body: r.body,
+            occurred_at: r.occurred_at,
         })
         .collect())
 }
@@ -463,7 +547,7 @@ pub struct Page {
 
 /// One page of the queue, worst-and-newest first, narrowed to what the caller
 /// may read.
-pub async fn list(db: &PgPool, q: &AlertQuery, ctx: &AdminContext) -> Result<Page, AppError> {
+pub async fn list(db: &DbPool, q: &AlertQuery, ctx: &AdminContext) -> Result<Page, AppError> {
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let cursor = q.cursor.as_deref().and_then(decode_cursor);
 
@@ -483,62 +567,94 @@ pub async fn list(db: &PgPool, q: &AlertQuery, ctx: &AdminContext) -> Result<Pag
         _ => (None, false),
     };
 
-    let sql = concat!(
-        "SELECT ",
-        select_columns!(),
-        from_joins!(),
-        r#"
-           WHERE a.status = ANY($1)
-             AND ($2::text[] IS NULL OR a.severity = ANY($2))
-             AND ($3::text[] IS NULL OR a.kind     = ANY($3))
-             AND a.kind <> ALL($4)
-             AND ($5::text IS NULL OR a.source    = $5)
-             AND ($6::text IS NULL OR a.module_id = $6)
-             AND ($7::uuid IS NULL OR a.assignee_id = $7)
-             AND (NOT $8::bool OR a.assignee_id IS NULL)
-             AND ($9::uuid IS NULL OR a.subject_user_id = $9)
-             AND ($10::timestamptz IS NULL OR a.last_seen_at >= $10)
-             AND ($11::timestamptz IS NULL OR a.last_seen_at <= $11)
-             AND ($12::text IS NULL OR a.title ILIKE '%' || $12 || '%'
-                                    OR a.summary ILIKE '%' || $12 || '%'
-                                    OR a.kind ILIKE '%' || $12 || '%')
-             AND ($13::timestamptz IS NULL OR (a.last_seen_at, a.id) < ($13, $14))
-             AND a.is_simulation = $16
-           ORDER BY a.last_seen_at DESC, a.id DESC
-           LIMIT $15"#
+    let backend = db.backend();
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        concat!("SELECT ", select_columns!(), from_joins!()),
     );
-
+    qb.push(" WHERE a.status").push_in(&statuses);
+    if let Some(sev) = severities.as_ref() {
+        qb.push(" AND a.severity").push_in(sev);
+    }
+    if let Some(k) = kinds.as_ref() {
+        qb.push(" AND a.kind").push_in(k);
+    }
+    if !denied.is_empty() {
+        qb.push(" AND a.kind NOT").push_in(&denied);
+    }
+    if let Some(src) = q.source.as_deref().filter(|s| !s.is_empty()) {
+        qb.push(" AND a.source = ").push_bind(src);
+    }
+    if let Some(m) = q.module_id.as_deref().filter(|s| !s.is_empty()) {
+        qb.push(" AND a.module_id = ").push_bind(m);
+    }
+    if let Some(aid) = assignee_id {
+        qb.push(" AND a.assignee_id = ").push_bind(aid);
+    }
+    if unassigned_only {
+        qb.push(" AND a.assignee_id IS NULL");
+    }
+    if let Some(subj) = q.subject_user_id {
+        qb.push(" AND a.subject_user_id = ").push_bind(subj);
+    }
+    if let Some(from) = q.from {
+        qb.push(" AND a.last_seen_at >= ").push_bind(from);
+    }
+    if let Some(to) = q.to {
+        qb.push(" AND a.last_seen_at <= ").push_bind(to);
+    }
+    if let Some(text) = q.q.as_deref().filter(|s| !s.is_empty()) {
+        let pat = format!("%{text}%");
+        // Case-insensitive match over the three text columns, spelled per engine
+        // (`dialect::ilike`, inlined so the builder can number each bind).
+        qb.push(" AND (");
+        for (i, col) in ["a.title", "a.summary", "a.kind"].iter().enumerate() {
+            if i > 0 {
+                qb.push(" OR ");
+            }
+            match backend {
+                Backend::Postgres => {
+                    qb.push(*col).push(" ILIKE ").push_bind(pat.clone());
+                }
+                _ => {
+                    qb.push("LOWER(")
+                        .push(*col)
+                        .push(") LIKE LOWER(")
+                        .push_bind(pat.clone())
+                        .push(")");
+                }
+            }
+        }
+        qb.push(")");
+    }
+    if let Some((at, id)) = cursor {
+        // The tuple comparison `(last_seen_at, id) < (at, id)`, expanded into the
+        // portable form so the same page boundary holds on every engine.
+        qb.push(" AND (a.last_seen_at < ")
+            .push_bind(at)
+            .push(" OR (a.last_seen_at = ")
+            .push_bind(at)
+            .push(" AND a.id < ")
+            .push_bind(id)
+            .push("))");
+    }
+    qb.push(" AND a.is_simulation = ")
+        .push_bind(q.simulation.unwrap_or(false));
+    qb.push_order_by("a.last_seen_at DESC, a.id DESC");
     // One extra row answers "is there a next page?" without a COUNT.
-    let rows = sqlx::query(sql)
-        .bind(&statuses)
-        .bind(severities.as_deref())
-        .bind(kinds.as_deref())
-        .bind(&denied)
-        .bind(q.source.as_deref().filter(|s| !s.is_empty()))
-        .bind(q.module_id.as_deref().filter(|s| !s.is_empty()))
-        .bind(assignee_id)
-        .bind(unassigned_only)
-        .bind(q.subject_user_id)
-        .bind(q.from)
-        .bind(q.to)
-        .bind(q.q.as_deref().filter(|s| !s.is_empty()))
-        .bind(cursor.map(|(at, _)| at))
-        .bind(cursor.map(|(_, id)| id))
-        .bind(limit + 1)
-        .bind(q.simulation.unwrap_or(false))
-        .fetch_all(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "alerts: lecture de la file");
-            AppError::Database(e)
-        })?;
+    qb.push(" LIMIT ").push_bind(limit + 1);
+
+    let rows: Vec<RawAlert> = qb.fetch_all_as::<RawAlert>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "alerts: lecture de la file");
+        AppError::Database(e)
+    })?;
 
     let has_more = rows.len() as i64 > limit;
     let mut out: Vec<AlertRow> = rows
-        .iter()
+        .into_iter()
         .take(limit as usize)
         .map(|r| {
-            let mut row = map_row(r);
+            let mut row = map_raw(r);
             row.actions = visible_actions(ctx, std::mem::take(&mut row.actions));
             row
         })
@@ -554,11 +670,10 @@ pub async fn list(db: &PgPool, q: &AlertQuery, ctx: &AdminContext) -> Result<Pag
 }
 
 /// One alert. Refuses a kind the caller may not read, exactly like the list.
-pub async fn get(db: &PgPool, id: Uuid, ctx: &AdminContext) -> Result<AlertRow, AppError> {
+pub async fn get(db: &DbPool, id: Uuid, ctx: &AdminContext) -> Result<AlertRow, AppError> {
     let sql = concat!("SELECT ", select_columns!(), from_joins!(), " WHERE a.id = $1");
-    let row = sqlx::query(sql)
-        .bind(id)
-        .fetch_optional(db)
+    let row = db
+        .fetch_optional_as::<RawAlert>(sql, params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, alert_id = %id, "alerts: lecture d'une alerte");
@@ -566,7 +681,7 @@ pub async fn get(db: &PgPool, id: Uuid, ctx: &AdminContext) -> Result<AlertRow, 
         })?
         .ok_or_else(|| AppError::NotFound("Alerte introuvable".into()))?;
 
-    let mut alert = map_row(&row);
+    let mut alert = map_raw(row);
     if !ctx.has(catalog::read_privilege(&alert.kind)) {
         tracing::warn!(
             user_id = %ctx.user_id, kind = %alert.kind,
@@ -582,75 +697,107 @@ pub async fn get(db: &PgPool, id: Uuid, ctx: &AdminContext) -> Result<AlertRow, 
 ///
 /// The point is the question an operator asks after opening one alert — "is this
 /// the only one?" — answered without going back to the queue and re-filtering.
-pub async fn related(db: &PgPool, alert: &AlertRow, ctx: &AdminContext) -> Result<Vec<AlertRow>, AppError> {
+pub async fn related(db: &DbPool, alert: &AlertRow, ctx: &AdminContext) -> Result<Vec<AlertRow>, AppError> {
     let denied = denied_kinds(ctx);
-    let sql = concat!(
-        "SELECT ",
-        select_columns!(),
-        from_joins!(),
-        r#"
-           WHERE a.id <> $1
-             AND a.kind <> ALL($4)
-             AND "#,
-        not_simulated!(),
-        r#"
-             AND (a.kind = $2 OR ($3::uuid IS NOT NULL AND a.subject_user_id = $3))
-           ORDER BY a.last_seen_at DESC
-           LIMIT 10"#
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
+        concat!("SELECT ", select_columns!(), from_joins!()),
     );
-    let rows = sqlx::query(sql)
-        .bind(alert.id)
-        .bind(&alert.kind)
-        .bind(alert.subject_user_id)
-        .bind(&denied)
-        .fetch_all(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, alert_id = %alert.id, "alerts: lecture des alertes liées");
-            AppError::Database(e)
-        })?;
-    Ok(rows.iter().map(map_row).collect())
+    qb.push(" WHERE a.id <> ").push_bind(alert.id);
+    if !denied.is_empty() {
+        qb.push(" AND a.kind NOT").push_in(&denied);
+    }
+    qb.push(" AND ").push(not_simulated!());
+    qb.push(" AND (a.kind = ").push_bind(&alert.kind);
+    if let Some(subj) = alert.subject_user_id {
+        qb.push(" OR a.subject_user_id = ").push_bind(subj);
+    }
+    qb.push(")");
+    qb.push_order_by("a.last_seen_at DESC");
+    qb.push(" LIMIT 10");
+
+    let rows: Vec<RawAlert> = qb.fetch_all_as::<RawAlert>(db).await.map_err(|e| {
+        tracing::error!(error = %e, alert_id = %alert.id, "alerts: lecture des alertes liées");
+        AppError::Database(e)
+    })?;
+    Ok(rows.into_iter().map(map_raw).collect())
+}
+
+/// The badge counts, hand-mapped from a single aggregate row.
+#[derive(sqlx::FromRow)]
+struct SummaryRow {
+    open: i64,
+    fresh: i64,
+    acknowledged: i64,
+    critical: i64,
+    warning: i64,
+    info: i64,
+    ignored: i64,
+    resolved: i64,
+    mine: i64,
 }
 
 /// Counts for the badges, and when the producers last ran.
-pub async fn summary(db: &PgPool, ctx: &AdminContext) -> Result<AlertSummary, AppError> {
+pub async fn summary(db: &DbPool, ctx: &AdminContext) -> Result<AlertSummary, AppError> {
+    let backend = db.backend();
     let denied = denied_kinds(ctx);
-    let row = sqlx::query(
-        r#"SELECT
-             COUNT(*) FILTER (WHERE status IN ('new','acknowledged'))                    AS open,
-             COUNT(*) FILTER (WHERE status = 'new')                                      AS fresh,
-             COUNT(*) FILTER (WHERE status = 'acknowledged')                             AS acknowledged,
-             COUNT(*) FILTER (WHERE status IN ('new','acknowledged') AND severity = 'critical') AS critical,
-             COUNT(*) FILTER (WHERE status IN ('new','acknowledged') AND severity = 'warning')  AS warning,
-             COUNT(*) FILTER (WHERE status IN ('new','acknowledged') AND severity = 'info')     AS info,
-             COUNT(*) FILTER (WHERE status = 'ignored')                                  AS ignored,
-             COUNT(*) FILTER (WHERE status = 'resolved')                                 AS resolved,
-             COUNT(*) FILTER (WHERE status IN ('new','acknowledged') AND assignee_id = $2) AS mine
-           FROM core.alerts
-          WHERE kind <> ALL($1)
-            -- Simulated alerts are never counted. The badge over the bell is
-            -- exactly the place where a "what if" must not look like a fact.
-            AND is_simulation = FALSE"#,
-    )
-    .bind(&denied)
-    .bind(ctx.user_id)
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: comptage du résumé");
-        AppError::Database(e)
-    })?;
+
+    // `COUNT(*) FILTER (WHERE c)` has no MySQL form, so every conditional count
+    // is expressed as `SUM(CASE WHEN c THEN 1 ELSE 0 END)`, wrapped by
+    // `sum_bigint` (COALESCE to 0, cast to bigint) so it decodes as `i64`.
+    let open = backend.sum_bigint("CASE WHEN status IN ('new','acknowledged') THEN 1 ELSE 0 END");
+    let fresh = backend.sum_bigint("CASE WHEN status = 'new' THEN 1 ELSE 0 END");
+    let ack = backend.sum_bigint("CASE WHEN status = 'acknowledged' THEN 1 ELSE 0 END");
+    let critical = backend
+        .sum_bigint("CASE WHEN status IN ('new','acknowledged') AND severity = 'critical' THEN 1 ELSE 0 END");
+    let warning = backend
+        .sum_bigint("CASE WHEN status IN ('new','acknowledged') AND severity = 'warning' THEN 1 ELSE 0 END");
+    let info = backend
+        .sum_bigint("CASE WHEN status IN ('new','acknowledged') AND severity = 'info' THEN 1 ELSE 0 END");
+    let ignored = backend.sum_bigint("CASE WHEN status = 'ignored' THEN 1 ELSE 0 END");
+    let resolved = backend.sum_bigint("CASE WHEN status = 'resolved' THEN 1 ELSE 0 END");
+    // `$1` is the caller's id (see the params below); it appears in the SELECT
+    // list, so it must be the first placeholder — the denied list follows.
+    let mine = backend
+        .sum_bigint("CASE WHEN status IN ('new','acknowledged') AND assignee_id = $1 THEN 1 ELSE 0 END");
+
+    let denied_clause = if denied.is_empty() {
+        String::new()
+    } else {
+        format!(" AND kind NOT IN ({})", backend.in_list(2, denied.len()))
+    };
+
+    let sql = format!(
+        "SELECT {open} AS open, {fresh} AS fresh, {ack} AS acknowledged, \
+                {critical} AS critical, {warning} AS warning, {info} AS info, \
+                {ignored} AS ignored, {resolved} AS resolved, {mine} AS mine \
+           FROM core.alerts \
+          WHERE is_simulation = FALSE{denied_clause}"
+    );
+
+    let mut p = params![ctx.user_id];
+    for k in &denied {
+        p.push(k.clone().into());
+    }
+
+    let row = db
+        .fetch_one_as::<SummaryRow>(&sql, p)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: comptage du résumé");
+            AppError::Database(e)
+        })?;
 
     Ok(AlertSummary {
-        open: row.get("open"),
-        new: row.get("fresh"),
-        acknowledged: row.get("acknowledged"),
-        critical: row.get("critical"),
-        warning: row.get("warning"),
-        info: row.get("info"),
-        ignored: row.get("ignored"),
-        resolved: row.get("resolved"),
-        mine: row.get("mine"),
+        open: row.open,
+        new: row.fresh,
+        acknowledged: row.acknowledged,
+        critical: row.critical,
+        warning: row.warning,
+        info: row.info,
+        ignored: row.ignored,
+        resolved: row.resolved,
+        mine: row.mine,
         last_scan_at: super::producers::last_scan_at(db).await?,
     })
 }
@@ -663,16 +810,22 @@ pub async fn summary(db: &PgPool, ctx: &AdminContext) -> Result<AlertSummary, Ap
 /// "who closed this, and what it was before" is the pair that makes the trail
 /// worth keeping.
 pub async fn set_status(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     alert_id: Uuid,
     next: Status,
     actor_id: Uuid,
     actor_label: &str,
     note: Option<&str>,
 ) -> Result<Status, AppError> {
-    let current: String = sqlx::query_scalar("SELECT status FROM core.alerts WHERE id = $1 FOR UPDATE")
-        .bind(alert_id)
-        .fetch_optional(&mut *conn)
+    let for_update = tx.backend().for_update();
+    let current: String = tx
+        .fetch_optional_scalar::<String>(
+            &format!(
+                "SELECT status FROM core.alerts WHERE id = $1{}",
+                for_update
+            ),
+            params![alert_id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, alert_id = %alert_id, "alerts: lecture de l'état courant");
@@ -689,18 +842,18 @@ pub async fn set_status(
         ));
     }
 
-    sqlx::query(
-        r#"UPDATE core.alerts
-              SET status    = $2,
-                  closed_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
-                  closed_by = CASE WHEN $3 THEN $4::uuid ELSE NULL END
-            WHERE id = $1"#,
+    // `closed_at` / `closed_by` are set on the closing transitions only; computed
+    // in Rust rather than with an in-SQL `CASE ... NOW()`.
+    let (closed_at, closed_by) = if next.is_closed() {
+        (Some(Utc::now()), Some(actor_id))
+    } else {
+        (None, None)
+    };
+
+    tx.execute(
+        "UPDATE core.alerts SET status = $1, closed_at = $2, closed_by = $3 WHERE id = $4",
+        params![next.as_str(), closed_at, closed_by, alert_id],
     )
-    .bind(alert_id)
-    .bind(next.as_str())
-    .bind(next.is_closed())
-    .bind(actor_id)
-    .execute(&mut *conn)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, alert_id = %alert_id, "alerts: changement d'état");
@@ -708,7 +861,7 @@ pub async fn set_status(
     })?;
 
     record_event(
-        conn,
+        tx,
         alert_id,
         EventKind::StatusChanged,
         Some(actor_id),
@@ -728,35 +881,37 @@ pub async fn set_status(
 /// alert centre ([`eligible_assignee`]): assigning work to somebody who cannot
 /// open it is how an alert sits untouched for a week.
 pub async fn set_assignee(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     alert_id: Uuid,
     assignee: Option<(Uuid, String)>,
     actor_id: Uuid,
     actor_label: &str,
 ) -> Result<Option<String>, AppError> {
-    let previous: Option<String> = sqlx::query_scalar(
-        r#"SELECT COALESCE(NULLIF(u.display_name, ''), u.username)
-             FROM core.alerts a LEFT JOIN core.users u ON u.id = a.assignee_id
-            WHERE a.id = $1"#,
-    )
-    .bind(alert_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, alert_id = %alert_id, "alerts: lecture de l'assigné courant");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound("Alerte introuvable".into()))?;
+    let previous: Option<String> = tx
+        .fetch_optional_row(
+            r#"SELECT COALESCE(NULLIF(u.display_name, ''), u.username) AS label
+                 FROM core.alerts a LEFT JOIN core.users u ON u.id = a.assignee_id
+                WHERE a.id = $1"#,
+            params![alert_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, alert_id = %alert_id, "alerts: lecture de l'assigné courant");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound("Alerte introuvable".into()))?
+        .try_get::<Option<String>>("label")
+        .map_err(AppError::Database)?;
 
-    sqlx::query(
-        r#"UPDATE core.alerts
-              SET assignee_id = $2,
-                  assigned_at = CASE WHEN $2::uuid IS NULL THEN NULL ELSE NOW() END
-            WHERE id = $1"#,
+    let (assignee_id, assigned_at) = match assignee.as_ref() {
+        Some((id, _)) => (Some(*id), Some(Utc::now())),
+        None => (None, None),
+    };
+
+    tx.execute(
+        "UPDATE core.alerts SET assignee_id = $1, assigned_at = $2 WHERE id = $3",
+        params![assignee_id, assigned_at, alert_id],
     )
-    .bind(alert_id)
-    .bind(assignee.as_ref().map(|(id, _)| *id))
-    .execute(&mut *conn)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, alert_id = %alert_id, "alerts: assignation");
@@ -764,7 +919,7 @@ pub async fn set_assignee(
     })?;
 
     record_event(
-        conn,
+        tx,
         alert_id,
         EventKind::Assigned,
         Some(actor_id),
@@ -780,15 +935,17 @@ pub async fn set_assignee(
 
 /// Appends a free comment to the timeline.
 pub async fn add_comment(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     alert_id: Uuid,
     body: &str,
     actor_id: Uuid,
     actor_label: &str,
 ) -> Result<(), AppError> {
-    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM core.alerts WHERE id = $1")
-        .bind(alert_id)
-        .fetch_optional(&mut *conn)
+    let exists: Option<Uuid> = tx
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT id FROM core.alerts WHERE id = $1",
+            params![alert_id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, alert_id = %alert_id, "alerts: vérification de l'alerte commentée");
@@ -799,7 +956,7 @@ pub async fn add_comment(
     }
 
     record_event(
-        conn,
+        tx,
         alert_id,
         EventKind::Comment,
         Some(actor_id),
@@ -811,6 +968,13 @@ pub async fn add_comment(
     .await
 }
 
+/// An eligible assignee: an account id and its display label.
+#[derive(sqlx::FromRow)]
+struct IdLabel {
+    id: Uuid,
+    label: String,
+}
+
 /// Accounts that may be handed an alert: those holding `core.alerts.read`,
 /// directly or through a group, with a live assignment. Super-users are
 /// included by the marker join.
@@ -818,15 +982,19 @@ pub async fn add_comment(
 /// Reusing the same resolution rules as [`crate::authz::context::resolve`]
 /// rather than a second, looser query: an eligibility list that is broader than
 /// the actual privilege check would offer names the assignment then refuses.
-pub async fn eligible_assignees(db: &PgPool) -> Result<Vec<(Uuid, String)>, AppError> {
-    let rows = sqlx::query(
-        r#"
+pub async fn eligible_assignees(db: &DbPool) -> Result<Vec<(Uuid, String)>, AppError> {
+    // `$1` = the expiry cut-off (bound from Rust in place of `NOW()`), `$2` = the
+    // privilege key; numbered by their position in the text.
+    let now = Utc::now();
+    let rows = db
+        .fetch_all_as::<IdLabel>(
+            r#"
         WITH live AS (
             SELECT a.role_id,
                    COALESCE(a.subject_user_id, m.user_id) AS user_id
               FROM core.role_assignments a
               LEFT JOIN core.user_group_members m ON m.group_id = a.subject_group_id
-             WHERE (a.expires_at IS NULL OR a.expires_at > NOW())
+             WHERE (a.expires_at IS NULL OR a.expires_at > $1)
         )
         SELECT DISTINCT u.id, COALESCE(NULLIF(u.display_name, ''), u.username) AS label
           FROM live
@@ -835,25 +1003,24 @@ pub async fn eligible_assignees(db: &PgPool) -> Result<Vec<(Uuid, String)>, AppE
          WHERE r.is_superuser
             OR EXISTS (
                 SELECT 1 FROM core.role_privileges rp
-                 WHERE rp.role_id = live.role_id AND rp.privilege_key = $1
+                 WHERE rp.role_id = live.role_id AND rp.privilege_key = $2
             )
          ORDER BY label
          LIMIT 500
         "#,
-    )
-    .bind(super::keys::ALERTS_READ)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: liste des assignés éligibles");
-        AppError::Database(e)
-    })?;
+            params![now, super::keys::ALERTS_READ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: liste des assignés éligibles");
+            AppError::Database(e)
+        })?;
 
-    Ok(rows.iter().map(|r| (r.get("id"), r.get("label"))).collect())
+    Ok(rows.into_iter().map(|r| (r.id, r.label)).collect())
 }
 
 /// Is this account allowed to be handed an alert? Returns its display label.
-pub async fn eligible_assignee(db: &PgPool, user_id: Uuid) -> Result<String, AppError> {
+pub async fn eligible_assignee(db: &DbPool, user_id: Uuid) -> Result<String, AppError> {
     eligible_assignees(db)
         .await?
         .into_iter()
@@ -869,25 +1036,34 @@ pub async fn eligible_assignee(db: &PgPool, user_id: Uuid) -> Result<String, App
 
 // ── Saved filter sets ────────────────────────────────────────────────────────
 
-pub async fn list_views(db: &PgPool, owner: Uuid) -> Result<Vec<AlertView>, AppError> {
-    let rows = sqlx::query(
-        "SELECT id, name, filters, created_at FROM core.alert_views WHERE owner_id = $1 ORDER BY name",
-    )
-    .bind(owner)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: lecture des jeux de filtres");
-        AppError::Database(e)
-    })?;
+/// A saved filter set row, as stored.
+#[derive(sqlx::FromRow)]
+struct RawView {
+    id: Uuid,
+    name: String,
+    filters: Value,
+    created_at: DateTime<Utc>,
+}
+
+pub async fn list_views(db: &DbPool, owner: Uuid) -> Result<Vec<AlertView>, AppError> {
+    let rows = db
+        .fetch_all_as::<RawView>(
+            "SELECT id, name, filters, created_at FROM core.alert_views WHERE owner_id = $1 ORDER BY name",
+            params![owner],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: lecture des jeux de filtres");
+            AppError::Database(e)
+        })?;
 
     Ok(rows
-        .iter()
+        .into_iter()
         .map(|r| AlertView {
-            id: r.get("id"),
-            name: r.get("name"),
-            filters: r.get("filters"),
-            created_at: r.get("created_at"),
+            id: r.id,
+            name: r.name,
+            filters: r.filters,
+            created_at: r.created_at,
         })
         .collect())
 }
@@ -895,7 +1071,7 @@ pub async fn list_views(db: &PgPool, owner: Uuid) -> Result<Vec<AlertView>, AppE
 /// Creates or replaces a saved filter set. Upsert on `(owner, name)`: saving
 /// twice under the same name overwrites rather than failing on the constraint.
 pub async fn save_view(
-    db: &PgPool,
+    db: &DbPool,
     owner: Uuid,
     name: &str,
     filters: &Value,
@@ -911,76 +1087,114 @@ pub async fn save_view(
         return Err(AppError::Validation("Filtre invalide".into()));
     }
 
-    let row = sqlx::query(
-        r#"INSERT INTO core.alert_views (owner_id, name, filters)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (owner_id, name) DO UPDATE SET filters = EXCLUDED.filters
-           RETURNING id, name, filters, created_at"#,
-    )
-    .bind(owner)
-    .bind(name)
-    .bind(filters)
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: enregistrement d'un jeu de filtres");
-        AppError::Database(e)
-    })?;
+    // Upsert then reselect: `RETURNING` is not portable, and on the conflict path
+    // the surviving row keeps its original id, so the read gives the right one.
+    let backend = db.backend();
+    let id = new_id();
+    let clause = backend.upsert(
+        "core.alert_views",
+        &["owner_id", "name"],
+        &[Assign::Incoming("filters")],
+    );
+    let sql = format!(
+        "INSERT INTO core.alert_views (id, owner_id, name, filters) VALUES ($1, $2, $3, $4){clause}"
+    );
+    db.execute(&sql, params![id, owner, name, filters.clone()])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: enregistrement d'un jeu de filtres");
+            AppError::Database(e)
+        })?;
+
+    let row = db
+        .fetch_one_as::<RawView>(
+            "SELECT id, name, filters, created_at FROM core.alert_views WHERE owner_id = $1 AND name = $2",
+            params![owner, name],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: relecture du jeu de filtres");
+            AppError::Database(e)
+        })?;
 
     Ok(AlertView {
-        id: row.get("id"),
-        name: row.get("name"),
-        filters: row.get("filters"),
-        created_at: row.get("created_at"),
+        id: row.id,
+        name: row.name,
+        filters: row.filters,
+        created_at: row.created_at,
     })
 }
 
-pub async fn delete_view(db: &PgPool, owner: Uuid, id: Uuid) -> Result<(), AppError> {
-    let affected = sqlx::query("DELETE FROM core.alert_views WHERE id = $1 AND owner_id = $2")
-        .bind(id)
-        .bind(owner)
-        .execute(db)
+pub async fn delete_view(db: &DbPool, owner: Uuid, id: Uuid) -> Result<(), AppError> {
+    let affected = db
+        .execute(
+            "DELETE FROM core.alert_views WHERE id = $1 AND owner_id = $2",
+            params![id, owner],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "alerts: suppression d'un jeu de filtres");
             AppError::Database(e)
-        })?
-        .rows_affected();
+        })?;
     if affected == 0 {
         return Err(AppError::NotFound("Filtre introuvable".into()));
     }
     Ok(())
 }
 
+/// A single distinct facet value.
+#[derive(sqlx::FromRow)]
+struct FacetRow {
+    v: String,
+}
+
 /// Distinct values present in the table, for the filter selects.
 ///
 /// Bounded by construction (a handful of kinds, one row per module), so this
 /// stays cheap and never hard-codes a catalogue that drifts.
-pub async fn facets(db: &PgPool, ctx: &AdminContext) -> Result<(Vec<String>, Vec<String>), AppError> {
+pub async fn facets(db: &DbPool, ctx: &AdminContext) -> Result<(Vec<String>, Vec<String>), AppError> {
     let denied = denied_kinds(ctx);
-    let kinds: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT kind FROM core.alerts
-          WHERE kind <> ALL($1) AND is_simulation = FALSE ORDER BY kind LIMIT 100",
-    )
-    .bind(&denied)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: facettes (types)");
-        AppError::Database(e)
-    })?;
+    let backend = db.backend();
 
-    let sources: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT source FROM core.alerts
-          WHERE kind <> ALL($1) AND is_simulation = FALSE ORDER BY source LIMIT 50",
-    )
-    .bind(&denied)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: facettes (sources)");
-        AppError::Database(e)
-    })?;
+    let mut kq = DbQueryBuilder::new(
+        backend,
+        "SELECT DISTINCT kind AS v FROM core.alerts WHERE is_simulation = FALSE",
+    );
+    if !denied.is_empty() {
+        kq.push(" AND kind NOT").push_in(&denied);
+    }
+    kq.push_order_by("kind");
+    kq.push(" LIMIT 100");
+    let kinds: Vec<String> = kq
+        .fetch_all_as::<FacetRow>(db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: facettes (types)");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|r| r.v)
+        .collect();
+
+    let mut sq = DbQueryBuilder::new(
+        backend,
+        "SELECT DISTINCT source AS v FROM core.alerts WHERE is_simulation = FALSE",
+    );
+    if !denied.is_empty() {
+        sq.push(" AND kind NOT").push_in(&denied);
+    }
+    sq.push_order_by("source");
+    sq.push(" LIMIT 50");
+    let sources: Vec<String> = sq
+        .fetch_all_as::<FacetRow>(db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: facettes (sources)");
+            AppError::Database(e)
+        })?
+        .into_iter()
+        .map(|r| r.v)
+        .collect();
 
     Ok((kinds, sources))
 }
@@ -990,29 +1204,33 @@ pub async fn facets(db: &PgPool, ctx: &AdminContext) -> Result<(Vec<String>, Vec
 ///
 /// Open alerts are never purged, whatever their age: an alert that has been open
 /// for a year is the most important row in the table, not the stalest.
-pub async fn purge_closed(db: &PgPool, retention_days: i64) -> Result<u64, AppError> {
+pub async fn purge_closed(db: &DbPool, retention_days: i64) -> Result<u64, AppError> {
     let days = retention_days.clamp(7, 3_650);
-    let deleted = sqlx::query(
-        r#"DELETE FROM core.alerts
-            WHERE status IN ('resolved', 'ignored')
-              AND closed_at < NOW() - ($1 || ' days')::interval"#,
-    )
-    .bind(days.to_string())
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: purge des alertes closes");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+    // The cut-off is computed in Rust and bound, in place of the former
+    // `NOW() - ($1 || ' days')::interval`.
+    let cutoff = Utc::now() - Duration::days(days);
+    let deleted = db
+        .execute(
+            r#"DELETE FROM core.alerts
+                WHERE status IN ('resolved', 'ignored')
+                  AND closed_at < $1"#,
+            params![cutoff],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: purge des alertes closes");
+            AppError::Database(e)
+        })?;
     Ok(deleted)
 }
 
 /// Severity of an alert, read back for the audit entry of a transition.
-pub async fn severity_of(db: &PgPool, id: Uuid) -> Result<Severity, AppError> {
-    let raw: String = sqlx::query_scalar("SELECT severity FROM core.alerts WHERE id = $1")
-        .bind(id)
-        .fetch_optional(db)
+pub async fn severity_of(db: &DbPool, id: Uuid) -> Result<Severity, AppError> {
+    let raw: String = db
+        .fetch_optional_scalar::<String>(
+            "SELECT severity FROM core.alerts WHERE id = $1",
+            params![id],
+        )
         .await
         .map_err(|e| {
             tracing::error!(error = %e, alert_id = %id, "alerts: lecture de la gravité");

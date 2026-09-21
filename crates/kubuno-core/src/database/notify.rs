@@ -1,8 +1,10 @@
+use crate::database::SCHEMA;
 use crate::events::{AppEvent, EventBus, EventMeta};
 use anyhow::Result;
+use kubuno_db::DbPool;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use sqlx::postgres::PgListener;
+use sqlx::PgPool;
 use std::sync::Arc;
 
 /// What travels on the `kubuno_events` channel.
@@ -53,7 +55,7 @@ pub async fn start_pg_listener(pool: &PgPool, event_bus: Arc<EventBus>) -> Resul
     Ok(())
 }
 
-pub async fn pg_notify(db: &PgPool, event: &AppEvent) -> Result<()> {
+pub async fn pg_notify(db: &DbPool, event: &AppEvent) -> Result<()> {
     pg_notify_with(db, event, &EventMeta::default()).await
 }
 
@@ -61,15 +63,14 @@ pub async fn pg_notify(db: &PgPool, event: &AppEvent) -> Result<()> {
 ///
 /// The path a background job takes: a job handler holds a pool and nothing else,
 /// so this is how work performed off the request path reaches the bus — and how
-/// the depth counter survives the hop.
-pub async fn pg_notify_with(db: &PgPool, event: &AppEvent, meta: &EventMeta) -> Result<()> {
+/// the depth counter survives the hop. Engine-agnostic: on PostgreSQL it is a
+/// `pg_notify`; on MySQL/SQLite `kubuno_db::events::notify` writes the enveloped
+/// payload to `core.kubuno_event_outbox`, which the outbox poller drains.
+pub async fn pg_notify_with(db: &DbPool, event: &AppEvent, meta: &EventMeta) -> Result<()> {
     let payload = serde_json::to_string(&serde_json::json!({
         "event": event,
         "meta":  meta,
     }))?;
-    sqlx::query("SELECT pg_notify('kubuno_events', $1)")
-        .bind(&payload)
-        .execute(db)
-        .await?;
+    kubuno_db::events::notify(db, SCHEMA, "kubuno_events", &payload).await?;
     Ok(())
 }

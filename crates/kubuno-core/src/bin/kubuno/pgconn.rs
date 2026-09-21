@@ -79,6 +79,8 @@ mod tests {
     #[test]
     fn test_from_settings_individual_fields() {
         let cfg = DatabaseSettings {
+            engine:          "postgres".to_string(),
+            path:            None,
             url:             None,
             host:            Some("dbhost".to_string()),
             port:            Some(5433),
@@ -102,6 +104,8 @@ mod tests {
     #[test]
     fn test_from_settings_with_url_fallback() {
         let cfg = DatabaseSettings {
+            engine:          "postgres".to_string(),
+            path:            None,
             url:             Some("postgres://u:p%23q@host:5432/db".to_string()),
             host:            None,
             port:            None,

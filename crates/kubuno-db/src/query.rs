@@ -109,6 +109,18 @@ impl DbQueryBuilder {
         self
     }
 
+    /// Records `value` as the next bind and returns its placeholder number,
+    /// **without** writing `$n` into the SQL. The caller then writes the
+    /// reference itself with [`push`](Self::push) — the escape hatch for
+    /// interpolating a fragment produced by [`crate::dialect`] or a hand-built
+    /// subquery that must name a specific placeholder (a recursive CTE whose
+    /// anchor is `WHERE id = $n`, say). The number must still appear in
+    /// ascending order in the final text, exactly once, like any other.
+    pub fn bind_only(&mut self, value: impl Into<DbValue>) -> usize {
+        self.params.push(value.into());
+        self.params.len()
+    }
+
     /// Appends ` IN (<placeholders>)` for a variadic list, binding each element.
     /// Reuses [`Backend::in_list`], so an **empty** list yields `IN (NULL)`,
     /// which matches nothing on all three engines — the caller does not need a

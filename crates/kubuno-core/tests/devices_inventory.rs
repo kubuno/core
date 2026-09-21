@@ -11,7 +11,7 @@ use kubuno_core::devices::{
     model::{AuthStrength, Tri},
     store, user_agent,
 };
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 const CHROME: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -19,37 +19,38 @@ const IPHONE: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) App
 
 /// Creates a throwaway account. Prefixed so the cleanup below cannot touch a
 /// real one even if the test database were pointed at something it should not be.
-async fn seed_user(db: &PgPool) -> Uuid {
+async fn seed_user(db: &DbPool) -> Uuid {
     let tag = Uuid::new_v4().simple().to_string();
-    sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO core.users (email, username, password_hash, display_name)
-         VALUES ($1, $2, 'x', 'Inventaire test') RETURNING id",
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, display_name)
+         VALUES ($1, $2, $3, 'x', 'Inventaire test')",
+        params![
+            id,
+            format!("devtest-{tag}@example.invalid"),
+            format!("devtest-{tag}")
+        ],
     )
-    .bind(format!("devtest-{tag}@example.invalid"))
-    .bind(format!("devtest-{tag}"))
-    .fetch_one(db)
     .await
-    .expect("création du compte de test")
+    .expect("création du compte de test");
+    id
 }
 
-async fn cleanup(db: &PgPool, user_id: Uuid) {
+async fn cleanup(db: &DbPool, user_id: Uuid) {
     // `core.devices` and `core.refresh_tokens` cascade from the account.
-    let _ = sqlx::query("DELETE FROM core.users WHERE id = $1")
-        .bind(user_id)
-        .execute(db)
+    let _ = db
+        .execute("DELETE FROM core.users WHERE id = $1", params![user_id])
         .await;
 }
 
-async fn open_session(db: &PgPool, user_id: Uuid, device_id: Uuid, strength: AuthStrength) -> Uuid {
-    let id = sqlx::query_scalar::<_, Uuid>(
+async fn open_session(db: &DbPool, user_id: Uuid, device_id: Uuid, strength: AuthStrength) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
         "INSERT INTO core.refresh_tokens
-             (user_id, token_hash, expires_at, client_type)
-         VALUES ($1, $2, NOW() + INTERVAL '30 days', 'web')
-         RETURNING id",
+             (id, user_id, token_hash, expires_at, client_type)
+         VALUES ($1, $2, $3, NOW() + INTERVAL '30 days', 'web')",
+        params![id, user_id, Uuid::new_v4().simple().to_string()],
     )
-    .bind(user_id)
-    .bind(Uuid::new_v4().simple().to_string())
-    .fetch_one(db)
     .await
     .expect("création de la session de test");
 
@@ -158,11 +159,12 @@ async fn unknown_is_stored_as_unknown_and_never_satisfies_encrypted() {
 
     // An explicit negative declaration is a different statement, and it is the
     // only one that may read as "no".
-    sqlx::query("UPDATE core.devices SET disk_encrypted = FALSE, signal_level = 'declared' WHERE id = $1")
-        .bind(device.id)
-        .execute(&db)
-        .await
-        .expect("déclaration négative");
+    db.execute(
+        "UPDATE core.devices SET disk_encrypted = FALSE, signal_level = 'declared' WHERE id = $1",
+        params![device.id],
+    )
+    .await
+    .expect("déclaration négative");
     let redeclared = store::get_owned(&db, device.id, user).await.expect("relecture");
     assert_eq!(redeclared.disk_encrypted(), Tri::No);
     assert!(!redeclared.disk_encrypted().is_encrypted());
@@ -192,33 +194,49 @@ async fn revocation_closes_sessions_and_forgetting_does_not() {
     assert!(sessions.iter().any(|s| s.auth_strength.as_deref() == Some("password_totp")));
     assert!(sessions.iter().any(|s| s.auth_strength.as_deref() == Some("password")));
 
-    let mut conn = db.acquire().await.expect("connexion");
-    let revoked = store::revoke_sessions(&mut conn, touched.device_id, "device_blocked")
-        .await
-        .expect("révocation");
+    let revoked = {
+        let mut tx = db.begin().await.expect("transaction");
+        let n = store::revoke_sessions(&mut tx, touched.device_id, "device_blocked")
+            .await
+            .expect("révocation");
+        tx.commit().await.expect("commit");
+        n
+    };
     assert_eq!(revoked, 2);
     assert!(store::sessions_of(&db, touched.device_id).await.expect("relecture").is_empty());
 
     // A second run revokes nothing: revocation is idempotent.
-    let again = store::revoke_sessions(&mut conn, touched.device_id, "device_blocked")
-        .await
-        .expect("seconde révocation");
+    let again = {
+        let mut tx = db.begin().await.expect("transaction");
+        let n = store::revoke_sessions(&mut tx, touched.device_id, "device_blocked")
+            .await
+            .expect("seconde révocation");
+        tx.commit().await.expect("commit");
+        n
+    };
     assert_eq!(again, 0);
 
     // Forgetting removes the inventory row and NOTHING else: the sessions —
     // even revoked ones — survive, because forgetting is not a sign-out and
     // certainly not an erasure on the machine.
-    let before: i64 = sqlx::query_scalar("SELECT COUNT(*)::bigint FROM core.refresh_tokens WHERE user_id = $1")
-        .bind(user)
-        .fetch_one(&db)
+    let before: i64 = db
+        .fetch_scalar::<i64>(
+            "SELECT COUNT(*)::bigint FROM core.refresh_tokens WHERE user_id = $1",
+            params![user],
+        )
         .await
         .expect("comptage");
-    store::forget(&mut conn, touched.device_id).await.expect("oubli");
-    drop(conn);
+    {
+        let mut tx = db.begin().await.expect("transaction");
+        store::forget(&mut tx, touched.device_id).await.expect("oubli");
+        tx.commit().await.expect("commit");
+    }
 
-    let after: i64 = sqlx::query_scalar("SELECT COUNT(*)::bigint FROM core.refresh_tokens WHERE user_id = $1")
-        .bind(user)
-        .fetch_one(&db)
+    let after: i64 = db
+        .fetch_scalar::<i64>(
+            "SELECT COUNT(*)::bigint FROM core.refresh_tokens WHERE user_id = $1",
+            params![user],
+        )
         .await
         .expect("comptage");
     assert_eq!(before, after, "oublier une fiche ne supprime aucune session");
@@ -231,14 +249,13 @@ async fn revocation_closes_sessions_and_forgetting_does_not() {
     // re-attached a detached session to a fresh fingerprint row in the
     // meantime. What must never happen is a session still pointing at a device
     // that no longer exists.
-    let still_pointing: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.refresh_tokens WHERE user_id = $1 AND device_id = $2",
-    )
-    .bind(user)
-    .bind(touched.device_id)
-    .fetch_one(&db)
-    .await
-    .expect("comptage");
+    let still_pointing: i64 = db
+        .fetch_scalar::<i64>(
+            "SELECT COUNT(*)::bigint FROM core.refresh_tokens WHERE user_id = $1 AND device_id = $2",
+            params![user, touched.device_id],
+        )
+        .await
+        .expect("comptage");
     assert_eq!(still_pointing, 0, "aucune session ne pointe vers la fiche oubliée");
 
     let gone = store::get_owned(&db, touched.device_id, user).await;
@@ -257,14 +274,16 @@ async fn the_backfill_attaches_pre_existing_sessions() {
     // Two sessions of the same browser, as they were written before this table
     // existed: a user agent, no device.
     for _ in 0..2 {
-        sqlx::query(
-            "INSERT INTO core.refresh_tokens (user_id, token_hash, user_agent, expires_at, client_type)
-             VALUES ($1, $2, $3, NOW() + INTERVAL '30 days', 'web')",
+        db.execute(
+            "INSERT INTO core.refresh_tokens (id, user_id, token_hash, user_agent, expires_at, client_type)
+             VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days', 'web')",
+            params![
+                kubuno_db::new_id(),
+                user,
+                Uuid::new_v4().simple().to_string(),
+                CHROME
+            ],
         )
-        .bind(user)
-        .bind(Uuid::new_v4().simple().to_string())
-        .bind(CHROME)
-        .execute(&db)
         .await
         .expect("session héritée");
     }

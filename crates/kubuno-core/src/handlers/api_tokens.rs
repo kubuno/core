@@ -15,6 +15,7 @@ use axum::{
     Json,
 };
 use base64::Engine as _;
+use kubuno_db::{new_id, params, DbPool};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -55,20 +56,21 @@ pub async fn list(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    let tokens = sqlx::query_as::<_, ApiToken>(
-        r#"SELECT id, user_id, name, token_hash, scopes, is_legacy, legacy_since,
-                  expires_at, created_at, last_used_at, revoked_at
-           FROM core.api_tokens
-           WHERE user_id = $1 AND revoked_at IS NULL
-           ORDER BY created_at DESC"#,
-    )
-    .bind(user.id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user.id, "Liste des jetons d'API");
-        AppError::Database(e)
-    })?;
+    let tokens = state
+        .db
+        .fetch_all_as::<ApiToken>(
+            r#"SELECT id, user_id, name, token_hash, scopes, is_legacy, legacy_since,
+                      expires_at, created_at, last_used_at, revoked_at
+               FROM core.api_tokens
+               WHERE user_id = $1 AND revoked_at IS NULL
+               ORDER BY created_at DESC"#,
+            params![user.id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user.id, "Liste des jetons d'API");
+            AppError::Database(e)
+        })?;
 
     let grace_days = policy::legacy_grace_days(&state.db).await;
     let tokens: Vec<Value> = tokens
@@ -198,23 +200,33 @@ pub async fn create(
 
     let (raw_token, hash) = generate_api_token();
 
-    let token = sqlx::query_as::<_, ApiToken>(
-        r#"INSERT INTO core.api_tokens (user_id, name, token_hash, scopes, expires_at)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, user_id, name, token_hash, scopes, is_legacy, legacy_since,
-                     expires_at, created_at, last_used_at, revoked_at"#,
-    )
-    .bind(user.id)
-    .bind(&dto.name)
-    .bind(&hash)
-    .bind(&scopes)
-    .bind(expires_at)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user.id, "Création d'un jeton d'API");
-        AppError::Database(e)
-    })?;
+    // No RETURNING: the id is generated in Rust and the row is read back by id.
+    let id = new_id();
+    state
+        .db
+        .execute(
+            r#"INSERT INTO core.api_tokens (id, user_id, name, token_hash, scopes, expires_at)
+               VALUES ($1, $2, $3, $4, $5, $6)"#,
+            params![id, user.id, &dto.name, &hash, scopes, expires_at],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user.id, "Création d'un jeton d'API");
+            AppError::Database(e)
+        })?;
+    let token = state
+        .db
+        .fetch_one_as::<ApiToken>(
+            r#"SELECT id, user_id, name, token_hash, scopes, is_legacy, legacy_since,
+                      expires_at, created_at, last_used_at, revoked_at
+               FROM core.api_tokens WHERE id = $1"#,
+            params![id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user.id, "Création d'un jeton d'API");
+            AppError::Database(e)
+        })?;
 
     // The trail records what the key may do — never the key. `after` goes
     // through the whitelist, which has no `token_hash` entry by construction.
@@ -255,25 +267,39 @@ pub async fn revoke(
     parts: Parts,
     Path(token_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    let revoked = sqlx::query_as::<_, ApiToken>(
-        r#"UPDATE core.api_tokens
-           SET revoked_at = NOW()
-           WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
-           RETURNING id, user_id, name, token_hash, scopes, is_legacy, legacy_since,
-                     expires_at, created_at, last_used_at, revoked_at"#,
-    )
-    .bind(token_id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, token_id = %token_id, "Révocation d'un jeton d'API");
-        AppError::Database(e)
-    })?;
-
-    let Some(token) = revoked else {
+    // No RETURNING on a guarded UPDATE (MySQL cannot): revoke atomically on the
+    // `revoked_at IS NULL` guard, and only if exactly this call flipped it
+    // (rows_affected == 1) do we then read the row back by id for the trail.
+    let affected = state
+        .db
+        .execute(
+            r#"UPDATE core.api_tokens
+               SET revoked_at = $1
+               WHERE id = $2 AND user_id = $3 AND revoked_at IS NULL"#,
+            params![chrono::Utc::now(), token_id, user.id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, token_id = %token_id, "Révocation d'un jeton d'API");
+            AppError::Database(e)
+        })?;
+    if affected == 0 {
         return Err(AppError::NotFound("Token introuvable".into()));
-    };
+    }
+
+    let token = state
+        .db
+        .fetch_one_as::<ApiToken>(
+            r#"SELECT id, user_id, name, token_hash, scopes, is_legacy, legacy_since,
+                      expires_at, created_at, last_used_at, revoked_at
+               FROM core.api_tokens WHERE id = $1"#,
+            params![token_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, token_id = %token_id, "Révocation d'un jeton d'API");
+            AppError::Database(e)
+        })?;
 
     context_from(&parts, &user)
         .record(
@@ -297,18 +323,19 @@ pub async fn revoke(
 }
 
 /// Charge la liste des rôles autorisés depuis la setting `auth.api_token_allowed_roles`.
-async fn load_allowed_roles(db: &sqlx::PgPool) -> Vec<String> {
-    let row: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT value FROM core.settings WHERE key = 'auth.api_token_allowed_roles'",
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "Lecture de auth.api_token_allowed_roles");
-        e
-    })
-    .ok()
-    .flatten();
+async fn load_allowed_roles(db: &DbPool) -> Vec<String> {
+    let row: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<serde_json::Value>(
+            "SELECT value FROM core.settings WHERE \"key\" = 'auth.api_token_allowed_roles'",
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Lecture de auth.api_token_allowed_roles");
+            e
+        })
+        .ok()
+        .flatten();
 
     row.and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
         .unwrap_or_else(|| vec!["user".into(), "admin".into()])

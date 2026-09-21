@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use serde::Serialize;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::settings::{chain, intl, scope::SettingScope};
@@ -87,7 +87,7 @@ pub fn parse_codes(raw: &str) -> Vec<String> {
 
 /// The calendars that apply to `user_id`, or to the instance when nobody in
 /// particular is asking.
-pub async fn for_user(db: &PgPool, user_id: Option<Uuid>) -> Applicable {
+pub async fn for_user(db: &DbPool, user_id: Option<Uuid>) -> Applicable {
     let scope = match user_id {
         Some(id) => SettingScope::user(id),
         None => SettingScope::INSTANCE,

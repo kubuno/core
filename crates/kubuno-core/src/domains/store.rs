@@ -13,9 +13,10 @@
 //!   4. **Nothing is removed out from under an account.** A domain carrying
 //!      addresses refuses to go until they are moved, and says how many.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use kubuno_db::{new_id, params, DbPool, DbTx};
 use serde_json::{json, Value};
-use sqlx::{postgres::PgRow, PgConnection, PgPool, Row};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 use super::dns;
@@ -24,84 +25,111 @@ use crate::errors::AppError;
 
 /// Columns every read shares, account count included.
 ///
-/// A macro rather than a `const` so call sites splice it with `concat!` and end
-/// up with one `&'static str` literal: the query text is fixed at compile time,
-/// which the driver accepts without any audit escape hatch.
-macro_rules! select_domains {
-    () => {
+/// Built per engine because the account-count subquery splits an address on its
+/// `@`, which has no single spelling across the three engines: the portable
+/// [`kubuno_db::dialect::Backend::email_domain`] produces `SPLIT_PART` on
+/// PostgreSQL, `SUBSTRING_INDEX` on MySQL and `substr`/`instr` on SQLite. The
+/// `COUNT(*)` scalar subquery already decodes as `i64` on every engine, so the
+/// old `::bigint` cast is dropped. Every other token is a fixed identifier, so
+/// the assembled text still carries no request data.
+fn select_domains(backend: kubuno_db::dialect::Backend, suffix: &str) -> String {
+    let domain = backend.email_domain("u.email");
+    format!(
         r#"
     SELECT d.id, d.name, d.kind, d.parent_id, p.name AS parent_name,
            d.verify_token, d.verified_at, d.last_checked_at, d.last_error,
            d.mx_hosts, d.has_spf, d.has_dmarc, d.mail_checked_at, d.created_at,
            (SELECT COUNT(*) FROM core.users u
-             WHERE LOWER(SPLIT_PART(u.email::text, '@', 2)) = d.name)::bigint AS account_count
+             WHERE LOWER({domain}) = d.name) AS account_count
       FROM core.domains d
       LEFT JOIN core.domains p ON p.id = d.parent_id
-"#
-    };
+{suffix}"#
+    )
 }
 
-fn from_row(row: &PgRow) -> Result<Domain, AppError> {
-    let kind: String = row.try_get("kind").map_err(AppError::Database)?;
-    Ok(Domain {
-        id: row.try_get("id").map_err(AppError::Database)?,
-        name: row.try_get("name").map_err(AppError::Database)?,
-        kind: DomainKind::parse(&kind)?,
-        parent_id: row.try_get("parent_id").map_err(AppError::Database)?,
-        parent_name: row.try_get("parent_name").map_err(AppError::Database)?,
-        verify_token: row.try_get("verify_token").map_err(AppError::Database)?,
-        verified_at: row.try_get("verified_at").map_err(AppError::Database)?,
-        last_checked_at: row.try_get("last_checked_at").map_err(AppError::Database)?,
-        last_error: row.try_get("last_error").map_err(AppError::Database)?,
-        mx_hosts: row.try_get("mx_hosts").map_err(AppError::Database)?,
-        has_spf: row.try_get("has_spf").map_err(AppError::Database)?,
-        has_dmarc: row.try_get("has_dmarc").map_err(AppError::Database)?,
-        mail_checked_at: row.try_get("mail_checked_at").map_err(AppError::Database)?,
-        created_at: row.try_get("created_at").map_err(AppError::Database)?,
-        account_count: row.try_get("account_count").map_err(AppError::Database)?,
-    })
+/// The raw columns of a [`select_domains`] read. `Domain` carries a parsed
+/// `DomainKind`, so no `FromRow` builds it directly.
+#[derive(Debug, FromRow)]
+struct DomainRow {
+    id: Uuid,
+    name: String,
+    kind: String,
+    parent_id: Option<Uuid>,
+    parent_name: Option<String>,
+    verify_token: String,
+    verified_at: Option<DateTime<Utc>>,
+    last_checked_at: Option<DateTime<Utc>>,
+    last_error: Option<String>,
+    mx_hosts: Value,
+    has_spf: Option<bool>,
+    has_dmarc: Option<bool>,
+    mail_checked_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    account_count: i64,
+}
+
+impl DomainRow {
+    fn into_domain(self) -> Result<Domain, AppError> {
+        Ok(Domain {
+            id: self.id,
+            name: self.name,
+            kind: DomainKind::parse(&self.kind)?,
+            parent_id: self.parent_id,
+            parent_name: self.parent_name,
+            verify_token: self.verify_token,
+            verified_at: self.verified_at,
+            last_checked_at: self.last_checked_at,
+            last_error: self.last_error,
+            mx_hosts: self.mx_hosts,
+            has_spf: self.has_spf,
+            has_dmarc: self.has_dmarc,
+            mail_checked_at: self.mail_checked_at,
+            created_at: self.created_at,
+            account_count: self.account_count,
+        })
+    }
 }
 
 /// Every domain, the primary first, then aliases grouped under the domain they
 /// serve — the order the console renders without having to sort.
-pub async fn list(db: &PgPool) -> Result<Vec<Domain>, AppError> {
-    let rows = sqlx::query(concat!(
-        select_domains!(),
-        " ORDER BY (d.kind = 'primary') DESC, COALESCE(p.name, d.name), d.kind, d.name"
-    ))
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "domains: liste");
-        AppError::Database(e)
-    })?;
-    rows.iter().map(from_row).collect()
+pub async fn list(db: &DbPool) -> Result<Vec<Domain>, AppError> {
+    let sql = select_domains(
+        db.backend(),
+        " ORDER BY (d.kind = 'primary') DESC, COALESCE(p.name, d.name), d.kind, d.name",
+    );
+    let rows = db
+        .fetch_all_as::<DomainRow>(&sql, params![])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "domains: liste");
+            AppError::Database(e)
+        })?;
+    rows.into_iter().map(DomainRow::into_domain).collect()
 }
 
-pub async fn get(db: &PgPool, id: Uuid) -> Result<Domain, AppError> {
-    let row = sqlx::query(concat!(select_domains!(), " WHERE d.id = $1"))
-        .bind(id)
-        .fetch_optional(db)
+pub async fn get(db: &DbPool, id: Uuid) -> Result<Domain, AppError> {
+    let sql = select_domains(db.backend(), " WHERE d.id = $1");
+    db.fetch_optional_as::<DomainRow>(&sql, params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "domains: lecture");
             AppError::Database(e)
         })?
-        .ok_or_else(|| AppError::NotFound("Domaine introuvable".into()))?;
-    from_row(&row)
+        .ok_or_else(|| AppError::NotFound("Domaine introuvable".into()))?
+        .into_domain()
 }
 
 /// Is `name` a domain this instance has *proven* it controls?
 ///
 /// The question every consumer asks, and the reason the registry exists. An
 /// alias answers yes: an address at an alias is an address of this instance.
-pub async fn is_verified(db: &PgPool, name: &str) -> bool {
-    match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM core.domains WHERE name = $1 AND verified_at IS NOT NULL)",
-    )
-    .bind(name.trim().to_ascii_lowercase())
-    .fetch_one(db)
-    .await
+pub async fn is_verified(db: &DbPool, name: &str) -> bool {
+    match db
+        .fetch_scalar::<bool>(
+            "SELECT EXISTS(SELECT 1 FROM core.domains WHERE name = $1 AND verified_at IS NOT NULL)",
+            params![name.trim().to_ascii_lowercase()],
+        )
+        .await
     {
         Ok(found) => found,
         Err(e) => {
@@ -114,23 +142,27 @@ pub async fn is_verified(db: &PgPool, name: &str) -> bool {
 }
 
 /// The verified names, for a picker.
-pub async fn verified_names(db: &PgPool) -> Vec<String> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT name FROM core.domains WHERE verified_at IS NOT NULL \
+pub async fn verified_names(db: &DbPool) -> Vec<String> {
+    match db
+        .fetch_all_as::<(String,)>(
+            "SELECT name FROM core.domains WHERE verified_at IS NOT NULL \
           ORDER BY (kind = 'primary') DESC, name",
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "domains: liste des domaines vérifiés");
-        Vec::new()
-    })
+            params![],
+        )
+        .await
+    {
+        Ok(rows) => rows.into_iter().map(|(name,)| name).collect(),
+        Err(e) => {
+            tracing::error!(error = %e, "domains: liste des domaines vérifiés");
+            Vec::new()
+        }
+    }
 }
 
 /// Declares a domain. Secondary or alias only — the primary is never created,
 /// it is promoted (see [`promote`]).
 pub async fn create(
-    conn: &mut PgConnection,
+    tx: &mut DbTx,
     name: &str,
     kind: DomainKind,
     parent_id: Option<Uuid>,
@@ -149,18 +181,23 @@ pub async fn create(
         let parent_id = parent_id.ok_or_else(|| {
             AppError::Validation("Un alias doit désigner le domaine dont il reprend les adresses.".into())
         })?;
-        let parent = sqlx::query("SELECT kind, verified_at FROM core.domains WHERE id = $1")
-            .bind(parent_id)
-            .fetch_optional(&mut *conn)
+        let parent = tx
+            .fetch_optional_row(
+                "SELECT kind, verified_at FROM core.domains WHERE id = $1",
+                params![parent_id],
+            )
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::Validation("Le domaine désigné n'existe pas.".into()))?;
-        if parent.get::<String, _>("kind") == "alias" {
+        let parent_kind: String = parent.try_get("kind").map_err(AppError::Database)?;
+        if parent_kind == "alias" {
             return Err(AppError::Validation(
                 "Un alias ne peut pas désigner un autre alias : rattachez-le au domaine d'origine.".into(),
             ));
         }
-        if parent.get::<Option<chrono::DateTime<Utc>>, _>("verified_at").is_none() {
+        let parent_verified: Option<DateTime<Utc>> =
+            parent.try_get("verified_at").map_err(AppError::Database)?;
+        if parent_verified.is_none() {
             return Err(AppError::Validation(
                 "Vérifiez d'abord le domaine dont cet alias reprend les adresses.".into(),
             ));
@@ -177,16 +214,13 @@ pub async fn create(
     let (raw, _hash) = crate::crypto::token::generate_token();
     let token: String = raw.chars().filter(|c| c.is_ascii_alphanumeric()).take(32).collect();
 
-    let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.domains (name, kind, parent_id, verify_token, created_by) \
-         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    // The id is generated in Rust (no `RETURNING` on MySQL) and returned directly.
+    let id = new_id();
+    tx.execute(
+        "INSERT INTO core.domains (id, name, kind, parent_id, verify_token, created_by) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        params![id, name, kind.as_str(), parent_id, &token, actor],
     )
-    .bind(name)
-    .bind(kind.as_str())
-    .bind(parent_id)
-    .bind(&token)
-    .bind(actor)
-    .fetch_one(&mut *conn)
     .await
     .map_err(|e| {
         if let sqlx::Error::Database(db) = &e {
@@ -206,19 +240,20 @@ pub async fn create(
 /// minutes later presses the same button, and a domain that was verified stays
 /// verified even if a later probe fails — a registrar hiccup must not silently
 /// un-own a domain that accounts already depend on.
-pub async fn verify(db: &PgPool, id: Uuid) -> Result<Domain, AppError> {
+pub async fn verify(db: &DbPool, id: Uuid) -> Result<Domain, AppError> {
     let domain = get(db, id).await?;
     let probe = dns::check_verification(&domain.name, &domain.verify_token).await;
 
     match probe {
         Ok(result) if result.found => {
-            sqlx::query(
+            // `NOW()` bound from Rust; placeholders ascending (SET then WHERE).
+            let now = Utc::now();
+            db.execute(
                 "UPDATE core.domains \
-                    SET verified_at = COALESCE(verified_at, NOW()), last_checked_at = NOW(), last_error = NULL \
-                  WHERE id = $1",
+                    SET verified_at = COALESCE(verified_at, $1), last_checked_at = $2, last_error = NULL \
+                  WHERE id = $3",
+                params![now, now, id],
             )
-            .bind(id)
-            .execute(db)
             .await
             .map_err(AppError::Database)?;
         }
@@ -240,36 +275,34 @@ pub async fn verify(db: &PgPool, id: Uuid) -> Result<Domain, AppError> {
     get(db, id).await
 }
 
-async fn record_failure(db: &PgPool, id: Uuid, message: &str) -> Result<(), AppError> {
-    sqlx::query("UPDATE core.domains SET last_checked_at = NOW(), last_error = $2 WHERE id = $1")
-        .bind(id)
-        .bind(message)
-        .execute(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "domains: enregistrement de l'échec de vérification");
-            AppError::Database(e)
-        })?;
+async fn record_failure(db: &DbPool, id: Uuid, message: &str) -> Result<(), AppError> {
+    // `NOW()` bound from Rust; placeholders ascending (SET then WHERE).
+    db.execute(
+        "UPDATE core.domains SET last_checked_at = $1, last_error = $2 WHERE id = $3",
+        params![Utc::now(), message, id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "domains: enregistrement de l'échec de vérification");
+        AppError::Database(e)
+    })?;
     Ok(())
 }
 
 /// Refreshes the mail diagnosis of one domain.
-pub async fn refresh_mail(db: &PgPool, id: Uuid) -> Result<Domain, AppError> {
+pub async fn refresh_mail(db: &DbPool, id: Uuid) -> Result<Domain, AppError> {
     let domain = get(db, id).await?;
     let probe = dns::probe_mail(&domain.name).await;
 
     // A probe that could not run leaves the previous answer in place rather than
     // overwriting a real diagnosis with three falses.
     if probe.error.is_none() {
-        sqlx::query(
-            "UPDATE core.domains SET mx_hosts = $2, has_spf = $3, has_dmarc = $4, mail_checked_at = NOW() \
-              WHERE id = $1",
+        // `NOW()` bound from Rust; placeholders ascending (SET then WHERE).
+        db.execute(
+            "UPDATE core.domains SET mx_hosts = $1, has_spf = $2, has_dmarc = $3, mail_checked_at = $4 \
+              WHERE id = $5",
+            params![json!(probe.mx), probe.spf, probe.dmarc, Utc::now(), id],
         )
-        .bind(id)
-        .bind(json!(probe.mx))
-        .bind(probe.spf)
-        .bind(probe.dmarc)
-        .execute(db)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "domains: enregistrement du diagnostic de messagerie");
@@ -283,16 +316,25 @@ pub async fn refresh_mail(db: &PgPool, id: Uuid) -> Result<Domain, AppError> {
 ///
 /// One transaction, because the unique index means the intermediate state — two
 /// primaries, or none — cannot be allowed to exist even for a statement.
-pub async fn promote(conn: &mut PgConnection, id: Uuid) -> Result<(String, Option<String>), AppError> {
-    let row = sqlx::query("SELECT name, kind, verified_at FROM core.domains WHERE id = $1 FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *conn)
+pub async fn promote(tx: &mut DbTx, id: Uuid) -> Result<(String, Option<String>), AppError> {
+    // The row lock is spelled per engine via `Backend::for_update` (empty on
+    // SQLite, whose writes are already serialized).
+    let for_update = tx.backend().for_update();
+    let row = tx
+        .fetch_optional_row(
+            &format!(
+                "SELECT name, kind, verified_at FROM core.domains WHERE id = $1{}",
+                for_update
+            ),
+            params![id],
+        )
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Domaine introuvable".into()))?;
 
-    let name: String = row.get("name");
-    match row.get::<String, _>("kind").as_str() {
+    let name: String = row.try_get("name").map_err(AppError::Database)?;
+    let kind: String = row.try_get("kind").map_err(AppError::Database)?;
+    match kind.as_str() {
         "primary" => {
             return Err(AppError::Validation(format!(
                 "« {name} » est déjà le domaine principal."
@@ -305,7 +347,9 @@ pub async fn promote(conn: &mut PgConnection, id: Uuid) -> Result<(String, Optio
         }
         _ => {}
     }
-    if row.get::<Option<chrono::DateTime<Utc>>, _>("verified_at").is_none() {
+    let verified_at: Option<DateTime<Utc>> =
+        row.try_get("verified_at").map_err(AppError::Database)?;
+    if verified_at.is_none() {
         return Err(AppError::Validation(format!(
             "Vérifiez « {name} » avant d'en faire le domaine principal."
         )));
@@ -313,21 +357,31 @@ pub async fn promote(conn: &mut PgConnection, id: Uuid) -> Result<(String, Optio
 
     // The outgoing primary becomes a secondary rather than disappearing: its
     // accounts keep their addresses, and the instance keeps answering for it.
-    let previous: Option<String> = sqlx::query_scalar(
-        "UPDATE core.domains SET kind = 'secondary' WHERE kind = 'primary' RETURNING name",
+    // The old `UPDATE … RETURNING name` (which MySQL lacks) is split into a read
+    // then a write; both run on the same transaction, so nothing slips between.
+    let previous: Option<String> = tx
+        .fetch_optional_scalar::<String>(
+            "SELECT name FROM core.domains WHERE kind = 'primary'",
+            params![],
+        )
+        .await
+        .map_err(AppError::Database)?;
+    tx.execute(
+        "UPDATE core.domains SET kind = 'secondary' WHERE kind = 'primary'",
+        params![],
     )
-    .fetch_optional(&mut *conn)
     .await
     .map_err(AppError::Database)?;
 
-    sqlx::query("UPDATE core.domains SET kind = 'primary' WHERE id = $1")
-        .bind(id)
-        .execute(&mut *conn)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "domains: promotion");
-            AppError::Database(e)
-        })?;
+    tx.execute(
+        "UPDATE core.domains SET kind = 'primary' WHERE id = $1",
+        params![id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "domains: promotion");
+        AppError::Database(e)
+    })?;
 
     Ok((name, previous))
 }
@@ -337,7 +391,7 @@ pub async fn promote(conn: &mut PgConnection, id: Uuid) -> Result<(String, Optio
 /// Returned as a list so the console can show a checklist instead of a single
 /// refusal: the reference does exactly this, and it is the difference between
 /// "impossible" and "voilà ce qu'il reste à faire".
-pub async fn removal_blockers(db: &PgPool, domain: &Domain) -> Result<Vec<String>, AppError> {
+pub async fn removal_blockers(db: &DbPool, domain: &Domain) -> Result<Vec<String>, AppError> {
     let mut blockers = Vec::new();
 
     if domain.kind == DomainKind::Primary {
@@ -352,13 +406,16 @@ pub async fn removal_blockers(db: &PgPool, domain: &Domain) -> Result<Vec<String
         ));
     }
 
-    let aliases: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM core.domains WHERE parent_id = $1",
-    )
-    .bind(domain.id)
-    .fetch_one(db)
-    .await
-    .map_err(AppError::Database)?;
+    let aliases: i64 = db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.domains WHERE parent_id = $1",
+                db.backend().count_bigint("*")
+            ),
+            params![domain.id],
+        )
+        .await
+        .map_err(AppError::Database)?;
     if aliases > 0 {
         blockers.push(format!(
             "{aliases} alias reprennent les adresses de ce domaine. Retirez-les d'abord."
@@ -369,10 +426,8 @@ pub async fn removal_blockers(db: &PgPool, domain: &Domain) -> Result<Vec<String
 }
 
 /// Removes a domain once nothing stands in the way.
-pub async fn delete(conn: &mut PgConnection, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM core.domains WHERE id = $1")
-        .bind(id)
-        .execute(&mut *conn)
+pub async fn delete(tx: &mut DbTx, id: Uuid) -> Result<(), AppError> {
+    tx.execute("DELETE FROM core.domains WHERE id = $1", params![id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "domains: suppression");
@@ -381,28 +436,42 @@ pub async fn delete(conn: &mut PgConnection, id: Uuid) -> Result<(), AppError> {
     Ok(())
 }
 
+/// One row of the registry summary.
+#[derive(Debug, FromRow)]
+struct OverviewRow {
+    total: i64,
+    verified: i64,
+    pending: i64,
+    aliases: i64,
+    primary_name: Option<String>,
+}
+
 /// The registry, summarised for the page header.
-pub async fn overview(db: &PgPool) -> Result<Value, AppError> {
-    let row = sqlx::query(
-        r#"SELECT COUNT(*)::bigint                                              AS total,
-                  COUNT(*) FILTER (WHERE verified_at IS NOT NULL)::bigint       AS verified,
-                  COUNT(*) FILTER (WHERE verified_at IS NULL)::bigint           AS pending,
-                  COUNT(*) FILTER (WHERE kind = 'alias')::bigint                AS aliases,
-                  (SELECT name FROM core.domains WHERE kind = 'primary')        AS primary_name
+pub async fn overview(db: &DbPool) -> Result<Value, AppError> {
+    // `COUNT(*) FILTER (WHERE …)` is PostgreSQL/SQLite only, so it is expressed
+    // as the portable `COUNT(CASE WHEN … THEN 1 END)`; the redundant `::bigint`
+    // casts are dropped.
+    let row = db
+        .fetch_one_as::<OverviewRow>(
+            r#"SELECT COUNT(*)                                              AS total,
+                  COUNT(CASE WHEN verified_at IS NOT NULL THEN 1 END)   AS verified,
+                  COUNT(CASE WHEN verified_at IS NULL THEN 1 END)       AS pending,
+                  COUNT(CASE WHEN kind = 'alias' THEN 1 END)            AS aliases,
+                  (SELECT name FROM core.domains WHERE kind = 'primary') AS primary_name
              FROM core.domains"#,
-    )
-    .fetch_one(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "domains: état du registre");
-        AppError::Database(e)
-    })?;
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "domains: état du registre");
+            AppError::Database(e)
+        })?;
 
     Ok(json!({
-        "total":        row.get::<i64, _>("total"),
-        "verified":     row.get::<i64, _>("verified"),
-        "pending":      row.get::<i64, _>("pending"),
-        "aliases":      row.get::<i64, _>("aliases"),
-        "primary_name": row.get::<Option<String>, _>("primary_name"),
+        "total":        row.total,
+        "verified":     row.verified,
+        "pending":      row.pending,
+        "aliases":      row.aliases,
+        "primary_name": row.primary_name,
     }))
 }

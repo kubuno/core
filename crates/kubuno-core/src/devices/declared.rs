@@ -23,22 +23,24 @@
 //!   day somebody implements hardware attestation there is a slot for it, and
 //!   the route below refuses to be that slot.
 
+use kubuno_db::{params, DbPool};
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::model::{event_kind, Tri};
 use crate::errors::AppError;
 
 /// Reads a boolean setting, defaulting when the row is missing or malformed.
-async fn bool_setting(db: &PgPool, key: &str, default: bool) -> bool {
-    let value: Option<Value> = sqlx::query_scalar("SELECT value FROM core.settings WHERE key = $1")
-        .bind(key)
-        .fetch_optional(db)
+async fn bool_setting(db: &DbPool, key: &str, default: bool) -> bool {
+    let value: Option<Value> = db
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE \"key\" = $1",
+            params![key],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, key = %key, "devices: lecture d'un réglage");
+            tracing::error!(error = %e, key = %key, "devices: reading a setting");
             e
         })
         .ok()
@@ -49,23 +51,25 @@ async fn bool_setting(db: &PgPool, key: &str, default: bool) -> bool {
 }
 
 /// Are declared signals accepted on this instance?
-pub async fn enabled(db: &PgPool) -> bool {
+pub async fn enabled(db: &DbPool) -> bool {
     bool_setting(db, "devices.declared_signals_enabled", false).await
 }
 
 /// Does blocking a device actually refuse its refreshes?
-pub async fn block_denies_refresh(db: &PgPool) -> bool {
+pub async fn block_denies_refresh(db: &DbPool) -> bool {
     bool_setting(db, "devices.block_denies_refresh", true).await
 }
 
 /// Configured path of the offline country database (empty = disabled).
-pub async fn country_db_path(db: &PgPool) -> String {
-    let value: Option<Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'devices.country_db_path'")
-            .fetch_optional(db)
-            .await
-            .ok()
-            .flatten();
+pub async fn country_db_path(db: &DbPool) -> String {
+    let value: Option<Value> = db
+        .fetch_optional_scalar::<Value>(
+            "SELECT value FROM core.settings WHERE \"key\" = 'devices.country_db_path'",
+            params![],
+        )
+        .await
+        .ok()
+        .flatten();
     value
         .and_then(|v| v.as_str().map(str::to_string))
         .unwrap_or_default()
@@ -99,40 +103,45 @@ fn trimmed(value: &Option<String>, max: usize) -> Option<String> {
 /// previous value instead of collapsing to unknown, which would make a partial
 /// declaration destructive.
 pub async fn apply(
-    db: &PgPool,
+    db: &DbPool,
     device_id: Uuid,
     user_id: Uuid,
     dto: &DeclareDto,
 ) -> Result<(), AppError> {
-    let affected = sqlx::query(
-        r#"UPDATE core.devices
-              SET declared_platform    = COALESCE($3, declared_platform),
-                  declared_version     = COALESCE($4, declared_version),
-                  declared_app_version = COALESCE($5, declared_app_version),
-                  disk_encrypted       = COALESCE($6, disk_encrypted),
-                  screen_lock          = COALESCE($7, screen_lock),
-                  declared_at          = NOW(),
+    // Placeholders must appear once each in ascending order (portable rewrite):
+    // the SET assignments come first, the WHERE keys after. `declared_at` is
+    // bound from Rust rather than the PostgreSQL-only `NOW()`.
+    let affected = db
+        .execute(
+            r#"UPDATE core.devices
+              SET declared_platform    = COALESCE($1, declared_platform),
+                  declared_version     = COALESCE($2, declared_version),
+                  declared_app_version = COALESCE($3, declared_app_version),
+                  disk_encrypted       = COALESCE($4, disk_encrypted),
+                  screen_lock          = COALESCE($5, screen_lock),
+                  declared_at          = $6,
                   -- Never downgrades: a device that reached `attested` (nothing
                   -- produces that today) must not fall back to `declared`
                   -- because a routine declaration arrived.
                   signal_level         = CASE WHEN signal_level = 'attested'
                                               THEN signal_level ELSE 'declared' END
-            WHERE id = $1 AND user_id = $2"#,
-    )
-    .bind(device_id)
-    .bind(user_id)
-    .bind(trimmed(&dto.platform, 64))
-    .bind(trimmed(&dto.platform_version, 64))
-    .bind(trimmed(&dto.app_version, 64))
-    .bind(dto.disk_encrypted)
-    .bind(dto.screen_lock)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, device_id = %device_id, "devices: enregistrement d'une déclaration");
-        AppError::Database(e)
-    })?
-    .rows_affected();
+            WHERE id = $7 AND user_id = $8"#,
+            params![
+                trimmed(&dto.platform, 64),
+                trimmed(&dto.platform_version, 64),
+                trimmed(&dto.app_version, 64),
+                dto.disk_encrypted,
+                dto.screen_lock,
+                chrono::Utc::now(),
+                device_id,
+                user_id
+            ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, device_id = %device_id, "devices: recording a declaration");
+            AppError::Database(e)
+        })?;
 
     if affected == 0 {
         return Err(AppError::NotFound("Appareil introuvable".into()));

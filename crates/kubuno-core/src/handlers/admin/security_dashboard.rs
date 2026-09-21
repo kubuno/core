@@ -52,6 +52,7 @@ use axum::{
     extract::{Query, State},
     Json,
 };
+use kubuno_db::{params, DbPool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -336,15 +337,16 @@ struct Panel {
 /// Served with the page so the console can say, on a 180-day window, that the
 /// rule log only keeps 90 — instead of drawing a flat start that reads as a quiet
 /// quarter when it is a purged one.
-async fn retention(db: &sqlx::PgPool) -> Value {
-    let rows: Vec<(String, Value)> = sqlx::query_as(
-        "SELECT key, value FROM core.settings \
-          WHERE key IN ('security.audit_retention_days', 'alerts.retention_days', \
-                        'rules.execution_retention_days')",
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_else(|e| {
+async fn retention(db: &DbPool) -> Value {
+    let rows: Vec<(String, Value)> = db
+        .fetch_all_as::<(String, Value)>(
+            "SELECT \"key\", value FROM core.settings \
+              WHERE \"key\" IN ('security.audit_retention_days', 'alerts.retention_days', \
+                            'rules.execution_retention_days')",
+            params![],
+        )
+        .await
+        .unwrap_or_else(|e| {
         // Best-effort: a missing retention note must not cost the operator the
         // whole page.
         tracing::error!(error = %e, "security_dashboard: rétentions");

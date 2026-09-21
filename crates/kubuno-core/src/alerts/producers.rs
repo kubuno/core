@@ -29,9 +29,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use kubuno_db::dialect::SqlType;
+use kubuno_db::{params, Backend, DbPool, DbQueryBuilder};
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use super::catalog;
@@ -81,20 +82,22 @@ const SETTING_KEYS: &[&str] = &[
     "alerts.retention_days",
 ];
 
-pub async fn thresholds(db: &PgPool) -> Result<Thresholds, AppError> {
-    let rows = sqlx::query("SELECT key, value FROM core.settings WHERE key = ANY($1)")
-        .bind(SETTING_KEYS)
-        .fetch_all(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "alerts: lecture des seuils");
-            AppError::Database(e)
-        })?;
+/// One `core.settings` row, keyed for the threshold map.
+#[derive(sqlx::FromRow)]
+struct SettingKv {
+    key: String,
+    value: Value,
+}
 
-    let map: HashMap<String, Value> = rows
-        .iter()
-        .map(|r| (r.get::<String, _>("key"), r.get::<Value, _>("value")))
-        .collect();
+pub async fn thresholds(db: &DbPool) -> Result<Thresholds, AppError> {
+    let mut qb = DbQueryBuilder::new(db.backend(), "SELECT \"key\", value FROM core.settings WHERE \"key\"");
+    qb.push_in(SETTING_KEYS.iter().copied());
+    let rows: Vec<SettingKv> = qb.fetch_all_as::<SettingKv>(db).await.map_err(|e| {
+        tracing::error!(error = %e, "alerts: lecture des seuils");
+        AppError::Database(e)
+    })?;
+
+    let map: HashMap<String, Value> = rows.into_iter().map(|r| (r.key, r.value)).collect();
 
     let d = Thresholds::default();
     let int = |key: &str, fallback: i64| -> i64 {
@@ -146,7 +149,7 @@ impl ScanReport {
 /// take the other five down with it, because the ones still working are exactly
 /// what an operator needs when something is already wrong. Each error is logged
 /// where it happens.
-pub async fn run_all(db: &PgPool, settings: &Settings) -> Result<ScanReport, AppError> {
+pub async fn run_all(db: &DbPool, settings: &Settings) -> Result<ScanReport, AppError> {
     let cfg = thresholds(db).await?;
     let mut report = ScanReport::default();
 
@@ -213,15 +216,16 @@ pub async fn run_all(db: &PgPool, settings: &Settings) -> Result<ScanReport, App
 /// and asking the queue is the only answer that cannot drift from reality. The
 /// console shows it next to "no alert", because "nothing to report" and "nothing
 /// has looked" are not the same sentence.
-pub async fn last_scan_at(db: &PgPool) -> Result<Option<DateTime<Utc>>, AppError> {
-    sqlx::query_scalar("SELECT MAX(done_at) FROM core.jobs WHERE job_type = $1 AND status = 'done'")
-        .bind(super::jobs::SCAN)
-        .fetch_one(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "alerts: lecture de la date de dernière analyse");
-            AppError::Database(e)
-        })
+pub async fn last_scan_at(db: &DbPool) -> Result<Option<DateTime<Utc>>, AppError> {
+    db.fetch_scalar::<Option<DateTime<Utc>>>(
+        "SELECT MAX(done_at) FROM core.jobs WHERE job_type = $1 AND status = 'done'",
+        params![super::jobs::SCAN],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "alerts: lecture de la date de dernière analyse");
+        AppError::Database(e)
+    })
 }
 
 // ── State producers ──────────────────────────────────────────────────────────
@@ -251,7 +255,7 @@ pub async fn last_scan_at(db: &PgPool) -> Result<Option<DateTime<Utc>>, AppError
 const PROBE_DEPENDENT: &[&str] = &["exposure.https"];
 
 async fn health_criticals(
-    db: &PgPool,
+    db: &DbPool,
     settings: &Settings,
     report: &mut ScanReport,
 ) -> Result<(), AppError> {
@@ -306,38 +310,50 @@ async fn health_criticals(
 /// Same query as the health report's own module check, on purpose: one reading
 /// of `core.module_instances`, so the banner and the queue never disagree about
 /// whether Drive is up.
-async fn failing_modules(db: &PgPool, report: &mut ScanReport) -> Result<(), AppError> {
-    let rows = sqlx::query(
-        r#"SELECT m.id AS id,
-                  m.display_name AS display_name,
-                  COALESCE(mi.status, 'never_registered') AS status,
-                  mi.last_heartbeat AS last_heartbeat
-             FROM core.modules m
-             LEFT JOIN LATERAL (
-                 SELECT status, last_heartbeat
-                   FROM core.module_instances
-                  WHERE module_id = m.id
-                  ORDER BY registered_at DESC
-                  LIMIT 1
-             ) mi ON TRUE
-            WHERE m.is_enabled = TRUE
-              AND m.is_core_module = FALSE
-              AND (mi.status IS NULL OR mi.status IN ('degraded', 'stopped'))
-            ORDER BY m.id"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: lecture des modules en échec");
-        AppError::Database(e)
-    })?;
+/// A module whose latest instance is unhealthy or missing.
+#[derive(sqlx::FromRow)]
+struct ModuleFail {
+    id: String,
+    display_name: String,
+    status: String,
+    last_heartbeat: Option<DateTime<Utc>>,
+}
+
+async fn failing_modules(db: &DbPool, report: &mut ScanReport) -> Result<(), AppError> {
+    // The former `LEFT JOIN LATERAL ... LIMIT 1` (PostgreSQL-only) is expressed
+    // as a join to the latest instance selected by a correlated `MAX`.
+    let rows = db
+        .fetch_all_as::<ModuleFail>(
+            r#"SELECT m.id AS id,
+                      m.display_name AS display_name,
+                      COALESCE(mi.status, 'never_registered') AS status,
+                      mi.last_heartbeat AS last_heartbeat
+                 FROM core.modules m
+                 LEFT JOIN core.module_instances mi
+                        ON mi.module_id = m.id
+                       AND mi.registered_at = (
+                           SELECT MAX(registered_at)
+                             FROM core.module_instances x
+                            WHERE x.module_id = m.id
+                       )
+                WHERE m.is_enabled = TRUE
+                  AND m.is_core_module = FALSE
+                  AND (mi.status IS NULL OR mi.status IN ('degraded', 'stopped'))
+                ORDER BY m.id"#,
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: lecture des modules en échec");
+            AppError::Database(e)
+        })?;
 
     let mut live = Vec::new();
     for row in &rows {
-        let id: String = row.get("id");
-        let name: String = row.get("display_name");
-        let status: String = row.get("status");
-        let heartbeat: Option<DateTime<Utc>> = row.get("last_heartbeat");
+        let id: String = row.id.clone();
+        let name: String = row.display_name.clone();
+        let status: String = row.status.clone();
+        let heartbeat: Option<DateTime<Utc>> = row.last_heartbeat;
 
         let alert = NewAlert::new(
             catalog::MODULE_UNAVAILABLE,
@@ -371,32 +387,49 @@ async fn failing_modules(db: &PgPool, report: &mut ScanReport) -> Result<(), App
 /// are one problem with one fix, and two hundred alerts about it would be the
 /// exact failure mode this feature exists to avoid. The count travels in the
 /// payload; the deduplication counter says how many passes have seen it.
-async fn dead_letter_jobs(db: &PgPool, report: &mut ScanReport) -> Result<(), AppError> {
-    let rows = sqlx::query(
+/// One dead-letter job type, with its running count and latest failure detail.
+#[derive(sqlx::FromRow)]
+struct DeadLetter {
+    job_type: String,
+    failures: i64,
+    last_failure: Option<DateTime<Utc>>,
+    last_error: Option<String>,
+    module_id: Option<String>,
+}
+
+async fn dead_letter_jobs(db: &DbPool, report: &mut ScanReport) -> Result<(), AppError> {
+    // `array_agg(...)[1]` (PostgreSQL-only) is replaced by correlated
+    // "latest row of the group" subqueries; `COUNT(*)` goes through
+    // `count_bigint` so it decodes as `i64` on every engine.
+    let backend = db.backend();
+    let sql = format!(
         r#"SELECT job_type,
-                  COUNT(*)                                            AS failures,
-                  MAX(done_at)                                        AS last_failure,
-                  (array_agg(error ORDER BY done_at DESC NULLS LAST))[1] AS last_error,
-                  (array_agg(module_id ORDER BY done_at DESC NULLS LAST))[1] AS module_id
-             FROM core.jobs
+                  {failures} AS failures,
+                  MAX(done_at) AS last_failure,
+                  (SELECT error FROM core.jobs j2
+                     WHERE j2.job_type = j.job_type AND j2.status = 'failed'
+                     ORDER BY done_at DESC LIMIT 1) AS last_error,
+                  (SELECT module_id FROM core.jobs j3
+                     WHERE j3.job_type = j.job_type AND j3.status = 'failed'
+                     ORDER BY done_at DESC LIMIT 1) AS module_id
+             FROM core.jobs j
             WHERE status = 'failed'
             GROUP BY job_type
             ORDER BY job_type"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
+        failures = backend.count_bigint("*"),
+    );
+    let rows = db.fetch_all_as::<DeadLetter>(&sql, params![]).await.map_err(|e| {
         tracing::error!(error = %e, "alerts: lecture des tâches en échec définitif");
         AppError::Database(e)
     })?;
 
     let mut live = Vec::new();
     for row in &rows {
-        let job_type: String = row.get("job_type");
-        let failures: i64 = row.get("failures");
-        let last_error: Option<String> = row.get("last_error");
-        let module_id: Option<String> = row.get("module_id");
-        let last_failure: Option<DateTime<Utc>> = row.get("last_failure");
+        let job_type: String = row.job_type.clone();
+        let failures: i64 = row.failures;
+        let last_error: Option<String> = row.last_error.clone();
+        let module_id: Option<String> = row.module_id.clone();
+        let last_failure: Option<DateTime<Utc>> = row.last_failure;
 
         // A single give-up is worth knowing about; a pile of them means the work
         // is not getting done at all.
@@ -445,7 +478,7 @@ async fn dead_letter_jobs(db: &PgPool, report: &mut ScanReport) -> Result<(), Ap
 /// `continuity.backup` goes critical there, and [`health_criticals`] turns that
 /// into an alert already. Two kinds saying the same sentence is how a queue
 /// stops being read.
-async fn backup_failures(db: &PgPool, report: &mut ScanReport) -> Result<(), AppError> {
+async fn backup_failures(db: &DbPool, report: &mut ScanReport) -> Result<(), AppError> {
     let stats = crate::backup::runs::stats(db).await?;
 
     let failing = stats.last_status.as_deref() == Some("failed");
@@ -497,40 +530,55 @@ async fn backup_failures(db: &PgPool, report: &mut ScanReport) -> Result<(), App
 /// Reads `core.admin_audit`, which records `core.auth.login_failed` for
 /// administrator accounts — the ones whose compromise matters, and the reason
 /// the trail does not fill up with misses on names a stranger invented.
+/// One account's run of failed sign-ins in the window.
+#[derive(sqlx::FromRow)]
+struct LoginBurst {
+    target_id: String,
+    target_label: Option<String>,
+    failures: i64,
+    sources: i64,
+    last_attempt: Option<DateTime<Utc>>,
+}
+
 async fn login_bursts(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &Thresholds,
     report: &mut ScanReport,
 ) -> Result<(), AppError> {
-    let rows = sqlx::query(
+    // `make_interval` is replaced by a cut-off computed in Rust; `host(inet)`
+    // (PostgreSQL-only) is dropped in favour of counting distinct raw addresses.
+    let backend = db.backend();
+    let cutoff = Utc::now() - Duration::minutes(cfg.login_window_min);
+    let sql = format!(
         r#"SELECT target_id,
-                  MAX(target_label)                       AS target_label,
-                  COUNT(*)                                AS failures,
-                  COUNT(DISTINCT host(ip_address))        AS sources,
-                  MAX(occurred_at)                        AS last_attempt
+                  MAX(target_label) AS target_label,
+                  {failures} AS failures,
+                  {sources} AS sources,
+                  MAX(occurred_at) AS last_attempt
              FROM core.admin_audit
             WHERE action = 'core.auth.login_failed'
               AND target_id IS NOT NULL
-              AND occurred_at >= NOW() - make_interval(mins => $1::int)
+              AND occurred_at >= $1
             GROUP BY target_id
            HAVING COUNT(*) >= $2"#,
-    )
-    .bind(cfg.login_window_min as i32)
-    .bind(cfg.login_burst)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: lecture des échecs de connexion");
-        AppError::Database(e)
-    })?;
+        failures = backend.count_bigint("*"),
+        sources = backend.count_bigint("DISTINCT ip_address"),
+    );
+    let rows = db
+        .fetch_all_as::<LoginBurst>(&sql, params![cutoff, cfg.login_burst])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: lecture des échecs de connexion");
+            AppError::Database(e)
+        })?;
 
     let mut live = Vec::new();
     for row in &rows {
-        let target_id: String = row.get("target_id");
-        let label: Option<String> = row.get("target_label");
-        let failures: i64 = row.get("failures");
-        let sources: i64 = row.get("sources");
-        let last_attempt: Option<DateTime<Utc>> = row.get("last_attempt");
+        let target_id: String = row.target_id.clone();
+        let label: Option<String> = row.target_label.clone();
+        let failures: i64 = row.failures;
+        let sources: i64 = row.sources;
+        let last_attempt: Option<DateTime<Utc>> = row.last_attempt;
         let label = label.unwrap_or_else(|| target_id.clone());
 
         // Three times the threshold in the same window is not somebody
@@ -594,18 +642,25 @@ const EVENT_LOOKBACK_HOURS: i64 = 48;
 /// twice, so the reading itself has to advance: this watermark is that
 /// advancement, kept in the payload of the alerts rather than in a settings row
 /// nobody would think to look at.
-async fn audit_watermark(db: &PgPool, kind: &str) -> Result<i64, AppError> {
-    sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT MAX((payload->>'audit_id')::bigint) FROM core.alerts WHERE kind = $1",
-    )
-    .bind(kind)
-    .fetch_one(db)
-    .await
-    .map(|v| v.unwrap_or(0))
-    .map_err(|e| {
-        tracing::error!(error = %e, kind = %kind, "alerts: lecture du repère de lecture du journal");
-        AppError::Database(e)
-    })
+async fn audit_watermark(db: &DbPool, kind: &str) -> Result<i64, AppError> {
+    // `payload->>'audit_id'` becomes `dialect::json_text`; the numeric cast that
+    // made `MAX` sort numerically is spelled per engine (the `cast` helper takes
+    // only `&'static str`, and the JSON extraction is built at run time).
+    let backend = db.backend();
+    let extracted = backend.json_text("payload", &["audit_id"]);
+    let casted = match backend {
+        Backend::Postgres => format!("({extracted})::bigint"),
+        Backend::MySql => format!("CAST({extracted} AS SIGNED)"),
+        Backend::Sqlite => format!("CAST({extracted} AS INTEGER)"),
+    };
+    let sql = format!("SELECT MAX({casted}) FROM core.alerts WHERE kind = $1");
+    db.fetch_scalar::<Option<i64>>(&sql, params![kind])
+        .await
+        .map(|v| v.unwrap_or(0))
+        .map_err(|e| {
+            tracing::error!(error = %e, kind = %kind, "alerts: lecture du repère de lecture du journal");
+            AppError::Database(e)
+        })
 }
 
 /// Somebody was granted an administrative role.
@@ -615,35 +670,47 @@ async fn audit_watermark(db: &PgPool, kind: &str) -> Result<i64, AppError> {
 /// of three. The payload keeps the most recent entry's id, which is both the
 /// link into the trail and the watermark that stops the next pass re-counting
 /// what this one already reported.
-async fn privilege_grants(db: &PgPool, report: &mut ScanReport) -> Result<(), AppError> {
+/// One administrative-role grant lifted from the audit trail.
+#[derive(sqlx::FromRow)]
+struct Grant {
+    id: i64,
+    occurred_at: DateTime<Utc>,
+    actor_label: String,
+    target_label: Option<String>,
+    after: Option<Value>,
+}
+
+async fn privilege_grants(db: &DbPool, report: &mut ScanReport) -> Result<(), AppError> {
     let watermark = audit_watermark(db, catalog::PRIVILEGE_GRANTED).await?;
 
-    let rows = sqlx::query(
-        r#"SELECT id, occurred_at, actor_label, target_label, target_id, after
-             FROM core.admin_audit
-            WHERE action = 'core.role_assignments.create'
-              AND outcome = 'success'
-              AND id > $2
-              AND occurred_at >= NOW() - make_interval(hours => $1::int)
-            ORDER BY id"#,
-    )
-    .bind(EVENT_LOOKBACK_HOURS as i32)
-    .bind(watermark)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: lecture des privilèges accordés");
-        AppError::Database(e)
-    })?;
+    // `make_interval` becomes a cut-off computed in Rust. Placeholders follow
+    // their text order: the watermark ($1) then the cut-off ($2).
+    let cutoff = Utc::now() - Duration::hours(EVENT_LOOKBACK_HOURS);
+    let rows = db
+        .fetch_all_as::<Grant>(
+            r#"SELECT id, occurred_at, actor_label, target_label, after
+                 FROM core.admin_audit
+                WHERE action = 'core.role_assignments.create'
+                  AND outcome = 'success'
+                  AND id > $1
+                  AND occurred_at >= $2
+                ORDER BY id"#,
+            params![watermark, cutoff],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: lecture des privilèges accordés");
+            AppError::Database(e)
+        })?;
 
     for row in &rows {
-        let audit_id: i64 = row.get("id");
-        let actor: String = row.get("actor_label");
-        let target: Option<String> = row.get("target_label");
-        let occurred_at: DateTime<Utc> = row.get("occurred_at");
+        let audit_id: i64 = row.id;
+        let actor: String = row.actor_label.clone();
+        let target: Option<String> = row.target_label.clone();
+        let occurred_at: DateTime<Utc> = row.occurred_at;
         // The audit snapshot is already whitelisted and redacted upstream; only
         // the two descriptive fields are lifted out of it.
-        let after: Option<Value> = row.get("after");
+        let after: Option<Value> = row.after.clone();
         let scope = after
             .as_ref()
             .and_then(|v| v.get("scope"))
@@ -687,37 +754,53 @@ const SENSITIVE_PREFIXES: &[&str] = &["auth.", "security.", "mail.", "backup."];
 /// Deduplicated on the **setting key**: a value an operator flipped four times
 /// this afternoon is one line reading “×4”, not four lines saying the same
 /// sentence. See [`audit_watermark`] for why the reading advances instead.
-async fn sensitive_settings(db: &PgPool, report: &mut ScanReport) -> Result<(), AppError> {
+/// One sensitive-setting change lifted from the audit trail.
+#[derive(sqlx::FromRow)]
+struct Sensitive {
+    id: i64,
+    occurred_at: DateTime<Utc>,
+    actor_label: String,
+    target_id: String,
+    target_label: Option<String>,
+}
+
+async fn sensitive_settings(db: &DbPool, report: &mut ScanReport) -> Result<(), AppError> {
     let patterns: Vec<String> = SENSITIVE_PREFIXES.iter().map(|p| format!("{p}%")).collect();
     let watermark = audit_watermark(db, catalog::SENSITIVE_SETTING).await?;
 
-    let rows = sqlx::query(
+    // `target_id LIKE ANY($1)` (array, PostgreSQL-only) becomes an explicit
+    // `OR`-chain of `LIKE`; `make_interval` becomes a cut-off computed in Rust.
+    let cutoff = Utc::now() - Duration::hours(EVENT_LOOKBACK_HOURS);
+    let mut qb = DbQueryBuilder::new(
+        db.backend(),
         r#"SELECT id, occurred_at, actor_label, target_id, target_label
              FROM core.admin_audit
             WHERE action = 'core.settings.change'
               AND outcome = 'success'
-              AND target_id IS NOT NULL
-              AND target_id LIKE ANY($1)
-              AND id > $3
-              AND occurred_at >= NOW() - make_interval(hours => $2::int)
-            ORDER BY id"#,
-    )
-    .bind(&patterns)
-    .bind(EVENT_LOOKBACK_HOURS as i32)
-    .bind(watermark)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
+              AND target_id IS NOT NULL"#,
+    );
+    qb.push(" AND (");
+    for (i, pat) in patterns.iter().enumerate() {
+        if i > 0 {
+            qb.push(" OR ");
+        }
+        qb.push("target_id LIKE ").push_bind(pat);
+    }
+    qb.push(")");
+    qb.push(" AND id > ").push_bind(watermark);
+    qb.push(" AND occurred_at >= ").push_bind(cutoff);
+    qb.push_order_by("id");
+    let rows = qb.fetch_all_as::<Sensitive>(db).await.map_err(|e| {
         tracing::error!(error = %e, "alerts: lecture des réglages sensibles modifiés");
         AppError::Database(e)
     })?;
 
     for row in &rows {
-        let audit_id: i64 = row.get("id");
-        let key: String = row.get("target_id");
-        let label: Option<String> = row.get("target_label");
-        let actor: String = row.get("actor_label");
-        let occurred_at: DateTime<Utc> = row.get("occurred_at");
+        let audit_id: i64 = row.id;
+        let key: String = row.target_id.clone();
+        let label: Option<String> = row.target_label.clone();
+        let actor: String = row.actor_label.clone();
+        let occurred_at: DateTime<Utc> = row.occurred_at;
 
         let alert = NewAlert::new(
             catalog::SENSITIVE_SETTING,
@@ -751,7 +834,7 @@ async fn sensitive_settings(db: &PgPool, report: &mut ScanReport) -> Result<(), 
 /// `warning` — it says "keep an eye on this" — while an alert is a piece of work
 /// with an owner and a deadline.
 async fn disk_pressure(
-    db: &PgPool,
+    db: &DbPool,
     settings: &Settings,
     cfg: &Thresholds,
     report: &mut ScanReport,
@@ -815,12 +898,27 @@ async fn disk_pressure(
 /// the full list is read.
 const MAX_QUOTA_ALERTS: i64 = 25;
 
+/// One account at or past the configured share of its quota.
+#[derive(sqlx::FromRow)]
+struct QuotaRow {
+    id: Uuid,
+    label: String,
+    email: String,
+    used_bytes: i64,
+    quota_bytes: i64,
+    org_unit_id: Option<Uuid>,
+}
+
 async fn quota_pressure(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &Thresholds,
     report: &mut ScanReport,
 ) -> Result<(), AppError> {
-    let rows = sqlx::query(
+    // `used_bytes::float8` (PostgreSQL cast) becomes `dialect::cast`, spelled per
+    // engine, so the ordering by fill ratio holds everywhere.
+    let backend = db.backend();
+    let order = format!("{} / quota_bytes", backend.cast("used_bytes", SqlType::Double));
+    let sql = format!(
         r#"SELECT id,
                   COALESCE(NULLIF(display_name, ''), username) AS label,
                   email, used_bytes, quota_bytes, org_unit_id
@@ -828,25 +926,24 @@ async fn quota_pressure(
             WHERE is_active = TRUE
               AND quota_bytes > 0
               AND used_bytes * 100 >= quota_bytes * $1
-            ORDER BY (used_bytes::float8 / quota_bytes) DESC
+            ORDER BY {order} DESC
             LIMIT $2"#,
-    )
-    .bind(cfg.quota_percent)
-    .bind(MAX_QUOTA_ALERTS)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "alerts: lecture des comptes saturés");
-        AppError::Database(e)
-    })?;
+    );
+    let rows = db
+        .fetch_all_as::<QuotaRow>(&sql, params![cfg.quota_percent, MAX_QUOTA_ALERTS])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "alerts: lecture des comptes saturés");
+            AppError::Database(e)
+        })?;
 
     let mut live = Vec::new();
     for row in &rows {
-        let id: Uuid = row.get("id");
-        let label: String = row.get("label");
-        let used: i64 = row.get("used_bytes");
-        let quota: i64 = row.get("quota_bytes");
-        let unit: Option<Uuid> = row.get("org_unit_id");
+        let id: Uuid = row.id;
+        let label: String = row.label.clone();
+        let used: i64 = row.used_bytes;
+        let quota: i64 = row.quota_bytes;
+        let unit: Option<Uuid> = row.org_unit_id;
         let percent = if quota > 0 { used * 100 / quota } else { 0 };
 
         // At or past 100 % the account can no longer store anything: that is an
@@ -870,7 +967,7 @@ async fn quota_pressure(
             // The address is what an operator needs to reach the person; it is
             // already in the audit trail and the directory, and the alert names
             // no other attribute of the account.
-            "email":       row.get::<String, _>("email"),
+            "email":       row.email.clone(),
             "used_bytes":  used,
             "quota_bytes": quota,
             "percent":     percent,

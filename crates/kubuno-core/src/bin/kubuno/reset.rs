@@ -6,6 +6,7 @@ use kubuno_core::{
     config::Settings,
     database::{migrations, pool::create_pool, seed},
 };
+use kubuno_db::params;
 use kubuno_storage::StorageBackendType;
 
 use crate::display::*;
@@ -66,16 +67,20 @@ pub async fn cmd_app_reset(args: &clap::ArgMatches) -> Result<()> {
         .await
         .context("Connexion à la base de données")?;
 
-    // ── Découverte des schémas à supprimer ──────────────────────────────────
-    let schemas: Vec<String> = sqlx::query_scalar(
-        "SELECT nspname FROM pg_catalog.pg_namespace
-         WHERE nspname NOT IN ('public', 'information_schema')
-           AND nspname NOT LIKE 'pg_%'
-         ORDER BY nspname",
-    )
-    .fetch_all(&pool)
-    .await
-    .context("Liste des schémas PostgreSQL")?;
+    // ── Discovery of the schemas to drop ────────────────────────────────────
+    let schemas: Vec<String> = pool
+        .fetch_all_as::<(String,)>(
+            "SELECT nspname FROM pg_catalog.pg_namespace
+             WHERE nspname NOT IN ('public', 'information_schema')
+               AND nspname NOT LIKE 'pg_%'
+             ORDER BY nspname",
+            params![],
+        )
+        .await
+        .context("Liste des schémas PostgreSQL")?
+        .into_iter()
+        .map(|(s,)| s)
+        .collect();
 
     let storage_path = settings.storage.local_path().to_string();
     let temp_path    = settings.storage.temp_path().to_string();
@@ -133,20 +138,16 @@ pub async fn cmd_app_reset(args: &clap::ArgMatches) -> Result<()> {
             // here rather than trusted — `quote_ident` doubles any interior
             // quote, which is what makes the identifier unable to end early.
             let ident = quote_ident(schema)?;
-            sqlx::query(sqlx::AssertSqlSafe(format!(
-                "DROP SCHEMA IF EXISTS {ident} CASCADE"
-            )))
-                .execute(&pool)
+            pool.execute(&format!("DROP SCHEMA IF EXISTS {ident} CASCADE"), params![])
                 .await
                 .with_context(|| format!("Suppression du schéma {schema}"))?;
         }
         ok(&format!("{} schéma(s) supprimé(s).", schemas.len()));
     }
 
-    // ── 2. Réinitialisation de l'historique des migrations ──────────────────
+    // ── 2. Reset of the migration history ───────────────────────────────────
     info("Réinitialisation de _sqlx_migrations…");
-    sqlx::query("DELETE FROM _sqlx_migrations")
-        .execute(&pool)
+    pool.execute("DELETE FROM _sqlx_migrations", params![])
         .await
         .context("Réinitialisation de _sqlx_migrations")?;
     ok("Historique des migrations réinitialisé.");
@@ -198,28 +199,31 @@ pub async fn cmd_module_reset(module_id: &str, force: bool, keep_files: bool) ->
         .await
         .context("Connexion à la base de données")?;
 
-    // Vérifier que le schéma existe
-    let schema_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1)",
-    )
-    .bind(module_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
+    // Check that the schema exists.
+    let schema_exists: bool = pool
+        .fetch_scalar::<bool>(
+            "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1)",
+            params![module_id],
+        )
+        .await
+        .unwrap_or(false);
 
     if !schema_exists {
         warn(&format!("Le schéma '{module_id}' n'existe pas — module déjà réinitialisé ou non installé."));
         return Ok(());
     }
 
-    // Compter les tables pour informer l'utilisateur
-    let table_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = $1",
-    )
-    .bind(module_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    // Count the tables to inform the user.
+    let table_count: i64 = pool
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM information_schema.tables WHERE table_schema = $1",
+                pool.backend().count_bigint("*")
+            ),
+            params![module_id],
+        )
+        .await
+        .unwrap_or(0);
 
     let storage_path = settings.storage.local_path().to_string();
     let is_local     = settings.storage.backend == StorageBackendType::Local;
@@ -259,10 +263,7 @@ pub async fn cmd_module_reset(module_id: &str, force: bool, keep_files: bool) ->
     // Safe: `module_id` is a command-line argument, so it is escaped here
     // rather than trusted — see `quote_ident`.
     let ident = quote_ident(module_id)?;
-    sqlx::query(sqlx::AssertSqlSafe(format!(
-        "DROP SCHEMA IF EXISTS {ident} CASCADE"
-    )))
-        .execute(&pool)
+    pool.execute(&format!("DROP SCHEMA IF EXISTS {ident} CASCADE"), params![])
         .await
         .with_context(|| format!("Suppression du schéma {module_id}"))?;
     ok(&format!("Schéma {module_id} supprimé ({table_count} table(s))."));

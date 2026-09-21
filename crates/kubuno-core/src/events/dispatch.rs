@@ -61,8 +61,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use kubuno_db::{params, DbPool};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use tokio::sync::broadcast::error::RecvError;
 
 use super::bus::{self, EventBus, EventMeta};
@@ -113,7 +113,7 @@ pub struct DeliveryPayload {
 /// while the bus is alive; a lagging receiver is logged and resumes rather than
 /// aborting, exactly as the push worker does — a worker that gave up on the
 /// first burst would be worse than one that missed a few events.
-pub async fn fanout_worker(bus: Arc<EventBus>, db: PgPool) {
+pub async fn fanout_worker(bus: Arc<EventBus>, db: DbPool) {
     let mut rx = bus.subscribe();
     loop {
         match rx.recv().await {
@@ -175,29 +175,32 @@ pub async fn fanout_worker(bus: Arc<EventBus>, db: PgPool) {
 /// `DISTINCT` because a module may have several registered instances; the
 /// delivery targets the module, and the handler picks the most recent instance.
 async fn subscribers_of(
-    db: &PgPool,
+    db: &DbPool,
     event_type: &str,
     source_module: Option<&str>,
 ) -> Result<Vec<String>, ()> {
-    sqlx::query_scalar::<_, String>(
+    // `subscribed_events` is a stored list column: the membership test is a
+    // JSON-array containment so it works on every engine. `source_module` is
+    // bound twice (a placeholder is never reused).
+    let contains = db.backend().json_array_contains("mi.subscribed_events", 1);
+    let sql = format!(
         "SELECT DISTINCT mi.module_id \
            FROM core.module_instances mi \
            JOIN core.modules m ON m.id = mi.module_id \
-          WHERE $1 = ANY(mi.subscribed_events) \
+          WHERE {contains} \
             AND mi.status <> 'stopped' \
             AND m.is_enabled \
-            AND ($2::text IS NULL OR mi.module_id <> $2)",
-    )
-    .bind(event_type)
-    .bind(source_module)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(
-            error = %e, event_type = %event_type,
-            "events: lecture des modules abonnés impossible"
-        );
-    })
+            AND ($2 IS NULL OR mi.module_id <> $3)"
+    );
+    db.fetch_all_as::<(String,)>(&sql, params![event_type, source_module, source_module])
+        .await
+        .map(|rows| rows.into_iter().map(|(module_id,)| module_id).collect())
+        .map_err(|e| {
+            tracing::error!(
+                error = %e, event_type = %event_type,
+                "events: reading subscribed modules failed"
+            );
+        })
 }
 
 // ── Delivery: queue → module ────────────────────────────────────────────────
@@ -215,21 +218,22 @@ pub fn register(registry: &mut JobRegistry, server: Arc<ServerSettings>) {
             let payload: DeliveryPayload = serde_json::from_value(job.payload.clone())
                 .map_err(|e| anyhow::anyhow!("Charge utile de livraison invalide : {e}"))?;
 
-            let base_url: Option<String> = sqlx::query_scalar(
-                "SELECT base_url FROM core.module_instances \
+            let base_url: Option<String> = ctx
+                .db
+                .fetch_optional_scalar::<String>(
+                    "SELECT base_url FROM core.module_instances \
                   WHERE module_id = $1 AND status <> 'stopped' \
                   ORDER BY registered_at DESC LIMIT 1",
-            )
-            .bind(&payload.module_id)
-            .fetch_optional(&ctx.db)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    error = %e, module_id = %payload.module_id,
-                    "events: résolution de l'adresse du module"
-                );
-                e
-            })?;
+                    params![&payload.module_id],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        error = %e, module_id = %payload.module_id,
+                        "events: resolving the module address"
+                    );
+                    e
+                })?;
 
             // Retryable: the module is restarting, and the backoff is exactly
             // the mechanism that lets it come back and still receive the event.

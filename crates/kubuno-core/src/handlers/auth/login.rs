@@ -14,6 +14,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use kubuno_db::{params, DbPool};
 use serde_json::json;
 
 use serde::Deserialize;
@@ -38,12 +39,15 @@ pub async fn login(
     headers: HeaderMap,
     Json(dto): Json<LoginDto>,
 ) -> Result<Response, AppError> {
-    let user_opt = sqlx::query_as::<_, crate::models::user::User>(
-        "SELECT * FROM core.users WHERE (email = $1 OR username = $1) AND is_active = TRUE",
-    )
-    .bind(&dto.login)
-    .fetch_optional(&state.db)
-    .await?;
+    // The identifier feeds two placeholders (`email` and `username`); positional
+    // engines cannot reuse `$1`, so it is bound twice.
+    let user_opt = state
+        .db
+        .fetch_optional_as::<crate::models::user::User>(
+            "SELECT * FROM core.users WHERE (email = $1 OR username = $2) AND is_active = TRUE",
+            params![&dto.login, &dto.login],
+        )
+        .await?;
 
     // Toujours exécuter un calcul argon2 pour éviter le timing attack sur les emails inexistants
     let dummy_hash = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaasfvMkQ96Cjbu2I0";
@@ -282,13 +286,14 @@ pub async fn login(
         // Failure to persist the flag must not cost the person their sign-in:
         // it is logged, and the next sign-in evaluates the same two questions
         // again and gets another chance to record the answer.
-        match sqlx::query(
-            "UPDATE core.users SET must_change_password = TRUE WHERE id = $1 \
-               AND NOT must_change_password",
-        )
-        .bind(user.id)
-        .execute(&state.db)
-        .await
+        match state
+            .db
+            .execute(
+                "UPDATE core.users SET must_change_password = TRUE WHERE id = $1 \
+                   AND NOT must_change_password",
+                params![user.id],
+            )
+            .await
         {
             Ok(_) => {
                 user.must_change_password = true;
@@ -370,24 +375,41 @@ pub struct LogoutRequest {
 /// (reauth) window — a proof must not outlive the session it was granted in.
 async fn revoke_session(state: &AppState, refresh_raw: &str) {
     let refresh_hash = token::hash_token(refresh_raw);
-    let owner: Option<uuid::Uuid> = match sqlx::query_scalar(
-        "UPDATE core.refresh_tokens SET revoked_at = NOW(), revoke_reason = 'logout'
-         WHERE token_hash = $1 AND revoked_at IS NULL
-         RETURNING user_id",
-    )
-    .bind(&refresh_hash)
-    .fetch_optional(&state.db)
-    .await
-    {
+    let owner: Option<uuid::Uuid> = match revoke_and_get_owner(&state.db, &refresh_hash).await {
         Ok(o) => o,
         Err(e) => {
-            tracing::error!(error = %e, "logout: révocation du refresh token");
+            tracing::error!(error = %e, "logout: revoking the refresh token");
             None
         }
     };
     if let Some(user_id) = owner {
         crate::auth::reauth::store::revoke_all(&state.db, user_id).await;
     }
+}
+
+/// Revokes the not-yet-revoked token behind `refresh_hash` and returns its
+/// owner. MySQL has no `UPDATE ... RETURNING`, so the owner is read and the row
+/// revoked inside one transaction: the read carries the same guard as the write,
+/// so it names exactly the row the update will close.
+async fn revoke_and_get_owner(
+    db: &DbPool,
+    refresh_hash: &str,
+) -> Result<Option<uuid::Uuid>, sqlx::Error> {
+    let mut tx = db.begin().await?;
+    let owner: Option<uuid::Uuid> = tx
+        .fetch_optional_scalar::<uuid::Uuid>(
+            "SELECT user_id FROM core.refresh_tokens WHERE token_hash = $1 AND revoked_at IS NULL",
+            params![refresh_hash],
+        )
+        .await?;
+    tx.execute(
+        "UPDATE core.refresh_tokens SET revoked_at = $1, revoke_reason = 'logout'
+         WHERE token_hash = $2 AND revoked_at IS NULL",
+        params![chrono::Utc::now(), refresh_hash],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(owner)
 }
 
 #[utoipa::path(

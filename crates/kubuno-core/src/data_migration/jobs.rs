@@ -34,7 +34,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use super::{dispatch, store};
 use crate::config::settings::ServerSettings;
@@ -98,7 +98,7 @@ pub fn register(registry: &mut JobRegistry, server: Arc<ServerSettings>, jwt_sec
 
 /// Arms the chain if anything is waiting. Called at boot, so a campaign left
 /// running by a restart carries on by itself.
-pub async fn resume(db: &PgPool) {
+pub async fn resume(db: &DbPool) {
     match store::has_work(db).await {
         Ok(true) => kick(db).await,
         Ok(false) => {}
@@ -108,7 +108,7 @@ pub async fn resume(db: &PgPool) {
 
 /// Wakes the chain. Idempotent: a second call while a tick is queued does
 /// nothing.
-pub async fn kick(db: &PgPool) {
+pub async fn kick(db: &DbPool) {
     match queue::ensure_scheduled(db, NewJob::new(STEP)).await {
         Ok(Some(id)) => tracing::info!(tâche = %id, "data_migration: migration mise en file"),
         Ok(None) => tracing::debug!("data_migration: une étape est déjà en file"),
@@ -122,7 +122,7 @@ enum TickOutcome {
     ModuleUnreachable,
 }
 
-async fn tick(db: &PgPool, server: &ServerSettings, jwt_secret: &str) -> TickOutcome {
+async fn tick(db: &DbPool, server: &ServerSettings, jwt_secret: &str) -> TickOutcome {
     match store::reclaim_stalled(db).await {
         Ok(n) if n > 0 => {
             tracing::info!(comptes = n, "data_migration: comptes interrompus remis en file")
@@ -265,13 +265,13 @@ async fn tick(db: &PgPool, server: &ServerSettings, jwt_secret: &str) -> TickOut
     outcome
 }
 
-async fn release(db: &PgPool, account_id: uuid::Uuid) {
+async fn release(db: &DbPool, account_id: uuid::Uuid) {
     if let Err(e) = store::release_account(db, account_id).await {
         tracing::error!(compte = %account_id, error = %e, "data_migration: libération du compte");
     }
 }
 
-async fn fail(db: &PgPool, account_id: uuid::Uuid, message: &str) {
+async fn fail(db: &DbPool, account_id: uuid::Uuid, message: &str) {
     if let Err(e) = store::fail_account(db, account_id, message).await {
         tracing::error!(compte = %account_id, error = %e, "data_migration: échec non enregistré");
     }

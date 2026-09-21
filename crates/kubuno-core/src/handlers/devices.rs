@@ -30,6 +30,7 @@ use axum::{
     http::{header, HeaderMap},
     Json,
 };
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -56,19 +57,19 @@ async fn current_device(state: &AppState, headers: &HeaderMap, user_id: Uuid) ->
         .and_then(|v| v.to_str().ok());
 
     let lookup = |hash: String| async move {
-        sqlx::query_scalar::<_, Uuid>(
-            "SELECT id FROM core.devices WHERE user_id = $1 AND correlation_hash = $2",
-        )
-        .bind(user_id)
-        .bind(hash)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "devices: résolution de l'appareil courant");
-            e
-        })
-        .ok()
-        .flatten()
+        state
+            .db
+            .fetch_optional_scalar::<Uuid>(
+                "SELECT id FROM core.devices WHERE user_id = $1 AND correlation_hash = $2",
+                params![user_id, hash],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "devices: résolution de l'appareil courant");
+                e
+            })
+            .ok()
+            .flatten()
     };
 
     // Strong path: the opaque cookie or a native client's key.
@@ -190,12 +191,15 @@ pub async fn sign_out_my_device(
     // way to sign out somebody else's laptop by guessing a UUID.
     let _device = store::get_owned(&state.db, id, user.id).await?;
 
-    let mut conn = state.db.acquire().await.map_err(|e| {
+    let mut tx = state.db.begin().await.map_err(|e| {
         tracing::error!(error = %e, "devices: connexion pour la déconnexion");
         AppError::Database(e)
     })?;
-    let revoked = store::revoke_sessions(&mut conn, id, "logout").await?;
-    drop(conn);
+    let revoked = store::revoke_sessions(&mut tx, id, "logout").await?;
+    tx.commit().await.map_err(|e| {
+        tracing::error!(error = %e, "devices: commit (déconnexion)");
+        AppError::Database(e)
+    })?;
 
     correlate::record_event(
         &state.db,
@@ -265,41 +269,39 @@ pub async fn disown_my_device(
         AppError::Database(e)
     })?;
 
-    let revoked = sqlx::query(
-        "UPDATE core.refresh_tokens
-            SET revoked_at = NOW(), revoke_reason = 'disowned'
-          WHERE user_id = $1 AND revoked_at IS NULL",
-    )
-    .bind(user.id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user.id, "devices: révocation globale (désaveu)");
-        AppError::Database(e)
-    })?
-    .rows_affected();
-
-    sqlx::query("UPDATE core.users SET must_change_password = TRUE WHERE id = $1")
-        .bind(user.id)
-        .execute(&mut *tx)
+    let now = chrono::Utc::now();
+    let revoked = tx
+        .execute(
+            "UPDATE core.refresh_tokens
+                SET revoked_at = $1, revoke_reason = 'disowned'
+              WHERE user_id = $2 AND revoked_at IS NULL",
+            params![now, user.id],
+        )
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user.id, "devices: forçage du changement de mot de passe");
+            tracing::error!(error = %e, user_id = %user.id, "devices: révocation globale (désaveu)");
             AppError::Database(e)
         })?;
 
+    tx.execute(
+        "UPDATE core.users SET must_change_password = TRUE WHERE id = $1",
+        params![user.id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, user_id = %user.id, "devices: forçage du changement de mot de passe");
+        AppError::Database(e)
+    })?;
+
     // The device is blocked too: it revoked its own sessions above, and a
     // blocked device cannot open a new one until an operator clears it.
-    sqlx::query(
+    tx.execute(
         "UPDATE core.devices
-            SET approval = 'blocked', approval_by = $2, approval_at = NOW(),
+            SET approval = 'blocked', approval_by = $1, approval_at = $2,
                 approval_reason = COALESCE($3, 'Désavoué par l''utilisateur')
-          WHERE id = $1",
+          WHERE id = $4",
+        params![user.id, now, note.as_deref(), id],
     )
-    .bind(id)
-    .bind(user.id)
-    .bind(note.as_deref())
-    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, device_id = %id, "devices: blocage à la suite d'un désaveu");
@@ -307,7 +309,7 @@ pub async fn disown_my_device(
     })?;
 
     correlate::record_event_tx(
-        &mut *tx,
+        &mut tx,
         id,
         event_kind::DISOWNED,
         Some(user.id),

@@ -13,6 +13,7 @@ use axum::{
     extract::FromRequestParts,
     http::{HeaderMap, Method, request::Parts},
 };
+use kubuno_db::params;
 use uuid::Uuid;
 
 /// How the caller proved who they are — **and what that proof authorises**.
@@ -96,14 +97,15 @@ impl FromRequestParts<AppState> for AuthUser {
             state.settings.auth.access_token_ttl,
         );
         if let Ok(claims) = jwt.validate_access_token(token) {
-            let user = sqlx::query_as::<_, User>(
-                "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-            )
-            .bind(claims.sub)
-            .fetch_optional(&state.db)
-            .await
-            .map_err(AppError::Database)?
-            .ok_or(AppError::Unauthorized)?;
+            let user = state
+                .db
+                .fetch_optional_as::<User>(
+                    "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+                    params![claims.sub],
+                )
+                .await
+                .map_err(AppError::Database)?
+                .ok_or(AppError::Unauthorized)?;
             parts.extensions.insert(AuthSource::session());
             // Memoised for the rest of the request, symmetrically with the read
             // above: a handler taking both `AuthUser` and a privilege extractor
@@ -121,14 +123,15 @@ impl FromRequestParts<AppState> for AuthUser {
         // rather than to retry.
         let grant = token_scope::resolve_grant(&state.db, token).await?;
 
-        let user = sqlx::query_as::<_, User>(
-            "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
-        )
-        .bind(grant.user_id)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or(AppError::Unauthorized)?;
+        let user = state
+            .db
+            .fetch_optional_as::<User>(
+                "SELECT * FROM core.users WHERE id = $1 AND is_active = TRUE",
+                params![grant.user_id],
+            )
+            .await
+            .map_err(AppError::Database)?
+            .ok_or(AppError::Unauthorized)?;
 
         let source = AuthSource::api_token(grant);
         let recorded = source.grant.clone();

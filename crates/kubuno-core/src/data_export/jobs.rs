@@ -46,7 +46,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use serde_json::json;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use super::{archive, contract, core_data, policy, runs};
@@ -136,7 +136,7 @@ pub fn register(registry: &mut JobRegistry, server: Arc<ServerSettings>) {
 
 /// Arms the retention pass at startup. Idempotent across restarts and across
 /// several core processes.
-pub async fn schedule(db: &PgPool) {
+pub async fn schedule(db: &DbPool) {
     match queue::ensure_scheduled(db, NewJob::new(PRUNE).delay(PRUNE_INTERVAL)).await {
         Ok(Some(id)) => tracing::info!(job_id = %id, "Purge des exports planifiée"),
         Ok(None) => tracing::debug!("Purge des exports déjà planifiée"),
@@ -145,7 +145,7 @@ pub async fn schedule(db: &PgPool) {
 }
 
 /// Enqueues the production of one archive.
-pub async fn enqueue_run(db: &PgPool, export_id: Uuid) -> Result<Uuid, AppError> {
+pub async fn enqueue_run(db: &DbPool, export_id: Uuid) -> Result<Uuid, AppError> {
     let job = NewJob::new(RUN)
         // Exactly one attempt. A retry would restart the batch on a run whose
         // state already says where it got to, and the retry of a *bookkeeping*
@@ -164,7 +164,7 @@ pub async fn enqueue_run(db: &PgPool, export_id: Uuid) -> Result<Uuid, AppError>
 
 /// Works on one run for one budget, then either re-arms or seals the archive.
 async fn advance(
-    db: &PgPool,
+    db: &DbPool,
     server: &ServerSettings,
     export_id: Uuid,
     job_id: Uuid,
@@ -262,7 +262,7 @@ async fn advance(
 /// and every account records it as missing — which is what the manifest then
 /// says, in as many words.
 async fn build_plan(
-    db: &PgPool,
+    db: &DbPool,
     server: &ServerSettings,
     requested: &[String],
 ) -> BTreeMap<String, (String, Vec<String>)> {
@@ -298,7 +298,7 @@ async fn build_plan(
 ///
 /// Two thirds of `jobs.job_timeout_s`: the remaining third is what an account
 /// already in flight needs to finish before the runner would kill the task.
-async fn budget_of(db: &PgPool) -> Duration {
+async fn budget_of(db: &DbPool) -> Duration {
     let timeout = crate::settings::instance_value(db, "jobs.job_timeout_s")
         .await
         .as_ref()
@@ -313,7 +313,7 @@ async fn budget_of(db: &PgPool) -> Duration {
 
 // ── The instance folder ──────────────────────────────────────────────────────
 
-async fn write_instance(db: &PgPool, staging: &std::path::Path) -> Result<(), String> {
+async fn write_instance(db: &DbPool, staging: &std::path::Path) -> Result<(), String> {
     // `comptes.json` is written FIRST and is what the resumption guard above
     // looks for. Any other order would let a crash between two extracts leave a
     // marker claiming a folder that is only half there.
@@ -355,7 +355,7 @@ async fn put(root: &std::path::Path, relative: &str, body: &[u8]) -> Result<(), 
 /// else — an unreachable module, a refused entry, an extraction that failed — is
 /// recorded and carried into the manifest.
 async fn process_subject(
-    db: &PgPool,
+    db: &DbPool,
     server: &ServerSettings,
     run: &runs::ExportRun,
     plan: &BTreeMap<String, (String, Vec<String>)>,
@@ -511,7 +511,7 @@ fn subject_file_ceiling(run: &runs::ExportRun, pol: &policy::Policy) -> u64 {
 
 /// The three files the core writes for every account.
 async fn write_account_core(
-    db: &PgPool,
+    db: &DbPool,
     staging: &std::path::Path,
     folder: &str,
     user_id: Uuid,
@@ -549,7 +549,7 @@ async fn write_account_core(
 
 /// Writes the manifest and the readme, seals the archive, closes the run.
 async fn finalise(
-    db: &PgPool,
+    db: &DbPool,
     run: &runs::ExportRun,
     staging: &std::path::Path,
     destination: &std::path::Path,
@@ -698,7 +698,7 @@ fn readme_text(run: &runs::ExportRun, subjects: &[runs::ExportSubject]) -> Strin
 ///
 /// The row survives: "an export of everyone was produced that day" must outlive
 /// the file by years — see [`super::runs`].
-pub async fn prune(db: &PgPool) -> Result<u64, AppError> {
+pub async fn prune(db: &DbPool) -> Result<u64, AppError> {
     let expired = runs::expired_files(db).await?;
     let mut removed = 0u64;
 

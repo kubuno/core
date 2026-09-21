@@ -7,6 +7,8 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use kubuno_db::{dialect::Assign, new_id, params};
+
 use crate::{auth::middleware::AuthUser, errors::AppError, state::AppState};
 
 #[derive(Deserialize)]
@@ -31,25 +33,56 @@ pub async fn register_device(
     }
 
     // Re-registering the same (provider, token) re-binds it to this user.
-    let id: uuid::Uuid = sqlx::query_scalar(
-        r#"INSERT INTO core.push_devices (user_id, provider, device_token, app_id, locale)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (provider, device_token)
-           DO UPDATE SET user_id = EXCLUDED.user_id, app_id = EXCLUDED.app_id,
-                         locale = EXCLUDED.locale, last_seen_at = NOW()
-           RETURNING id"#,
-    )
-    .bind(user.id)
-    .bind(&dto.provider)
-    .bind(&dto.device_token)
-    .bind(dto.app_id.as_deref())
-    .bind(dto.locale.as_deref())
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "register_device");
-        AppError::Database(e)
-    })?;
+    let backend = state.db.backend();
+    let clause = backend.upsert(
+        "core.push_devices",
+        &["provider", "device_token"],
+        &[
+            Assign::Incoming("user_id"),
+            Assign::Incoming("app_id"),
+            Assign::Incoming("locale"),
+            Assign::Incoming("last_seen_at"),
+        ],
+    );
+    let sql = format!(
+        "INSERT INTO core.push_devices \
+             (id, user_id, provider, device_token, app_id, locale, last_seen_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7){clause}"
+    );
+    let now = chrono::Utc::now();
+    state
+        .db
+        .execute(
+            &sql,
+            params![
+                new_id(),
+                user.id,
+                &dto.provider,
+                &dto.device_token,
+                dto.app_id.as_deref(),
+                dto.locale.as_deref(),
+                now
+            ],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "register_device");
+            AppError::Database(e)
+        })?;
+
+    // Read the row's id back: on conflict the stored id was kept, not the one
+    // we tried to insert, so a reselect on the unique key is authoritative.
+    let id: uuid::Uuid = state
+        .db
+        .fetch_scalar::<uuid::Uuid>(
+            "SELECT id FROM core.push_devices WHERE provider = $1 AND device_token = $2",
+            params![&dto.provider, &dto.device_token],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "register_device");
+            AppError::Database(e)
+        })?;
 
     Ok(Json(json!({ "id": id })))
 }
@@ -60,12 +93,13 @@ pub async fn delete_device(
     AuthUser(user): AuthUser,
     Path(device_id): Path<uuid::Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    let affected = sqlx::query("DELETE FROM core.push_devices WHERE id = $1 AND user_id = $2")
-        .bind(device_id)
-        .bind(user.id)
-        .execute(&state.db)
-        .await?
-        .rows_affected();
+    let affected = state
+        .db
+        .execute(
+            "DELETE FROM core.push_devices WHERE id = $1 AND user_id = $2",
+            params![device_id, user.id],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound("Device introuvable".into()));
@@ -78,12 +112,13 @@ pub async fn list_preferences(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    let rows = sqlx::query_as::<_, (String, String, bool)>(
-        "SELECT module_id, event_type, enabled FROM core.push_preferences WHERE user_id = $1",
-    )
-    .bind(user.id)
-    .fetch_all(&state.db)
-    .await?;
+    let rows = state
+        .db
+        .fetch_all_as::<(String, String, bool)>(
+            "SELECT module_id, event_type, enabled FROM core.push_preferences WHERE user_id = $1",
+            params![user.id],
+        )
+        .await?;
 
     let prefs: Vec<Value> = rows
         .into_iter()
@@ -110,17 +145,20 @@ pub async fn set_preference(
     let module_id = dto.module_id.unwrap_or_else(|| "*".into());
     let event_type = dto.event_type.unwrap_or_else(|| "*".into());
 
-    sqlx::query(
-        r#"INSERT INTO core.push_preferences (user_id, module_id, event_type, enabled)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (user_id, module_id, event_type) DO UPDATE SET enabled = EXCLUDED.enabled"#,
-    )
-    .bind(user.id)
-    .bind(&module_id)
-    .bind(&event_type)
-    .bind(dto.enabled)
-    .execute(&state.db)
-    .await?;
+    let backend = state.db.backend();
+    let clause = backend.upsert(
+        "core.push_preferences",
+        &["user_id", "module_id", "event_type"],
+        &[Assign::Incoming("enabled")],
+    );
+    let sql = format!(
+        "INSERT INTO core.push_preferences (user_id, module_id, event_type, enabled) \
+         VALUES ($1, $2, $3, $4){clause}"
+    );
+    state
+        .db
+        .execute(&sql, params![user.id, &module_id, &event_type, dto.enabled])
+        .await?;
 
     Ok(Json(json!({ "message": "Préférence enregistrée" })))
 }

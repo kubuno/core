@@ -196,7 +196,7 @@ impl Action {
 // ── Rows ─────────────────────────────────────────────────────────────────────
 
 /// One alert, as the API serves it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AlertRow {
     pub id: Uuid,
     pub source: String,
@@ -224,12 +224,14 @@ pub struct AlertRow {
     pub closed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     /// Computed per request from the catalogue, never stored: the wording of an
-    /// action changes with the code, and a stored one would rot.
+    /// action changes with the code, and a stored one would rot. Not a column —
+    /// filled in after the row is read.
+    #[sqlx(skip)]
     pub actions: Vec<Action>,
 }
 
 /// One line of an alert's timeline.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AlertEventRow {
     pub id: i64,
     pub kind: String,
@@ -262,7 +264,7 @@ pub struct AlertSummary {
 }
 
 /// A saved filter set, owned by one operator.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AlertView {
     pub id: Uuid,
     pub name: String,

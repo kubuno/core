@@ -12,7 +12,7 @@
 //! rephrasing on our side conveys that.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use super::client::{Connection, DirectoryError};
 use super::mapping::map_user;
@@ -181,7 +181,7 @@ pub async fn probe_connection(jwt_secret: &str, dir: &LdapDirectory) -> Connecti
 /// supplies. The password is used and dropped; it is never stored, never
 /// logged, and never echoed back.
 pub async fn probe_authentication(
-    db: &PgPool,
+    db: &DbPool,
     jwt_secret: &str,
     dir: &LdapDirectory,
     login: &str,

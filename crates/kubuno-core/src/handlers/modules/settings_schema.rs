@@ -6,6 +6,7 @@ use axum::{
     extract::{Path as AxumPath, State},
     Json,
 };
+use kubuno_db::{params, DbPool};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -327,18 +328,19 @@ pub fn setting_groups_from_config(config: Option<&serde_json::Value>) -> Vec<Set
 /// which is what makes every presentation field survive the round trip without
 /// a column per attribute in `core.settings`.
 pub async fn load_settings_schema(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     module_id: &str,
 ) -> Result<Vec<SettingDef>, AppError> {
-    let config: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT config FROM core.modules WHERE id = $1")
-            .bind(module_id)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, module = %module_id, "lecture du schéma de réglages");
-                AppError::Database(e)
-            })?;
+    let config: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<serde_json::Value>(
+            "SELECT config FROM core.modules WHERE id = $1",
+            params![module_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, module = %module_id, "reading the settings schema");
+            AppError::Database(e)
+        })?;
 
     Ok(config
         .as_ref()
@@ -391,20 +393,20 @@ pub async fn internal_module_settings_by_id(
 /// `<module>.` prefix stripped) with the effective value — the stored one, or
 /// the declared default when nothing was ever set.
 async fn build_module_settings(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     module_id: &str,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let rows: Vec<(String, serde_json::Value, Option<serde_json::Value>)> = sqlx::query_as(
-        "SELECT key, value, default_value FROM core.settings \
-         WHERE module_id = $1 AND scope IN ('global', 'overridable')",
-    )
-    .bind(module_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, module = %module_id, "réglages internes du module");
-        AppError::Database(e)
-    })?;
+    let rows: Vec<(String, serde_json::Value, Option<serde_json::Value>)> = db
+        .fetch_all_as::<(String, serde_json::Value, Option<serde_json::Value>)>(
+            "SELECT \"key\", value, default_value FROM core.settings \
+             WHERE module_id = $1 AND scope IN ('global', 'overridable')",
+            params![module_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, module = %module_id, "module internal settings");
+            AppError::Database(e)
+        })?;
 
     let prefix = format!("{module_id}.");
     let mut settings = serde_json::Map::new();

@@ -119,8 +119,10 @@
 //! with a handle it holds. Not the thumbnails, indexes and caches it never asked
 //! for and cannot remove.
 
+use chrono::{Duration, Utc};
+use kubuno_db::dialect::{Assign, SqlType};
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -246,15 +248,16 @@ fn validate(entries: &[UsageEntry]) -> Result<Vec<Category>, AppError> {
 ///
 /// The foreign key would refuse an unknown module anyway; asking first turns a
 /// constraint violation into a 404 that says which module was not found.
-pub async fn module_exists(db: &PgPool, module_id: &str) -> Result<bool, AppError> {
-    sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM core.modules WHERE id = $1)")
-        .bind(module_id)
-        .fetch_one(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, module_id = %module_id, "storage_usage: existence du module");
-            AppError::Database(e)
-        })
+pub async fn module_exists(db: &DbPool, module_id: &str) -> Result<bool, AppError> {
+    db.fetch_scalar::<bool>(
+        "SELECT EXISTS(SELECT 1 FROM core.modules WHERE id = $1)",
+        params![module_id],
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, module_id = %module_id, "storage_usage: module existence");
+        AppError::Database(e)
+    })
 }
 
 /// Records `module_id`'s current storage usage.
@@ -264,7 +267,7 @@ pub async fn module_exists(db: &PgPool, module_id: &str) -> Result<bool, AppErro
 /// breakdown that is half of the new state and half of the old one would be a
 /// number no operator could act on.
 pub async fn declare(
-    db: &PgPool,
+    db: &DbPool,
     module_id: &str,
     entries: &[UsageEntry],
     scope: Scope,
@@ -294,163 +297,144 @@ pub async fn declare(
     if order.len() != entries.len() {
         tracing::debug!(
             module_id = %module_id,
-            reçus = entries.len(),
-            uniques = order.len(),
-            "Déclaration comportant des couples compte/catégorie répétés : dernière valeur retenue"
+            received = entries.len(),
+            unique = order.len(),
+            "Declaration carrying repeated account/category pairs: last value kept"
         );
     }
 
     let user_ids: Vec<Uuid> = order.iter().map(|(u, _)| *u).collect();
-    let cats: Vec<String> = order.iter().map(|(_, c)| c.as_str().to_owned()).collect();
-    let used: Vec<i64> = order.iter().filter_map(|k| latest.get(k).map(|v| v.0)).collect();
-    let counts: Vec<Option<i64>> = order.iter().filter_map(|k| latest.get(k).map(|v| v.1)).collect();
+
+    // Which of the named accounts still exist. The former statement JOINed
+    // core.users inside an UNNEST-driven upsert to skip unknown accounts; that
+    // shape is PostgreSQL-only, so existence is checked here and each write is
+    // filtered against this set below. A window narrower than the module's own
+    // read-to-declare gap remains: an account deleted between this check and the
+    // insert would raise the FK rather than be skipped in-statement.
+    let mut existing: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    if !user_ids.is_empty() {
+        let mut qb = DbQueryBuilder::new(db.backend(), "SELECT id FROM core.users WHERE id");
+        qb.push_in(user_ids.clone());
+        let found: Vec<(Uuid,)> = qb.fetch_all_as(db).await.map_err(|e| {
+            tracing::error!(error = %e, module_id = %module_id, "storage_usage: account existence");
+            AppError::Database(e)
+        })?;
+        existing = found.into_iter().map(|(id,)| id).collect();
+    }
+
+    // A single instant shared by every write in this call: accepted rows are
+    // stamped with it, and a full declaration retires anything left with an
+    // older stamp. This replaces the UNNEST + NOT EXISTS retirement, which no
+    // other engine can run.
+    let now = Utc::now();
 
     let mut tx = db.begin().await.map_err(|e| {
-        tracing::error!(error = %e, module_id = %module_id, "storage_usage: ouverture de transaction");
+        tracing::error!(error = %e, module_id = %module_id, "storage_usage: transaction open");
         AppError::Database(e)
     })?;
 
-    // The join against `core.users` is what makes an unknown account a skipped
-    // row rather than a foreign-key violation that discards the whole batch: a
-    // module reading its own tables and declaring a second later will sometimes
-    // name an account deleted in between, and that must not cost it the other
-    // 4 999 rows.
-    let accepted: i64 = if entries.is_empty() {
-        0
-    } else {
-        sqlx::query_scalar(
-            r#"WITH incoming AS (
-                   SELECT t.user_id, t.category, t.used_bytes, t.object_count
-                     FROM UNNEST($2::uuid[], $5::text[], $3::bigint[], $4::bigint[])
-                            AS t(user_id, category, used_bytes, object_count)
-                     JOIN core.users u ON u.id = t.user_id
-               ), written AS (
-                   INSERT INTO core.storage_usage (module_id, user_id, category, used_bytes, object_count, declared_at)
-                   SELECT $1, user_id, category, used_bytes, object_count, NOW() FROM incoming
-                   ON CONFLICT (module_id, user_id, category) DO UPDATE
-                       SET used_bytes   = EXCLUDED.used_bytes,
-                           object_count = EXCLUDED.object_count,
-                           declared_at  = EXCLUDED.declared_at
-                   RETURNING 1
-               )
-               SELECT COUNT(*)::bigint FROM written"#,
+    // Upsert each declared (account, category), skipping accounts that no longer
+    // exist. The last value per key already won during deduplication above.
+    let upsert = db.backend().upsert(
+        "core.storage_usage",
+        &["module_id", "user_id", "category"],
+        &[
+            Assign::Incoming("used_bytes"),
+            Assign::Incoming("object_count"),
+            Assign::Incoming("declared_at"),
+        ],
+    );
+    let insert_sql = format!(
+        "INSERT INTO core.storage_usage \
+             (module_id, user_id, category, used_bytes, object_count, declared_at) \
+         VALUES ($1, $2, $3, $4, $5, $6){upsert}"
+    );
+
+    let mut accepted: i64 = 0;
+    for (user_id, cat) in &order {
+        if !existing.contains(user_id) {
+            continue;
+        }
+        let (used_bytes, object_count) =
+            latest.get(&(*user_id, *cat)).copied().unwrap_or((0, None));
+        tx.execute(
+            &insert_sql,
+            params![module_id, user_id, cat.as_str(), used_bytes, object_count, now],
         )
-        .bind(module_id)
-        .bind(&user_ids)
-        .bind(&used)
-        .bind(&counts)
-        .bind(&cats)
-        .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, module_id = %module_id, "storage_usage: écriture des déclarations");
+            tracing::error!(error = %e, module_id = %module_id, "storage_usage: writing declarations");
             AppError::Database(e)
-        })?
-    };
+        })?;
+        accepted += 1;
+    }
 
     // A full declaration is the module's complete state, so anything it did not
-    // mention it no longer holds. This is the only path that can lower a
-    // module's share, and the reason a lost message repairs itself.
-    //
-    // Retirement is per (account, category), not per account: a module that
-    // emptied one account's bin and said so must lose its `trash` row without
-    // losing its `content` row in the same breath. `NOT EXISTS` over the empty
-    // set is true for every row, which is what makes an empty full declaration
-    // mean "I hold nothing at all" rather than "ignore me".
+    // just stamp it no longer holds. Retiring by the shared instant is portable
+    // and per (account, category): a module that emptied one account's bin loses
+    // its `trash` row without losing its `content` row. An empty full
+    // declaration deletes every row for the module — "I hold nothing at all".
     let retired: i64 = match scope {
         Scope::Partial => 0,
-        Scope::Full => sqlx::query_scalar(
-            r#"WITH declared AS (
-                   SELECT * FROM UNNEST($2::uuid[], $3::text[]) AS t(user_id, category)
-               ), gone AS (
-                   DELETE FROM core.storage_usage s
-                    WHERE s.module_id = $1
-                      AND NOT EXISTS (
-                          SELECT 1 FROM declared d
-                           WHERE d.user_id = s.user_id AND d.category = s.category
-                      )
-                   RETURNING 1
-               )
-               SELECT COUNT(*)::bigint FROM gone"#,
-        )
-        .bind(module_id)
-        .bind(&user_ids)
-        .bind(&cats)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, module_id = %module_id, "storage_usage: retrait des comptes non déclarés");
-            AppError::Database(e)
-        })?,
+        Scope::Full => tx
+            .execute(
+                "DELETE FROM core.storage_usage WHERE module_id = $1 AND declared_at < $2",
+                params![module_id, now],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, module_id = %module_id, "storage_usage: retiring undeclared accounts");
+                AppError::Database(e)
+            })? as i64,
     };
 
     // The reporter row exists from the first declaration onwards, even when that
     // declaration was empty. That is deliberate: "this module declares, and it
-    // currently holds nothing" is a fact the console must be able to state, and
-    // it cannot be read off a table with no rows in it.
-    sqlx::query(
-        r#"INSERT INTO core.storage_reporters
-               (module_id, first_declared_at, last_declared_at, last_full_sync_at, declarations)
-           VALUES ($1, NOW(), NOW(), CASE WHEN $2 THEN NOW() END, 1)
-           ON CONFLICT (module_id) DO UPDATE
-               SET last_declared_at  = NOW(),
-                   last_full_sync_at = CASE WHEN $2 THEN NOW()
-                                            ELSE core.storage_reporters.last_full_sync_at END,
-                   declarations      = core.storage_reporters.declarations + 1"#,
-    )
-    .bind(module_id)
-    .bind(scope == Scope::Full)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, module_id = %module_id, "storage_usage: horodatage du déclarant");
-        AppError::Database(e)
-    })?;
-
-    // Reported back so a module can check what the core actually made of its
-    // declaration — in particular how much of it landed on the account's bill,
-    // which is the number that has consequences.
-    let totals = sqlx::query(
-        r#"SELECT COALESCE(SUM(used_bytes) FILTER (WHERE category = ANY($2::text[])), 0)::bigint AS held,
-                  COALESCE(SUM(used_bytes) FILTER (WHERE category = ANY($3::text[])), 0)::bigint AS billable,
-                  COUNT(DISTINCT user_id)::bigint AS accounts
-             FROM core.storage_usage WHERE module_id = $1"#,
-    )
-    .bind(module_id)
-    .bind(
-        Category::ALL
-            .iter()
-            .filter(|c| c.is_held())
-            .map(|c| c.as_str().to_owned())
-            .collect::<Vec<_>>(),
-    )
-    .bind(
-        Category::ALL
-            .iter()
-            .filter(|c| c.is_billable())
-            .map(|c| c.as_str().to_owned())
-            .collect::<Vec<_>>(),
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, module_id = %module_id, "storage_usage: total du module");
-        AppError::Database(e)
-    })?;
+    // currently holds nothing" is a fact the console must be able to state.
+    // `last_full_sync_at` is set only by a full declaration and otherwise kept;
+    // computed in Rust rather than with a SQL CASE over NOW().
+    let is_full = scope == Scope::Full;
+    let full_sync: Option<chrono::DateTime<chrono::Utc>> = is_full.then_some(now);
+    let reporter_upsert = db.backend().upsert(
+        "core.storage_reporters",
+        &["module_id"],
+        &[
+            Assign::Incoming("last_declared_at"),
+            Assign::Expr { col: "last_full_sync_at", expr: "COALESCE({new}, {cur})" },
+            Assign::Expr { col: "declarations", expr: "{cur} + 1" },
+        ],
+    );
+    let reporter_sql = format!(
+        "INSERT INTO core.storage_reporters \
+             (module_id, first_declared_at, last_declared_at, last_full_sync_at, declarations) \
+         VALUES ($1, $2, $3, $4, 1){reporter_upsert}"
+    );
+    tx.execute(&reporter_sql, params![module_id, now, now, full_sync])
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, module_id = %module_id, "storage_usage: reporter timestamp");
+            AppError::Database(e)
+        })?;
 
     tx.commit().await.map_err(|e| {
-        tracing::error!(error = %e, module_id = %module_id, "storage_usage: validation de transaction");
+        tracing::error!(error = %e, module_id = %module_id, "storage_usage: transaction commit");
         AppError::Database(e)
     })?;
+
+    // Totals for the module, read back after commit (a transaction cannot fetch
+    // whole rows through this API). Summed per held/billable category in Rust
+    // rather than with PostgreSQL's `SUM(...) FILTER (WHERE category = ANY(...))`.
+    let (module_total_bytes, module_billable_bytes, accounts) =
+        module_totals(db, module_id).await?;
 
     let outcome = DeclarationOutcome {
         module_id: module_id.to_owned(),
         accepted,
         skipped_unknown_accounts: entries.len() as i64 - accepted,
         retired,
-        module_total_bytes: totals.try_get("held").unwrap_or(0),
-        module_billable_bytes: totals.try_get("billable").unwrap_or(0),
-        accounts: totals.try_get("accounts").unwrap_or(0),
+        module_total_bytes,
+        module_billable_bytes,
+        accounts,
     };
 
     tracing::debug!(
@@ -458,13 +442,70 @@ pub async fn declare(
         accepted = outcome.accepted,
         skipped = outcome.skipped_unknown_accounts,
         retired = outcome.retired,
-        occupé = outcome.module_total_bytes,
-        facturé = outcome.module_billable_bytes,
+        held = outcome.module_total_bytes,
+        billable = outcome.module_billable_bytes,
         full = scope == Scope::Full,
-        "Déclaration de consommation enregistrée"
+        "Storage usage declaration recorded"
     );
 
     Ok(outcome)
+}
+
+/// One module's held total, billable total and account count, read after a
+/// declaration commits. Only categories the current binary knows as held /
+/// billable are counted — the former query's `= ANY(<held/billable list>)`,
+/// which excluded an unknown category from both totals.
+async fn module_totals(db: &DbPool, module_id: &str) -> Result<(i64, i64, i64), AppError> {
+    let backend = db.backend();
+
+    #[derive(sqlx::FromRow)]
+    struct CatSum {
+        category: String,
+        used: Option<i64>,
+    }
+    let rows = db
+        .fetch_all_as::<CatSum>(
+            &format!(
+                "SELECT category, {used} AS used FROM core.storage_usage \
+                 WHERE module_id = $1 GROUP BY category",
+                used = backend.cast("SUM(used_bytes)", SqlType::BigInt),
+            ),
+            params![module_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, module_id = %module_id, "storage_usage: module total");
+            AppError::Database(e)
+        })?;
+
+    let mut held = 0i64;
+    let mut billable = 0i64;
+    for r in &rows {
+        let bytes = r.used.unwrap_or(0);
+        let known = Category::parse(&r.category);
+        if known.is_some_and(Category::is_held) {
+            held += bytes;
+        }
+        if known.is_some_and(Category::is_billable) {
+            billable += bytes;
+        }
+    }
+
+    let accounts = db
+        .fetch_scalar::<i64>(
+            &format!(
+                "SELECT {} FROM core.storage_usage WHERE module_id = $1",
+                backend.cast("COUNT(DISTINCT user_id)", SqlType::BigInt),
+            ),
+            params![module_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, module_id = %module_id, "storage_usage: module account count");
+            AppError::Database(e)
+        })?;
+
+    Ok((held, billable, accounts))
 }
 
 // ── Reading it back ──────────────────────────────────────────────────────────
@@ -567,7 +608,7 @@ pub struct Breakdown {
 }
 
 /// How long a module may stay silent before its share is called stale.
-pub async fn stale_hours(db: &PgPool) -> i64 {
+pub async fn stale_hours(db: &DbPool) -> i64 {
     crate::settings::instance_value(db, STALE_HOURS_SETTING)
         .await
         .as_ref()
@@ -585,70 +626,99 @@ pub async fn stale_hours(db: &PgPool) -> i64 {
 /// itself into at startup. No identifier is compiled in anywhere: a module the
 /// core has never met simply is not in the table, and a module installed
 /// tomorrow appears without a line of code changing.
-pub async fn breakdown(db: &PgPool, authoritative_used: i64) -> Result<Breakdown, AppError> {
+pub async fn breakdown(db: &DbPool, authoritative_used: i64) -> Result<Breakdown, AppError> {
     let stale_hours = stale_hours(db).await;
 
     // Listed: every enabled, non-internal module (what the administration's
     // module list shows), plus any module that has declarations on file even
     // after being disabled — its bytes are still on the disk, and dropping it
     // from the breakdown would quietly move them into "unattributed".
-    let rows = sqlx::query(
-        r#"SELECT m.id,
+    // "N hours ago" is computed in Rust and bound, rather than expressed with
+    // NOW() - make_interval(...) which no other engine spells the same way.
+    let stale_before = Utc::now() - Duration::hours(stale_hours);
+    let backend = db.backend();
+
+    #[derive(sqlx::FromRow)]
+    struct ModuleRow {
+        id: String,
+        display_name: String,
+        is_enabled: bool,
+        declared: bool,
+        first_declared_at: Option<chrono::DateTime<chrono::Utc>>,
+        last_declared_at: Option<chrono::DateTime<chrono::Utc>>,
+        last_full_sync_at: Option<chrono::DateTime<chrono::Utc>>,
+        stale: Option<bool>,
+    }
+    let rows = db
+        .fetch_all_as::<ModuleRow>(
+            r#"SELECT m.id,
                   COALESCE(NULLIF(m.display_name, ''), m.id) AS display_name,
                   m.is_enabled,
                   r.module_id IS NOT NULL                    AS declared,
                   r.first_declared_at,
                   r.last_declared_at,
                   r.last_full_sync_at,
-                  r.last_declared_at < NOW() - make_interval(hours => $1::int) AS stale
+                  r.last_declared_at < $1                     AS stale
              FROM core.modules m
              LEFT JOIN core.storage_reporters r ON r.module_id = m.id
             WHERE (m.is_enabled = TRUE AND m.is_core_module = FALSE)
                OR r.module_id IS NOT NULL"#,
-    )
-    .bind(stale_hours as i32)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_usage: répartition par module");
-        AppError::Database(e)
-    })?;
+            params![stale_before],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_usage: per-module breakdown");
+            AppError::Database(e)
+        })?;
 
     // The split, read once and grouped in memory. One query rather than one per
     // module: the table is keyed by module and the whole point of the page is to
     // compare modules, so reading it whole and pivoting here is both cheaper and
     // easier to keep consistent than N round trips.
-    let cat_rows = sqlx::query(
-        r#"SELECT module_id, category,
-                  SUM(used_bytes)::bigint         AS used,
-                  SUM(object_count)::bigint       AS objects,
-                  COUNT(DISTINCT user_id)::bigint AS accounts
-             FROM core.storage_usage
-            GROUP BY module_id, category"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_usage: répartition par catégorie");
-        AppError::Database(e)
-    })?;
+    #[derive(sqlx::FromRow)]
+    struct CatRow {
+        module_id: String,
+        category: String,
+        used: Option<i64>,
+        objects: Option<i64>,
+        accounts: Option<i64>,
+    }
+    let cat_rows = db
+        .fetch_all_as::<CatRow>(
+            &format!(
+                r#"SELECT module_id, category,
+                      {used}     AS used,
+                      {objects}  AS objects,
+                      {accounts} AS accounts
+                 FROM core.storage_usage
+                GROUP BY module_id, category"#,
+                used = backend.cast("SUM(used_bytes)", SqlType::BigInt),
+                objects = backend.cast("SUM(object_count)", SqlType::BigInt),
+                accounts = backend.cast("COUNT(DISTINCT user_id)", SqlType::BigInt),
+            ),
+            params![],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_usage: per-category breakdown");
+            AppError::Database(e)
+        })?;
 
     let mut per_module: std::collections::HashMap<String, Vec<CategoryUsage>> =
         std::collections::HashMap::new();
     for r in &cat_rows {
-        let module_id: String = r.try_get("module_id").unwrap_or_default();
-        let raw: String = r.try_get("category").unwrap_or_default();
+        let raw = r.category.clone();
         // A row whose category the current binary does not know can only come
         // from a downgrade. It is shown under its stored name and treated as
         // held-but-not-billed: the conservative choice, since billing bytes the
         // core cannot classify is the one outcome with consequences.
         let known = Category::parse(&raw);
-        per_module.entry(module_id).or_default().push(CategoryUsage {
-            used_bytes: r.try_get::<Option<i64>, _>("used").ok().flatten().unwrap_or(0),
-            object_count: r.try_get::<Option<i64>, _>("objects").ok().flatten(),
+        per_module.entry(r.module_id.clone()).or_default().push(CategoryUsage {
+            used_bytes: r.used.unwrap_or(0),
+            object_count: r.objects,
             billable: known.is_some_and(Category::is_billable),
             held: known.is_none_or(Category::is_held),
-            accounts: r.try_get::<Option<i64>, _>("accounts").ok().flatten(),
+            accounts: r.accounts,
             category: raw,
         });
     }
@@ -659,8 +729,8 @@ pub async fn breakdown(db: &PgPool, authoritative_used: i64) -> Result<Breakdown
     let mut modules: Vec<ModuleUsage> = rows
         .iter()
         .map(|r| {
-            let declared = r.try_get::<bool, _>("declared").unwrap_or(false);
-            let module_id: String = r.try_get::<String, _>("id").unwrap_or_default();
+            let declared = r.declared;
+            let module_id = r.id.clone();
             let categories = per_module.remove(&module_id).unwrap_or_default();
             let sum = |f: fn(&CategoryUsage) -> bool| -> i64 {
                 categories.iter().filter(|c| f(c)).map(|c| c.used_bytes).sum()
@@ -675,7 +745,7 @@ pub async fn breakdown(db: &PgPool, authoritative_used: i64) -> Result<Breakdown
             let accounts = categories.iter().filter_map(|c| c.accounts).max().unwrap_or(0);
             ModuleUsage {
                 module_id,
-                display_name: r.try_get::<String, _>("display_name").unwrap_or_default(),
+                display_name: r.display_name.clone(),
                 declared,
                 // A declaring module with no rows holds zero — a real, measured
                 // zero. A module that never declared holds `None`. Collapsing
@@ -687,11 +757,11 @@ pub async fn breakdown(db: &PgPool, authoritative_used: i64) -> Result<Breakdown
                 object_count: declared.then(|| objects(|c| c.held)),
                 accounts: declared.then_some(accounts),
                 categories,
-                first_declared_at: r.try_get("first_declared_at").ok().flatten(),
-                last_declared_at: r.try_get("last_declared_at").ok().flatten(),
-                last_full_sync_at: r.try_get("last_full_sync_at").ok().flatten(),
-                stale: r.try_get::<Option<bool>, _>("stale").ok().flatten().unwrap_or(false),
-                is_enabled: r.try_get::<bool, _>("is_enabled").unwrap_or(true),
+                first_declared_at: r.first_declared_at,
+                last_declared_at: r.last_declared_at,
+                last_full_sync_at: r.last_full_sync_at,
+                stale: r.stale.unwrap_or(false),
+                is_enabled: r.is_enabled,
             }
         })
         .collect();
@@ -775,40 +845,48 @@ fn fold_categories<'a>(it: impl Iterator<Item = &'a CategoryUsage>) -> Vec<Categ
 /// alerting on every module that does not store bytes is how an operator learns
 /// to dismiss the alert.
 pub async fn stale_reporters(
-    db: &PgPool,
+    db: &DbPool,
 ) -> Result<Vec<(String, String, chrono::DateTime<chrono::Utc>, i64)>, AppError> {
     let hours = stale_hours(db).await;
-    let rows = sqlx::query(
-        r#"SELECT r.module_id,
-                  COALESCE(NULLIF(m.display_name, ''), m.id) AS display_name,
-                  r.last_declared_at,
-                  COALESCE((SELECT SUM(used_bytes) FROM core.storage_usage s
-                             WHERE s.module_id = r.module_id), 0)::bigint AS used
-             FROM core.storage_reporters r
-             JOIN core.modules m ON m.id = r.module_id
-            WHERE m.is_enabled = TRUE
-              AND r.last_declared_at < NOW() - make_interval(hours => $1::int)
-            ORDER BY r.last_declared_at"#,
-    )
-    .bind(hours as i32)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_usage: déclarants silencieux");
-        AppError::Database(e)
-    })?;
+    let stale_before = Utc::now() - Duration::hours(hours);
+    let backend = db.backend();
+
+    #[derive(sqlx::FromRow)]
+    struct StaleRow {
+        module_id: String,
+        display_name: String,
+        last_declared_at: chrono::DateTime<chrono::Utc>,
+        used: i64,
+    }
+    let rows = db
+        .fetch_all_as::<StaleRow>(
+            &format!(
+                r#"SELECT r.module_id,
+                      COALESCE(NULLIF(m.display_name, ''), m.id) AS display_name,
+                      r.last_declared_at,
+                      {used} AS used
+                 FROM core.storage_reporters r
+                 JOIN core.modules m ON m.id = r.module_id
+                WHERE m.is_enabled = TRUE
+                  AND r.last_declared_at < $1
+                ORDER BY r.last_declared_at"#,
+                used = backend.cast(
+                    "COALESCE((SELECT SUM(used_bytes) FROM core.storage_usage s \
+                       WHERE s.module_id = r.module_id), 0)",
+                    SqlType::BigInt,
+                ),
+            ),
+            params![stale_before],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_usage: silent reporters");
+            AppError::Database(e)
+        })?;
 
     Ok(rows
-        .iter()
-        .map(|r| {
-            (
-                r.try_get::<String, _>("module_id").unwrap_or_default(),
-                r.try_get::<String, _>("display_name").unwrap_or_default(),
-                r.try_get("last_declared_at")
-                    .unwrap_or_else(|_| chrono::Utc::now()),
-                r.try_get::<i64, _>("used").unwrap_or(0),
-            )
-        })
+        .into_iter()
+        .map(|r| (r.module_id, r.display_name, r.last_declared_at, r.used))
         .collect())
 }
 
@@ -876,70 +954,79 @@ pub struct AccountModuleUsage {
 /// declares but holds nothing for this person is absent rather than shown at
 /// zero: on an instance with twenty modules, nineteen zeroes bury the one line
 /// that matters.
-pub async fn account_usage(db: &PgPool, user_id: Uuid) -> Result<AccountUsage, AppError> {
+pub async fn account_usage(db: &DbPool, user_id: Uuid) -> Result<AccountUsage, AppError> {
     let stale_hours = stale_hours(db).await;
 
-    let account = sqlx::query(
-        "SELECT quota_bytes, used_bytes FROM core.users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "storage_usage: lecture du compte");
-        AppError::Database(e)
-    })?
-    .ok_or_else(|| AppError::NotFound(format!("Compte {user_id}")))?;
+    let (quota_bytes, used_bytes) = db
+        .fetch_optional_as::<(i64, i64)>(
+            "SELECT quota_bytes, used_bytes FROM core.users WHERE id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "storage_usage: account read");
+            AppError::Database(e)
+        })?
+        .ok_or_else(|| AppError::NotFound(format!("Account {user_id}")))?;
 
-    let rows = sqlx::query(
-        r#"SELECT s.module_id,
+    let stale_before = Utc::now() - Duration::hours(stale_hours);
+    #[derive(sqlx::FromRow)]
+    struct AcctRow {
+        module_id: String,
+        display_name: String,
+        category: String,
+        used_bytes: i64,
+        object_count: Option<i64>,
+        last_declared_at: Option<chrono::DateTime<chrono::Utc>>,
+        stale: Option<bool>,
+    }
+    let rows = db
+        .fetch_all_as::<AcctRow>(
+            r#"SELECT s.module_id,
                   COALESCE(NULLIF(m.display_name, ''), m.id) AS display_name,
                   s.category,
                   s.used_bytes,
                   s.object_count,
                   r.last_declared_at,
-                  r.last_declared_at < NOW() - make_interval(hours => $2::int) AS stale
+                  r.last_declared_at < $2 AS stale
              FROM core.storage_usage s
              JOIN core.modules m           ON m.id = s.module_id
              LEFT JOIN core.storage_reporters r ON r.module_id = s.module_id
             WHERE s.user_id = $1"#,
-    )
-    .bind(user_id)
-    .bind(stale_hours as i32)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, user_id = %user_id, "storage_usage: fiche de compte");
-        AppError::Database(e)
-    })?;
+            params![user_id, stale_before],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, user_id = %user_id, "storage_usage: account sheet");
+            AppError::Database(e)
+        })?;
 
     let mut modules: Vec<AccountModuleUsage> = Vec::new();
     for r in &rows {
-        let module_id: String = r.try_get("module_id").unwrap_or_default();
-        let raw: String = r.try_get("category").unwrap_or_default();
+        let raw = r.category.clone();
         let known = Category::parse(&raw);
         let line = CategoryUsage {
-            used_bytes: r.try_get::<i64, _>("used_bytes").unwrap_or(0),
-            object_count: r.try_get::<Option<i64>, _>("object_count").ok().flatten(),
+            used_bytes: r.used_bytes,
+            object_count: r.object_count,
             billable: known.is_some_and(Category::is_billable),
             held: known.is_none_or(Category::is_held),
             // Always this one account — a number that would say nothing.
             accounts: None,
             category: raw,
         };
-        match modules.iter_mut().find(|m| m.module_id == module_id) {
+        match modules.iter_mut().find(|m| m.module_id == r.module_id) {
             Some(m) => m.categories.push(line),
             None => modules.push(AccountModuleUsage {
-                module_id,
-                display_name: r.try_get("display_name").unwrap_or_default(),
+                module_id: r.module_id.clone(),
+                display_name: r.display_name.clone(),
                 billable_bytes: 0,
                 held_bytes: 0,
                 delegated_bytes: 0,
                 delegated_objects: 0,
                 object_count: 0,
                 categories: vec![line],
-                last_declared_at: r.try_get("last_declared_at").ok().flatten(),
-                stale: r.try_get::<Option<bool>, _>("stale").ok().flatten().unwrap_or(false),
+                last_declared_at: r.last_declared_at,
+                stale: r.stale.unwrap_or(false),
             }),
         }
     }
@@ -973,12 +1060,11 @@ pub async fn account_usage(db: &PgPool, user_id: Uuid) -> Result<AccountUsage, A
     let held_bytes: i64 = modules.iter().map(|m| m.held_bytes).sum();
     let delegated_bytes: i64 = modules.iter().map(|m| m.delegated_bytes).sum();
     let delegated_objects: i64 = modules.iter().map(|m| m.delegated_objects).sum();
-    let used_bytes: i64 = account.try_get("used_bytes").unwrap_or(0);
     let categories = fold_categories(modules.iter().flat_map(|m| m.categories.iter()));
 
     Ok(AccountUsage {
         user_id,
-        quota_bytes: account.try_get("quota_bytes").unwrap_or(0),
+        quota_bytes,
         used_bytes,
         billable_bytes,
         held_bytes,
@@ -1032,24 +1118,31 @@ pub struct BlockedDeclarant {
 /// would silently subtract the missing one's share from every account it holds
 /// bytes for. There is no safe partial repair, so a single unfit declarant stops
 /// the pass — and the existing staleness alert already tells an operator which.
-pub async fn repair_blockers(db: &PgPool) -> Result<Vec<BlockedDeclarant>, AppError> {
+pub async fn repair_blockers(db: &DbPool) -> Result<Vec<BlockedDeclarant>, AppError> {
     let hours = stale_hours(db).await;
-    let rows = sqlx::query(
-        r#"SELECT r.module_id,
+    let stale_before = Utc::now() - Duration::hours(hours);
+    #[derive(sqlx::FromRow)]
+    struct BlockerRow {
+        module_id: String,
+        never_full: bool,
+        stale: Option<bool>,
+    }
+    let rows = db
+        .fetch_all_as::<BlockerRow>(
+            r#"SELECT r.module_id,
                   r.last_full_sync_at IS NULL AS never_full,
-                  r.last_declared_at < NOW() - make_interval(hours => $1::int) AS stale
+                  r.last_declared_at < $1 AS stale
              FROM core.storage_reporters r
              JOIN core.modules m ON m.id = r.module_id
             WHERE m.is_enabled = TRUE
             ORDER BY r.module_id"#,
-    )
-    .bind(hours as i32)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_usage: aptitude des déclarants au recalage");
-        AppError::Database(e)
-    })?;
+            params![stale_before],
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "storage_usage: declarant fitness for realignment");
+            AppError::Database(e)
+        })?;
 
     // An instance where nobody declares is not an instance where nobody stores
     // anything. Reading the empty table as "every account bills zero" would zero
@@ -1063,12 +1156,12 @@ pub async fn repair_blockers(db: &PgPool) -> Result<Vec<BlockedDeclarant>, AppEr
     }
 
     Ok(rows
-        .iter()
+        .into_iter()
         .filter_map(|r| {
-            let module_id: String = r.try_get("module_id").unwrap_or_default();
-            if r.try_get::<bool, _>("never_full").unwrap_or(true) {
+            let module_id = r.module_id;
+            if r.never_full {
                 Some(BlockedDeclarant { module_id, blocker: RepairBlocker::NeverFullySynced })
-            } else if r.try_get::<Option<bool>, _>("stale").ok().flatten().unwrap_or(false) {
+            } else if r.stale.unwrap_or(false) {
                 Some(BlockedDeclarant { module_id, blocker: RepairBlocker::Stale })
             } else {
                 None
@@ -1110,44 +1203,63 @@ impl CounterDrift {
 /// Accounts with no declarations at all are included with `declared_bytes = 0`
 /// only when their counter is non-zero — otherwise every account on the instance
 /// would be a candidate for a correction to the value it already has.
-pub async fn counter_drifts(db: &PgPool, min_delta: i64) -> Result<Vec<CounterDrift>, AppError> {
+pub async fn counter_drifts(db: &DbPool, min_delta: i64) -> Result<Vec<CounterDrift>, AppError> {
     let billable: Vec<String> = Category::ALL
         .iter()
         .filter(|c| c.is_billable())
         .map(|c| c.as_str().to_owned())
         .collect();
 
-    let rows = sqlx::query(
-        r#"SELECT u.id, u.email::text AS email, u.quota_bytes, u.used_bytes,
-                  COALESCE(d.declared, 0)::bigint AS declared
+    // `= ANY($1::text[])` over the billable category list becomes an ` IN (...)`
+    // built by the query builder; the `::text`/`::bigint` casts become the
+    // engine-aware cast. The staleness threshold and the sums stay the same.
+    let backend = db.backend();
+    let mut qb = DbQueryBuilder::new(
+        backend,
+        format!(
+            r#"SELECT u.id, {email} AS email, u.quota_bytes, u.used_bytes,
+                  {declared} AS declared
              FROM core.users u
              LEFT JOIN (
-                   SELECT user_id, SUM(used_bytes)::bigint AS declared
+                   SELECT user_id, {subsum} AS declared
                      FROM core.storage_usage
-                    WHERE category = ANY($1::text[])
-                    GROUP BY user_id
-             ) d ON d.user_id = u.id
-            WHERE (d.declared IS NOT NULL OR u.used_bytes <> 0)
-              AND ABS(COALESCE(d.declared, 0) - u.used_bytes) >= $2
-            ORDER BY ABS(COALESCE(d.declared, 0) - u.used_bytes) DESC"#,
-    )
-    .bind(&billable)
-    .bind(min_delta)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "storage_usage: écarts de compteur");
+                    WHERE category"#,
+            email = backend.cast("u.email", SqlType::Text),
+            declared = backend.cast("COALESCE(d.declared, 0)", SqlType::BigInt),
+            subsum = backend.cast("SUM(used_bytes)", SqlType::BigInt),
+        ),
+    );
+    qb.push_in(billable);
+    qb.push(
+        " GROUP BY user_id \
+             ) d ON d.user_id = u.id \
+            WHERE (d.declared IS NOT NULL OR u.used_bytes <> 0) \
+              AND ABS(COALESCE(d.declared, 0) - u.used_bytes) >= ",
+    );
+    qb.push_bind(min_delta);
+    qb.push(" ORDER BY ABS(COALESCE(d.declared, 0) - u.used_bytes) DESC");
+
+    #[derive(sqlx::FromRow)]
+    struct DriftRow {
+        id: Uuid,
+        email: String,
+        quota_bytes: i64,
+        used_bytes: i64,
+        declared: i64,
+    }
+    let rows: Vec<DriftRow> = qb.fetch_all_as(db).await.map_err(|e| {
+        tracing::error!(error = %e, "storage_usage: counter drifts");
         AppError::Database(e)
     })?;
 
     Ok(rows
-        .iter()
+        .into_iter()
         .map(|r| CounterDrift {
-            user_id: r.try_get("id").unwrap_or_default(),
-            email: r.try_get::<String, _>("email").unwrap_or_default(),
-            quota_bytes: r.try_get("quota_bytes").unwrap_or(0),
-            counter_bytes: r.try_get("used_bytes").unwrap_or(0),
-            declared_bytes: r.try_get("declared").unwrap_or(0),
+            user_id: r.id,
+            email: r.email,
+            quota_bytes: r.quota_bytes,
+            counter_bytes: r.used_bytes,
+            declared_bytes: r.declared,
         })
         .collect())
 }
@@ -1204,7 +1316,7 @@ impl From<&CounterDrift> for HeldBackAccount {
 }
 
 /// How small a difference is left alone.
-pub async fn correction_min_bytes(db: &PgPool) -> i64 {
+pub async fn correction_min_bytes(db: &DbPool) -> i64 {
     crate::settings::instance_value(db, CORRECTION_MIN_SETTING)
         .await
         .as_ref()
@@ -1216,7 +1328,7 @@ pub async fn correction_min_bytes(db: &PgPool) -> i64 {
 }
 
 /// Whether the core is allowed to rewrite `core.users.used_bytes`.
-pub async fn repair_enabled(db: &PgPool) -> bool {
+pub async fn repair_enabled(db: &DbPool) -> bool {
     crate::settings::instance_value(db, AUTHORITATIVE_SETTING)
         .await
         .as_ref()
@@ -1227,7 +1339,7 @@ pub async fn repair_enabled(db: &PgPool) -> bool {
 /// Assembles the repair's current position **without changing anything**, for
 /// the administration console: is it on, is it suspended and by whom, what would
 /// it do, and whom is it holding back.
-pub async fn repair_preview(db: &PgPool) -> Result<RepairReport, AppError> {
+pub async fn repair_preview(db: &DbPool) -> Result<RepairReport, AppError> {
     build_report(db, false).await
 }
 
@@ -1249,11 +1361,11 @@ pub async fn repair_preview(db: &PgPool) -> Result<RepairReport, AppError> {
 /// The update is conditional on the counter still holding the value that was
 /// read, so a module writing concurrently wins and the repair simply retries an
 /// hour later against the newer figure.
-pub async fn repair_counters(db: &PgPool) -> Result<RepairReport, AppError> {
+pub async fn repair_counters(db: &DbPool) -> Result<RepairReport, AppError> {
     build_report(db, true).await
 }
 
-async fn build_report(db: &PgPool, apply: bool) -> Result<RepairReport, AppError> {
+async fn build_report(db: &DbPool, apply: bool) -> Result<RepairReport, AppError> {
     let enabled = repair_enabled(db).await;
     let min_delta = correction_min_bytes(db).await;
     let blockers = repair_blockers(db).await?;
@@ -1282,23 +1394,21 @@ async fn build_report(db: &PgPool, apply: bool) -> Result<RepairReport, AppError
     for d in drifts.iter().filter(|d| !d.would_newly_exceed_quota()) {
         // Conditional on the value read: a module that wrote in the meantime is
         // more current than this pass, and its figure must stand.
-        let updated = sqlx::query(
-            "UPDATE core.users SET used_bytes = $1 WHERE id = $2 AND used_bytes = $3",
-        )
-        .bind(d.declared_bytes)
-        .bind(d.user_id)
-        .bind(d.counter_bytes)
-        .execute(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %d.user_id, "storage_usage: recalage du compteur");
-            AppError::Database(e)
-        })?;
+        let updated = db
+            .execute(
+                "UPDATE core.users SET used_bytes = $1 WHERE id = $2 AND used_bytes = $3",
+                params![d.declared_bytes, d.user_id, d.counter_bytes],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, user_id = %d.user_id, "storage_usage: counter realignment");
+                AppError::Database(e)
+            })?;
 
-        if updated.rows_affected() == 0 {
+        if updated == 0 {
             tracing::debug!(
                 user_id = %d.user_id,
-                "Recalage ignoré : le compteur a bougé entre la lecture et l'écriture"
+                "Realignment skipped: the counter moved between read and write"
             );
             continue;
         }

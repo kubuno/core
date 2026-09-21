@@ -44,7 +44,7 @@ pub mod store;
 
 use std::collections::BTreeSet;
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 pub use evidence::Evidence;
 pub use model::{Detector, DetectorLeaf, Kind};
@@ -55,7 +55,7 @@ pub use scan::Limits;
 /// Once per gate call rather than once per detector: one request must run under
 /// one set of rules, even if an administrator changes a setting while it is in
 /// flight.
-pub async fn limits_from_settings(db: &PgPool) -> Limits {
+pub async fn limits_from_settings(db: &DbPool) -> Limits {
     use super::store::setting_u64;
     Limits {
         max_part_bytes: setting_u64(db, "rules.detectors.max_part_bytes", 262_144, 1_024, 16_777_216)

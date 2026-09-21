@@ -33,9 +33,9 @@
 use crate::{errors::AppError, settings::SettingScope};
 use base64::Engine as _;
 use chrono::{Duration, Utc};
+use kubuno_db::{params, DbPool};
 use rand::Rng;
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Alphabet without visually ambiguous glyphs (`O`/`0`, `I`/`1`/`L`, `Z`/`2`).
@@ -78,7 +78,7 @@ struct Params {
     math_max: i64,
 }
 
-async fn get_int(db: &PgPool, key: &str, default: i64, min: i64, max: i64) -> i64 {
+async fn get_int(db: &DbPool, key: &str, default: i64, min: i64, max: i64) -> i64 {
     match crate::settings::chain::resolve_for(db, key, &SettingScope::INSTANCE).await {
         Ok(r) => r
             .value
@@ -87,13 +87,13 @@ async fn get_int(db: &PgPool, key: &str, default: i64, min: i64, max: i64) -> i6
             .unwrap_or(default)
             .clamp(min, max),
         Err(e) => {
-            tracing::error!(error = %e, key, "captcha: réglage illisible");
+            tracing::error!(error = %e, key, "captcha: unreadable setting");
             default
         }
     }
 }
 
-async fn resolve_params(db: &PgPool) -> Params {
+async fn resolve_params(db: &DbPool) -> Params {
     let kind = match crate::settings::chain::resolve_for(db, "security.captcha_type", &SettingScope::INSTANCE).await {
         Ok(r) => CaptchaKind::parse(r.value.as_ref().and_then(Value::as_str).unwrap_or("text")),
         Err(_) => CaptchaKind::Text,
@@ -116,13 +116,16 @@ pub struct Challenge {
 
 /// Draw, store and return a fresh challenge of the configured kind. Sweeps stale
 /// rows first so the table cannot grow without bound.
-pub async fn generate(db: &PgPool) -> Result<Challenge, AppError> {
-    if let Err(e) =
-        sqlx::query("DELETE FROM core.captcha_challenges WHERE expires_at < NOW() OR consumed = TRUE")
-            .execute(db)
-            .await
+pub async fn generate(db: &DbPool) -> Result<Challenge, AppError> {
+    let now = Utc::now();
+    if let Err(e) = db
+        .execute(
+            "DELETE FROM core.captcha_challenges WHERE expires_at < $1 OR consumed = TRUE",
+            params![now],
+        )
+        .await
     {
-        tracing::warn!(error = %e, "captcha: purge des défis périmés impossible");
+        tracing::warn!(error = %e, "captcha: could not purge the stale challenges");
     }
 
     let p = resolve_params(db).await;
@@ -138,20 +141,20 @@ pub async fn generate(db: &PgPool) -> Result<Challenge, AppError> {
     Ok(Challenge { id, payload })
 }
 
-async fn store(db: &PgPool, kind: CaptchaKind, answer: &str) -> Result<Uuid, AppError> {
+async fn store(db: &DbPool, kind: CaptchaKind, answer: &str) -> Result<Uuid, AppError> {
     let expires_at = Utc::now() + Duration::minutes(TTL_MINUTES);
-    sqlx::query_scalar(
-        "INSERT INTO core.captcha_challenges (answer, kind, expires_at) VALUES ($1, $2, $3) RETURNING id",
+    // The id is generated in Rust and bound rather than read back with RETURNING.
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.captcha_challenges (id, answer, kind, expires_at) VALUES ($1, $2, $3, $4)",
+        params![id, answer, kind.as_str(), expires_at],
     )
-    .bind(answer)
-    .bind(kind.as_str())
-    .bind(expires_at)
-    .fetch_one(db)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, "captcha: enregistrement du défi impossible");
+        tracing::error!(error = %e, "captcha: could not store the challenge");
         AppError::Internal(anyhow::anyhow!("captcha: génération impossible"))
-    })
+    })?;
+    Ok(id)
 }
 
 fn data_url(png: &[u8]) -> String {
@@ -313,24 +316,76 @@ fn build_slider() -> (String, Value) {
 /// per challenge. Returns `true` only when a live, unconsumed challenge existed
 /// and the answer satisfied its kind. Fails **closed** on a database error: a
 /// broken store must not let the gate be bypassed.
-pub async fn verify(db: &PgPool, id: Uuid, given: &str) -> bool {
-    let row = sqlx::query_as::<_, (String, String)>(
-        "UPDATE core.captcha_challenges SET consumed = TRUE \
-         WHERE id = $1 AND consumed = FALSE AND expires_at > NOW() \
-         RETURNING answer, kind",
-    )
-    .bind(id)
-    .fetch_optional(db)
-    .await;
-
-    let (expected, kind) = match row {
-        Ok(Some(r)) => r,
-        Ok(None) => return false,
+pub async fn verify(db: &DbPool, id: Uuid, given: &str) -> bool {
+    // MySQL has no UPDATE ... RETURNING, so the guarded consume and the read of
+    // the answer are done as two statements inside one transaction. The UPDATE's
+    // `consumed = FALSE` guard makes exactly one racer win (rows_affected == 1);
+    // reading by id afterwards, still in the tx, sees the row we just consumed
+    // before any concurrent sweep can delete it.
+    let now = Utc::now();
+    let mut tx = match db.begin().await {
+        Ok(t) => t,
         Err(e) => {
-            tracing::error!(error = %e, "captcha: vérification impossible");
+            tracing::error!(error = %e, "captcha: verification failed");
             return false;
         }
     };
+
+    let affected = match tx
+        .execute(
+            "UPDATE core.captcha_challenges SET consumed = TRUE \
+             WHERE id = $1 AND consumed = FALSE AND expires_at > $2",
+            params![id, now],
+        )
+        .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!(error = %e, "captcha: verification failed");
+            let _ = tx.rollback().await;
+            return false;
+        }
+    };
+    if affected == 0 {
+        let _ = tx.rollback().await;
+        return false;
+    }
+
+    let row = match tx
+        .fetch_optional_row(
+            "SELECT answer, kind FROM core.captcha_challenges WHERE id = $1",
+            params![id],
+        )
+        .await
+    {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            let _ = tx.rollback().await;
+            return false;
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "captcha: verification failed");
+            let _ = tx.rollback().await;
+            return false;
+        }
+    };
+
+    let (expected, kind): (String, String) = match (
+        row.try_get::<String>("answer"),
+        row.try_get::<String>("kind"),
+    ) {
+        (Ok(a), Ok(k)) => (a, k),
+        _ => {
+            let _ = tx.rollback().await;
+            return false;
+        }
+    };
+
+    if let Err(e) = tx.commit().await {
+        // Fail closed: if the consume did not persist, do not honour the answer.
+        tracing::error!(error = %e, "captcha: verification failed");
+        return false;
+    }
 
     match CaptchaKind::parse(&kind) {
         CaptchaKind::Text => given.trim().to_uppercase() == expected,

@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use kubuno_db::DbPool;
 use sqlx::{PgPool, Row};
 use tokio::io::AsyncWriteExt;
 
@@ -52,16 +53,16 @@ pub const SCHEMA: &str = "core";
 
 /// Free space required before a dump is even attempted. A backup that fills the
 /// volume it is protecting takes the instance down to save it.
-const MIN_FREE_BYTES: u64 = 256 * 1024 * 1024;
+pub(crate) const MIN_FREE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Free space below which a dump in progress is abandoned. Lower than the entry
 /// bar: the file being written is already accounted for in what is left.
-const ABORT_FREE_BYTES: u64 = 64 * 1024 * 1024;
+pub(crate) const ABORT_FREE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Suffix of a dump still being written. Renamed into place only once the file
 /// is complete and fsynced, so a crash never leaves something that *looks* like
 /// a backup and is half a table short.
-const PARTIAL_SUFFIX: &str = ".part";
+pub(crate) const PARTIAL_SUFFIX: &str = ".part";
 
 /// What one completed dump produced.
 #[derive(Debug, Clone)]
@@ -86,13 +87,15 @@ pub fn file_name_for(at: DateTime<Utc>) -> String {
 ///
 /// Used by the retention pass, which must delete only its own output: a
 /// destination directory is an operator's directory, and anything else in it is
-/// somebody else's file.
+/// somebody else's file. Both the PostgreSQL `.sql` dumps and the portable
+/// `.ndjson` dumps (MySQL/SQLite) are recognised.
 pub fn is_dump_file(name: &str) -> bool {
     let Some(rest) = name.strip_prefix("kubuno-core-") else {
         return false;
     };
-    let Some(stamp) = rest.strip_suffix(".sql") else {
-        return false;
+    let stamp = match rest.strip_suffix(".sql").or_else(|| rest.strip_suffix(".ndjson")) {
+        Some(s) => s,
+        None => return false,
     };
     stamp.len() == 16
         && stamp.char_indices().all(|(i, c)| match i {
@@ -121,7 +124,7 @@ struct TableSpec {
 
 /// Creates the destination if needed, with permissions that match what the file
 /// will contain.
-async fn ensure_directory(destination: &Path) -> anyhow::Result<()> {
+pub(crate) async fn ensure_directory(destination: &Path) -> anyhow::Result<()> {
     tokio::fs::create_dir_all(destination)
         .await
         .with_context(|| format!("Création du répertoire de sauvegarde {}", destination.display()))?;
@@ -144,7 +147,7 @@ async fn ensure_directory(destination: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn free_bytes(destination: &Path) -> Option<u64> {
+pub(crate) fn free_bytes(destination: &Path) -> Option<u64> {
     crate::health::disk::usage_of(destination).map(|u| u.available_bytes)
 }
 
@@ -295,7 +298,18 @@ async fn sequence_positions(conn: &mut sqlx::PgConnection) -> anyhow::Result<Vec
 /// The file is written under a `.part` name and renamed only after a successful
 /// `fsync`, so a partially written dump is never mistaken for a usable one — by
 /// the retention pass, by the console, or by an operator at 3 a.m.
-pub async fn write_dump(db: &PgPool, destination: &Path) -> anyhow::Result<DumpOutcome> {
+pub async fn write_dump(db: &DbPool, destination: &Path) -> anyhow::Result<DumpOutcome> {
+    // A logical, data-only dump built from `pg_catalog` and the COPY protocol is
+    // irreducibly PostgreSQL-specific (catalogue introspection, `COPY … TO
+    // STDOUT`, `REPEATABLE READ, READ ONLY`). PostgreSQL keeps that fast path and
+    // its `psql`-loadable `.sql` output; MySQL and SQLite go through the portable
+    // NDJSON writer (see [`super::portable`]), so scheduled backups work on every
+    // engine.
+    let db = match db.as_pg() {
+        Some(pool) => pool,
+        None => return super::portable::write_dump(db, destination).await,
+    };
+
     ensure_directory(destination).await?;
 
     if let Some(free) = free_bytes(destination) {

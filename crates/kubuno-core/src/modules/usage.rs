@@ -39,7 +39,8 @@ use std::time::Duration;
 
 use chrono::{NaiveDate, Utc};
 use chrono_tz::Tz;
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 /// How often the in-memory counters are consolidated into the table.
@@ -160,44 +161,78 @@ impl UsageMeter {
 /// Accounts erased between the hit and the flush are filtered out in SQL rather
 /// than allowed to fail the batch on the foreign key — losing a whole minute of
 /// attendance because one account was purged would be a poor trade.
-pub async fn flush(db: &PgPool, meter: &UsageMeter) {
+pub async fn flush(db: &DbPool, meter: &UsageMeter) {
     let batch = meter.drain();
     if batch.is_empty() {
         return;
     }
+    let rows = batch.len();
 
-    let mut days: Vec<NaiveDate> = Vec::with_capacity(batch.len());
-    let mut modules: Vec<String> = Vec::with_capacity(batch.len());
-    let mut users: Vec<Uuid> = Vec::with_capacity(batch.len());
-    let mut hits: Vec<i64> = Vec::with_capacity(batch.len());
+    // The PostgreSQL original consolidated the whole batch with one
+    // `INSERT ... SELECT FROM UNNEST(...)` statement, but `UNNEST` and array
+    // parameters exist on no other engine. The portable form applies the same
+    // add-not-overwrite merge one row at a time, inside a single transaction so
+    // the batch still lands atomically. The `EXISTS` guard drops hits for
+    // accounts erased between the hit and the flush rather than failing on the
+    // foreign key. `updated_at` is stamped in Rust rather than with `NOW()`.
+    let backend = db.backend();
+    let now = Utc::now();
+    let insert_sql = format!(
+        "INSERT INTO core.module_usage_daily (day, module_id, user_id, hits, updated_at) \
+         SELECT $1, $2, $3, $4, $5 \
+          WHERE EXISTS (SELECT 1 FROM core.users u WHERE u.id = $6){}",
+        backend.upsert(
+            "core.module_usage_daily",
+            &["day", "module_id", "user_id"],
+            &[
+                Assign::Expr { col: "hits", expr: "{cur} + {new}" },
+                Assign::Incoming("updated_at"),
+            ],
+        )
+    );
+
+    let mut tx = match db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                lignes = rows,
+                "Fréquentation des modules : consolidation échouée (lot abandonné)"
+            );
+            return;
+        }
+    };
+
+    let mut affected: u64 = 0;
     for (day, module_id, user_id, count) in batch {
-        days.push(day);
-        modules.push(module_id);
-        users.push(user_id);
-        hits.push(count);
+        // `user_id` fills both the inserted column ($3) and the EXISTS guard
+        // ($6); placeholders are never reused, so it is bound twice.
+        match tx
+            .execute(
+                &insert_sql,
+                params![day, module_id, user_id, count, now, user_id],
+            )
+            .await
+        {
+            Ok(done) => affected += done,
+            Err(e) => {
+                // The batch is lost on purpose rather than retried: it is at
+                // most a minute of an advisory counter, and a queue of failed
+                // batches would grow without bound exactly when the database is
+                // already unwell.
+                tracing::error!(
+                    error = %e,
+                    lignes = rows,
+                    "Fréquentation des modules : consolidation échouée (lot abandonné)"
+                );
+                let _ = tx.rollback().await;
+                return;
+            }
+        }
     }
 
-    let result = sqlx::query(
-        // Aliased `m` so the addition below names the row being updated without
-        // repeating a schema-qualified name inside an ON CONFLICT clause.
-        "INSERT INTO core.module_usage_daily AS m (day, module_id, user_id, hits) \
-         SELECT t.day, t.module_id, t.user_id, t.hits \
-           FROM UNNEST($1::date[], $2::text[], $3::uuid[], $4::bigint[]) \
-                AS t(day, module_id, user_id, hits) \
-          WHERE EXISTS (SELECT 1 FROM core.users u WHERE u.id = t.user_id) \
-         ON CONFLICT (day, module_id, user_id) DO UPDATE \
-                SET hits = m.hits + EXCLUDED.hits, \
-                    updated_at = NOW()",
-    )
-    .bind(&days)
-    .bind(&modules)
-    .bind(&users)
-    .bind(&hits)
-    .execute(db)
-    .await;
-
-    match result {
-        Ok(done) => {
+    match tx.commit().await {
+        Ok(()) => {
             let dropped = meter.dropped.swap(0, Ordering::Relaxed);
             if dropped > 0 {
                 tracing::warn!(
@@ -207,17 +242,14 @@ pub async fn flush(db: &PgPool, meter: &UsageMeter) {
                 );
             }
             tracing::debug!(
-                lignes = done.rows_affected(),
+                lignes = affected,
                 "Fréquentation des modules consolidée"
             );
         }
         Err(e) => {
-            // The batch is lost on purpose rather than retried: it is at most a
-            // minute of an advisory counter, and a queue of failed batches would
-            // grow without bound exactly when the database is already unwell.
             tracing::error!(
                 error = %e,
-                lignes = days.len(),
+                lignes = rows,
                 "Fréquentation des modules : consolidation échouée (lot abandonné)"
             );
         }
@@ -225,7 +257,7 @@ pub async fn flush(db: &PgPool, meter: &UsageMeter) {
 }
 
 /// The task that keeps the counter moving. Runs for the life of the process.
-pub async fn flusher(db: PgPool, meter: std::sync::Arc<UsageMeter>) {
+pub async fn flusher(db: DbPool, meter: std::sync::Arc<UsageMeter>) {
     // Before the first hit is ever recorded, so no counter is stamped with a
     // fallback zone the instance never chose.
     meter.set_zone(crate::settings::intl::instance_timezone(&db).await);
