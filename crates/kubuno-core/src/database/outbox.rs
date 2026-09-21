@@ -110,7 +110,7 @@ impl OutboxPoller {
                     tracing::error!(error = %e, "Passe de lecture de l'outbox échouée");
                 }
                 ticks = ticks.wrapping_add(1);
-                if ticks % PURGE_EVERY_TICKS == 0 {
+                if ticks.is_multiple_of(PURGE_EVERY_TICKS) {
                     if let Err(e) = self.purge_delivered().await {
                         tracing::error!(error = %e, "Purge de l'outbox échouée");
                     }
