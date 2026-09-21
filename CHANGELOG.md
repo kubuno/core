@@ -145,6 +145,17 @@ number at release time, and CI publishes that section as the GitHub Release note
   PostgreSQL, MySQL/MariaDB and SQLite. On SQLite, a row's "last updated"
   timestamp is now kept current by a trigger, matching PostgreSQL's function and
   MySQL's `ON UPDATE`.
+- **The last PostgreSQL-only reporting views and the re-encryption tool now run
+  on every engine.** The target-audience reach and member figures, the per-domain
+  account count, the administration dashboard's daily sign-up/sign-in/event
+  charts, the audit drill-down's record listing (with its cell truncation and
+  timestamps), and the `security:rekey` command all behaved on PostgreSQL only.
+  They no longer depend on PostgreSQL-specific SQL (`LATERAL` joins, `SPLIT_PART`,
+  `generate_series`/`to_char`, `left(...)`, `to_jsonb`, and inline `::type`
+  casts): the counts are correlated sub-queries, the address split is spelled per
+  engine, the date buckets are built in the application, and the JSON secret value
+  round-trips through portable helpers — so every administration page and the
+  key-rotation tool now work identically on PostgreSQL, MySQL/MariaDB and SQLite.
 
 ### Fixed
 
@@ -162,12 +173,6 @@ number at release time, and CI publishes that section as the GitHub Release note
   yet delivered: the core still listens only to PostgreSQL's notification
   channel and needs a reader for the new event table. The compile-time-checked
   queries of the core, media and drive are PostgreSQL-only for now.
-- A few administrative **reporting** views and one maintenance tool remain
-  PostgreSQL-only and are not yet portable: the target-audience reach figures
-  (a `LATERAL` join), the per-domain account count (`SPLIT_PART`), the sign-up
-  activity chart (`generate_series`), the audit drill-down's cell truncation
-  (`left(...)`), and the secret re-encryption CLI (`rekey`). They are unused on a
-  MySQL/SQLite install's normal operation but would error if opened there.
 
 ### Security
 
