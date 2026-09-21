@@ -277,6 +277,11 @@ pub async fn delete_group(
             .await);
     }
 
+    // Purge the group's setting overrides (the `setting_values_purge_scope`
+    // trigger's job on PostgreSQL; a no-op there).
+    crate::settings::store::purge_setting_values_for_scope(&mut tx, "group", group_id)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_group: purge des réglages"); AppError::Database(e) })?;
     tx.execute("DELETE FROM core.user_groups WHERE id = $1", params![group_id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_group"); AppError::Database(e) })?;

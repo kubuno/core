@@ -388,6 +388,25 @@ pub fn register(registry: &mut JobRegistry) {
                 tracing::error!(error = %e, "Lecture des comptes à purger échouée");
                 e
             })?;
+        // Take each account's setting overrides with it — the
+        // `setting_values_purge_scope` trigger's job on PostgreSQL, which has no
+        // equivalent for the polymorphic `scope_id` on the other engines.
+        if ctx.db.backend() != kubuno_db::Backend::Postgres {
+            ctx.db
+                .execute(
+                    "DELETE FROM core.setting_values \
+                      WHERE scope_type = 'user' \
+                        AND scope_id IN ( \
+                            SELECT id FROM core.users \
+                             WHERE deleted_at IS NOT NULL AND deleted_at < $1)",
+                    params![cutoff],
+                )
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "Purge des réglages des comptes supprimés échouée");
+                    e
+                })?;
+        }
         ctx.db
             .execute(
                 "DELETE FROM core.users WHERE deleted_at IS NOT NULL AND deleted_at < $1",

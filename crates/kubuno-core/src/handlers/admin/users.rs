@@ -1574,6 +1574,11 @@ pub async fn purge_user(
             AppError::Database(e)
         })?;
 
+    // Purge the account's own setting overrides (the `setting_values_purge_scope`
+    // trigger's job on PostgreSQL; a no-op there).
+    crate::settings::store::purge_setting_values_for_scope(&mut tx, "user", id)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, user_id = %id, "purge_user: purge des réglages"); AppError::Database(e) })?;
     tx.execute("DELETE FROM core.users WHERE id = $1", params![id])
         .await
         .map_err(|e| {

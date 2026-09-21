@@ -6,7 +6,7 @@
 //! locking an enforceable rule rather than a hint in the interface.
 
 use kubuno_db::dialect::{Assign, SqlType};
-use kubuno_db::{params, DbPool, DbQueryBuilder, DbTx};
+use kubuno_db::{params, Backend, DbPool, DbQueryBuilder, DbTx};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -128,6 +128,60 @@ pub async fn ensure_subject_exists(db: &DbPool, scope: &SettingScope) -> Result<
     Ok(())
 }
 
+/// Keeps the legacy `core.settings.value` mirror in lockstep with the instance
+/// scope, the way migration `000060`'s `setting_values_mirror` trigger does on
+/// PostgreSQL. About twenty call sites (mailer, health report, job runner, rate
+/// limiter, auth) still read `core.settings.value` with plain SQL, so an
+/// instance-level write made through this module must reach them.
+///
+/// `settings.value` becomes the instance override when one exists, and the
+/// factory default once it is cleared. A no-op on PostgreSQL, where the trigger
+/// already fired.
+async fn mirror_instance_to_settings(tx: &mut DbTx, key: &str) -> Result<(), sqlx::Error> {
+    if tx.backend() == Backend::Postgres {
+        return Ok(());
+    }
+    tx.execute(
+        "UPDATE core.settings s \
+            SET value = COALESCE( \
+                    (SELECT v.value FROM core.setting_values v \
+                      WHERE v.\"key\" = $1 AND v.scope_type = 'instance'), \
+                    s.default_value, s.value), \
+                updated_at = COALESCE( \
+                    (SELECT v.updated_at FROM core.setting_values v \
+                      WHERE v.\"key\" = $2 AND v.scope_type = 'instance'), \
+                    s.updated_at) \
+          WHERE s.\"key\" = $3",
+        params![key, key, key],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Removes the scoped setting values whose subject is being deleted, the way
+/// migration `000060`'s `setting_values_purge_scope` trigger does on PostgreSQL.
+/// `scope_type` is one of `'org_unit'`, `'group'`, `'user'` — a literal from the
+/// caller, never request text. A no-op on PostgreSQL, where the trigger fires.
+///
+/// The polymorphic `scope_id` carries no foreign key, so a recycled uuid could
+/// otherwise resurrect an override nobody remembers.
+pub async fn purge_setting_values_for_scope(
+    tx: &mut DbTx,
+    scope_type: &'static str,
+    subject_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    debug_assert!(matches!(scope_type, "org_unit" | "group" | "user"));
+    if tx.backend() == Backend::Postgres {
+        return Ok(());
+    }
+    tx.execute(
+        "DELETE FROM core.setting_values WHERE scope_type = $1 AND scope_id = $2",
+        params![scope_type, subject_id],
+    )
+    .await?;
+    Ok(())
+}
+
 /// Sets `key` at `scope`.
 ///
 /// Runs on a connection rather than the pool so the caller can enclose it in the
@@ -180,6 +234,13 @@ pub async fn set_value(
         AppError::Database(e)
     })?;
 
+    if scope.kind == ScopeKind::Instance {
+        mirror_instance_to_settings(tx, key).await.map_err(|e| {
+            tracing::error!(error = %e, key = %key, "settings: miroir instance impossible");
+            AppError::Database(e)
+        })?;
+    }
+
     Ok(WriteOutcome {
         schema,
         locked: before.locked_here,
@@ -218,6 +279,13 @@ pub async fn clear_value(
         tracing::error!(error = %e, key = %key, "settings: suppression de la valeur impossible");
         AppError::Database(e)
     })?;
+
+    if scope.kind == ScopeKind::Instance {
+        mirror_instance_to_settings(tx, key).await.map_err(|e| {
+            tracing::error!(error = %e, key = %key, "settings: miroir instance impossible");
+            AppError::Database(e)
+        })?;
+    }
 
     Ok(WriteOutcome {
         schema,

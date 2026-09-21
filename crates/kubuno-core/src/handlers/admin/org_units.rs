@@ -765,6 +765,11 @@ pub async fn delete_org_unit(
         )
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_org_unit: reassigning accounts"); AppError::Database(e) })?;
+    // Purge the unit's own setting overrides — the `setting_values_purge_scope`
+    // trigger does this on PostgreSQL; the helper is a no-op there.
+    crate::settings::store::purge_setting_values_for_scope(&mut tx, "org_unit", id)
+        .await
+        .map_err(|e| { tracing::error!(error = %e, "delete_org_unit: purge des réglages d'unité"); AppError::Database(e) })?;
     tx.execute("DELETE FROM core.org_units WHERE id = $1", params![id])
         .await
         .map_err(|e| { tracing::error!(error = %e, "delete_org_unit"); AppError::Database(e) })?;
