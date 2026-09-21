@@ -41,12 +41,16 @@ async fn access(
     user_id: Uuid,
     label_id: Uuid,
 ) -> Result<Option<(bool, bool)>, AppError> {
-    // NOTE: `core.label_access(...)` is a PostgreSQL set-returning function; this
-    // query has no MySQL/SQLite equivalent and is Postgres-only for now.
+    // Portable derived table (see `database::compat`); the user id is bound
+    // three times (`$1..$3`), the label id is `$4`.
+    let sql = format!(
+        "SELECT la.is_owner, la.can_manage FROM {} la WHERE la.label_id = $4",
+        crate::database::compat::label_access(db.backend(), 1)
+    );
     let row = db
         .fetch_optional_as::<(bool, bool)>(
-            "SELECT is_owner, can_manage FROM core.label_access($1) WHERE label_id = $2",
-            params![user_id, label_id],
+            &sql,
+            params![user_id, user_id, user_id, label_id],
         )
         .await?;
     Ok(row)
@@ -69,24 +73,30 @@ pub async fn list(
     AuthUser(user): AuthUser,
 ) -> Result<Json<Value>, AppError> {
     // `link_count` follows the visibility rule: a manager counts everyone's
-    // links, a plain recipient only their own.
-    // NOTE: `core.label_access(...)` is a PostgreSQL set-returning function
-    // (Postgres-only). `user.id` is bound twice because a positional placeholder
-    // is never reused across engines.
+    // links, a plain recipient only their own. Portable `label_access` derived
+    // table (see `database::compat`): `$1` is the link_count owner filter, then
+    // `$2..$4` are the three copies of the user id it needs; every value is bound
+    // once, in ascending order.
+    let backend = state.db.backend();
+    let sql = format!(
+        r#"SELECT l.id, l.name, l.color, l.description,
+                  a.is_owner, a.can_manage,
+                  l.owner_id, COALESCE(u.display_name, u.username) AS owner_name,
+                  (SELECT {count} FROM core.label_links k
+                    WHERE k.label_id = l.id AND (a.can_manage OR k.owner_id = $1)) AS link_count,
+                  (SELECT {count} FROM core.label_shares s WHERE s.label_id = l.id) AS share_count
+           FROM {label_access} a
+           JOIN core.labels l ON l.id = a.label_id
+           JOIN core.users  u ON u.id = l.owner_id
+           ORDER BY a.is_owner DESC, LOWER(l.name)"#,
+        count = backend.count_bigint("*"),
+        label_access = crate::database::compat::label_access(backend, 2),
+    );
     let rows = state
         .db
         .fetch_all_as::<(Uuid, String, String, Option<String>, bool, bool, Uuid, String, i64, i64)>(
-            r#"SELECT l.id, l.name, l.color, l.description,
-                      a.is_owner, a.can_manage,
-                      l.owner_id, COALESCE(u.display_name, u.username) AS owner_name,
-                      (SELECT COUNT(*) FROM core.label_links k
-                        WHERE k.label_id = l.id AND (a.can_manage OR k.owner_id = $1)) AS link_count,
-                      (SELECT COUNT(*) FROM core.label_shares s WHERE s.label_id = l.id) AS share_count
-               FROM core.label_access($2) a
-               JOIN core.labels l ON l.id = a.label_id
-               JOIN core.users  u ON u.id = l.owner_id
-               ORDER BY a.is_owner DESC, LOWER(l.name)"#,
-            params![user.id, user.id],
+            &sql,
+            params![user.id, user.id, user.id, user.id],
         )
         .await?;
 
@@ -259,12 +269,17 @@ pub async fn set_resource_labels(
     // Any label the caller may see can be linked — their own, and those shared
     // with them (a share is a shared vocabulary, so plain recipients may label
     // their own elements too). The links themselves stay owned by the caller.
-    // Resolved before the transaction: it is a read only. NOTE:
-    // `core.label_access(...)` is a PostgreSQL set-returning function
-    // (Postgres-only); `= ANY(...)` becomes a portable `IN (...)`.
-    let mut owned_qb =
-        DbQueryBuilder::new(backend, "SELECT label_id FROM core.label_access(");
-    owned_qb.push_bind(user.id).push(") WHERE label_id");
+    // Resolved before the transaction: it is a read only. Portable `label_access`
+    // derived table (see `database::compat`); `= ANY(...)` becomes a portable
+    // `IN (...)`. The user id is bound three times, in ascending order, before
+    // the `IN` list.
+    let mut owned_qb = DbQueryBuilder::new(backend, "SELECT la.label_id FROM ");
+    let n = owned_qb.bind_only(user.id);
+    owned_qb.bind_only(user.id);
+    owned_qb.bind_only(user.id);
+    owned_qb
+        .push(crate::database::compat::label_access(backend, n))
+        .push(" la WHERE la.label_id");
     owned_qb.push_in(dto.label_ids.iter().copied());
     let owned: Vec<Uuid> = owned_qb
         .fetch_all_as::<(Uuid,)>(&state.db)
@@ -433,18 +448,23 @@ pub async fn list_links(
     if access(&state.db, user.id, id).await?.is_none() {
         return Err(AppError::NotFound("Étiquette introuvable".into()));
     }
-    // NOTE: `core.label_access(...)` is Postgres-only. Placeholders renumbered to
-    // ascend in source order; `user.id` is bound twice rather than reusing one.
+    // Portable `label_access` derived table (see `database::compat`). It takes
+    // `$1..$3` (the user id, thrice); `$4` is the label id and `$5` the owner
+    // filter. Every value is bound once, ascending.
+    let sql = format!(
+        r#"SELECT k.id, k.label_id, k.module, k.resource_type, k.resource_id,
+                  k.title, k.href, k.envelope, k.created_at
+           FROM core.label_links k
+           JOIN {label_access} a ON a.label_id = k.label_id
+           WHERE k.label_id = $4 AND (k.owner_id = $5 OR a.can_manage)
+           ORDER BY k.created_at DESC"#,
+        label_access = crate::database::compat::label_access(state.db.backend(), 1),
+    );
     let links = state
         .db
         .fetch_all_as::<LabelLink>(
-            r#"SELECT k.id, k.label_id, k.module, k.resource_type, k.resource_id,
-                      k.title, k.href, k.envelope, k.created_at
-               FROM core.label_links k
-               JOIN core.label_access($1) a ON a.label_id = k.label_id
-               WHERE k.label_id = $2 AND (k.owner_id = $3 OR a.can_manage)
-               ORDER BY k.created_at DESC"#,
-            params![user.id, id, user.id],
+            &sql,
+            params![user.id, user.id, user.id, id, user.id],
         )
         .await?;
     Ok(Json(json!({ "links": links })))

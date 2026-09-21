@@ -674,75 +674,74 @@ pub async fn purge_executions(db: &DbPool, days: i64) -> Result<u64, AppError> {
 
 // ── Subject resolution ───────────────────────────────────────────────────────
 
-/// The raw shape of a subject read: the account and the two membership chains,
-/// returned as JSON arrays so they decode on every engine.
-#[derive(sqlx::FromRow)]
-struct SubjectRow {
-    id: Uuid,
-    org_unit_id: Option<Uuid>,
-    #[sqlx(json)]
-    unit_chain: Vec<Uuid>,
-    #[sqlx(json)]
-    group_ids: Vec<Uuid>,
-}
-
-/// Everything a scope test needs about an account, in one query.
+/// Everything a scope test needs about an account.
 ///
 /// Called **only after a rule's conditions matched and its scope is non-empty**.
 /// The hot path — deciding which rules an event concerns — is served entirely
 /// from the memory index and never touches the database.
+///
+/// Rebuilt as portable steps: the original folded the ancestor chain with the
+/// PostgreSQL-only `core.org_unit_ancestors(...)` and `jsonb_agg`. The ancestor
+/// walk now runs through the portable recursive CTE of `database::compat`, whose
+/// depth guard (64) comfortably exceeds the console's org-unit ceiling, so the
+/// chain is never truncated for a legal tree.
 pub async fn resolve_subject(db: &DbPool, user_id: Uuid) -> Result<Subject, AppError> {
-    // FLAG: PostgreSQL-only at run time. `core.org_unit_ancestors(...)` is a
-    // custom set-returning function and `jsonb_agg` is a PostgreSQL aggregate.
-    // The shape (JSON arrays) is portable and compiles everywhere; the functions
-    // are not, so this query runs only on PostgreSQL.
-    let row = db
-        .fetch_optional_as::<SubjectRow>(
-            r#"SELECT u.id,
-                      u.org_unit_id,
-                      COALESCE(
-                          (SELECT jsonb_agg(a.id) FROM core.org_unit_ancestors(u.org_unit_id, $2) a),
-                          '[]'::jsonb
-                      ) AS unit_chain,
-                      COALESCE(
-                          (SELECT jsonb_agg(gm.group_id) FROM core.user_group_members gm WHERE gm.user_id = u.id),
-                          '[]'::jsonb
-                      ) AS group_ids
-                 FROM core.users u
-                WHERE u.id = $1"#,
-            // The ceiling the console enforces, not a literal of our own: a bound
-            // shorter than the tree an operator may legally build would truncate the
-            // ancestor chain, and a rule scoped near the top would stop firing for the
-            // deepest accounts without anything failing. One invariant, one constant.
-            params![user_id, crate::handlers::admin::org_units::MAX_ORG_UNIT_DEPTH],
+    let fail = |e: sqlx::Error| {
+        tracing::error!(error = %e, user_id = %user_id, "rules: résolution du sujet");
+        AppError::Database(e)
+    };
+
+    // The account and its unit. A vanished account (no row) is covered by
+    // nothing that names anybody.
+    let Some(org_unit_id) = db
+        .fetch_optional_scalar::<Option<Uuid>>(
+            "SELECT org_unit_id FROM core.users WHERE id = $1",
+            params![user_id],
         )
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "rules: résolution du sujet");
-            AppError::Database(e)
-        })?;
-
-    let Some(row) = row else {
-        // The account vanished between the event and the evaluation. An unknown
-        // subject is covered by nothing that names anybody.
+        .map_err(fail)?
+    else {
         return Ok(Subject::default());
     };
 
-    let org_unit_id = row.org_unit_id;
-    let mut unit_chain = row.unit_chain;
-    // `org_unit_ancestors` walks upwards from the unit itself; the defensive
-    // insert keeps the chain correct even if that ever stops being true.
+    // Every group the account belongs to.
+    let group_ids: Vec<Uuid> = db
+        .fetch_all_as::<(Uuid,)>(
+            "SELECT group_id FROM core.user_group_members WHERE user_id = $1",
+            params![user_id],
+        )
+        .await
+        .map_err(fail)?
+        .into_iter()
+        .map(|(g,)| g)
+        .collect();
+
+    // The unit's ancestor chain (itself included), nearest first.
+    let mut unit_chain: Vec<Uuid> = Vec::new();
     if let Some(own) = org_unit_id {
+        let sql = format!(
+            "SELECT a.id FROM {} a ORDER BY a.depth",
+            crate::database::compat::org_unit_ancestors(1)
+        );
+        unit_chain = db
+            .fetch_all_as::<(Uuid,)>(&sql, params![own])
+            .await
+            .map_err(fail)?
+            .into_iter()
+            .map(|(id,)| id)
+            .collect();
+        // The walk starts at the unit itself; the defensive insert keeps the
+        // chain correct even if that ever stops being true.
         if !unit_chain.contains(&own) {
             unit_chain.push(own);
         }
     }
 
     Ok(Subject {
-        user_id: Some(row.id),
+        user_id: Some(user_id),
         org_unit_id,
         unit_chain,
-        group_ids: row.group_ids,
+        group_ids,
     })
 }
 

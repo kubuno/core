@@ -81,6 +81,28 @@ pub fn org_unit_descendants_many(start: usize, count: usize) -> String {
     subtree(&anchor, "c.parent_id = s.id", "")
 }
 
+/// Portable expansion of **several** subtrees at once, each row tagged with the
+/// root it descends from — the shape the effective-privilege resolver needs (it
+/// expands every unit a grant is scoped to and maps the descendants back to that
+/// grant). Columns `(root, id)`. `start` is the first of `count` placeholders,
+/// each a root id bound in order. Panics on an empty set.
+pub fn org_unit_descendants_with_root(start: usize, count: usize) -> String {
+    assert!(count > 0, "org_unit_descendants_with_root needs at least one root");
+    let roots = placeholder_list(start, count);
+    let depth = MAX_TREE_DEPTH;
+    format!(
+        "(WITH RECURSIVE _kb_roots(root, id, depth) AS ( \
+             SELECT u.id AS root, u.id AS id, 0 AS depth \
+               FROM core.org_units u WHERE u.id IN ({roots}) \
+             UNION ALL \
+             SELECT s.root, c.id, s.depth + 1 \
+               FROM core.org_units c JOIN _kb_roots s ON c.parent_id = s.id \
+              WHERE s.depth < {depth} \
+         ) \
+         SELECT DISTINCT root, id FROM _kb_roots)"
+    )
+}
+
 /// Portable replacement for `core.org_unit_ancestors($root)`.
 ///
 /// Columns `(id, name, parent_id, depth)`: `depth` 0 is the unit itself, 1 its
@@ -149,30 +171,30 @@ pub fn superadmin_ids(backend: Backend) -> String {
 /// `(label_id, is_owner, can_manage)`.
 ///
 /// The user id is referenced three times; `user` is the first of **three**
-/// consecutive placeholders, all bound to that same id in order. `MAX(...)` over
-/// the boolean-as-integer columns is the portable spelling of PostgreSQL's
-/// `bool_or`.
-pub fn label_access(user: usize) -> String {
+/// consecutive placeholders, all bound to that same id in order. The per-flag
+/// fold is [`Backend::bool_or`] (`bool_or` on PostgreSQL, `MAX` over the
+/// boolean-as-integer columns on MySQL/SQLite).
+pub fn label_access(backend: Backend, user: usize) -> String {
     let owner = user;
     let shared = user + 1;
     let group = user + 2;
     format!(
-        "(SELECT a.label_id, MAX(a.is_owner) AS is_owner, MAX(a.can_manage) AS can_manage \
+        "(SELECT a.label_id, {is_owner} AS is_owner, {can_manage} AS can_manage \
             FROM ( \
-                SELECT l.id AS label_id, {true_} AS is_owner, {true_} AS can_manage \
+                SELECT l.id AS label_id, TRUE AS is_owner, TRUE AS can_manage \
                   FROM core.labels l WHERE l.owner_id = ${owner} \
                 UNION ALL \
-                SELECT s.label_id, {false_}, s.can_manage \
+                SELECT s.label_id, FALSE, s.can_manage \
                   FROM core.label_shares s WHERE s.user_id = ${shared} \
                 UNION ALL \
-                SELECT s.label_id, {false_}, s.can_manage \
+                SELECT s.label_id, FALSE, s.can_manage \
                   FROM core.label_shares s \
                   JOIN core.user_group_members m ON m.group_id = s.group_id \
                  WHERE m.user_id = ${group} \
             ) a \
            GROUP BY a.label_id)",
-        true_ = "TRUE",
-        false_ = "FALSE",
+        is_owner = backend.bool_or("a.is_owner"),
+        can_manage = backend.bool_or("a.can_manage"),
     )
 }
 
@@ -199,7 +221,7 @@ mod tests {
                     org_unit_descendants_many(1, 3)
                 ),
                 format!("SELECT user_id FROM {} s", superadmin_ids(b)),
-                format!("SELECT label_id FROM {} a WHERE a.label_id = $4", label_access(1)),
+                format!("SELECT label_id FROM {} a WHERE a.label_id = $4", label_access(b, 1)),
             ];
             for sql in cases {
                 assert!(

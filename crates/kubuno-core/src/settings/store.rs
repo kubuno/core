@@ -395,11 +395,21 @@ pub struct OverrideRef {
 }
 
 pub async fn list_overrides(db: &DbPool, key: &str) -> Result<Vec<OverrideRef>, AppError> {
-    // `core.setting_overrides` is a PostgreSQL set-returning function; the other
-    // engines get the equivalent from the schema layer (separate migration).
+    // Inlined portable equivalent of the PostgreSQL-only `core.setting_overrides`
+    // set-returning function: no recursion, only left joins to name each scope.
+    // `::text` casts are dropped (the columns are already text) and `key` is
+    // spelled as the quoted reserved word.
     let rows: Vec<(String, Uuid, String, bool)> = db
         .fetch_all_as::<(String, Uuid, String, bool)>(
-            "SELECT scope_type, scope_id, scope_name, locked FROM core.setting_overrides($1)",
+            "SELECT v.scope_type, v.scope_id, \
+                    COALESCE(o.name, g.name, u.display_name, u.username, '?') AS scope_name, \
+                    v.locked \
+               FROM core.setting_values v \
+               LEFT JOIN core.org_units   o ON v.scope_type = 'org_unit' AND o.id = v.scope_id \
+               LEFT JOIN core.user_groups g ON v.scope_type = 'group'    AND g.id = v.scope_id \
+               LEFT JOIN core.users       u ON v.scope_type = 'user'     AND u.id = v.scope_id \
+              WHERE v.\"key\" = $1 AND v.scope_type <> 'instance' \
+              ORDER BY v.scope_type, 3",
             params![key],
         )
         .await
@@ -447,7 +457,7 @@ pub async fn overrides_by_key(
     );
     qb.push_in(keys.iter().cloned());
     qb.push(" AND v.scope_type <> 'instance'");
-    qb.push_order_by("v.key, v.scope_type");
+    qb.push_order_by("v.\"key\", v.scope_type");
 
     let rows: Vec<(String, String, Uuid, String, bool)> =
         qb.fetch_all_as(db).await.map_err(|e| {

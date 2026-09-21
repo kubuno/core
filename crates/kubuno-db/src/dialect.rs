@@ -371,6 +371,17 @@ impl Backend {
         }
     }
 
+    /// Boolean OR over a group — PostgreSQL's `bool_or`. MySQL and SQLite store
+    /// booleans as `0`/`1` and have no `bool_or`, but `MAX` over those integers
+    /// is the same fold and decodes back to `bool`. PostgreSQL rejects
+    /// `MAX(boolean)`, so the spelling genuinely differs.
+    pub fn bool_or(self, expr: &'static str) -> String {
+        match self {
+            Backend::Postgres => format!("bool_or({expr})"),
+            Backend::MySql | Backend::Sqlite => format!("MAX({expr})"),
+        }
+    }
+
     /// Concatenation of a group's values. `separator` is a literal.
     pub fn string_agg(self, expr: &'static str, separator: &'static str) -> String {
         debug_assert!(!separator.contains('\''), "separator must not contain a quote");

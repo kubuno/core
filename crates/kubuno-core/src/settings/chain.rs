@@ -179,25 +179,249 @@ fn own_specificity(chain: &[ChainLevel], scope: &SettingScope) -> i32 {
     }
 }
 
-/// Reads the chain of `key` as seen from `scope`.
+/// One `core.setting_values` row, as every scope level reads it.
+#[derive(sqlx::FromRow)]
+struct ValueRow {
+    value: Value,
+    locked: bool,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_by: Option<Uuid>,
+}
+
+/// An org-unit ancestor carrying a per-unit override.
+#[derive(sqlx::FromRow)]
+struct OrgLevelRow {
+    id: Uuid,
+    name: Option<String>,
+    depth: i32,
+    value: Value,
+    locked: bool,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_by: Option<Uuid>,
+}
+
+/// A group or user scope carrying an override.
+#[derive(sqlx::FromRow)]
+struct SubjectLevelRow {
+    id: Uuid,
+    name: Option<String>,
+    value: Value,
+    locked: bool,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_by: Option<Uuid>,
+}
+
+/// Reads the chain of `key` as seen from `scope`, from the most general level to
+/// the most specific one.
 ///
-/// `core.setting_chain` is a PostgreSQL set-returning function; the equivalent
-/// on the other engines is provided by the schema layer (separate migration).
+/// This is the portable reimplementation of the PostgreSQL-only
+/// `core.setting_chain` set-returning function (migration `000060`). It gathers
+/// the same levels — factory default, instance, the ancestor org units of the
+/// anchor unit, the relevant groups and the user — and applies the identical
+/// ordering (specificity, then most-recently-set, then a stable id tie-break).
+/// The org-unit walk reuses the portable recursive CTE of
+/// [`crate::database::compat`], depth guard included, so a cyclic tree truncates
+/// the chain instead of hanging the backend.
 pub async fn load_chain(
     db: &DbPool,
     key: &str,
     scope: &SettingScope,
 ) -> Result<Vec<ChainLevel>, AppError> {
-    db.fetch_all_as::<ChainLevel>(
-        "SELECT scope_type, scope_id, scope_name, specificity, value, locked, updated_at, updated_by \
-         FROM core.setting_chain($1, $2, $3)",
-        params![key, scope.kind.as_str(), scope.chain_id()],
-    )
-    .await
-    .map_err(|e| {
+    let fail = |e: sqlx::Error| {
         tracing::error!(error = %e, key = %key, "setting_chain: lecture de la chaîne impossible");
         AppError::Database(e)
-    })
+    };
+
+    // The unit whose ancestry applies to this scope, if any: the unit itself for
+    // an org-unit scope, the user's unit for a user scope, nothing otherwise.
+    let anchor: Option<Uuid> = match scope.kind {
+        ScopeKind::OrgUnit => scope.id,
+        ScopeKind::User => match scope.id {
+            Some(uid) => db
+                .fetch_optional_scalar::<Option<Uuid>>(
+                    "SELECT org_unit_id FROM core.users WHERE id = $1",
+                    params![uid],
+                )
+                .await
+                .map_err(fail)?
+                .flatten(),
+            None => None,
+        },
+        _ => None,
+    };
+
+    let mut levels: Vec<ChainLevel> = Vec::new();
+
+    // Factory default (specificity 0). `updated_by` is never attributed.
+    #[derive(sqlx::FromRow)]
+    struct DefaultRow {
+        value: Value,
+        updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    }
+    if let Some(d) = db
+        .fetch_optional_as::<DefaultRow>(
+            "SELECT default_value AS value, updated_at FROM core.settings \
+              WHERE \"key\" = $1 AND default_value IS NOT NULL",
+            params![key],
+        )
+        .await
+        .map_err(fail)?
+    {
+        levels.push(ChainLevel {
+            scope_type: "default".into(),
+            scope_id: None,
+            scope_name: None,
+            specificity: 0,
+            value: d.value,
+            locked: false,
+            updated_at: d.updated_at,
+            updated_by: None,
+        });
+    }
+
+    // Instance level (specificity 100).
+    if let Some(v) = db
+        .fetch_optional_as::<ValueRow>(
+            "SELECT value, locked, updated_at, updated_by FROM core.setting_values \
+              WHERE \"key\" = $1 AND scope_type = 'instance'",
+            params![key],
+        )
+        .await
+        .map_err(fail)?
+    {
+        levels.push(ChainLevel {
+            scope_type: "instance".into(),
+            scope_id: None,
+            scope_name: None,
+            specificity: 100,
+            value: v.value,
+            locked: v.locked,
+            updated_at: v.updated_at,
+            updated_by: v.updated_by,
+        });
+    }
+
+    // Org-unit levels: every ancestor of the anchor that carries an override.
+    // `depth` 0 is the unit itself (most specific), so specificity decreases as
+    // the walk climbs — 200 + (64 - min(depth, 64)).
+    if let Some(anchor_id) = anchor {
+        let sql = format!(
+            "SELECT a.id, a.name, a.depth, v.value, v.locked, v.updated_at, v.updated_by \
+               FROM {ancestors} a \
+               JOIN core.setting_values v \
+                 ON v.\"key\" = $2 AND v.scope_type = 'org_unit' AND v.scope_id = a.id",
+            ancestors = crate::database::compat::org_unit_ancestors(1),
+        );
+        let rows = db
+            .fetch_all_as::<OrgLevelRow>(&sql, params![anchor_id, key])
+            .await
+            .map_err(fail)?;
+        for r in rows {
+            levels.push(ChainLevel {
+                scope_type: "org_unit".into(),
+                scope_id: Some(r.id),
+                scope_name: r.name,
+                specificity: 200 + (64 - r.depth.min(64)),
+                value: r.value,
+                locked: r.locked,
+                updated_at: r.updated_at,
+                updated_by: r.updated_by,
+            });
+        }
+    }
+
+    // Group levels (specificity 400): the target group for a group scope, or
+    // every group the user belongs to for a user scope.
+    let group_rows: Vec<SubjectLevelRow> = match scope.kind {
+        ScopeKind::Group => match scope.id {
+            Some(gid) => db
+                .fetch_all_as::<SubjectLevelRow>(
+                    "SELECT g.id, g.name, v.value, v.locked, v.updated_at, v.updated_by \
+                       FROM core.user_groups g \
+                       JOIN core.setting_values v \
+                         ON v.\"key\" = $1 AND v.scope_type = 'group' AND v.scope_id = g.id \
+                      WHERE g.id = $2",
+                    params![key, gid],
+                )
+                .await
+                .map_err(fail)?,
+            None => Vec::new(),
+        },
+        ScopeKind::User => match scope.id {
+            Some(uid) => db
+                .fetch_all_as::<SubjectLevelRow>(
+                    "SELECT g.id, g.name, v.value, v.locked, v.updated_at, v.updated_by \
+                       FROM core.user_groups g \
+                       JOIN core.setting_values v \
+                         ON v.\"key\" = $1 AND v.scope_type = 'group' AND v.scope_id = g.id \
+                       JOIN core.user_group_members m ON m.group_id = g.id AND m.user_id = $2",
+                    params![key, uid],
+                )
+                .await
+                .map_err(fail)?,
+            None => Vec::new(),
+        },
+        _ => Vec::new(),
+    };
+    for r in group_rows {
+        levels.push(ChainLevel {
+            scope_type: "group".into(),
+            scope_id: Some(r.id),
+            scope_name: r.name,
+            specificity: 400,
+            value: r.value,
+            locked: r.locked,
+            updated_at: r.updated_at,
+            updated_by: r.updated_by,
+        });
+    }
+
+    // User level (specificity 500).
+    if scope.kind == ScopeKind::User {
+        if let Some(uid) = scope.id {
+            if let Some(r) = db
+                .fetch_optional_as::<SubjectLevelRow>(
+                    "SELECT u.id, COALESCE(u.display_name, u.username) AS name, \
+                            v.value, v.locked, v.updated_at, v.updated_by \
+                       FROM core.users u \
+                       JOIN core.setting_values v \
+                         ON v.\"key\" = $1 AND v.scope_type = 'user' AND v.scope_id = u.id \
+                      WHERE u.id = $2",
+                    params![key, uid],
+                )
+                .await
+                .map_err(fail)?
+            {
+                levels.push(ChainLevel {
+                    scope_type: "user".into(),
+                    scope_id: Some(r.id),
+                    scope_name: r.name,
+                    specificity: 500,
+                    value: r.value,
+                    locked: r.locked,
+                    updated_at: r.updated_at,
+                    updated_by: r.updated_by,
+                });
+            }
+        }
+    }
+
+    // The function ordered by specificity, then most-recently-set, then id to
+    // settle a timestamp tie so the answer never wobbles; `NULL` scope ids
+    // (default, instance) sort first within their rank.
+    levels.sort_by(|a, b| {
+        a.specificity
+            .cmp(&b.specificity)
+            .then(b.updated_at.cmp(&a.updated_at))
+            .then(match (a.scope_id, b.scope_id) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(x), Some(y)) => x.cmp(&y),
+            })
+    });
+
+    Ok(levels)
 }
 
 /// Reads and resolves in one call.

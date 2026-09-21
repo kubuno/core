@@ -707,8 +707,9 @@ pub async fn delete_org_unit(
     // children changes two of these numbers, and the audit entry has to describe
     // what was destroyed, not what survived.
     // Read as a row and mapped by hand: a `DbTx` reads rows, not structs.
+    let impact_sql = impact_counts_sql(tx.backend());
     let impact_row = tx
-        .fetch_optional_row(&impact_counts_sql(tx.backend()), params![id, id, id, id, id, id])
+        .fetch_optional_row(&impact_sql, params![id, id, id, id, id, id])
         .await
         .map_err(|e| { tracing::error!(error = %e, %id, "delete_org_unit: count"); AppError::Database(e) })?
         .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
