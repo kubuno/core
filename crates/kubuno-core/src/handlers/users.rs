@@ -629,26 +629,35 @@ pub async fn search_users(
     // (and its pattern) is only present when there is text to match, and the
     // unit narrowing only when it applies — the former `$n = ''` / `NOT
     // $n::boolean` tricks are replaced by branching in Rust.
-    // NOTE: `core.org_unit_descendants(...)` (set-returning function), `ILIKE`
-    // and `NULLS LAST` are PostgreSQL-only.
+    // The subtree filter uses the portable recursive CTE of `database::compat`;
+    // `ILIKE` goes through the builder's dialect layer and `NULLS LAST` is
+    // spelled portably below.
     let mut qb = DbQueryBuilder::new(
         state.db.backend(),
         concat!("SELECT ", directory_columns!(), " FROM core.users WHERE is_active = TRUE"),
     );
+    let backend = state.db.backend();
     if !query.is_empty() {
         let pattern = format!("%{query}%");
-        qb.push(" AND (username ILIKE ")
-            .push_bind(pattern.clone())
-            .push(" OR display_name ILIKE ")
-            .push_bind(pattern)
-            .push(")");
+        // Case-insensitive match through the dialect layer (`ILIKE` exists only
+        // on PostgreSQL); each pattern is bound once, in ascending order.
+        let n1 = qb.bind_only(pattern.clone());
+        let n2 = qb.bind_only(pattern);
+        qb.push(&format!(
+            " AND ({} OR {})",
+            backend.ilike("username", n1),
+            backend.ilike("display_name", n2)
+        ));
     }
     if restrict {
         match anchor {
             Some(a) => {
-                qb.push(" AND org_unit_id IN (SELECT d.id FROM core.org_unit_descendants(")
-                    .push_bind(a)
-                    .push(") d)");
+                // Portable subtree membership via the recursive CTE.
+                let n = qb.bind_only(a);
+                qb.push(&format!(
+                    " AND org_unit_id IN (SELECT d.id FROM {} d)",
+                    crate::database::compat::org_unit_descendants(n)
+                ));
             }
             // Narrowed but attached to no unit: an empty directory, the closed
             // side of the failure (as the original NULL-anchor branch produced).
@@ -657,7 +666,9 @@ pub async fn search_users(
             }
         }
     }
-    qb.push(" ORDER BY display_name ASC NULLS LAST LIMIT ").push_bind(limit);
+    // `NULLS LAST` is PostgreSQL-only; `(col IS NULL)` sorts absences last on the
+    // three engines.
+    qb.push(" ORDER BY (display_name IS NULL), display_name ASC LIMIT ").push_bind(limit);
 
     let users = qb
         .fetch_all_as::<(uuid::Uuid, String, Option<String>, Option<String>, String)>(&state.db)
@@ -746,12 +757,15 @@ pub async fn user_card(
     // Narrowed directories answer only inside the caller's own unit and its
     // sub-units — the same anchor the search uses, so one policy, one meaning.
     if policy.audience == settings::directory::Audience::SameUnit && caller.id != id {
-        // NOTE: `core.org_unit_descendants(...)` is a PostgreSQL set-returning
-        // function (Postgres-only).
+        // Portable subtree membership via the recursive CTE of `database::compat`.
+        let same_sql = format!(
+            "SELECT EXISTS (SELECT 1 FROM {} d WHERE d.id = $2)",
+            crate::database::compat::org_unit_descendants(1)
+        );
         let same: Option<bool> = state
             .db
             .fetch_optional_scalar::<bool>(
-                "SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1) d WHERE d.id = $2)",
+                &same_sql,
                 params![caller.org_unit_id, org_unit_id],
             )
             .await

@@ -845,17 +845,18 @@ pub async fn get_policy(
     // instead of hanging the request. Reusing it rather than writing a second
     // recursive CTE is what keeps "nearest wins" meaning the same thing here as
     // it does for settings.
-    // NOTE (multi-engine): `core.org_unit_ancestors(...)` is a PostgreSQL
-    // set-returning function. Flagged for the dialect layer; the API is ported.
+    // Portable recursive CTE (see `database::compat`) in place of the
+    // PostgreSQL-only `core.org_unit_ancestors(...)`.
+    let sql = format!(
+        "SELECT a.id, a.name \
+           FROM {} a \
+          WHERE a.id <> $2 \
+          ORDER BY a.depth",
+        crate::database::compat::org_unit_ancestors(1)
+    );
     let ancestors: Vec<(Uuid, String)> = state
         .db
-        .fetch_all_as::<(Uuid, String)>(
-            "SELECT a.id, a.name
-           FROM core.org_unit_ancestors($1) a
-          WHERE a.id <> $2
-          ORDER BY a.depth",
-            params![q.org_unit_id, q.org_unit_id],
-        )
+        .fetch_all_as::<(Uuid, String)>(&sql, params![q.org_unit_id, q.org_unit_id])
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "audiences: walking up parent units");

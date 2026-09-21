@@ -206,17 +206,26 @@ pub async fn gather(db: &DbPool, settings: &Settings, probe: RequestProbe) -> Re
     )
     .await?;
 
+    // Portable derived table (see `database::compat`) in place of the
+    // PostgreSQL-only `core.superadmin_ids()`.
+    let superadmin_ids = crate::database::compat::superadmin_ids(db.backend());
     let superadmins = count(
         db,
-        "SELECT COUNT(*) FROM core.superadmin_ids()",
+        &format!(
+            "SELECT {} FROM {superadmin_ids} s",
+            db.backend().count_bigint("*")
+        ),
         "full administrators",
     )
     .await?;
 
     let superadmins_with_2fa = count(
         db,
-        "SELECT COUNT(*) FROM core.superadmin_ids() s \
-         JOIN core.users u ON u.id = s.user_id WHERE u.totp_enabled = TRUE",
+        &format!(
+            "SELECT {} FROM {superadmin_ids} s \
+             JOIN core.users u ON u.id = s.user_id WHERE u.totp_enabled = TRUE",
+            db.backend().count_bigint("*")
+        ),
         "administrators with two-factor authentication",
     )
     .await?;
@@ -226,9 +235,12 @@ pub async fn gather(db: &DbPool, settings: &Settings, probe: RequestProbe) -> Re
     // legacy column cannot answer this.
     let non_admin_accounts = count(
         db,
-        "SELECT COUNT(*) FROM core.users u \
-         WHERE u.is_active = TRUE \
-           AND NOT EXISTS (SELECT 1 FROM core.superadmin_ids() s WHERE s.user_id = u.id)",
+        &format!(
+            "SELECT {} FROM core.users u \
+             WHERE u.is_active = TRUE \
+               AND NOT EXISTS (SELECT 1 FROM {superadmin_ids} s WHERE s.user_id = u.id)",
+            db.backend().count_bigint("*")
+        ),
         "non-administrator accounts",
     )
     .await?;
@@ -421,7 +433,7 @@ async fn load_settings(db: &DbPool) -> Result<SettingMap, AppError> {
 
 // `sql` is `&'static str`: the four callers above each pass a literal written in
 // this file, so nothing here can be assembled at run time.
-async fn count(db: &DbPool, sql: &'static str, what: &str) -> Result<i64, AppError> {
+async fn count(db: &DbPool, sql: &str, what: &str) -> Result<i64, AppError> {
     db.fetch_scalar::<i64>(sql, params![])
         .await
         .map_err(|e| {

@@ -181,13 +181,13 @@ fn build_user_filter(
             for u in us {
                 binds.push((*u).into());
             }
-            let values = (0..us.len())
-                .map(|i| format!("(${})", dstart + i))
-                .collect::<Vec<_>>()
-                .join(", ");
+            // Portable multi-root subtree walk (see `database::compat`) instead
+            // of the PostgreSQL `VALUES ... , core.org_unit_descendants(sel.id)`
+            // lateral join. The walk already includes each root at depth 0, so
+            // `direct` is kept only for readability of the filter.
+            let subtree = crate::database::compat::org_unit_descendants_many(dstart, us.len());
             clauses.push(format!(
-                "({direct} OR org_unit_id IN (SELECT d.id FROM (VALUES {values}) AS sel(id), \
-                 core.org_unit_descendants(sel.id) AS d))"
+                "({direct} OR org_unit_id IN (SELECT d.id FROM {subtree} d))"
             ));
         } else {
             clauses.push(direct);

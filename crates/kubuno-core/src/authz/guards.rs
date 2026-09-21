@@ -308,11 +308,12 @@ pub async fn ensure_can_act_on_user(
 /// effect.
 pub async fn superadmin_count(tx: &mut DbTx) -> Result<i64, AppError> {
     let backend = tx.backend();
-    // NOTE (migration consolidation): PostgreSQL-only set-returning function
-    // `core.superadmin_ids()` — no MySQL/SQLite equivalent; the SQL text is kept.
+    // Portable derived table (see `database::compat`): the set-returning
+    // function `core.superadmin_ids()` exists only on PostgreSQL.
     let sql = format!(
-        "SELECT {} FROM core.superadmin_ids()",
-        backend.count_bigint("*")
+        "SELECT {} FROM {} s",
+        backend.count_bigint("*"),
+        crate::database::compat::superadmin_ids(backend)
     );
     let count = tx
         .fetch_optional_scalar::<i64>(&sql, params![])
@@ -350,19 +351,20 @@ pub async fn ensure_superadmin_remains(tx: &mut DbTx) -> Result<(), AppError> {
 /// fact. Delegated administrators keep `role = 'user'`: their power is scoped to
 /// the core's console and does not travel to the modules.
 pub async fn sync_role_cache(tx: &mut DbTx, user_id: Uuid) -> Result<(), AppError> {
-    // NOTE (migration consolidation): PostgreSQL-only set-returning function
-    // `core.superadmin_ids()` — no MySQL/SQLite equivalent; the SQL text is kept.
-    tx.execute(
+    // Portable derived table (see `database::compat`) in place of the
+    // PostgreSQL-only `core.superadmin_ids()`.
+    let sql = format!(
         r#"UPDATE core.users u
               SET role = CASE
-                             WHEN EXISTS (SELECT 1 FROM core.superadmin_ids() s WHERE s.user_id = u.id)
+                             WHEN EXISTS (SELECT 1 FROM {} s WHERE s.user_id = u.id)
                                  THEN 'admin'
                              WHEN u.role = 'admin' THEN 'user'
                              ELSE u.role
                          END
             WHERE u.id = $1"#,
-        params![user_id],
-    )
+        crate::database::compat::superadmin_ids(tx.backend())
+    );
+    tx.execute(&sql, params![user_id])
     .await
     .map_err(|e| {
         tracing::error!(error = %e, user_id = %user_id, "authz: syncing the users.role cache");

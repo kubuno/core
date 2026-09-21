@@ -69,7 +69,6 @@ const MAX_NAME_CHARS: usize = 255;
 /// Bound handed to the recursive walkers. One level past the ceiling is enough
 /// to *observe* a violation: anything deeper is refused anyway, so paying for a
 /// full 64-level walk would buy nothing.
-const WALK_LIMIT: i32 = MAX_ORG_UNIT_DEPTH + 1;
 
 #[derive(Serialize, FromRow)]
 pub struct OrgUnit {
@@ -182,17 +181,15 @@ fn map_write_error(e: sqlx::Error, name: &str, context: &'static str) -> AppErro
 }
 
 /// Depth of `id` measured from the root, or `None` when the unit does not exist.
-///
-/// NOTE (multi-engine): `core.org_unit_ancestors(...)` is a PostgreSQL
-/// set-returning function — a recursive tree walk with no portable equivalent.
-/// Flagged for the dialect layer; the call is kept PostgreSQL-shaped.
 async fn unit_depth(conn: &mut DbTx, id: Uuid) -> Result<Option<i32>, AppError> {
     // A single aggregate row always comes back; its value is NULL for a missing
     // unit, so it is decoded as `Option<i32>` and the outer option flattened.
-    conn.fetch_optional_scalar::<Option<i32>>(
-        "SELECT MAX(a.depth) FROM core.org_unit_ancestors($1, $2) a",
-        params![id, WALK_LIMIT],
-    )
+    // The ancestor walk is the portable recursive CTE of `database::compat`.
+    let sql = format!(
+        "SELECT MAX(a.depth) FROM {} a",
+        crate::database::compat::org_unit_ancestors(1)
+    );
+    conn.fetch_optional_scalar::<Option<i32>>(&sql, params![id])
     .await
     .map(Option::flatten)
     .map_err(|e| {
@@ -202,14 +199,13 @@ async fn unit_depth(conn: &mut DbTx, id: Uuid) -> Result<Option<i32>, AppError> 
 }
 
 /// Height of the subtree rooted at `id`: 0 for a leaf.
-///
-/// NOTE (multi-engine): `core.org_unit_descendants(...)` is a PostgreSQL
-/// set-returning function (see [`unit_depth`]). Flagged for the dialect layer.
 async fn subtree_height(conn: &mut DbTx, id: Uuid) -> Result<i32, AppError> {
-    conn.fetch_optional_scalar::<i32>(
-        "SELECT COALESCE(MAX(d.depth), 0) FROM core.org_unit_descendants($1, $2) d",
-        params![id, WALK_LIMIT],
-    )
+    // Portable recursive CTE (see `database::compat`).
+    let sql = format!(
+        "SELECT COALESCE(MAX(d.depth), 0) FROM {} d",
+        crate::database::compat::org_unit_descendants(1)
+    );
+    conn.fetch_optional_scalar::<i32>(&sql, params![id])
     .await
     .map(|v| v.unwrap_or(0))
     .map_err(|e| {
@@ -306,19 +302,27 @@ pub struct DeletionImpact {
     pub setting_overrides: i64,
 }
 
-/// The five counts, read in one round trip because they are displayed together.
+/// The six counts, read in one round trip because they are displayed together.
 ///
-/// `$1` is the unit, `$2` the bound handed to the recursive walker.
-const IMPACT_COUNTS: &str = r#"SELECT
-       (SELECT COUNT(*) FROM core.org_units c WHERE c.parent_id = $1)             AS children,
-       (SELECT GREATEST(COUNT(*) - 1, 0) FROM core.org_unit_descendants($1, $2))  AS descendants,
-       (SELECT COUNT(*) FROM core.users u WHERE u.org_unit_id = $1)               AS users,
-       (SELECT COUNT(*) FROM core.role_assignments a WHERE a.scope_org_unit_id = $1)
-                                                                                  AS role_assignments,
-       (SELECT COUNT(*) FROM core.target_audience_policies p WHERE p.org_unit_id = $1)
-                                                                                  AS audience_policies,
-       (SELECT COUNT(*) FROM core.setting_values v
-         WHERE v.scope_type = 'org_unit' AND v.scope_id = $1)                     AS setting_overrides"#;
+/// Placeholders are the unit id, bound once per use (`$1..$6`): the portable
+/// placeholder scanner forbids reusing `$n`. The descendant walk is the portable
+/// recursive CTE of [`crate::database::compat`]; it counts the subtree including
+/// the unit itself, so one is subtracted for "descendants". A unit always has a
+/// row, so the count is never zero here.
+fn impact_counts_sql(backend: kubuno_db::Backend) -> String {
+    let c = backend.count_bigint("*");
+    let descendants = crate::database::compat::org_unit_descendants(2);
+    format!(
+        "SELECT \
+           (SELECT {c} FROM core.org_units ch WHERE ch.parent_id = $1) AS children, \
+           (SELECT {c} FROM {descendants} d) - 1 AS descendants, \
+           (SELECT {c} FROM core.users u WHERE u.org_unit_id = $3) AS users, \
+           (SELECT {c} FROM core.role_assignments a WHERE a.scope_org_unit_id = $4) AS role_assignments, \
+           (SELECT {c} FROM core.target_audience_policies p WHERE p.org_unit_id = $5) AS audience_policies, \
+           (SELECT {c} FROM core.setting_values v \
+             WHERE v.scope_type = 'org_unit' AND v.scope_id = $6) AS setting_overrides"
+    )
+}
 
 /// `GET /admin/org-units/:id/impact` — what `DELETE` on this unit would do.
 ///
@@ -349,7 +353,10 @@ pub async fn org_unit_impact(
     // safety net for a tree that predates it.
     let impact = state
         .db
-        .fetch_one_as::<DeletionImpact>(IMPACT_COUNTS, params![id, WALK_LIMIT])
+        .fetch_one_as::<DeletionImpact>(
+            &impact_counts_sql(state.db.backend()),
+            params![id, id, id, id, id, id],
+        )
         .await
         .map_err(|e| { tracing::error!(error = %e, %id, "org_unit_impact: count"); AppError::Database(e) })?;
 
@@ -549,11 +556,12 @@ pub async fn update_org_unit(
             // cycle (A → B → A): the tree would stop being a tree, and every
             // recursive traversal would only be saved by its depth guard. Refuse
             // before writing.
+            let cycle_sql = format!(
+                "SELECT EXISTS (SELECT 1 FROM {} d WHERE d.id = $2)",
+                crate::database::compat::org_unit_descendants(1)
+            );
             let creates_cycle: bool = tx
-                .fetch_optional_scalar::<bool>(
-                    "SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1, $2) d WHERE d.id = $3)",
-                    params![id, WALK_LIMIT, new_parent],
-                )
+                .fetch_optional_scalar::<bool>(&cycle_sql, params![id, new_parent])
                 .await
                 .map_err(|e| { tracing::error!(error = %e, "update_org_unit cycle check"); AppError::Database(e) })?
                 .unwrap_or(false);
@@ -700,7 +708,7 @@ pub async fn delete_org_unit(
     // what was destroyed, not what survived.
     // Read as a row and mapped by hand: a `DbTx` reads rows, not structs.
     let impact_row = tx
-        .fetch_optional_row(IMPACT_COUNTS, params![id, WALK_LIMIT])
+        .fetch_optional_row(&impact_counts_sql(tx.backend()), params![id, id, id, id, id, id])
         .await
         .map_err(|e| { tracing::error!(error = %e, %id, "delete_org_unit: count"); AppError::Database(e) })?
         .ok_or_else(|| AppError::NotFound(format!("Unité {id}")))?;
@@ -870,12 +878,14 @@ mod tests {
         const { assert!(MAX_ORG_UNIT_DEPTH < 64, "le plafond doit rester sous la falaise de 000060") };
     }
 
-    /// The bound handed to the recursive walkers must let a violation be *seen*:
+    /// The portable walker's depth guard must let a violation be *seen*:
     /// stopping at the ceiling would report the ceiling and accept the write.
     #[test]
     fn the_walk_limit_sees_one_level_past_the_ceiling() {
-        assert_eq!(WALK_LIMIT, MAX_ORG_UNIT_DEPTH + 1);
-        const { assert!(WALK_LIMIT <= 64, "la garde de 000041 vaut 64") };
+        assert!(
+            crate::database::compat::MAX_TREE_DEPTH > MAX_ORG_UNIT_DEPTH,
+            "le garde-fou de la marche doit dépasser le plafond pour voir une violation"
+        );
     }
 
     // ── The double option, which is the whole point of the update DTO ────────

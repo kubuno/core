@@ -3,6 +3,10 @@
 /// table is written `core.<table>`.
 pub const SCHEMA: &str = "core";
 
+/// Portable equivalents of the PostgreSQL SQL functions the handlers call
+/// inline (org-unit tree walks, `superadmin_ids`, `label_access`), so those
+/// paths work on MySQL and SQLite as well.
+pub mod compat;
 pub mod migrations;
 pub mod notify;
 /// The event-bus reader for engines without `LISTEN`/`NOTIFY`: a poller over the

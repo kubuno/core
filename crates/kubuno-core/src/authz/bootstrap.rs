@@ -60,17 +60,17 @@ pub async fn grant_instance_superadmin(db: &DbPool, user_id: Uuid) -> Result<boo
 /// alone: `core.superadmin_ids()` already counts them.
 pub async fn reconcile_superadmins(db: &DbPool) -> Result<u64, sqlx::Error> {
     let (ignore, on_conflict) = insert_ignore(db.backend());
-    // NOTE (migration consolidation): `core.superadmin_ids()` is a PostgreSQL
-    // set-returning function; MySQL/SQLite have no equivalent, so this statement
-    // is PostgreSQL-only until the function is inlined as a portable subquery.
-    // The caller (main bootstrap) logs and continues on error.
+    // Portable derived table (see `database::compat`) in place of the
+    // PostgreSQL-only `core.superadmin_ids()`. The caller (main bootstrap) logs
+    // and continues on error.
+    let superadmins = crate::database::compat::superadmin_ids(db.backend());
     let sql = format!(
         "INSERT {ignore}INTO core.role_assignments (role_id, subject_user_id, scope) \
          SELECT r.id, u.id, 'instance' \
            FROM core.users u, core.roles r \
           WHERE u.role = 'admin' AND u.is_active \
             AND r.slug = 'super-admin' \
-            AND u.id NOT IN (SELECT user_id FROM core.superadmin_ids()){on_conflict}"
+            AND u.id NOT IN (SELECT user_id FROM {superadmins} sa){on_conflict}"
     );
     let n = db.execute(&sql, params![]).await?;
 
