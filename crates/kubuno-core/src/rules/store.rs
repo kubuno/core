@@ -443,18 +443,23 @@ impl NewExecution {
 }
 
 pub async fn record_execution(db: &DbPool, exec: &NewExecution) -> Result<i64, AppError> {
-    // FLAG: `core.rule_executions.id` is BIGSERIAL, so the row's id is invented
-    // by the database and read back with RETURNING. PostgreSQL (and SQLite 3.35+)
-    // support this; MySQL/MariaDB do not, and a serial key cannot be pre-generated
-    // in Rust like the UUID keys elsewhere. This site stays PostgreSQL-shaped.
-    db.fetch_scalar::<i64>(
+    // `core.rule_executions.id` is engine-assigned (BIGSERIAL / AUTO_INCREMENT /
+    // rowid), so it is learnt after the write: PostgreSQL and SQLite read it back
+    // with `RETURNING id`, MySQL from `SELECT LAST_INSERT_ID()`. Both statements
+    // must run on the same connection, so the insert is wrapped in a short
+    // transaction (`insert_returning_scalar` picks the per-engine path).
+    let mut tx = db.begin().await.map_err(|e| {
+        tracing::error!(error = %e, rule_id = %exec.rule_id, "rules: ouverture du journal d'exécution");
+        AppError::Database(e)
+    })?;
+    let id = kubuno_db::returning::insert_returning_scalar::<i64>(
+        &mut tx,
         r#"INSERT INTO core.rule_executions
                (rule_id, rule_version, mode, outcome, event_type, actor_user_id,
                 org_unit_id, resource_type, resource_id, detail,
                 actions_total, actions_ok, actions_failed, depth, duration_ms,
                 gate_reference)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-           RETURNING id"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)"#,
         params![
             exec.rule_id,
             exec.rule_version,
@@ -473,12 +478,20 @@ pub async fn record_execution(db: &DbPool, exec: &NewExecution) -> Result<i64, A
             exec.duration_ms,
             exec.gate_reference.as_deref()
         ],
+        "id",
+        "SELECT LAST_INSERT_ID()",
+        params![],
     )
     .await
     .map_err(|e| {
         tracing::error!(error = %e, rule_id = %exec.rule_id, "rules: écriture du journal d'exécution");
         AppError::Database(e)
-    })
+    })?;
+    tx.commit().await.map_err(|e| {
+        tracing::error!(error = %e, rule_id = %exec.rule_id, "rules: commit du journal d'exécution");
+        AppError::Database(e)
+    })?;
+    Ok(id)
 }
 
 /// Updates the action counters of an execution once the dispatcher is done.

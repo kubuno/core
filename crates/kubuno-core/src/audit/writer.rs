@@ -71,22 +71,24 @@ async fn insert(
         None => (None, None),
     };
 
-    // `core.admin_audit.id` is a BIGSERIAL: the engine assigns it, so it is read
-    // back with `RETURNING` (PostgreSQL and SQLite have it). MySQL has neither
-    // `RETURNING` nor a by-key reselect for an auto-increment, and is not
-    // supported for the audit chain — this is a known, flagged limitation.
-    let id: i64 = conn
-        .fetch_optional_scalar::<i64>(
-            r#"INSERT INTO core.admin_audit
+    // `core.admin_audit.id` is engine-assigned (a `BIGSERIAL` on PostgreSQL, a
+    // `BIGINT AUTO_INCREMENT` on MySQL, an `INTEGER PRIMARY KEY` rowid on
+    // SQLite), so the process learns it after the write. PostgreSQL and SQLite
+    // read it back with `RETURNING id`; MySQL, which has no `RETURNING`, gets it
+    // from `SELECT LAST_INSERT_ID()` on the same transaction connection (session
+    // scoped, so no concurrent writer can perturb it between the two statements).
+    // The per-engine choice is made by `returning::insert_returning_scalar`.
+    let id: i64 = kubuno_db::returning::insert_returning_scalar::<i64>(
+        conn,
+        r#"INSERT INTO core.admin_audit
                    (actor_id, actor_label, actor_role, actor_origin, actor_token_id,
                     ip_address, user_agent,
                     action, module_id, target_type, target_id, target_label,
                     before, after, outcome, detail, reversible, reverts_entry_id,
                     occurred_at, prev_hash, row_hash)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                       $13, $14, $15, $16, $17, $18, $19, $20, $21)
-               RETURNING id"#,
-            params![
+                       $13, $14, $15, $16, $17, $18, $19, $20, $21)"#,
+        params![
                 ctx.actor.id,
                 &ctx.actor.label,
                 ctx.actor.role.as_deref(),
@@ -109,9 +111,11 @@ async fn insert(
                 prev_hash,
                 row_hash
             ],
-        )
-        .await?
-        .ok_or(sqlx::Error::RowNotFound)?;
+        "id",
+        "SELECT LAST_INSERT_ID()",
+        params![],
+    )
+    .await?;
 
     // Close the undo loop: the undone entry points back at the one that undid it.
     if let Some(undone) = entry.reverts_entry_id {
