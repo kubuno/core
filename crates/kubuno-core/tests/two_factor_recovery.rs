@@ -18,52 +18,50 @@ use kubuno_core::auth::{
     reauth::{claims, store},
 };
 use kubuno_core::models::user::User;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 const SECRET: &str = "secret-de-test-suffisamment-long-pour-hs256-0123456789";
 
 /// Creates a throwaway account. Every test cleans up after itself so the
 /// dedicated database can be reused.
-async fn make_user(db: &PgPool, role: &str) -> Uuid {
+async fn make_user(db: &DbPool, role: &str) -> Uuid {
     let suffix = Uuid::new_v4().simple().to_string();
-    let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.users (email, username, password_hash, role)
-         VALUES ($1, $2, $3, $4) RETURNING id",
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role)
+         VALUES ($1, $2, $3, $4, $5)",
+        params![
+            id,
+            format!("t-{suffix}@test.invalid"),
+            format!("t-{suffix}"),
+            "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaasfvMkQ96Cjbu2I0",
+            role
+        ],
     )
-    .bind(format!("t-{suffix}@test.invalid"))
-    .bind(format!("t-{suffix}"))
-    .bind("$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaasfvMkQ96Cjbu2I0")
-    .bind(role)
-    .fetch_one(db)
     .await
     .expect("création du compte de test");
     id
 }
 
-async fn drop_user(db: &PgPool, id: Uuid) {
-    let _ = sqlx::query("DELETE FROM core.users WHERE id = $1")
-        .bind(id)
-        .execute(db)
+async fn drop_user(db: &DbPool, id: Uuid) {
+    let _ = db
+        .execute("DELETE FROM core.users WHERE id = $1", params![id])
         .await;
 }
 
-async fn load_user(db: &PgPool, id: Uuid) -> User {
-    sqlx::query_as::<_, User>("SELECT * FROM core.users WHERE id = $1")
-        .bind(id)
-        .fetch_one(db)
+async fn load_user(db: &DbPool, id: Uuid) -> User {
+    db.fetch_one_as::<User>("SELECT * FROM core.users WHERE id = $1", params![id])
         .await
         .expect("relecture du compte")
 }
 
-async fn set_setting(db: &PgPool, key: &str, value: serde_json::Value) {
-    sqlx::query(
+async fn set_setting(db: &DbPool, key: &str, value: serde_json::Value) {
+    db.execute(
         "INSERT INTO core.settings (key, value, category) VALUES ($1, $2, 'security')
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        params![key, value],
     )
-    .bind(key)
-    .bind(value)
-    .execute(db)
     .await
     .expect("écriture du réglage");
 }
@@ -173,12 +171,12 @@ async fn a_reauth_grant_expires_and_can_be_revoked() {
     drop_user(&db, other).await;
 
     // Expiry is a database fact, not a claim the client makes.
-    sqlx::query("UPDATE core.reauth_grants SET expires_at = $2 WHERE jti = $1")
-        .bind(jti)
-        .bind(Utc::now() - ChronoDuration::seconds(1))
-        .execute(&db)
-        .await
-        .expect("péremption forcée");
+    db.execute(
+        "UPDATE core.reauth_grants SET expires_at = $1 WHERE jti = $2",
+        params![Utc::now() - ChronoDuration::seconds(1), jti],
+    )
+    .await
+    .expect("péremption forcée");
     assert!(
         !store::is_live(&db, jti, user).await.expect("périmé"),
         "un droit périmé ne doit plus être honoré"
@@ -227,12 +225,14 @@ async fn the_admin_requirement_arms_a_grace_window_then_refuses() {
 
     // Snapshot the instance settings and restore them at the end: this database
     // is dedicated, but a leftover "2FA obligatoire" would poison later runs.
-    let previous: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT value FROM core.settings WHERE key = 'security.admin_2fa_required'")
-            .fetch_optional(&db)
-            .await
-            .expect("lecture du réglage")
-            .flatten();
+    let previous: Option<serde_json::Value> = db
+        .fetch_optional_scalar::<Option<serde_json::Value>>(
+            "SELECT value FROM core.settings WHERE key = 'security.admin_2fa_required'",
+            params![],
+        )
+        .await
+        .expect("lecture du réglage")
+        .flatten();
 
     let user = make_user(&db, "admin").await;
 
@@ -258,12 +258,12 @@ async fn the_admin_requirement_arms_a_grace_window_then_refuses() {
     assert_eq!(load_user(&db, user).await.admin_2fa_grace_until, armed);
 
     // Deadline reached: refusal, with the distinguishable error.
-    sqlx::query("UPDATE core.users SET admin_2fa_grace_until = $2 WHERE id = $1")
-        .bind(user)
-        .bind(Utc::now() - ChronoDuration::minutes(1))
-        .execute(&db)
-        .await
-        .expect("échéance forcée");
+    db.execute(
+        "UPDATE core.users SET admin_2fa_grace_until = $1 WHERE id = $2",
+        params![Utc::now() - ChronoDuration::minutes(1), user],
+    )
+    .await
+    .expect("échéance forcée");
     let err = admin_2fa::enforce(&db, &load_user(&db, user).await).await;
     assert!(
         matches!(err, Err(kubuno_core::errors::AppError::TwoFactorRequired)),
@@ -287,11 +287,12 @@ async fn the_admin_requirement_arms_a_grace_window_then_refuses() {
     assert!(load_user(&db, user).await.admin_2fa_grace_until.is_some());
 
     // Enrolling clears the deadline and reopens the console.
-    sqlx::query("UPDATE core.users SET totp_enabled = TRUE WHERE id = $1")
-        .bind(user)
-        .execute(&db)
-        .await
-        .expect("activation du second facteur");
+    db.execute(
+        "UPDATE core.users SET totp_enabled = TRUE WHERE id = $1",
+        params![user],
+    )
+    .await
+    .expect("activation du second facteur");
     admin_2fa::clear_deadline(&db, user).await;
     admin_2fa::enforce(&db, &load_user(&db, user).await)
         .await

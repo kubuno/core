@@ -15,8 +15,9 @@
 //! PostgreSQL must not turn red on a missing fixture.
 #![allow(dead_code)]
 
-use sqlx::postgres::PgPoolOptions;
-use sqlx::PgPool;
+use kubuno_db::{connect, DbPool, DbSettings};
+
+const SCHEMA: &str = "core";
 
 pub fn test_database_url() -> Option<String> {
     std::env::var("KUBUNO_TEST_DATABASE_URL")
@@ -25,8 +26,22 @@ pub fn test_database_url() -> Option<String> {
         .filter(|u| !u.trim().is_empty())
 }
 
+/// Builds a PostgreSQL `DbSettings` from the test URL. The section is normally
+/// deserialized from config; `connect_timeout` is seconds.
+fn settings(url: &str) -> DbSettings {
+    let base = serde_json::json!({
+        "engine": "postgres",
+        "url": url,
+        "max_connections": 8,
+        "min_connections": 0,
+        "connect_timeout": 10,
+        "run_migrations": false,
+    });
+    serde_json::from_value(base).expect("DbSettings")
+}
+
 /// Connects and applies the migrations. `None` = no test database configured.
-pub async fn test_pool() -> Option<PgPool> {
+pub async fn test_pool() -> Option<DbPool> {
     let url = match test_database_url() {
         Some(u) => u,
         None => {
@@ -35,15 +50,11 @@ pub async fn test_pool() -> Option<PgPool> {
         }
     };
 
-    let pool = PgPoolOptions::new()
-        .max_connections(8)
-        .acquire_timeout(std::time::Duration::from_secs(10))
-        .connect(&url)
+    let pool = connect(&settings(&url), SCHEMA)
         .await
         .expect("connexion à la base de test");
 
-    sqlx::migrate!("../../migrations")
-        .run(&pool)
+    kubuno_core::database::migrations::run(&pool)
         .await
         .expect("migrations sur la base de test");
 

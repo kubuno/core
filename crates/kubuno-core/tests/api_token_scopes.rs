@@ -17,8 +17,9 @@ use kubuno_core::auth::token_scope::{
 };
 use kubuno_core::authz::{context, AdminContext, PrivilegeScope};
 use kubuno_core::errors::AppError;
+use chrono::Utc;
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -27,96 +28,93 @@ fn tag() -> String {
     Uuid::new_v4().simple().to_string()[..12].to_string()
 }
 
-async fn make_user(db: &PgPool, tag: &str, who: &str, role: &str) -> Uuid {
-    sqlx::query_scalar(
-        "INSERT INTO core.users (email, username, password_hash, role) \
-         VALUES ($1, $2, 'x', $3) RETURNING id",
+async fn make_user(db: &DbPool, tag: &str, who: &str, role: &str) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role) \
+         VALUES ($1, $2, $3, 'x', $4)",
+        params![id, format!("{who}.{tag}@test.local"), format!("{who}_{tag}"), role],
     )
-    .bind(format!("{who}.{tag}@test.local"))
-    .bind(format!("{who}_{tag}"))
-    .bind(role)
-    .fetch_one(db)
     .await
-    .expect("création d'utilisateur")
+    .expect("création d'utilisateur");
+    id
 }
 
-async fn make_role(db: &PgPool, tag: &str, slug: &str, privileges: &[&str]) -> Uuid {
-    let id: Uuid =
-        sqlx::query_scalar("INSERT INTO core.roles (slug, name) VALUES ($1, $2) RETURNING id")
-            .bind(format!("{slug}-{tag}"))
-            .bind(slug)
-            .fetch_one(db)
-            .await
-            .expect("création de rôle");
+async fn make_role(db: &DbPool, tag: &str, slug: &str, privileges: &[&str]) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.roles (id, slug, name) VALUES ($1, $2, $3)",
+        params![id, format!("{slug}-{tag}"), slug],
+    )
+    .await
+    .expect("création de rôle");
     for key in privileges {
-        sqlx::query("INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)")
-            .bind(id)
-            .bind(key)
-            .execute(db)
-            .await
-            .expect("privilège du rôle");
+        db.execute(
+            "INSERT INTO core.role_privileges (role_id, privilege_key) VALUES ($1, $2)",
+            params![id, *key],
+        )
+        .await
+        .expect("privilège du rôle");
     }
     id
 }
 
-async fn assign_instance(db: &PgPool, role: Uuid, user: Uuid) -> Uuid {
-    sqlx::query_scalar(
-        "INSERT INTO core.role_assignments (role_id, subject_user_id, scope) \
-         VALUES ($1, $2, 'instance') RETURNING id",
+async fn assign_instance(db: &DbPool, role: Uuid, user: Uuid) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.role_assignments (id, role_id, subject_user_id, scope) \
+         VALUES ($1, $2, $3, 'instance')",
+        params![id, role, user],
     )
-    .bind(role)
-    .bind(user)
-    .fetch_one(db)
     .await
-    .expect("affectation")
+    .expect("affectation");
+    id
 }
 
 /// Inserts a token exactly as the handler would, and returns `(id, raw)`.
-async fn make_token(db: &PgPool, user: Uuid, scopes: &[&str]) -> (Uuid, String) {
+async fn make_token(db: &DbPool, user: Uuid, scopes: &[&str]) -> (Uuid, String) {
     let raw = format!("kubuno_test_{}", Uuid::new_v4().simple());
     let hash = hex::encode(Sha256::digest(raw.as_bytes()));
     let scopes: Vec<String> = scopes.iter().map(|s| s.to_string()).collect();
-    let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.api_tokens (user_id, name, token_hash, scopes) \
-         VALUES ($1, 'test', $2, $3) RETURNING id",
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.api_tokens (id, user_id, name, token_hash, scopes) \
+         VALUES ($1, $2, 'test', $3, $4)",
+        params![id, user, &hash, scopes],
     )
-    .bind(user)
-    .bind(&hash)
-    .bind(&scopes)
-    .fetch_one(db)
     .await
     .expect("création de jeton");
     (id, raw)
 }
 
 /// A token as the migration left it: no scopes, marked legacy.
-async fn make_legacy_token(db: &PgPool, user: Uuid, since_days_ago: i64) -> (Uuid, String) {
+async fn make_legacy_token(db: &DbPool, user: Uuid, since_days_ago: i64) -> (Uuid, String) {
     let raw = format!("kubuno_test_{}", Uuid::new_v4().simple());
     let hash = hex::encode(Sha256::digest(raw.as_bytes()));
-    let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.api_tokens (user_id, name, token_hash, is_legacy, legacy_since) \
-         VALUES ($1, 'legacy', $2, TRUE, NOW() - ($3 || ' days')::INTERVAL) RETURNING id",
+    let id = kubuno_db::new_id();
+    // Compute the "issued N days ago" instant in Rust rather than with a
+    // PostgreSQL interval expression, so the fixture stays engine-agnostic.
+    let legacy_since = Utc::now() - chrono::Duration::days(since_days_ago);
+    db.execute(
+        "INSERT INTO core.api_tokens (id, user_id, name, token_hash, is_legacy, legacy_since) \
+         VALUES ($1, $2, 'legacy', $3, TRUE, $4)",
+        params![id, user, &hash, legacy_since],
     )
-    .bind(user)
-    .bind(&hash)
-    .bind(since_days_ago.to_string())
-    .fetch_one(db)
     .await
     .expect("création de jeton hérité");
     (id, raw)
 }
 
-async fn cleanup(db: &PgPool, users: &[Uuid]) {
+async fn cleanup(db: &DbPool, users: &[Uuid]) {
     // `core.api_tokens` and `core.role_assignments` cascade from the user.
     for u in users {
-        let _ = sqlx::query("DELETE FROM core.users WHERE id = $1")
-            .bind(u)
-            .execute(db)
+        let _ = db
+            .execute("DELETE FROM core.users WHERE id = $1", params![u])
             .await;
     }
 }
 
-async fn ctx_for_token(db: &PgPool, grant: &TokenGrant) -> AdminContext {
+async fn ctx_for_token(db: &DbPool, grant: &TokenGrant) -> AdminContext {
     let subject = context::resolve(db, grant.user_id, ActorOrigin::ApiToken, Some(grant.token_id))
         .await
         .expect("résolution du contexte");
@@ -133,13 +131,16 @@ async fn an_unscoped_non_legacy_token_cannot_even_be_inserted() {
 
     // The CHECK is the floor: no code path, present or future, can mint a
     // credential with no scopes unless it also marks it legacy.
-    let res = sqlx::query(
-        "INSERT INTO core.api_tokens (user_id, name, token_hash) VALUES ($1, 'x', $2)",
-    )
-    .bind(user)
-    .bind(hex::encode(Sha256::digest(b"anything")))
-    .execute(&db)
-    .await;
+    let res = db
+        .execute(
+            "INSERT INTO core.api_tokens (id, user_id, name, token_hash) VALUES ($1, $2, 'x', $3)",
+            params![
+                kubuno_db::new_id(),
+                user,
+                hex::encode(Sha256::digest(b"anything"))
+            ],
+        )
+        .await;
     assert!(res.is_err(), "une liste de portées vide doit être refusée par la base");
 
     cleanup(&db, &[user]).await;
@@ -191,11 +192,12 @@ async fn withdrawing_a_privilege_from_the_owner_withdraws_it_from_the_token() {
     );
 
     // The owner loses the assignment. Nothing is done to the token.
-    sqlx::query("DELETE FROM core.role_assignments WHERE id = $1")
-        .bind(assignment)
-        .execute(&db)
-        .await
-        .expect("retrait de l'affectation");
+    db.execute(
+        "DELETE FROM core.role_assignments WHERE id = $1",
+        params![assignment],
+    )
+    .await
+    .expect("retrait de l'affectation");
     kubuno_core::authz::cache::invalidate_all();
 
     assert!(
@@ -211,11 +213,11 @@ async fn a_superuser_token_holds_its_list_and_not_the_rest() {
     let Some(db) = common::test_pool().await else { return };
     let t = tag();
     let user = make_user(&db, &t, "root", "admin").await;
-    let role: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.roles (slug, name, is_superuser) VALUES ($1, 'su', TRUE) RETURNING id",
+    let role = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.roles (id, slug, name, is_superuser) VALUES ($1, $2, 'su', TRUE)",
+        params![role, format!("su-{t}")],
     )
-    .bind(format!("su-{t}"))
-    .fetch_one(&db)
     .await
     .expect("rôle super-utilisateur");
     assign_instance(&db, role, user).await;
@@ -232,7 +234,7 @@ async fn a_superuser_token_holds_its_list_and_not_the_rest() {
     assert!(ctx.require_superuser("installer un module").is_err());
 
     cleanup(&db, &[user]).await;
-    let _ = sqlx::query("DELETE FROM core.roles WHERE id = $1").bind(role).execute(&db).await;
+    let _ = db.execute("DELETE FROM core.roles WHERE id = $1", params![role]).await;
 }
 
 // ── Scope selection at creation ──────────────────────────────────────────────
@@ -262,11 +264,11 @@ async fn the_sensitive_scopes_are_refused_even_to_a_superuser() {
     let Some(db) = common::test_pool().await else { return };
     let t = tag();
     let user = make_user(&db, &t, "su", "admin").await;
-    let role: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.roles (slug, name, is_superuser) VALUES ($1, 'su', TRUE) RETURNING id",
+    let role = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.roles (id, slug, name, is_superuser) VALUES ($1, $2, 'su', TRUE)",
+        params![role, format!("su2-{t}")],
     )
-    .bind(format!("su2-{t}"))
-    .fetch_one(&db)
     .await
     .expect("rôle super-utilisateur");
     assign_instance(&db, role, user).await;
@@ -299,7 +301,7 @@ async fn the_sensitive_scopes_are_refused_even_to_a_superuser() {
         .is_err());
 
     cleanup(&db, &[user]).await;
-    let _ = sqlx::query("DELETE FROM core.roles WHERE id = $1").bind(role).execute(&db).await;
+    let _ = db.execute("DELETE FROM core.roles WHERE id = $1", params![role]).await;
 }
 
 #[tokio::test]
@@ -392,11 +394,11 @@ async fn a_legacy_token_keeps_the_owner_privileges_except_the_sensitive_ones() {
     let Some(db) = common::test_pool().await else { return };
     let t = tag();
     let user = make_user(&db, &t, "legacysu", "admin").await;
-    let role: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.roles (slug, name, is_superuser) VALUES ($1, 'su', TRUE) RETURNING id",
+    let role = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.roles (id, slug, name, is_superuser) VALUES ($1, $2, 'su', TRUE)",
+        params![role, format!("su3-{t}")],
     )
-    .bind(format!("su3-{t}"))
-    .fetch_one(&db)
     .await
     .expect("rôle super-utilisateur");
     assign_instance(&db, role, user).await;
@@ -416,7 +418,7 @@ async fn a_legacy_token_keeps_the_owner_privileges_except_the_sensitive_ones() {
     assert!(ctx.require_superuser("approuver un thème").is_err());
 
     cleanup(&db, &[user]).await;
-    let _ = sqlx::query("DELETE FROM core.roles WHERE id = $1").bind(role).execute(&db).await;
+    let _ = db.execute("DELETE FROM core.roles WHERE id = $1", params![role]).await;
 }
 
 #[tokio::test]
@@ -450,11 +452,12 @@ async fn a_token_whose_owner_is_deactivated_is_refused() {
 
     assert!(resolve_grant(&db, &raw).await.is_ok(), "compte actif : jeton valide");
 
-    sqlx::query("UPDATE core.users SET is_active = FALSE WHERE id = $1")
-        .bind(user)
-        .execute(&db)
-        .await
-        .expect("désactivation");
+    db.execute(
+        "UPDATE core.users SET is_active = FALSE WHERE id = $1",
+        params![user],
+    )
+    .await
+    .expect("désactivation");
 
     assert!(
         matches!(resolve_grant(&db, &raw).await, Err(AppError::Unauthorized)),
@@ -471,11 +474,12 @@ async fn a_revoked_token_stays_refused() {
     let user = make_user(&db, &t, "revoke", "user").await;
     let (id, raw) = make_token(&db, user, &["core.users.read"]).await;
 
-    sqlx::query("UPDATE core.api_tokens SET revoked_at = NOW() WHERE id = $1")
-        .bind(id)
-        .execute(&db)
-        .await
-        .expect("révocation");
+    db.execute(
+        "UPDATE core.api_tokens SET revoked_at = $1 WHERE id = $2",
+        params![Utc::now(), id],
+    )
+    .await
+    .expect("révocation");
 
     assert!(matches!(resolve_grant(&db, &raw).await, Err(AppError::Unauthorized)));
 

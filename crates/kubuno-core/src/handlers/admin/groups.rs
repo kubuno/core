@@ -140,7 +140,7 @@ pub async fn create_group(
     // the row back and use it as the audit target.
     let id = kubuno_db::new_id();
     let raw = kubuno_db::returning::insert_returning_row(
-        &mut *tx,
+        &mut tx,
         r#"INSERT INTO core.user_groups (id, name, description, permissions, is_default, release_exempt)
            VALUES ($1, $2, $3, $4, $5, $6)"#,
         params![
@@ -206,7 +206,7 @@ pub async fn update_group(
     // "provided → set, absent → keep" the original `CASE ... IS NOT NULL` had,
     // without PostgreSQL's `::text` cast or reusing a placeholder.
     let updated_raw = kubuno_db::returning::update_returning_row(
-        &mut *tx,
+        &mut tx,
         r#"UPDATE core.user_groups
            SET name           = COALESCE($1, name),
                description     = COALESCE($2, description),

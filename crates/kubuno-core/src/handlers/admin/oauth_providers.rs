@@ -130,7 +130,7 @@ pub async fn create_oauth_provider(
     // the row's identity for the reselect and the audit target.
     let id = kubuno_db::new_id();
     let raw = kubuno_db::returning::insert_returning_row(
-        &mut *tx,
+        &mut tx,
         r#"INSERT INTO core.oauth_providers
                (id, slug, display_name, issuer_url, client_id, client_secret_enc,
                 scopes, button_color, enabled, allow_signup, position,
@@ -217,7 +217,7 @@ pub async fn update_oauth_provider(
     let previous = provider_from_row(&prev_raw)?;
 
     let updated_raw = kubuno_db::returning::update_returning_row(
-        &mut *tx,
+        &mut tx,
         r#"UPDATE core.oauth_providers SET
                display_name      = COALESCE($2,  display_name),
                issuer_url        = COALESCE($3,  issuer_url),

@@ -310,7 +310,7 @@ pub async fn sign_out_device(
     };
 
     if let Err(e) = correlate::record_event_tx(
-        &mut *tx,
+        &mut tx,
         id,
         event_kind::SIGNED_OUT,
         Some(audit.admin.id),

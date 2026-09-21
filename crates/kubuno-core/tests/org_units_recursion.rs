@@ -8,7 +8,7 @@ mod common;
 
 use std::time::Duration;
 
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow, PartialEq)]
@@ -19,43 +19,47 @@ struct UnitRow {
     depth:     i32,
 }
 
-async fn create_unit(db: &PgPool, name: &str, parent: Option<Uuid>) -> Uuid {
-    sqlx::query_scalar("INSERT INTO core.org_units (name, parent_id) VALUES ($1, $2) RETURNING id")
-        .bind(name)
-        .bind(parent)
-        .fetch_one(db)
-        .await
-        .expect("création d'unité")
+async fn create_unit(db: &DbPool, name: &str, parent: Option<Uuid>) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.org_units (id, name, parent_id) VALUES ($1, $2, $3)",
+        params![id, name, parent],
+    )
+    .await
+    .expect("création d'unité");
+    id
 }
 
-async fn ancestors(db: &PgPool, id: Uuid) -> Vec<UnitRow> {
-    sqlx::query_as::<_, UnitRow>("SELECT id, name, parent_id, depth FROM core.org_unit_ancestors($1)")
-        .bind(id)
-        .fetch_all(db)
-        .await
-        .expect("ancêtres")
+async fn ancestors(db: &DbPool, id: Uuid) -> Vec<UnitRow> {
+    db.fetch_all_as::<UnitRow>(
+        "SELECT id, name, parent_id, depth FROM core.org_unit_ancestors($1)",
+        params![id],
+    )
+    .await
+    .expect("ancêtres")
 }
 
-async fn descendants(db: &PgPool, id: Uuid) -> Vec<UnitRow> {
-    sqlx::query_as::<_, UnitRow>("SELECT id, name, parent_id, depth FROM core.org_unit_descendants($1)")
-        .bind(id)
-        .fetch_all(db)
-        .await
-        .expect("descendants")
+async fn descendants(db: &DbPool, id: Uuid) -> Vec<UnitRow> {
+    db.fetch_all_as::<UnitRow>(
+        "SELECT id, name, parent_id, depth FROM core.org_unit_descendants($1)",
+        params![id],
+    )
+    .await
+    .expect("descendants")
 }
 
 /// The check performed by `update_org_unit` before writing a new parent.
-async fn creates_cycle(db: &PgPool, unit: Uuid, new_parent: Uuid) -> bool {
-    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1) d WHERE d.id = $2)")
-        .bind(unit)
-        .bind(new_parent)
-        .fetch_one(db)
-        .await
-        .expect("détection de cycle")
+async fn creates_cycle(db: &DbPool, unit: Uuid, new_parent: Uuid) -> bool {
+    db.fetch_scalar::<bool>(
+        "SELECT EXISTS (SELECT 1 FROM core.org_unit_descendants($1) d WHERE d.id = $2)",
+        params![unit, new_parent],
+    )
+    .await
+    .expect("détection de cycle")
 }
 
 /// Builds  racine → direction → équipe → binôme  plus a sibling of « équipe ».
-async fn build_tree(db: &PgPool, tag: &str) -> (Uuid, Uuid, Uuid, Uuid) {
+async fn build_tree(db: &DbPool, tag: &str) -> (Uuid, Uuid, Uuid, Uuid) {
     let root   = create_unit(db, &format!("{tag} racine"), None).await;
     let dir    = create_unit(db, &format!("{tag} direction"), Some(root)).await;
     let equipe = create_unit(db, &format!("{tag} équipe"), Some(dir)).await;
@@ -63,15 +67,19 @@ async fn build_tree(db: &PgPool, tag: &str) -> (Uuid, Uuid, Uuid, Uuid) {
     (root, dir, equipe, binome)
 }
 
-async fn cleanup(db: &PgPool, tag: &str) {
+async fn cleanup(db: &DbPool, tag: &str) {
     // Break any cycle first, otherwise ON DELETE CASCADE has nothing to grip.
-    let _ = sqlx::query("UPDATE core.org_units SET parent_id = NULL WHERE name LIKE $1")
-        .bind(format!("{tag}%"))
-        .execute(db)
+    let _ = db
+        .execute(
+            "UPDATE core.org_units SET parent_id = NULL WHERE name LIKE $1",
+            params![format!("{tag}%")],
+        )
         .await;
-    let _ = sqlx::query("DELETE FROM core.org_units WHERE name LIKE $1")
-        .bind(format!("{tag}%"))
-        .execute(db)
+    let _ = db
+        .execute(
+            "DELETE FROM core.org_units WHERE name LIKE $1",
+            params![format!("{tag}%")],
+        )
         .await;
 }
 
@@ -124,14 +132,14 @@ async fn descendants_cover_the_whole_subtree() {
     assert_eq!(descendants(&db, binome).await.len(), 1);
 
     // « This rule applies to N users »: the query the feature will run.
-    let users: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM core.users u
+    let users: i64 = db
+        .fetch_scalar::<i64>(
+            "SELECT COUNT(*) FROM core.users u
           WHERE u.org_unit_id IN (SELECT d.id FROM core.org_unit_descendants($1) d)",
-    )
-    .bind(root)
-    .fetch_one(&db)
-    .await
-    .expect("comptage");
+            params![root],
+        )
+        .await
+        .expect("comptage");
     assert_eq!(users, 0, "aucun utilisateur dans l'arborescence de test");
 
     cleanup(&db, &tag).await;
@@ -144,12 +152,12 @@ async fn a_cycle_in_the_database_does_not_hang_the_traversal() {
     let (_root, dir, equipe, binome) = build_tree(&db, &tag).await;
 
     // Forge a cycle behind the application's back: direction → … → binôme → direction.
-    sqlx::query("UPDATE core.org_units SET parent_id = $1 WHERE id = $2")
-        .bind(binome)
-        .bind(dir)
-        .execute(&db)
-        .await
-        .expect("création du cycle");
+    db.execute(
+        "UPDATE core.org_units SET parent_id = $1 WHERE id = $2",
+        params![binome, dir],
+    )
+    .await
+    .expect("création du cycle");
 
     // Both functions must return, bounded by their depth guard.
     let chain = tokio::time::timeout(Duration::from_secs(10), ancestors(&db, equipe))
@@ -164,13 +172,13 @@ async fn a_cycle_in_the_database_does_not_hang_the_traversal() {
     assert!(subtree.len() <= 4, "un cycle ne doit pas dupliquer les unités : {}", subtree.len());
 
     // And the explicit depth cap truncates the walk.
-    let capped: Vec<UnitRow> = sqlx::query_as(
-        "SELECT id, name, parent_id, depth FROM core.org_unit_ancestors($1, 1)",
-    )
-    .bind(equipe)
-    .fetch_all(&db)
-    .await
-    .expect("ancêtres bornés");
+    let capped: Vec<UnitRow> = db
+        .fetch_all_as::<UnitRow>(
+            "SELECT id, name, parent_id, depth FROM core.org_unit_ancestors($1, 1)",
+            params![equipe],
+        )
+        .await
+        .expect("ancêtres bornés");
     assert_eq!(capped.len(), 2, "profondeur 1 = l'unité et son parent");
 
     cleanup(&db, &tag).await;

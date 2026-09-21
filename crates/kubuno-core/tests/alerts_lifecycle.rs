@@ -13,8 +13,63 @@ use kubuno_core::audit::ActorOrigin;
 use kubuno_core::authz::context::PrivilegeScope;
 use kubuno_core::authz::{keys, AdminContext};
 use serde_json::json;
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool};
 use uuid::Uuid;
+
+#[derive(sqlx::FromRow)]
+struct ClosedRow {
+    closed_at: Option<chrono::DateTime<chrono::Utc>>,
+    closed_by: Option<Uuid>,
+}
+
+#[derive(sqlx::FromRow)]
+struct DedupKeyRow {
+    dedup_key: String,
+}
+
+// `store::set_status` / `store::add_comment` write through a `&mut DbTx`. These
+// wrappers open a short transaction and commit only on success, matching the
+// autocommit semantics the tests relied on with a pooled connection.
+async fn set_status(
+    db: &DbPool,
+    alert_id: Uuid,
+    next: Status,
+    actor_id: Uuid,
+    actor_label: &str,
+    note: Option<&str>,
+) -> Result<Status, kubuno_core::errors::AppError> {
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(kubuno_core::errors::AppError::Database)?;
+    let r = store::set_status(&mut tx, alert_id, next, actor_id, actor_label, note).await;
+    if r.is_ok() {
+        tx.commit()
+            .await
+            .map_err(kubuno_core::errors::AppError::Database)?;
+    }
+    r
+}
+
+async fn add_comment(
+    db: &DbPool,
+    alert_id: Uuid,
+    body: &str,
+    actor_id: Uuid,
+    actor_label: &str,
+) -> Result<(), kubuno_core::errors::AppError> {
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(kubuno_core::errors::AppError::Database)?;
+    let r = store::add_comment(&mut tx, alert_id, body, actor_id, actor_label).await;
+    if r.is_ok() {
+        tx.commit()
+            .await
+            .map_err(kubuno_core::errors::AppError::Database)?;
+    }
+    r
+}
 
 /// Dedup keys are namespaced per test run: the test database is shared between
 /// test binaries, and the partial unique index is global.
@@ -22,36 +77,33 @@ fn tag() -> String {
     Uuid::new_v4().simple().to_string()
 }
 
-async fn cleanup(db: &PgPool, discriminator: &str) {
+async fn cleanup(db: &DbPool, discriminator: &str) {
     // `core.alert_events` goes with it (ON DELETE CASCADE).
-    let _ = sqlx::query("DELETE FROM core.alerts WHERE dedup_key LIKE '%' || $1 || '%'")
-        .bind(discriminator)
-        .execute(db)
+    let _ = db
+        .execute(
+            "DELETE FROM core.alerts WHERE dedup_key LIKE '%' || $1 || '%'",
+            params![discriminator],
+        )
         .await;
 }
 
-async fn row_count(db: &PgPool, discriminator: &str) -> i64 {
-    sqlx::query_scalar::<_, i64>(
+async fn row_count(db: &DbPool, discriminator: &str) -> i64 {
+    db.fetch_scalar::<i64>(
         "SELECT COUNT(*) FROM core.alerts WHERE dedup_key LIKE '%' || $1 || '%'",
+        params![discriminator],
     )
-    .bind(discriminator)
-    .fetch_one(db)
     .await
     .expect("comptage des alertes")
 }
 
-async fn occurrences(db: &PgPool, id: Uuid) -> i32 {
-    sqlx::query_scalar::<_, i32>("SELECT occurrences FROM core.alerts WHERE id = $1")
-        .bind(id)
-        .fetch_one(db)
+async fn occurrences(db: &DbPool, id: Uuid) -> i32 {
+    db.fetch_scalar::<i32>("SELECT occurrences FROM core.alerts WHERE id = $1", params![id])
         .await
         .expect("lecture du compteur")
 }
 
-async fn status_of(db: &PgPool, id: Uuid) -> String {
-    sqlx::query_scalar::<_, String>("SELECT status FROM core.alerts WHERE id = $1")
-        .bind(id)
-        .fetch_one(db)
+async fn status_of(db: &DbPool, id: Uuid) -> String {
+    db.fetch_scalar::<String>("SELECT status FROM core.alerts WHERE id = $1", params![id])
         .await
         .expect("lecture de l'état")
 }
@@ -76,23 +128,26 @@ fn root(user_id: Uuid) -> AdminContext {
 }
 
 /// A test account, created and removed by the caller. Never `admin@kubuno.local`.
-async fn make_user(db: &PgPool, tag: &str) -> Uuid {
-    sqlx::query_scalar::<_, Uuid>(
-        r#"INSERT INTO core.users (email, username, password_hash, display_name, role)
-           VALUES ($1, $2, 'x', $3, 'user') RETURNING id"#,
+async fn make_user(db: &DbPool, tag: &str) -> Uuid {
+    let id = kubuno_db::new_id();
+    db.execute(
+        r#"INSERT INTO core.users (id, email, username, password_hash, display_name, role)
+           VALUES ($1, $2, $3, 'x', $4, 'user')"#,
+        params![
+            id,
+            format!("alerts-{tag}@test.invalid"),
+            format!("alerts-{tag}"),
+            format!("Alerts {tag}")
+        ],
     )
-    .bind(format!("alerts-{tag}@test.invalid"))
-    .bind(format!("alerts-{tag}"))
-    .bind(format!("Alerts {tag}"))
-    .fetch_one(db)
     .await
-    .expect("création du compte de test")
+    .expect("création du compte de test");
+    id
 }
 
-async fn drop_user(db: &PgPool, id: Uuid) {
-    let _ = sqlx::query("DELETE FROM core.users WHERE id = $1")
-        .bind(id)
-        .execute(db)
+async fn drop_user(db: &DbPool, id: Uuid) {
+    let _ = db
+        .execute("DELETE FROM core.users WHERE id = $1", params![id])
         .await;
 }
 
@@ -167,11 +222,9 @@ async fn ignored_absorbs_recurrences_while_resolved_opens_a_new_alert() {
 
     // ── Ignored: a recurrence must stay silent. ──
     let first = store::raise(&db, sample(&t, Severity::Warning)).await.expect("levée");
-    let mut conn = db.acquire().await.expect("connexion");
-    store::set_status(&mut conn, first.id, Status::Ignored, operator, "Test", Some("ne s'applique pas"))
+    set_status(&db, first.id, Status::Ignored, operator, "Test", Some("ne s'applique pas"))
         .await
         .expect("ignorer");
-    drop(conn);
 
     let again = store::raise(&db, sample(&t, Severity::Warning)).await.expect("levée");
     assert_eq!(again.id, first.id, "une alerte ignorée absorbe les récurrences");
@@ -179,11 +232,9 @@ async fn ignored_absorbs_recurrences_while_resolved_opens_a_new_alert() {
     assert_eq!(row_count(&db, &t).await, 1);
 
     // ── Resolved: a recurrence is a regression, and gets its own row. ──
-    let mut conn = db.acquire().await.expect("connexion");
-    store::set_status(&mut conn, first.id, Status::Resolved, operator, "Test", None)
+    set_status(&db, first.id, Status::Resolved, operator, "Test", None)
         .await
         .expect("clore");
-    drop(conn);
 
     let comeback = store::raise(&db, sample(&t, Severity::Warning)).await.expect("levée");
     assert_ne!(comeback.id, first.id, "le problème revenu est une nouvelle alerte");
@@ -204,9 +255,8 @@ async fn the_lifecycle_records_every_step_with_its_author() {
     let operator = make_user(&db, &t).await;
 
     let raised = store::raise(&db, sample(&t, Severity::Warning)).await.expect("levée");
-    let mut conn = db.acquire().await.expect("connexion");
 
-    let previous = store::set_status(&mut conn, raised.id, Status::Acknowledged, operator, "Alice", None)
+    let previous = set_status(&db, raised.id, Status::Acknowledged, operator, "Alice", None)
         .await
         .expect("prise en charge");
     assert_eq!(previous, Status::New);
@@ -214,28 +264,28 @@ async fn the_lifecycle_records_every_step_with_its_author() {
     // Re-asserting the current state writes nothing: a timeline of no-ops is a
     // timeline nobody reads.
     assert!(
-        store::set_status(&mut conn, raised.id, Status::Acknowledged, operator, "Alice", None)
+        set_status(&db, raised.id, Status::Acknowledged, operator, "Alice", None)
             .await
             .is_err()
     );
 
-    store::add_comment(&mut conn, raised.id, "Relance planifiée", operator, "Alice")
+    add_comment(&db, raised.id, "Relance planifiée", operator, "Alice")
         .await
         .expect("commentaire");
 
-    store::set_status(&mut conn, raised.id, Status::Resolved, operator, "Alice", Some("corrigé"))
+    set_status(&db, raised.id, Status::Resolved, operator, "Alice", Some("corrigé"))
         .await
         .expect("clôture");
-    drop(conn);
 
-    let closed: (Option<chrono::DateTime<chrono::Utc>>, Option<Uuid>) =
-        sqlx::query_as("SELECT closed_at, closed_by FROM core.alerts WHERE id = $1")
-            .bind(raised.id)
-            .fetch_one(&db)
-            .await
-            .expect("lecture de la clôture");
-    assert!(closed.0.is_some(), "une alerte close porte sa date");
-    assert_eq!(closed.1, Some(operator), "et son auteur");
+    let closed = db
+        .fetch_one_as::<ClosedRow>(
+            "SELECT closed_at, closed_by FROM core.alerts WHERE id = $1",
+            params![raised.id],
+        )
+        .await
+        .expect("lecture de la clôture");
+    assert!(closed.closed_at.is_some(), "une alerte close porte sa date");
+    assert_eq!(closed.closed_by, Some(operator), "et son auteur");
 
     let timeline = store::timeline(&db, raised.id).await.expect("fil");
     let kinds: Vec<&str> = timeline.iter().map(|e| e.kind.as_str()).collect();
@@ -273,15 +323,17 @@ async fn a_condition_that_disappeared_is_closed_automatically() {
     // from what is actually open rather than from a single made-up key matters:
     // `auto_resolve` closes everything of that kind outside the list, and the
     // test database is shared with the other tests running in parallel.
-    let live: Vec<String> = sqlx::query_scalar(
-        "SELECT dedup_key FROM core.alerts
+    let live: Vec<String> = db
+        .fetch_all_as::<DedupKeyRow>(
+            "SELECT dedup_key FROM core.alerts
           WHERE kind = $1 AND status IN ('new','acknowledged') AND id <> $2",
-    )
-    .bind(catalog::JOB_DEAD_LETTER)
-    .bind(raised.id)
-    .fetch_all(&db)
-    .await
-    .expect("clés vivantes");
+            params![catalog::JOB_DEAD_LETTER, raised.id],
+        )
+        .await
+        .expect("clés vivantes")
+        .into_iter()
+        .map(|r| r.dedup_key)
+        .collect();
 
     let closed = store::auto_resolve(&db, catalog::JOB_DEAD_LETTER, &live)
         .await

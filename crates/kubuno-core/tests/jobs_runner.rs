@@ -12,8 +12,14 @@ use std::time::Duration;
 
 use kubuno_core::jobs::queue::{self, FailOutcome};
 use kubuno_core::jobs::{runner, JobRegistry, JobRunnerConfig, NewJob};
-use sqlx::PgPool;
+use kubuno_db::{params, DbPool, DbQueryBuilder};
 use uuid::Uuid;
+
+#[derive(sqlx::FromRow)]
+struct ErrDone {
+    error:   Option<String>,
+    done_at: Option<chrono::DateTime<chrono::Utc>>,
+}
 
 /// Job types are namespaced per test run so tests never interfere with each
 /// other nor with jobs left over from a previous run.
@@ -21,29 +27,25 @@ fn unique_type(prefix: &str) -> String {
     format!("test.{prefix}.{}", Uuid::new_v4().simple())
 }
 
-async fn status_of(db: &PgPool, id: Uuid) -> String {
-    sqlx::query_scalar::<_, String>("SELECT status FROM core.jobs WHERE id = $1")
-        .bind(id)
-        .fetch_one(db)
+async fn status_of(db: &DbPool, id: Uuid) -> String {
+    db.fetch_scalar::<String>("SELECT status FROM core.jobs WHERE id = $1", params![id])
         .await
         .expect("lecture du statut")
 }
 
 /// Seconds between now and the job's `run_after` (negative = runnable).
-async fn seconds_until_runnable(db: &PgPool, id: Uuid) -> f64 {
-    sqlx::query_scalar::<_, f64>(
+async fn seconds_until_runnable(db: &DbPool, id: Uuid) -> f64 {
+    db.fetch_scalar::<f64>(
         "SELECT EXTRACT(EPOCH FROM (run_after - NOW()))::float8 FROM core.jobs WHERE id = $1",
+        params![id],
     )
-    .bind(id)
-    .fetch_one(db)
     .await
     .expect("lecture de run_after")
 }
 
-async fn cleanup(db: &PgPool, job_type: &str) {
-    let _ = sqlx::query("DELETE FROM core.jobs WHERE job_type = $1")
-        .bind(job_type)
-        .execute(db)
+async fn cleanup(db: &DbPool, job_type: &str) {
+    let _ = db
+        .execute("DELETE FROM core.jobs WHERE job_type = $1", params![job_type])
         .await;
 }
 
@@ -106,8 +108,9 @@ async fn failures_back_off_exponentially_then_give_up() {
     assert!(queue::claim(&db, &types).await.expect("claim").is_none(), "backoff non respecté");
 
     // Fast-forward the backoff instead of sleeping.
-    sqlx::query("UPDATE core.jobs SET run_after = NOW() WHERE id = $1")
-        .bind(id).execute(&db).await.expect("avance du temps");
+    db.execute("UPDATE core.jobs SET run_after = NOW() WHERE id = $1", params![id])
+        .await
+        .expect("avance du temps");
 
     // Attempt 2 → retry in ~10s (doubling).
     let job = queue::claim(&db, &types).await.expect("claim").expect("tâche");
@@ -117,8 +120,9 @@ async fn failures_back_off_exponentially_then_give_up() {
     let d2 = seconds_until_runnable(&db, id).await;
     assert!(d2 > d1, "le délai doit croître ({d1} → {d2})");
 
-    sqlx::query("UPDATE core.jobs SET run_after = NOW() WHERE id = $1")
-        .bind(id).execute(&db).await.expect("avance du temps");
+    db.execute("UPDATE core.jobs SET run_after = NOW() WHERE id = $1", params![id])
+        .await
+        .expect("avance du temps");
 
     // Attempt 3 = max_attempts → definitive failure, error kept.
     let job = queue::claim(&db, &types).await.expect("claim").expect("tâche");
@@ -127,11 +131,12 @@ async fn failures_back_off_exponentially_then_give_up() {
     assert_eq!(outcome, FailOutcome::GaveUp);
     assert_eq!(status_of(&db, id).await, "failed");
 
-    let (error, done): (Option<String>, Option<chrono::DateTime<chrono::Utc>>) =
-        sqlx::query_as("SELECT error, done_at FROM core.jobs WHERE id = $1")
-            .bind(id).fetch_one(&db).await.expect("lecture");
-    assert_eq!(error.as_deref(), Some("boum 3"));
-    assert!(done.is_some(), "done_at doit être renseigné en échec définitif");
+    let row = db
+        .fetch_one_as::<ErrDone>("SELECT error, done_at FROM core.jobs WHERE id = $1", params![id])
+        .await
+        .expect("lecture");
+    assert_eq!(row.error.as_deref(), Some("boum 3"));
+    assert!(row.done_at.is_some(), "done_at doit être renseigné en échec définitif");
 
     // A failed job is never claimed again.
     assert!(queue::claim(&db, &types).await.expect("claim").is_none());
@@ -146,25 +151,34 @@ async fn stalled_jobs_are_requeued_after_a_crash() {
 
     // A job left `running` an hour ago by a process that died, with attempts
     // left…
-    let alive: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.jobs (job_type, status, attempts, max_attempts, started_at)
-         VALUES ($1, 'running', 1, 3, NOW() - INTERVAL '1 hour') RETURNING id",
+    let alive: Uuid = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.jobs (id, job_type, status, attempts, max_attempts, started_at)
+         VALUES ($1, $2, 'running', 1, 3, NOW() - INTERVAL '1 hour')",
+        params![alive, &job_type],
     )
-    .bind(&job_type).fetch_one(&db).await.expect("insertion");
+    .await
+    .expect("insertion");
 
     // …and one that had already burnt all of them.
-    let exhausted: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.jobs (job_type, status, attempts, max_attempts, started_at)
-         VALUES ($1, 'running', 3, 3, NOW() - INTERVAL '1 hour') RETURNING id",
+    let exhausted: Uuid = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.jobs (id, job_type, status, attempts, max_attempts, started_at)
+         VALUES ($1, $2, 'running', 3, 3, NOW() - INTERVAL '1 hour')",
+        params![exhausted, &job_type],
     )
-    .bind(&job_type).fetch_one(&db).await.expect("insertion");
+    .await
+    .expect("insertion");
 
     // A job that started a second ago is still alive: it must NOT be touched.
-    let running_now: Uuid = sqlx::query_scalar(
-        "INSERT INTO core.jobs (job_type, status, attempts, max_attempts, started_at)
-         VALUES ($1, 'running', 1, 3, NOW()) RETURNING id",
+    let running_now: Uuid = kubuno_db::new_id();
+    db.execute(
+        "INSERT INTO core.jobs (id, job_type, status, attempts, max_attempts, started_at)
+         VALUES ($1, $2, 'running', 1, 3, NOW())",
+        params![running_now, &job_type],
     )
-    .bind(&job_type).fetch_one(&db).await.expect("insertion");
+    .await
+    .expect("insertion");
 
     let recovered = queue::requeue_stalled(&db, Duration::from_secs(600))
         .await
@@ -233,10 +247,10 @@ async fn runner_executes_registered_jobs_end_to_end() {
         let db = db.clone();
         let ids = ids.clone();
         async move {
-            let n: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM core.jobs WHERE id = ANY($1) AND status = 'done'",
-            )
-            .bind(&ids).fetch_one(&db).await.unwrap_or(0);
+            let mut qb = DbQueryBuilder::new(db.backend(), "SELECT COUNT(*) FROM core.jobs WHERE ");
+            qb.push("id").push_in(ids.clone());
+            qb.push(" AND status = 'done'");
+            let n: i64 = qb.fetch_scalar(&db).await.unwrap_or(0);
             n == ids.len() as i64
         }
     })
@@ -316,8 +330,12 @@ async fn recurring_jobs_are_not_duplicated() {
 
     // A running occurrence may schedule its own successor.
     let current = first.expect("id");
-    sqlx::query("UPDATE core.jobs SET status = 'running', started_at = NOW() WHERE id = $1")
-        .bind(current).execute(&db).await.expect("mise en cours");
+    db.execute(
+        "UPDATE core.jobs SET status = 'running', started_at = NOW() WHERE id = $1",
+        params![current],
+    )
+    .await
+    .expect("mise en cours");
     let next = queue::reschedule_after(&db, NewJob::new(job_type.as_str()).delay(Duration::from_secs(3600)), current)
         .await
         .expect("reschedule");

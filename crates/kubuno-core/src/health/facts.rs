@@ -476,6 +476,7 @@ async fn load_failing_modules(db: &DbPool) -> Result<Vec<FailingModule>, AppErro
         .collect())
 }
 
+#[allow(clippy::type_complexity)]
 async fn load_mutes(db: &DbPool) -> Result<HashMap<String, Muted>, AppError> {
     // (check_id, muted_by, muted_at, reason, by_label)
     let rows: Vec<(String, Option<uuid::Uuid>, DateTime<Utc>, Option<String>, Option<String>)> = db

@@ -272,15 +272,13 @@ pub async fn insert(
     values.push(DbValue::from(author));
 
     tx.execute(
-        concat!(
-            r#"INSERT INTO core.content_detectors
-                   (id, key, label, description, category, kind, pattern, terms, checksum,
-                    proximity_terms, proximity_window, proximity_required,
-                    base_confidence, checksum_bonus, proximity_bonus,
-                    min_confidence, min_matches, min_unique_matches,
-                    is_enabled, is_builtin, created_by, updated_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,FALSE,$20,$21)"#
-        ),
+        r#"INSERT INTO core.content_detectors
+               (id, key, label, description, category, kind, pattern, terms, checksum,
+                proximity_terms, proximity_window, proximity_required,
+                base_confidence, checksum_bonus, proximity_bonus,
+                min_confidence, min_matches, min_unique_matches,
+                is_enabled, is_builtin, created_by, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,FALSE,$20,$21)"#,
         values,
     )
     .await
