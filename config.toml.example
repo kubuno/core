@@ -185,6 +185,16 @@ database = "kubuno"
 # Si url est défini, les champs individuels ci-dessus sont ignorés.
 # url = "postgres://kubuno:mot_de_passe@localhost:5432/kubuno"
 
+# Préfixe de nom de schéma (façon préfixe de table WordPress) : permet à
+# plusieurs instances Kubuno de cohabiter sur un même serveur de base. Chaque
+# schéma devient « <préfixe><schéma> » (le core → kub_core, le module notes →
+# kub_notes). Vide/absent = aucun préfixe (comportement identique à avant).
+# Doit correspondre à ^[a-z0-9_]{1,32}$. Le socle base de données (kubuno-db)
+# l'applique à la création des schémas, au search_path et à chaque requête ;
+# renseignez la MÊME valeur dans la config de chaque module de l'instance.
+# Surchargeable par la variable d'environnement KV__DATABASE__SCHEMA_PREFIX.
+# schema_prefix = "kub_"
+
 # Taille maximale du pool de connexions (requêtes HTTP concurrentes).
 max_connections = 20
 

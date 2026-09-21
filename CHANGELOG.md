@@ -11,6 +11,17 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Several Kubuno instances can share one database server.** A new optional
+  `[database] schema_prefix` setting (for example `schema_prefix = "kub_"`,
+  overridable with the `KV__DATABASE__SCHEMA_PREFIX` environment variable, and
+  offered in the first-run setup wizard) prefixes every schema name, the
+  WordPress way: the `notes` module's schema becomes `kub_notes`, the core's
+  becomes `kub_core`, and so on. It works on PostgreSQL (a real schema),
+  MySQL/MariaDB (a database) and SQLite (a separate file), and modules need no
+  change — their migrations and queries are redirected automatically. With no
+  prefix set (the default) nothing changes at all: an existing instance behaves
+  exactly as before. The prefix must be lowercase letters, digits and
+  underscores; an invalid value is refused at start-up with a clear message.
 - **A module's PostgreSQL migrations keep working untouched.** The engine puts
   the module's schema on PostgreSQL's search path on every connection, as each
   module's own start-up used to. A migration written before multi-engine

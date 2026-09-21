@@ -23,6 +23,8 @@ export default {
     pitchTitle: 'Nothing goes elsewhere',
     pitch: 'The database stays yours: backups, encryption and hosting follow your rules, not a provider’s.',
     host: 'Host', port: 'Port', name: 'Database', user: 'User', password: 'Password',
+    schemaPrefix: 'Schema prefix (optional)',
+    schemaPrefixHint: 'Lets several Kubuno instances share one database server, e.g. "kub_". Leave empty for none.',
     connected: 'Connection established',
     createIt: 'Create it during the installation',
     createHint: 'Create it, then run the test again: {{cmd}}',

@@ -262,6 +262,10 @@ struct DbForm {
     user: String,
     password: String,
     database: String,
+    /// Optional schema-name prefix, so several instances can share one database
+    /// server (see `[database] schema_prefix`). Empty means none.
+    #[serde(default)]
+    schema_prefix: Option<String>,
 }
 
 impl DbForm {
@@ -285,6 +289,21 @@ impl DbForm {
             && !n.chars().next().is_some_and(|c| c.is_ascii_digit())
     }
 
+    /// The trimmed schema prefix, or `""` when none was given.
+    fn schema_prefix(&self) -> &str {
+        self.schema_prefix.as_deref().map(str::trim).unwrap_or("")
+    }
+
+    /// A prefix we are willing to write into the config file. Mirrors
+    /// `kubuno_db::SchemaPrefix`: empty (none) or `^[a-z0-9_]{1,32}$`.
+    fn schema_prefix_is_safe(&self) -> bool {
+        let p = self.schema_prefix();
+        p.is_empty()
+            || (p.len() <= 32
+                && p.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'))
+    }
+
     fn validate(&self) -> Result<(), (&'static str, String)> {
         if self.host.trim().is_empty() {
             return Err(("db.host_required", "L'hôte de la base est requis.".to_string()));
@@ -297,6 +316,14 @@ impl DbForm {
                 "db.name_invalid",
                 "Nom de base invalide : lettres, chiffres et « _ » uniquement, sans chiffre en \
                  première position."
+                    .to_string(),
+            ));
+        }
+        if !self.schema_prefix_is_safe() {
+            return Err((
+                "db.schema_prefix_invalid",
+                "Préfixe de schéma invalide : minuscules, chiffres et « _ » uniquement, 32 \
+                 caractères maximum."
                     .to_string(),
             ));
         }
@@ -762,6 +789,11 @@ async fn install(State(st): State<Arc<SetupState>>, Json(req): Json<InstallReque
         Assign::text("database", "password", &req.database.password),
         Assign::text("database", "database", &db_name),
     ];
+    // Only written when the operator asked for one, so a plain install leaves the
+    // key absent (no prefix) and the config file stays minimal.
+    if !req.database.schema_prefix().is_empty() {
+        assigns.push(Assign::text("database", "schema_prefix", req.database.schema_prefix()));
+    }
     // Secrets already set by an operator are left alone; placeholders are replaced.
     if super::is_placeholder(&st.settings.server.internal_secret) {
         assigns.push(Assign::text("server", "internal_secret", &generate_secret()));

@@ -110,6 +110,7 @@ function initialSetupLang(): string {
 interface Draft {
   token?: string
   dbHost?: string; dbPort?: string; dbName?: string; dbUser?: string; dbPassword?: string
+  dbSchemaPrefix?: string
   dbTest?: DbTest | null; createDb?: boolean
   admUser?: string; admEmail?: string; admPassword?: string; admConfirm?: string
   instanceName?: string; themeId?: string | null; logoDataUrl?: string | null
@@ -167,6 +168,8 @@ export default function SetupWizard() {
   const [dbName, setDbName] = useState('kubuno')
   const [dbUser, setDbUser] = useState('kubuno')
   const [dbPassword, setDbPassword] = useState('')
+  // Optional: prefixes every schema name so several instances share one server.
+  const [dbSchemaPrefix, setDbSchemaPrefix] = useState('')
   const [testing, setTesting] = useState(false)
   const [dbTest, setDbTest] = useState<DbTest | null>(null)
   const [createDb, setCreateDb] = useState(false)
@@ -209,6 +212,7 @@ export default function SetupWizard() {
           if (d.dbName) setDbName(d.dbName)
           if (d.dbUser) setDbUser(d.dbUser)
           if (d.dbPassword != null) setDbPassword(d.dbPassword)
+          if (d.dbSchemaPrefix != null) setDbSchemaPrefix(d.dbSchemaPrefix)
           if (d.dbTest !== undefined) setDbTest(d.dbTest)
           if (d.createDb != null) setCreateDb(d.createDb)
           if (d.admUser) setAdmUser(d.admUser)
@@ -282,7 +286,7 @@ export default function SetupWizard() {
   useEffect(() => {
     if (!hydrated || installed) return
     const body: Draft = {
-      token, dbHost, dbPort, dbName, dbUser, dbPassword, dbTest, createDb,
+      token, dbHost, dbPort, dbName, dbUser, dbPassword, dbSchemaPrefix, dbTest, createDb,
       admUser, admEmail, admPassword, admConfirm, instanceName, themeId, logoDataUrl,
     }
     // Debounced: this fires on every keystroke.
@@ -291,8 +295,8 @@ export default function SetupWizard() {
     }, 400)
     return () => clearTimeout(timer)
   }, [hydrated, installed, draftKey, token, dbHost, dbPort, dbName, dbUser, dbPassword,
-      dbTest, createDb, admUser, admEmail, admPassword, admConfirm, instanceName,
-      themeId, logoDataUrl])
+      dbSchemaPrefix, dbTest, createDb, admUser, admEmail, admPassword, admConfirm,
+      instanceName, themeId, logoDataUrl])
 
   const passwordProblem = useMemo(() => {
     if (admPassword && admPassword.length < 12) return t('admin.tooShort')
@@ -353,6 +357,7 @@ export default function SetupWizard() {
         database: {
           host: dbHost, port: Number(dbPort) || 5432, user: dbUser,
           password: dbPassword, database: dbName,
+          schema_prefix: dbSchemaPrefix.trim() || undefined,
         },
         admin: { username: admUser.trim(), email: admEmail.trim(), password: admPassword },
         instance: {
@@ -490,6 +495,11 @@ export default function SetupWizard() {
                 <OutlinedField label={t('database.user')} value={dbUser} onChange={setDbUser} primaryColor="var(--color-primary)" />
                 <OutlinedField label={t('database.password')} value={dbPassword} onChange={setDbPassword}
                                type="password" primaryColor="var(--color-primary)" />
+                <div>
+                  <OutlinedField label={t('database.schemaPrefix')} value={dbSchemaPrefix}
+                                 onChange={setDbSchemaPrefix} primaryColor="var(--color-primary)" />
+                  <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{t('database.schemaPrefixHint')}</p>
+                </div>
                 <div className="flex items-center gap-3.5">
                   <Pill tone="ghost" onClick={testDatabase} disabled={testing}>
                     {testing ? t('actions.testing') : t('actions.test')}

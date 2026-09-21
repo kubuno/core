@@ -34,15 +34,56 @@ use sqlx::{Decode, FromRow, MySql, Postgres, Row, Sqlite, Type};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::dialect::Backend;
+use crate::schema::SchemaPrefix;
 use crate::sql;
 use crate::value::DbValue;
 
-/// A connection pool for whichever engine the process was configured with.
+/// A connection pool for whichever engine the process was configured with,
+/// together with the optional schema-name prefix ([`SchemaPrefix`]) applied to
+/// every statement and every migration. The prefix is set once, at
+/// [`crate::pool::connect`], and lives for the life of the pool.
 #[derive(Clone)]
-pub enum DbPool {
+pub struct DbPool {
+    kind: PoolKind,
+    prefix: SchemaPrefix,
+}
+
+/// The concrete sqlx pool behind a [`DbPool`], one variant per engine.
+#[derive(Clone)]
+pub(crate) enum PoolKind {
     Pg(sqlx::PgPool),
     My(sqlx::MySqlPool),
     Sq(SqliteHandle),
+}
+
+impl DbPool {
+    /// The concrete pool behind this handle — used by [`crate::pool::MigratorSet`]
+    /// to hand each engine's migrator its own driver pool.
+    pub(crate) fn kind(&self) -> &PoolKind {
+        &self.kind
+    }
+
+    /// Wraps a PostgreSQL pool with its schema prefix (called from
+    /// [`crate::pool`]).
+    pub(crate) fn from_pg(pool: sqlx::PgPool, prefix: SchemaPrefix) -> Self {
+        DbPool { kind: PoolKind::Pg(pool), prefix }
+    }
+
+    /// Wraps a MySQL/MariaDB pool with its schema prefix.
+    pub(crate) fn from_mysql(pool: sqlx::MySqlPool, prefix: SchemaPrefix) -> Self {
+        DbPool { kind: PoolKind::My(pool), prefix }
+    }
+
+    /// Wraps a SQLite handle with its schema prefix.
+    pub(crate) fn from_sqlite(handle: SqliteHandle, prefix: SchemaPrefix) -> Self {
+        DbPool { kind: PoolKind::Sq(handle), prefix }
+    }
+
+    /// The schema prefix this pool applies. Read by [`crate::pool::MigratorSet`]
+    /// so a module's migrations land in the prefixed schema too.
+    pub fn schema_prefix(&self) -> &SchemaPrefix {
+        &self.prefix
+    }
 }
 
 /// SQLite's pool plus the single-writer gate. Cloneable: every clone shares the
@@ -161,17 +202,19 @@ impl<T> ScalarAnyRow for T where
 impl DbPool {
     /// Which engine this pool talks to.
     pub fn backend(&self) -> Backend {
-        match self {
-            DbPool::Pg(_) => Backend::Postgres,
-            DbPool::My(_) => Backend::MySql,
-            DbPool::Sq(_) => Backend::Sqlite,
+        match &self.kind {
+            PoolKind::Pg(_) => Backend::Postgres,
+            PoolKind::My(_) => Backend::MySql,
+            PoolKind::Sq(_) => Backend::Sqlite,
         }
     }
 
     fn prepare(&self, sql: &str) -> Result<String, sqlx::Error> {
-        Ok(sql::prepare(sql, self.backend())
-            .map_err(sql::into_sqlx_error)?
-            .into_owned())
+        let placeholders = sql::prepare(sql, self.backend()).map_err(sql::into_sqlx_error)?;
+        // Apply the schema prefix last. When none is set this is a no-op that
+        // returns the string borrowed and unchanged, so the default path costs
+        // exactly what it did before prefixing existed.
+        Ok(self.prefix.rewrite(&placeholders).into_owned())
     }
 
     // ── writes ────────────────────────────────────────────────────────────────
@@ -182,16 +225,16 @@ impl DbPool {
     /// `BUSY`/`LOCKED`.
     pub async fn execute(&self, sql: &str, params: Vec<DbValue>) -> Result<u64, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbPool::Pg(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+        match &self.kind {
+            PoolKind::Pg(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .execute(p)
                 .await?
                 .rows_affected()),
-            DbPool::My(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+            PoolKind::My(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .execute(p)
                 .await?
                 .rows_affected()),
-            DbPool::Sq(h) => {
+            PoolKind::Sq(h) => {
                 let _permit = h.write.acquire().await.expect("write semaphore never closes");
                 with_sqlite_retry(|| {
                     let sql = prepared.clone();
@@ -217,14 +260,14 @@ impl DbPool {
         params: Vec<DbValue>,
     ) -> Result<Vec<T>, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbPool::Pg(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
+        match &self.kind {
+            PoolKind::Pg(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
                 .fetch_all(p)
                 .await,
-            DbPool::My(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
+            PoolKind::My(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
                 .fetch_all(p)
                 .await,
-            DbPool::Sq(h) => {
+            PoolKind::Sq(h) => {
                 with_sqlite_retry(|| {
                     let sql = prepared.clone();
                     let params = params.clone();
@@ -246,14 +289,14 @@ impl DbPool {
         params: Vec<DbValue>,
     ) -> Result<Option<T>, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbPool::Pg(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
+        match &self.kind {
+            PoolKind::Pg(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
                 .fetch_optional(p)
                 .await,
-            DbPool::My(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
+            PoolKind::My(p) => bind_all!(sqlx::query_as::<_, T>(safe(prepared)), params)
                 .fetch_optional(p)
                 .await,
-            DbPool::Sq(h) => {
+            PoolKind::Sq(h) => {
                 with_sqlite_retry(|| {
                     let sql = prepared.clone();
                     let params = params.clone();
@@ -287,14 +330,14 @@ impl DbPool {
         params: Vec<DbValue>,
     ) -> Result<Option<T>, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbPool::Pg(p) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
+        match &self.kind {
+            PoolKind::Pg(p) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
                 .fetch_optional(p)
                 .await,
-            DbPool::My(p) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
+            PoolKind::My(p) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
                 .fetch_optional(p)
                 .await,
-            DbPool::Sq(h) => {
+            PoolKind::Sq(h) => {
                 with_sqlite_retry(|| {
                     let sql = prepared.clone();
                     let params = params.clone();
@@ -328,16 +371,16 @@ impl DbPool {
         params: Vec<DbValue>,
     ) -> Result<Option<DbRow>, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbPool::Pg(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+        match &self.kind {
+            PoolKind::Pg(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .fetch_optional(p)
                 .await?
                 .map(DbRow::Pg)),
-            DbPool::My(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+            PoolKind::My(p) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .fetch_optional(p)
                 .await?
                 .map(DbRow::My)),
-            DbPool::Sq(h) => {
+            PoolKind::Sq(h) => {
                 with_sqlite_retry(|| {
                     let sql = prepared.clone();
                     let params = params.clone();
@@ -360,10 +403,10 @@ impl DbPool {
     /// the transaction's whole life, so write transactions serialise; it is
     /// released on commit, rollback or drop.
     pub async fn begin(&self) -> Result<DbTx, sqlx::Error> {
-        match self {
-            DbPool::Pg(p) => Ok(DbTx::Pg(p.begin().await?)),
-            DbPool::My(p) => Ok(DbTx::My(p.begin().await?)),
-            DbPool::Sq(h) => {
+        let kind = match &self.kind {
+            PoolKind::Pg(p) => TxKind::Pg(p.begin().await?),
+            PoolKind::My(p) => TxKind::My(p.begin().await?),
+            PoolKind::Sq(h) => {
                 let permit = h
                     .write
                     .clone()
@@ -371,14 +414,24 @@ impl DbPool {
                     .await
                     .expect("write semaphore never closes");
                 let tx = h.pool.begin().await?;
-                Ok(DbTx::Sq { tx, _write: permit })
+                TxKind::Sq { tx, _write: permit }
             }
-        }
+        };
+        // The transaction inherits the pool's schema prefix, so statements issued
+        // through it are rewritten the same way.
+        Ok(DbTx { kind, prefix: self.prefix.clone() })
     }
 }
 
-/// An open transaction on whichever engine is in use.
-pub enum DbTx {
+/// An open transaction on whichever engine is in use, carrying the same schema
+/// prefix as the pool it began from.
+pub struct DbTx {
+    kind: TxKind,
+    prefix: SchemaPrefix,
+}
+
+/// The concrete sqlx transaction behind a [`DbTx`], one variant per engine.
+enum TxKind {
     Pg(sqlx::Transaction<'static, Postgres>),
     My(sqlx::Transaction<'static, MySql>),
     Sq {
@@ -390,31 +443,33 @@ pub enum DbTx {
 
 impl DbTx {
     pub fn backend(&self) -> Backend {
-        match self {
-            DbTx::Pg(_) => Backend::Postgres,
-            DbTx::My(_) => Backend::MySql,
-            DbTx::Sq { .. } => Backend::Sqlite,
+        match &self.kind {
+            TxKind::Pg(_) => Backend::Postgres,
+            TxKind::My(_) => Backend::MySql,
+            TxKind::Sq { .. } => Backend::Sqlite,
         }
     }
 
     fn prepare(&self, sql: &str) -> Result<String, sqlx::Error> {
-        Ok(sql::prepare(sql, self.backend())
-            .map_err(sql::into_sqlx_error)?
-            .into_owned())
+        let placeholders = sql::prepare(sql, self.backend()).map_err(sql::into_sqlx_error)?;
+        // Apply the schema prefix last. When none is set this is a no-op that
+        // returns the string borrowed and unchanged, so the default path costs
+        // exactly what it did before prefixing existed.
+        Ok(self.prefix.rewrite(&placeholders).into_owned())
     }
 
     pub async fn execute(&mut self, sql: &str, params: Vec<DbValue>) -> Result<u64, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbTx::Pg(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+        match &mut self.kind {
+            TxKind::Pg(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .execute(&mut **tx)
                 .await?
                 .rows_affected()),
-            DbTx::My(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+            TxKind::My(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .execute(&mut **tx)
                 .await?
                 .rows_affected()),
-            DbTx::Sq { tx, .. } => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+            TxKind::Sq { tx, .. } => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .execute(&mut **tx)
                 .await?
                 .rows_affected()),
@@ -427,14 +482,14 @@ impl DbTx {
         params: Vec<DbValue>,
     ) -> Result<Option<T>, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbTx::Pg(tx) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
+        match &mut self.kind {
+            TxKind::Pg(tx) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
                 .fetch_optional(&mut **tx)
                 .await,
-            DbTx::My(tx) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
+            TxKind::My(tx) => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
                 .fetch_optional(&mut **tx)
                 .await,
-            DbTx::Sq { tx, .. } => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
+            TxKind::Sq { tx, .. } => bind_all!(sqlx::query_scalar::<_, T>(safe(prepared)), params)
                 .fetch_optional(&mut **tx)
                 .await,
         }
@@ -446,16 +501,16 @@ impl DbTx {
         params: Vec<DbValue>,
     ) -> Result<Option<DbRow>, sqlx::Error> {
         let prepared = self.prepare(sql)?;
-        match self {
-            DbTx::Pg(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+        match &mut self.kind {
+            TxKind::Pg(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .fetch_optional(&mut **tx)
                 .await?
                 .map(DbRow::Pg)),
-            DbTx::My(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+            TxKind::My(tx) => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .fetch_optional(&mut **tx)
                 .await?
                 .map(DbRow::My)),
-            DbTx::Sq { tx, .. } => Ok(bind_all!(sqlx::query(safe(prepared)), params)
+            TxKind::Sq { tx, .. } => Ok(bind_all!(sqlx::query(safe(prepared)), params)
                 .fetch_optional(&mut **tx)
                 .await?
                 .map(DbRow::Sq)),
@@ -463,10 +518,10 @@ impl DbTx {
     }
 
     pub async fn commit(self) -> Result<(), sqlx::Error> {
-        match self {
-            DbTx::Pg(tx) => tx.commit().await,
-            DbTx::My(tx) => tx.commit().await,
-            DbTx::Sq { tx, _write } => {
+        match self.kind {
+            TxKind::Pg(tx) => tx.commit().await,
+            TxKind::My(tx) => tx.commit().await,
+            TxKind::Sq { tx, _write } => {
                 let r = tx.commit().await;
                 drop(_write);
                 r
@@ -475,10 +530,10 @@ impl DbTx {
     }
 
     pub async fn rollback(self) -> Result<(), sqlx::Error> {
-        match self {
-            DbTx::Pg(tx) => tx.rollback().await,
-            DbTx::My(tx) => tx.rollback().await,
-            DbTx::Sq { tx, _write } => {
+        match self.kind {
+            TxKind::Pg(tx) => tx.rollback().await,
+            TxKind::My(tx) => tx.rollback().await,
+            TxKind::Sq { tx, _write } => {
                 let r = tx.rollback().await;
                 drop(_write);
                 r

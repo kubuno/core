@@ -22,6 +22,8 @@ export default {
     pitchTitle: 'Rien ne part ailleurs',
     pitch: "La base reste la vôtre : sauvegardes, chiffrement et hébergement suivent vos règles, pas celles d'un prestataire.",
     host: 'Hôte', port: 'Port', name: 'Base de données', user: 'Utilisateur', password: 'Mot de passe',
+    schemaPrefix: 'Préfixe de schéma (optionnel)',
+    schemaPrefixHint: 'Permet à plusieurs instances Kubuno de cohabiter sur un même serveur, ex. « kub_ ». Laissez vide pour aucun.',
     connected: 'Connexion établie',
     createIt: "La créer pendant l'installation",
     createHint: 'Créez-la puis relancez le test : {{cmd}}',

@@ -32,6 +32,7 @@ fn base_settings(engine: &str) -> DbSettings {
         password: None,
         database: None,
         path: None,
+        schema_prefix: None,
         max_connections: 4,
         min_connections: 0,
         connect_timeout: std::time::Duration::from_secs(10),

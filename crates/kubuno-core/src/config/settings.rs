@@ -230,6 +230,16 @@ pub struct DatabaseSettings {
     pub password: Option<String>,
     pub database: Option<String>,
 
+    // Optional schema-name prefix (WordPress-style), so several Kubuno instances
+    // can share one database server: every schema name becomes `<prefix><name>`
+    // (`core` -> `kub_core`, the `notes` module -> `kub_notes`). Empty/absent
+    // means no prefix. Must match `^[a-z0-9_]{1,32}$`. The shared database
+    // foundation (`kubuno-db`) applies it to schema creation, the search path and
+    // every statement; it is surfaced here so it round-trips through the config
+    // file and the setup wizard, and reaches modules configured the same way.
+    #[serde(default)]
+    pub schema_prefix: Option<String>,
+
     // Paramètres du pool (communs aux deux modes)
     pub max_connections: u32,
     pub min_connections: u32,
