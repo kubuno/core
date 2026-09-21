@@ -2015,6 +2015,7 @@ dependencies = [
  "instant-acme",
  "ipnet",
  "jsonwebtoken",
+ "kubuno-db",
  "kubuno-mcp",
  "kubuno-modauth",
  "kubuno-storage",

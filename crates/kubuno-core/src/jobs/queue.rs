@@ -37,7 +37,7 @@ pub fn backoff_delay(attempts_made: i32) -> Duration {
     Duration::from_secs(secs)
 }
 
-fn truncate_error(err: &str) -> String {
+pub(crate) fn truncate_error(err: &str) -> String {
     if err.len() <= MAX_ERROR_LEN {
         return err.to_string();
     }
