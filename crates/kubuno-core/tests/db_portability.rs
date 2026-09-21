@@ -775,6 +775,197 @@ async fn exercise_authz_settings(pool: &DbPool) {
     );
 }
 
+/// Exercises the handler-level paths ported off PostgreSQL-only SQL: the
+/// `update_me` dynamic typed UPDATE, the per-engine `FOR UPDATE` clause, the
+/// data export assembled in Rust (former `json_agg`/`row_to_json` + `host()`),
+/// the tamper-evident audit append (its id read back via `RETURNING`/
+/// `LAST_INSERT_ID`), and the labels-browse access query (portable
+/// `label_access` derived table + `ILIKE`).
+async fn exercise_ported_paths(pool: &DbPool) {
+    use kubuno_db::DbQueryBuilder;
+
+    // The audit HMAC chain is process-wide: install the key once so the append
+    // below links a row_hash rather than leaving the columns NULL.
+    kubuno_core::audit::chain::init_audit_key("portability-test-internal-secret-key-xyz");
+
+    // An org unit to hang the account on (`users.org_unit_id` is NOT NULL on the
+    // consolidated schema): reuse the root that `schema_round_trips` created.
+    let ou: Uuid = pool
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT id FROM core.org_units WHERE parent_id IS NULL",
+            params![],
+        )
+        .await
+        .expect("query root org unit")
+        .expect("a root org unit exists");
+
+    let uid = Uuid::new_v4();
+    let uname = format!("u{}", &uid.simple().to_string()[..12]);
+    pool.execute(
+        "INSERT INTO core.users (id, email, username, password_hash, role, preferences, org_unit_id) \
+         VALUES ($1, $2, $3, $4, 'user', $5, $6)",
+        params![
+            uid,
+            format!("{uname}@ex.test"),
+            uname.clone(),
+            "x",
+            serde_json::json!({ "a": 1 }),
+            ou
+        ],
+    )
+    .await
+    .expect("insert export user");
+
+    // ── update_me: the dynamic, per-column typed UPDATE (no inline casts) ──
+    {
+        let mut qb = DbQueryBuilder::new(pool.backend(), "UPDATE core.users SET ");
+        qb.push("display_name = ").push_bind("Nom Porté".to_string());
+        qb.push(", preferences = ")
+            .push_bind(serde_json::json!({ "a": 2, "b": true }));
+        qb.push(" WHERE id = ").push_bind(uid);
+        let n = qb.execute(pool).await.expect("update_me-style update");
+        assert_eq!(n, 1, "one row updated");
+        let (name, prefs) = pool
+            .fetch_optional_as::<(Option<String>, serde_json::Value)>(
+                "SELECT display_name, preferences FROM core.users WHERE id = $1",
+                params![uid],
+            )
+            .await
+            .expect("read back updated user")
+            .expect("user row present");
+        assert_eq!(name.as_deref(), Some("Nom Porté"));
+        assert_eq!(prefs["b"], serde_json::json!(true), "typed JSON bind wrote through");
+    }
+
+    // ── FOR UPDATE: the per-engine row lock clause (empty on SQLite) parses ──
+    {
+        let mut tx = pool.begin().await.expect("begin for-update tx");
+        let fu = pool.backend().for_update();
+        let got = tx
+            .fetch_optional_scalar::<Uuid>(
+                &format!("SELECT id FROM core.users WHERE id = $1{fu}"),
+                params![uid],
+            )
+            .await
+            .expect("locked select");
+        assert_eq!(got, Some(uid));
+        tx.commit().await.expect("commit for-update tx");
+    }
+
+    // ── data export: assembled in Rust, incl. host(ip_address) ──
+    {
+        // A session so account_devices reads a row through `inet_text`.
+        let rt = Uuid::new_v4();
+        pool.execute(
+            "INSERT INTO core.refresh_tokens (id, user_id, token_hash, expires_at) \
+             VALUES ($1, $2, $3, $4)",
+            params![
+                rt,
+                uid,
+                format!("hash-{rt}"),
+                Utc::now() + chrono::Duration::days(1)
+            ],
+        )
+        .await
+        .expect("insert refresh token");
+
+        let profile = kubuno_core::data_export::core_data::account_profile(pool, uid)
+            .await
+            .expect("account_profile");
+        assert_eq!(profile["profil"]["username"], serde_json::json!(uname));
+        assert!(profile["groupes"].is_array());
+
+        let devices = kubuno_core::data_export::core_data::account_devices(pool, uid)
+            .await
+            .expect("account_devices");
+        assert_eq!(devices.as_array().map(|a| a.len()), Some(1), "the one session");
+
+        let accounts = kubuno_core::data_export::core_data::instance_accounts(pool)
+            .await
+            .expect("instance_accounts");
+        assert!(accounts.as_array().is_some_and(|a| !a.is_empty()));
+
+        let groups = kubuno_core::data_export::core_data::instance_groups(pool)
+            .await
+            .expect("instance_groups");
+        assert!(groups.is_array(), "groups assembled with their membres");
+
+        let settings = kubuno_core::data_export::core_data::instance_settings(pool)
+            .await
+            .expect("instance_settings");
+        assert!(settings.is_array());
+
+        kubuno_core::data_export::core_data::instance_org_units(pool)
+            .await
+            .expect("instance_org_units");
+    }
+
+    // ── audit append + read-back (RETURNING / LAST_INSERT_ID) ──
+    {
+        let ctx = kubuno_core::audit::model::AuditContext::system("Portability test");
+        let atx = ctx.begin(pool).await.expect("begin audit tx");
+        let id = atx
+            .commit(
+                kubuno_core::audit::model::AuditEntry::new("core.test.append")
+                    .module("core")
+                    .after(serde_json::json!({ "k": 1 })),
+            )
+            .await
+            .expect("audit append committed with an engine-assigned id");
+        let (action, has_hash) = pool
+            .fetch_optional_as::<(String, bool)>(
+                "SELECT action, (row_hash IS NOT NULL) FROM core.admin_audit WHERE id = $1",
+                params![id],
+            )
+            .await
+            .expect("read the appended audit row")
+            .expect("audit row present at its id");
+        assert_eq!(action, "core.test.append");
+        assert!(has_hash, "the HMAC chain linked a row_hash");
+    }
+
+    // ── labels browse: portable label_access derived table + ILIKE ──
+    {
+        let lid = Uuid::new_v4();
+        pool.execute(
+            "INSERT INTO core.labels (id, owner_id, name) VALUES ($1, $2, $3)",
+            params![lid, uid, format!("lbl-{lid}")],
+        )
+        .await
+        .expect("insert label");
+        let link = Uuid::new_v4();
+        pool.execute(
+            "INSERT INTO core.label_links \
+                 (id, label_id, owner_id, module, resource_type, resource_id, title) \
+             VALUES ($1, $2, $3, 'drive', 'file', $4, 'Titre')",
+            params![link, lid, uid, format!("res-{link}")],
+        )
+        .await
+        .expect("insert label link");
+
+        let la = kubuno_core::database::compat::label_access(pool.backend(), 1);
+        let sql = format!(
+            "SELECT k.label_id, k.owner_id \
+               FROM core.label_links k \
+               JOIN {la} a ON a.label_id = k.label_id \
+              WHERE (k.owner_id = $4 OR a.can_manage) AND {ilike}",
+            la = la,
+            ilike = pool.backend().ilike("k.title", 5),
+        );
+        let rows = pool
+            .fetch_all_as::<(Uuid, Uuid)>(
+                &sql,
+                params![uid, uid, uid, uid, "%Titre%".to_string()],
+            )
+            .await
+            .expect("labels browse access query");
+        assert!(
+            rows.iter().any(|(l, o)| *l == lid && *o == uid),
+            "own label link is visible through the browse access query"
+        );
+    }
+}
+
 async fn run_all(pool: &DbPool) {
     setup(pool).await;
     seed_counts(pool).await;
@@ -789,6 +980,9 @@ async fn run_all(pool: &DbPool) {
     if pool.backend() != Backend::Postgres {
         exercise_outbox(pool).await;
     }
+    // Last: it appends an audit row whose fact-event writes an outbox row, which
+    // would otherwise be counted by `exercise_outbox`'s exact-count assertion.
+    exercise_ported_paths(pool).await;
 }
 
 #[tokio::test]

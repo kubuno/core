@@ -479,7 +479,7 @@ pub async fn record_execution(db: &DbPool, exec: &NewExecution) -> Result<i64, A
             exec.gate_reference.as_deref()
         ],
         "id",
-        "SELECT LAST_INSERT_ID()",
+        "SELECT CAST(LAST_INSERT_ID() AS SIGNED)",
         params![],
     )
     .await

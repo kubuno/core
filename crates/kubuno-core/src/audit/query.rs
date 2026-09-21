@@ -88,7 +88,7 @@ macro_rules! select_columns {
     id, occurred_at, actor_id, actor_label, actor_role, actor_origin, actor_token_id,
     user_agent,
     action, module_id, target_type, target_id, target_label,
-    before, after, outcome, detail,
+    "before", "after", outcome, detail,
     reversible, reverts_entry_id, reverted_by_entry_id
 "#
     };

@@ -78,16 +78,21 @@ async fn insert(
     // from `SELECT LAST_INSERT_ID()` on the same transaction connection (session
     // scoped, so no concurrent writer can perturb it between the two statements).
     // The per-engine choice is made by `returning::insert_returning_scalar`.
+    // `ip_address` is an INET column on PostgreSQL, plain text elsewhere: the
+    // text bind ($6) is cast to inet only there, as every other IP insert does.
+    let inet_cast = if conn.backend() == Backend::Postgres { "::inet" } else { "" };
     let id: i64 = kubuno_db::returning::insert_returning_scalar::<i64>(
         conn,
-        r#"INSERT INTO core.admin_audit
+        &format!(
+            r#"INSERT INTO core.admin_audit
                    (actor_id, actor_label, actor_role, actor_origin, actor_token_id,
                     ip_address, user_agent,
                     action, module_id, target_type, target_id, target_label,
-                    before, after, outcome, detail, reversible, reverts_entry_id,
+                    "before", "after", outcome, detail, reversible, reverts_entry_id,
                     occurred_at, prev_hash, row_hash)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                       $13, $14, $15, $16, $17, $18, $19, $20, $21)"#,
+               VALUES ($1, $2, $3, $4, $5, $6{inet_cast}, $7, $8, $9, $10, $11, $12,
+                       $13, $14, $15, $16, $17, $18, $19, $20, $21)"#
+        ),
         params![
                 ctx.actor.id,
                 &ctx.actor.label,
@@ -112,7 +117,7 @@ async fn insert(
                 row_hash
             ],
         "id",
-        "SELECT LAST_INSERT_ID()",
+        "SELECT CAST(LAST_INSERT_ID() AS SIGNED)",
         params![],
     )
     .await?;

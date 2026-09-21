@@ -1706,192 +1706,192 @@ INSERT INTO "core"."content_detectors" ("id", "key", "label", "description", "ca
 CREATE TRIGGER "core"."acme_state_set_updated_at" AFTER UPDATE ON "acme_state"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."acme_state" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "acme_state" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."alerts_set_updated_at" AFTER UPDATE ON "alerts"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."alerts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "alerts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."buildings_set_updated_at" AFTER UPDATE ON "buildings"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."buildings" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "buildings" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."clipboard_items_set_updated_at" AFTER UPDATE ON "clipboard_items"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."clipboard_items" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "clipboard_items" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."collab_snapshots_set_updated_at" AFTER UPDATE ON "collab_snapshots"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."collab_snapshots" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "collab_snapshots" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."content_detectors_set_updated_at" AFTER UPDATE ON "content_detectors"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."content_detectors" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "content_detectors" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."domains_set_updated_at" AFTER UPDATE ON "domains"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."domains" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "domains" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."holiday_calendars_set_updated_at" AFTER UPDATE ON "holiday_calendars"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."holiday_calendars" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "holiday_calendars" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."holiday_unit_prefs_set_updated_at" AFTER UPDATE ON "holiday_unit_prefs"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."holiday_unit_prefs" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "holiday_unit_prefs" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."holidays_set_updated_at" AFTER UPDATE ON "holidays"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."holidays" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "holidays" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."labels_set_updated_at" AFTER UPDATE ON "labels"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."labels" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "labels" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."ldap_directories_set_updated_at" AFTER UPDATE ON "ldap_directories"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."ldap_directories" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "ldap_directories" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."login_captcha_gate_set_updated_at" AFTER UPDATE ON "login_captcha_gate"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."login_captcha_gate" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "login_captcha_gate" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."login_throttle_set_updated_at" AFTER UPDATE ON "login_throttle"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."login_throttle" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "login_throttle" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."migration_accounts_set_updated_at" AFTER UPDATE ON "migration_accounts"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."migration_accounts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "migration_accounts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."module_usage_daily_set_updated_at" AFTER UPDATE ON "module_usage_daily"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."module_usage_daily" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "module_usage_daily" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."modules_set_updated_at" AFTER UPDATE ON "modules"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."modules" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "modules" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."oauth_providers_set_updated_at" AFTER UPDATE ON "oauth_providers"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."oauth_providers" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "oauth_providers" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."org_units_set_updated_at" AFTER UPDATE ON "org_units"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."org_units" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "org_units" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."privileges_set_updated_at" AFTER UPDATE ON "privileges"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."privileges" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "privileges" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."remote_mounts_set_updated_at" AFTER UPDATE ON "remote_mounts"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."remote_mounts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "remote_mounts" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."resource_features_set_updated_at" AFTER UPDATE ON "resource_features"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."resource_features" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "resource_features" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."resources_set_updated_at" AFTER UPDATE ON "resources"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."resources" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "resources" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."roles_set_updated_at" AFTER UPDATE ON "roles"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."roles" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "roles" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."rule_actions_set_updated_at" AFTER UPDATE ON "rule_actions"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."rule_actions" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "rule_actions" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."rule_triggers_set_updated_at" AFTER UPDATE ON "rule_triggers"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."rule_triggers" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "rule_triggers" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."rules_set_updated_at" AFTER UPDATE ON "rules"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."rules" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "rules" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."setting_values_set_updated_at" AFTER UPDATE ON "setting_values"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."setting_values" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "setting_values" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."settings_set_updated_at" AFTER UPDATE ON "settings"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."settings" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "settings" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."target_audiences_set_updated_at" AFTER UPDATE ON "target_audiences"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."target_audiences" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "target_audiences" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."user_groups_set_updated_at" AFTER UPDATE ON "user_groups"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."user_groups" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "user_groups" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;
 CREATE TRIGGER "core"."users_set_updated_at" AFTER UPDATE ON "users"
     FOR EACH ROW WHEN NEW."updated_at" = OLD."updated_at"
     BEGIN
-        UPDATE "core"."users" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
+        UPDATE "users" SET "updated_at" = strftime('%Y-%m-%d %H:%M:%f', 'now')
             WHERE rowid = NEW.rowid;
     END;

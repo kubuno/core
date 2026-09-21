@@ -226,18 +226,21 @@ pub async fn verify_chain(db: &DbPool) -> Result<ChainReport, sqlx::Error> {
         });
     };
 
-    // NOTE: `host(ip_address)` is PostgreSQL-only (`inet` type + `host()`). The
-    // chain reproduces the exact text hashed at write time; on another engine,
-    // where `ip_address` is stored as text, the column would be selected directly.
+    // The chain reproduces the exact text hashed at write time. `host(ip_address)`
+    // is spelled per engine (`Backend::inet_text`); `"before"`/`"after"` are
+    // reserved words quoted for MySQL (harmless identifiers on the others).
     let rows = db
         .fetch_all_as::<RawChainRow>(
-            r#"SELECT id, occurred_at, actor_id, actor_label, actor_role, actor_origin,
-                      actor_token_id, host(ip_address) AS ip_text, user_agent,
+            &format!(
+                r#"SELECT id, occurred_at, actor_id, actor_label, actor_role, actor_origin,
+                      actor_token_id, {ip} AS ip_text, user_agent,
                       action, module_id, target_type, target_id, target_label,
-                      before, after, outcome, detail, reversible, prev_hash, row_hash
+                      "before", "after", outcome, detail, reversible, prev_hash, row_hash
                  FROM core.admin_audit
                 WHERE row_hash IS NOT NULL
                 ORDER BY id ASC"#,
+                ip = db.backend().inet_text("ip_address")
+            ),
             params![],
         )
         .await?;
