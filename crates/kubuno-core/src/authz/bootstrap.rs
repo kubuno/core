@@ -37,11 +37,16 @@ fn insert_ignore(backend: Backend) -> (&'static str, &'static str) {
 /// Returns whether an assignment was actually created, so a caller can say so.
 pub async fn grant_instance_superadmin(db: &DbPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
     let (ignore, on_conflict) = insert_ignore(db.backend());
+    // The id is minted in Rust: `role_assignments.id` carries a `gen_random_uuid`
+    // default on PostgreSQL only, and MySQL/SQLite would reject the NULL. A fresh
+    // random primary key never collides; the natural-key conflict (the same user
+    // already holding the role) is what `{on_conflict}`/`IGNORE` absorbs.
+    let assignment_id = kubuno_db::new_id();
     let sql = format!(
-        "INSERT {ignore}INTO core.role_assignments (role_id, subject_user_id, scope) \
-         SELECT r.id, $1, 'instance' FROM core.roles r WHERE r.slug = 'super-admin'{on_conflict}"
+        "INSERT {ignore}INTO core.role_assignments (id, role_id, subject_user_id, scope) \
+         SELECT $1, r.id, $2, 'instance' FROM core.roles r WHERE r.slug = 'super-admin'{on_conflict}"
     );
-    let created = db.execute(&sql, params![user_id]).await? > 0;
+    let created = db.execute(&sql, params![assignment_id, user_id]).await? > 0;
 
     if created {
         super::cache::invalidate_all();
@@ -59,23 +64,31 @@ pub async fn grant_instance_superadmin(db: &DbPool, user_id: Uuid) -> Result<boo
 /// with, so this widens no door. Accounts holding it through a group are left
 /// alone: `core.superadmin_ids()` already counts them.
 pub async fn reconcile_superadmins(db: &DbPool) -> Result<u64, sqlx::Error> {
-    let (ignore, on_conflict) = insert_ignore(db.backend());
     // Portable derived table (see `database::compat`) in place of the
     // PostgreSQL-only `core.superadmin_ids()`. The caller (main bootstrap) logs
     // and continues on error.
     let superadmins = crate::database::compat::superadmin_ids(db.backend());
+    // The candidates are read first, then granted one by one: an `INSERT … SELECT`
+    // over several rows cannot mint a per-row primary key in Rust, and
+    // `role_assignments.id` has no default outside PostgreSQL. Each grant reuses
+    // the single-row path above, which mints its id and dedups.
     let sql = format!(
-        "INSERT {ignore}INTO core.role_assignments (role_id, subject_user_id, scope) \
-         SELECT r.id, u.id, 'instance' \
-           FROM core.users u, core.roles r \
+        "SELECT u.id FROM core.users u \
           WHERE u.role = 'admin' AND u.is_active \
-            AND r.slug = 'super-admin' \
-            AND u.id NOT IN (SELECT user_id FROM {superadmins} sa){on_conflict}"
+            AND u.id NOT IN (SELECT user_id FROM {superadmins} sa)"
     );
-    let n = db.execute(&sql, params![]).await?;
+    let candidates: Vec<UserIdRow> = db.fetch_all_as(&sql, params![]).await?;
+
+    let mut n = 0u64;
+    for row in candidates {
+        if grant_instance_superadmin(db, row.id).await? {
+            n += 1;
+        }
+    }
 
     if n > 0 {
-        super::cache::invalidate_all();
+        // `grant_instance_superadmin` already invalidated the cache on each
+        // insert; the warning is emitted once for the batch.
         tracing::warn!(
             comptes = n,
             "Administrateur(s) sans attribution de rôle : super-administration instance rétablie \
@@ -84,4 +97,10 @@ pub async fn reconcile_superadmins(db: &DbPool) -> Result<u64, sqlx::Error> {
         );
     }
     Ok(n)
+}
+
+/// A single `id` column, for the reconcile scan.
+#[derive(sqlx::FromRow)]
+struct UserIdRow {
+    id: Uuid,
 }

@@ -46,7 +46,13 @@ pub fn missing(s: &Settings) -> Vec<&'static str> {
     let db_by_url = s.database.url.as_deref().map(|u| !u.trim().is_empty()).unwrap_or(false);
     let db_by_fields = s.database.user.as_deref().map(|u| !u.trim().is_empty()).unwrap_or(false)
         && s.database.database.as_deref().map(|d| !d.trim().is_empty()).unwrap_or(false);
-    if !db_by_url && !db_by_fields {
+    // SQLite needs neither a URL nor credentials — only a file, and its directory
+    // has a default — so an SQLite engine is configured as soon as it is chosen.
+    let is_sqlite = matches!(
+        kubuno_db::Backend::parse(&s.database.engine),
+        Some(kubuno_db::Backend::Sqlite)
+    );
+    if !db_by_url && !db_by_fields && !is_sqlite {
         out.push("database");
     }
     if is_placeholder(&s.server.internal_secret) {
