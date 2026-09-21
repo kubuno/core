@@ -11,6 +11,22 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **A fresh MySQL/MariaDB or SQLite install starts fully set up.** The built-in
+  catalogue — every administrative setting and its default, the permission list,
+  the built-in roles and their grants, the base user groups, the "everyone"
+  audience, the root organisation unit and the sensitive-content detectors — is
+  now seeded on these engines exactly as on PostgreSQL, so the admin console,
+  permissions and settings work on the first boot instead of showing empty
+  lists. Each installation also mints its own unique instance identity on first
+  start.
+
+### Changed
+
+- **Settings and other reserved-word columns work on MySQL/MariaDB.** The
+  database session now quotes identifiers the same way as PostgreSQL and SQLite,
+  so tables and columns whose names are MySQL reserved words (such as the
+  settings `key`) are read and written correctly on MySQL/MariaDB.
+
 - **The whole server runs on the database engine you choose.** The core now
   opens its database through the run-time engine layer instead of a PostgreSQL-
   only connection, so an administrator can install on PostgreSQL, MySQL/MariaDB

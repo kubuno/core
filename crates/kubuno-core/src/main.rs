@@ -111,6 +111,11 @@ async fn main() -> Result<()> {
         migrations::run(&pool).await?;
     }
 
+    // Instance identity: PostgreSQL seeds it in a migration, but the random
+    // per-install id cannot be a static default in the consolidated MySQL/SQLite
+    // schema, so mint it here (idempotent, never re-minted once present).
+    seed::ensure_instance_identity(&pool).await;
+
     // Réglages anti-DDoS : amorce env puis source de vérité = core.settings
     // (pilotables à chaud depuis le panneau d'administration).
     kubuno_core::auth::ddos::seed_from_env();

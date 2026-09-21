@@ -249,3 +249,44 @@ fn env_value(key: &str) -> Option<String> {
 fn env_or(key: &str, default: &str) -> String {
     env_value(key).unwrap_or_else(|| default.to_string())
 }
+
+/// Ensures the single-row instance identity exists.
+///
+/// PostgreSQL's migration `000120` seeds this row with a `uuid_generate_v4()`
+/// default, but the consolidated MySQL/SQLite schema cannot express a random
+/// per-install default for a `BINARY(16)`/`BLOB` primary identity. So the row
+/// is written here in Rust after the migrations run: a brand-new random
+/// `instance_id`, drawn once per installation. Idempotent — an install that
+/// already has the row (every PostgreSQL one, and any MySQL/SQLite one past its
+/// first boot) is left untouched, so the identity is never re-minted. Never
+/// fatal: an instance must still boot if this write races or fails.
+pub async fn ensure_instance_identity(db: &DbPool) {
+    // Only the presence of the single row matters; read it without assuming the
+    // engine seeded it.
+    let existing = db
+        .fetch_optional_scalar::<Uuid>(
+            "SELECT instance_id FROM core.instance_identity WHERE only_row = TRUE",
+            params![],
+        )
+        .await;
+    match existing {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            let id = Uuid::new_v4();
+            // `installed_at` carries its column default (NOW()/CURRENT_TIMESTAMP)
+            // on every engine; `only_row` is the constant TRUE primary key.
+            if let Err(e) = db
+                .execute(
+                    "INSERT INTO core.instance_identity (only_row, instance_id) VALUES ($1, $2)",
+                    params![true, id],
+                )
+                .await
+            {
+                tracing::error!(error = %e, "Seeding the instance identity failed");
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Reading the instance identity failed");
+        }
+    }
+}

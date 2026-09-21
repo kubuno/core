@@ -128,6 +128,9 @@ async fn setup(pool: &DbPool) {
     kubuno_core::database::migrations::run(pool)
         .await
         .expect("run full core migrations");
+    // The instance identity is minted in Rust after migrations on every engine
+    // (PostgreSQL's migration seed makes this a no-op there).
+    kubuno_core::database::seed::ensure_instance_identity(pool).await;
     // The event outbox is created at runtime (not by a migration) on engines
     // that have no LISTEN/NOTIFY; PostgreSQL uses pg_notify and needs none.
     if pool.backend() != Backend::Postgres {
@@ -469,8 +472,84 @@ async fn exercise_outbox(pool: &DbPool) {
     assert_eq!(poller.drain_once().await.unwrap(), 0, "nothing redelivered");
 }
 
+/// Asserts every catalog table the PostgreSQL migrations seed reaches the SAME
+/// row count on whichever engine the pool speaks — proof that the consolidated
+/// MySQL/SQLite schema ships the same seed data, not just the same tables. The
+/// counts are the FINAL seeded state of PostgreSQL (after all migrations, some
+/// of which delete or rewrite earlier seed rows), captured from a live dump.
+async fn seed_counts(pool: &DbPool) {
+    // (table, expected rows) — the FINAL PostgreSQL catalog.
+    let expected: &[(&str, i64)] = &[
+        ("settings", 158),
+        ("privileges", 51),
+        ("roles", 7),
+        ("role_privileges", 52),
+        ("setting_values", 19),
+        ("user_groups", 3),
+        ("target_audiences", 1),
+        ("org_units", 1),
+        ("content_detectors", 14),
+        ("instance_identity", 1),
+    ];
+    for (table, want) in expected {
+        let got: i64 = pool
+            .fetch_scalar(
+                &format!("SELECT COUNT(*) FROM core.{table}"),
+                params![],
+            )
+            .await
+            .unwrap_or_else(|e| panic!("count {table}: {e}"));
+        assert_eq!(
+            got, *want,
+            "seed row count for core.{table} differs across engines",
+        );
+    }
+
+    // Spot-check that the seed VALUES round-trip, not just the counts: a named
+    // setting is reachable by its (reserved-word) `key`, a UUID-keyed role is
+    // reachable by slug, and a role_privilege's FK resolves back to that role.
+    let named_settings: i64 = pool
+        .fetch_scalar(
+            "SELECT COUNT(*) FROM core.settings WHERE \"key\" = $1",
+            params!["instance.name"],
+        )
+        .await
+        .expect("read seeded setting by key");
+    assert_eq!(named_settings, 1, "seeded setting reachable by reserved `key`");
+
+    // Every seeded role_privilege resolves to a seeded role: the cross-table FK
+    // references survived the UUID → BINARY(16)/BLOB translation intact.
+    let dangling: i64 = pool
+        .fetch_scalar(
+            "SELECT COUNT(*) FROM core.role_privileges rp \
+             LEFT JOIN core.roles r ON r.id = rp.role_id WHERE r.id IS NULL",
+            params![],
+        )
+        .await
+        .expect("count dangling role_privileges");
+    assert_eq!(dangling, 0, "every role_privilege FK resolves to a seeded role");
+
+    // The `read-only-admin` role is seeded with its full read grant set.
+    let ro_admin: Uuid = pool
+        .fetch_scalar(
+            "SELECT id FROM core.roles WHERE slug = $1",
+            params!["read-only-admin"],
+        )
+        .await
+        .expect("seeded read-only-admin role");
+    let grants: i64 = pool
+        .fetch_scalar(
+            "SELECT COUNT(*) FROM core.role_privileges WHERE role_id = $1",
+            params![ro_admin],
+        )
+        .await
+        .expect("count read-only-admin grants");
+    assert!(grants >= 1, "read-only-admin role has seeded privileges");
+}
+
 async fn run_all(pool: &DbPool) {
     setup(pool).await;
+    seed_counts(pool).await;
     schema_round_trips(pool).await;
     exercise_jobs(pool).await;
     // The transactional outbox is the fallback for engines WITHOUT
