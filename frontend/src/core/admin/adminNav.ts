@@ -306,6 +306,9 @@ export const ADMIN_NAV: AdminNavItem[] = [
   // product still owes its operators (a scheduled backup, first of all).
   { id: 'system', labelKey: 'admin.nav_system', Icon: Server, secondary: true, children: [
     { id: 'background-jobs', labelKey: 'admin.nav_background_jobs', priv: PRIV.SETTINGS_READ },
+    // The core's own database: schema prefix and engine switch. Superadmin-gated
+    // in the panels and the endpoints; SETTINGS_READ keeps the leaf discoverable.
+    { id: 'database',        labelKey: 'admin.nav_database',        priv: PRIV.SETTINGS_READ },
     // HTTP/HTTPS termination: how the instance is reached at all. Infrastructure,
     // like the job runner and the mail relay it sits beside.
     { id: 'network',         labelKey: 'admin.nav_network',         priv: PRIV.SETTINGS_READ },

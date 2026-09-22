@@ -152,6 +152,26 @@ export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
     },
   })
 
+  // #3 — switch the module's engine AND copy its existing data across, instead
+  // of repointing it at an empty target. The module self-migrates the target on
+  // restart, then the old data is copied in; the source is kept intact.
+  const [migrateResult, setMigrateResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const migrateMut = useMutation({
+    mutationFn: () => api.post<{ job: { status: string; tables_total: number; total_rows: number; error: string } }>(
+      `/admin/modules/${moduleId}/database/migrate`, body).then(r => r.data),
+    onSuccess: (data) => {
+      const j = data.job
+      setMigrateResult(j.status === 'succeeded'
+        ? { ok: true, text: t('admin.mdb_copy_ok', { tables: j.tables_total, rows: j.total_rows }) }
+        : { ok: false, text: j.error || t('admin.mdb_copy_failed') })
+      void qc.invalidateQueries({ queryKey: ['module-database', moduleId] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setMigrateResult({ ok: false, text: msg || t('admin.mdb_copy_failed') })
+    },
+  })
+
   const revertMut = useMutation({
     mutationFn: () => api.delete(`/admin/modules/${moduleId}/database`).then(r => r.data),
     onSuccess: () => {
@@ -167,7 +187,7 @@ export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
   const engines: EngineName[] = cfg.data?.engines ?? ['postgres', 'mysql', 'sqlite']
   const hasOverride = !!(ov && ov.enabled)
 
-  const busy = testMut.isPending || saveMut.isPending || revertMut.isPending
+  const busy = testMut.isPending || saveMut.isPending || revertMut.isPending || migrateMut.isPending
 
   const fields = engine && (
     <div className="mt-4 flex flex-col gap-4">
@@ -240,6 +260,10 @@ export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
         </Callout>
       )}
 
+      {migrateResult && (
+        <Callout variant={migrateResult.ok ? 'success' : 'danger'}>{migrateResult.text}</Callout>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="secondary" size="sm" onClick={() => testMut.mutate()} loading={testMut.isPending} disabled={busy}>
           {t('admin.mdb_test')}
@@ -247,7 +271,13 @@ export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
         <Button variant="primary" size="sm" onClick={() => saveMut.mutate()} loading={saveMut.isPending} disabled={busy}>
           {t('admin.mdb_save')}
         </Button>
+        <Button variant="secondary" size="sm" onClick={() => migrateMut.mutate()} loading={migrateMut.isPending} disabled={busy}>
+          {t('admin.mdb_copy')}
+        </Button>
       </div>
+      <p className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+        {t('admin.mdb_copy_hint')}
+      </p>
     </div>
   )
 

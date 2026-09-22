@@ -34,6 +34,7 @@ import SecurityDashboardSection from '../security/SecurityDashboardSection'
 import ReportsSection from '../reports/ReportsSection'
 import StorageSection from '../storage/StorageSection'
 import BackupPanel from '../backup/BackupPanel'
+import DatabasePanel from '../database/DatabasePanel'
 import AudiencesSection from './audiences/AudiencesSection'
 import ResourcesSection from './resources/ResourcesSection'
 import DirectorySettingsSection from './directory-settings/DirectorySettingsSection'
@@ -256,6 +257,9 @@ export const ADMIN_SECTIONS: Record<string, AdminSection> = {
   // The backup policy, its run history and the manual trigger — then the knobs
   // that govern them (and the job runner), as the "Réglages" tab.
   'background-jobs':    { Component: withSettings(() => <BackupPanel />, 'background-jobs') },
+  // The core's own database: change the schema prefix at run time, or switch the
+  // whole instance to another engine (superadmin only). Guarded server-side.
+  'database':           { Component: () => <DatabasePanel /> },
   // Three tabs: the theme gallery, the login-page animation (a live editor that
   // deserves its own room), and the scoped settings.
   'apparence':     { Component: tabbed('apparence', [
