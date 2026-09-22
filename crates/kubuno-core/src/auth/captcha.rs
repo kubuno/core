@@ -436,7 +436,9 @@ fn glyph(ch: char) -> Option<[u8; 7]> {
         '6' => [0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E],
         '7' => [0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
         '8' => [0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E],
-        '9' => [0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E],
+        // Closed top loop over a straight right-hand descender, so a warped '9'
+        // cannot be read as a '3' (whose left side is open on every row).
+        '9' => [0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x01],
         _ => return None,
     };
     Some(rows)
@@ -474,9 +476,11 @@ fn render_text_png(code: &str, distortion: i64, noise: i64) -> Vec<u8> {
         let Some(rows) = glyph(ch) else { continue };
         let cx = slot * (i as f32 + 0.5);
         let cy = IMG_H as f32 / 2.0 + rng.gen_range(-4.0..4.0);
-        let angle = rng.gen_range(-0.52f32..0.52) * d; // up to ≈ ±30° at 100
+        let angle = rng.gen_range(-0.38f32..0.38) * d; // up to ≈ ±22° at 100
         let (sin, cos) = angle.sin_cos();
-        let amp = rng.gen_range(1.0f32..2.0) + 6.0 * d;
+        // Keep the sine warp gentle enough that a glyph's distinguishing strokes
+        // (e.g. 3 vs 9, 5 vs 6) survive, so a human reads the stored answer.
+        let amp = rng.gen_range(1.0f32..2.0) + 3.5 * d;
         let freq = rng.gen_range(0.04f32..0.09);
         let phase = rng.gen_range(0.0f32..std::f32::consts::TAU);
         let ink = rng.gen_range(20..70);
@@ -506,7 +510,9 @@ fn render_text_png(code: &str, distortion: i64, noise: i64) -> Vec<u8> {
         let freq = rng.gen_range(0.04f32..0.09);
         let phase = rng.gen_range(0.0f32..std::f32::consts::TAU);
         let base = rng.gen_range(15..45) as f32;
-        let g = rng.gen_range(120..180);
+        // Lighter than the glyph ink (20..70) so an interference curve reads as a
+        // background line, never mistaken for part of a character.
+        let g = rng.gen_range(150..195);
         for x in 0..IMG_W as i32 {
             let y = base + amp * (x as f32 * freq + phase).sin();
             put(&mut buf, x, y as i32, g);

@@ -227,6 +227,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **The login CAPTCHA is legible again.** After the configured number of failed
+  sign-ins, some characters in the challenge image were drawn ambiguously — a `9`
+  could look like a `3`, a `6` like a `5` — so a person reading and typing what
+  they saw was rejected, with no way to get in. The digit shapes were clarified
+  (the `9` now has a straight descender) and the image warp was softened so a
+  glyph's distinguishing strokes survive, while interference lines are drawn
+  lighter than the characters. The challenge is now readable and a correct answer
+  is accepted.
+
 - **The first administrator actually receives its privileges on MySQL/MariaDB
   and SQLite.** Granting the instance super-administrator role relied on the
   database filling in the assignment's identifier, which only PostgreSQL does; on
