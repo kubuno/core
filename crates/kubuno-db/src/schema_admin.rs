@@ -1083,7 +1083,7 @@ async fn dst_columns(
             let rows: Vec<(String, String, String)> = pool
                 .fetch_all_as(
                     "SELECT column_name, data_type, udt_name FROM information_schema.columns \
-                      WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+                      WHERE table_schema = $1 AND table_name = $2 AND is_generated = 'NEVER' ORDER BY ordinal_position",
                     params![schema, table],
                 )
                 .await?;
@@ -1141,7 +1141,12 @@ fn pg_text_cast(data_type: &str, udt: &str) -> Option<String> {
         "time without time zone" => Some("time".to_string()),
         "time with time zone" => Some("timetz".to_string()),
         "user-defined" => safe_pg_type(&format!("_{}", udt.trim_start_matches('_'))),
-        _ => None,
+        // Any other exotic-but-text-representable type (e.g. `tsvector`): read as
+        // text on export, cast back to its own type on import (`$n::tsvector`).
+        // Native character types report a `data_type` with a space (`character
+        // varying`), which `safe_pg_type` rejects, so they keep binding as raw
+        // text — exactly right.
+        other => safe_pg_type(other),
     }
 }
 
@@ -1249,7 +1254,7 @@ async fn pg_columns(
     let rows: Vec<(String, String, String)> = pool
         .fetch_all_as(
             "SELECT column_name, data_type, udt_name FROM information_schema.columns \
-              WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+              WHERE table_schema = $1 AND table_name = $2 AND is_generated = 'NEVER' ORDER BY ordinal_position",
             params![schema, table],
         )
         .await?;
@@ -1293,9 +1298,12 @@ fn pg_col(name: String, data_type: &str, udt: &str) -> Col {
             (Codec::Text, format!("{q}::text"))
         }
         // character varying / text / char / and anything else travels as text.
+        // The `::text` cast is a no-op for character types but is what lets an
+        // exotic-but-text-representable type (e.g. `tsvector`, ranges) be read at
+        // all — decoding it into a `String` directly is refused by the driver.
         _ => {
             let _ = udt;
-            (Codec::Text, q.clone())
+            (Codec::Text, format!("{q}::text"))
         }
     };
     Col { name, codec, read_expr }

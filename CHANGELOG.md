@@ -317,6 +317,9 @@ number at release time, and CI publishes that section as the GitHub Release note
   rejected by the driver, so a whole-database backup aborted as soon as it
   reached such a column (e.g. a latitude). Those columns are now read through a
   `double precision` cast, so the backup — and a cross-engine copy — completes.
+  Full-text-search (`tsvector`) and other exotic columns are read via a text
+  cast and restored to their own type, and generated columns are skipped (they
+  are recomputed on restore), so a whole-database backup covers every schema.
 
 - **Changing the schema prefix is now all-or-nothing, and renames every schema.**
   Two defects could leave an instance unusable after a prefix change: the rename
