@@ -5,6 +5,7 @@ pub mod backup;
 pub mod dashboard;
 pub mod data_export;
 pub mod data_migration;
+pub mod db_switch;
 /// The records behind a dashboard figure, listed by a report.
 pub mod detail;
 pub mod detectors;
@@ -26,6 +27,7 @@ pub mod period;
 pub mod resources;
 pub mod roles;
 pub mod rules;
+pub mod schema_prefix;
 pub mod security_dashboard;
 pub mod setting_scopes;
 pub mod settings;

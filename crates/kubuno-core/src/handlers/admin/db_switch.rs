@@ -1,0 +1,612 @@
+//! Admin console: switch a scope's database engine while keeping its data.
+//!
+//! "A scope" is the core's own database or one module's. Switching means copying
+//! every row of that scope, table by table in foreign-key order, from the
+//! current engine onto a freshly-migrated target on another engine, then
+//! pointing the scope at the target. The copy engine ([`kubuno_db::copy_schema`])
+//! is generic and type-preserving; this module is the orchestration and the
+//! persisted progress a `core.db_migration_jobs` row records.
+//!
+//! ## Safety
+//!
+//! The source is never touched: it is read, the target is filled and verified,
+//! and only then is the pointer moved (the config file for the core, the
+//! `core.module_databases` override for a module). If the copy fails at any
+//! point the source stays the reference, so a failed switch loses nothing.
+//!
+//! ## Why the core needs a restart
+//!
+//! Copying the core's own data happens while the core still runs on the source.
+//! Adopting the target means reconnecting the process's own pool, which only a
+//! restart does cleanly — so the core copy persists the new settings and reports
+//! `restart_required`. The module copy restarts the module through the
+//! supervisor and needs no core restart.
+
+use axum::{
+    extract::{Path, State},
+    Json,
+};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::time::Duration;
+use uuid::Uuid;
+
+use crate::{
+    auth::middleware::AdminUser,
+    authz::AdminCtx,
+    config::{DatabaseSettings, DbCredentials},
+    errors::AppError,
+    modules::db_config,
+    setup::config_file,
+    state::AppState,
+};
+use kubuno_db::{params, Backend, DbPool, SchemaPrefix};
+
+const ENGINES: [&str; 3] = ["postgres", "mysql", "sqlite"];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The target the operator supplies
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The destination engine/credentials. Mirrors the install wizard and the
+/// per-module override form. Deliberately not `Debug`: it carries a password.
+#[derive(Deserialize, Clone)]
+pub struct TargetDto {
+    engine: String,
+    #[serde(default)]
+    host: String,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    user: String,
+    #[serde(default)]
+    password: String,
+    #[serde(default)]
+    database: String,
+    #[serde(default)]
+    path: Option<String>,
+}
+
+impl TargetDto {
+    fn validate(&self) -> Result<Backend, AppError> {
+        let backend = Backend::parse(&self.engine)
+            .filter(|_| ENGINES.contains(&self.engine.as_str()))
+            .ok_or_else(|| AppError::Validation(format!("Moteur inconnu : {}", self.engine)))?;
+        if backend != Backend::Sqlite {
+            if self.host.trim().is_empty() {
+                return Err(AppError::Validation("L'hôte de la base cible est requis.".into()));
+            }
+            if self.user.trim().is_empty() {
+                return Err(AppError::Validation("L'utilisateur de la base cible est requis.".into()));
+            }
+        }
+        Ok(backend)
+    }
+
+    fn default_port(&self) -> u16 {
+        match Backend::parse(&self.engine) {
+            Some(Backend::MySql) => 3306,
+            _ => 5432,
+        }
+    }
+
+    fn credentials(&self) -> DbCredentials {
+        DbCredentials {
+            engine:   self.engine.clone(),
+            host:     self.host.trim().to_string(),
+            port:     self.port.unwrap_or_else(|| self.default_port()),
+            user:     self.user.trim().to_string(),
+            password: self.password.clone(),
+            database: self.database.trim().to_string(),
+            path:     self.path.clone().unwrap_or_default(),
+        }
+    }
+}
+
+/// Builds engine-agnostic [`DatabaseSettings`] from credentials plus an optional
+/// prefix, going through deserialization so it stays in step with the running
+/// instance's own parsing.
+fn settings_from(creds: &DbCredentials, prefix: &str) -> Result<DatabaseSettings, AppError> {
+    let mut obj = json!({
+        "engine": creds.engine,
+        "max_connections": 4,
+        "min_connections": 0,
+        "connect_timeout": 10,
+        "run_migrations": false,
+    });
+    let m = obj.as_object_mut().expect("json object");
+    match Backend::parse(&creds.engine) {
+        Some(Backend::Sqlite) => {
+            let dir = if creds.path.trim().is_empty() { "/var/lib/kubuno/db" } else { creds.path.trim() };
+            m.insert("path".into(), json!(dir));
+        }
+        _ => {
+            m.insert("host".into(), json!(creds.host));
+            m.insert("port".into(), json!(creds.port));
+            m.insert("user".into(), json!(creds.user));
+            m.insert("password".into(), json!(creds.password));
+            m.insert("database".into(), json!(creds.database));
+        }
+    }
+    if !prefix.is_empty() {
+        m.insert("schema_prefix".into(), json!(prefix));
+    }
+    serde_json::from_value(obj).map_err(|e| AppError::Internal(e.into()))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The persisted job
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One `core.db_migration_jobs` row.
+#[derive(sqlx::FromRow, Clone)]
+pub struct Job {
+    pub id:            Uuid,
+    pub scope:         String,
+    pub source_engine: String,
+    pub target_engine: String,
+    pub status:        String,
+    pub tables_total:  i32,
+    pub tables_done:   i32,
+    pub total_rows:    i64,
+    pub copied_rows:   i64,
+    pub current_table: String,
+    pub error:         String,
+}
+
+fn job_json(j: &Job) -> Value {
+    json!({
+        "id":            j.id,
+        "scope":         j.scope,
+        "source_engine": j.source_engine,
+        "target_engine": j.target_engine,
+        "status":        j.status,
+        "tables_total":  j.tables_total,
+        "tables_done":   j.tables_done,
+        "total_rows":    j.total_rows,
+        "copied_rows":   j.copied_rows,
+        "current_table": j.current_table,
+        "error":         j.error,
+    })
+}
+
+const JOB_COLS: &str = "id, scope, source_engine, target_engine, status, tables_total, \
+                        tables_done, total_rows, copied_rows, current_table, error";
+
+async fn create_job(db: &DbPool, scope: &str, source: &str, target: &str) -> Result<Uuid, AppError> {
+    let id = Uuid::new_v4();
+    db.execute(
+        "INSERT INTO core.db_migration_jobs (id, scope, source_engine, target_engine, status) \
+         VALUES ($1, $2, $3, $4, 'running')",
+        params![id, scope, source, target],
+    )
+    .await
+    .map_err(AppError::Database)?;
+    Ok(id)
+}
+
+async fn set_progress(db: &DbPool, id: Uuid, table: &str, tables_done: i32, copied: i64) {
+    if let Err(e) = db
+        .execute(
+            "UPDATE core.db_migration_jobs \
+                SET current_table = $1, tables_done = $2, copied_rows = $3 WHERE id = $4",
+            params![table, tables_done, copied, id],
+        )
+        .await
+    {
+        tracing::warn!(error = %e, "db_switch: mise à jour de la progression impossible");
+    }
+}
+
+async fn finish_ok(db: &DbPool, id: Uuid, tables_total: i32, total_rows: i64) {
+    let _ = db
+        .execute(
+            "UPDATE core.db_migration_jobs \
+                SET status = 'succeeded', tables_total = $1, tables_done = $1, \
+                    total_rows = $2, copied_rows = $2, current_table = '' WHERE id = $3",
+            params![tables_total, total_rows, id],
+        )
+        .await;
+}
+
+async fn finish_err(db: &DbPool, id: Uuid, message: &str) {
+    let _ = db
+        .execute(
+            "UPDATE core.db_migration_jobs SET status = 'failed', error = $1 WHERE id = $2",
+            params![message, id],
+        )
+        .await;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reading jobs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `GET /admin/database/migration-jobs[?scope=…]`
+pub async fn list_jobs(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+) -> Result<Json<Value>, AppError> {
+    ctx.require_superuser("consultation des migrations de base de données")?;
+    let jobs: Vec<Job> = state
+        .db
+        .fetch_all_as(
+            &format!("SELECT {JOB_COLS} FROM core.db_migration_jobs ORDER BY created_at DESC"),
+            params![],
+        )
+        .await
+        .map_err(AppError::Database)?;
+    Ok(Json(json!({ "jobs": jobs.iter().map(job_json).collect::<Vec<_>>() })))
+}
+
+/// `GET /admin/database/migration-jobs/:id`
+pub async fn get_job(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    ctx.require_superuser("consultation des migrations de base de données")?;
+    let job: Option<Job> = state
+        .db
+        .fetch_optional_as(
+            &format!("SELECT {JOB_COLS} FROM core.db_migration_jobs WHERE id = $1"),
+            params![id],
+        )
+        .await
+        .map_err(AppError::Database)?;
+    match job {
+        Some(j) => Ok(Json(json!({ "job": job_json(&j) }))),
+        None => Err(AppError::NotFound("Migration introuvable".into())),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The core main-database switch
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `POST /admin/database/migrate` — copy the whole core database onto another
+/// engine and persist the new settings; a core restart finalises it.
+pub async fn migrate_core_database(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+    Json(dto): Json<TargetDto>,
+) -> Result<Json<Value>, AppError> {
+    ctx.require_superuser("migration de la base de données principale")?;
+    let target_backend = dto.validate()?;
+    let source_engine = state.settings.database.engine.clone();
+
+    let prefix_str = state
+        .settings
+        .database
+        .schema_prefix
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    let eff = SchemaPrefix::new(Some(&prefix_str))
+        .map_err(AppError::Validation)?
+        .schema("core");
+
+    let creds = dto.credentials();
+    let target_settings = settings_from(&creds, &prefix_str)?;
+
+    let job = create_job(&state.db, "core", &source_engine, &dto.engine).await?;
+
+    // Everything after this point reports failure onto the job rather than
+    // leaving the instance in a half state; the source is never modified.
+    let result = do_core_copy(&state, &target_settings, &eff, job).await;
+    match result {
+        Ok((tables, rows)) => {
+            // Persist the new settings so the restarted core adopts the target.
+            if let Err(e) = persist_core_settings(&creds, target_backend) {
+                let msg = format!("Copie réussie mais configuration non écrite : {e}");
+                finish_err(&state.db, job, &msg).await;
+                return Err(e);
+            }
+            finish_ok(&state.db, job, tables, rows).await;
+            tracing::warn!(from = %source_engine, to = %dto.engine, tables, rows,
+                "Base principale copiée vers le nouveau moteur — redémarrage du core requis");
+            Ok(Json(json!({
+                "job":              job_json(&fetch_job(&state.db, job).await?),
+                "restart_required": true,
+            })))
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            finish_err(&state.db, job, &msg).await;
+            Err(e)
+        }
+    }
+}
+
+/// Opens the target, migrates it, and copies the core schema onto it. Returns
+/// `(tables, rows)`.
+async fn do_core_copy(
+    state: &AppState,
+    target_settings: &DatabaseSettings,
+    eff: &str,
+    job: Uuid,
+) -> Result<(i32, i64), AppError> {
+    // The target pool. `connect` runs `ensure_schema`, so the namespace exists.
+    let target = kubuno_db::connect(target_settings, "core")
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Connexion à la base cible impossible : {e}")))?;
+
+    // The target must hold the core tables before a copy, and the core owns its
+    // own migrations, so it can build them itself (unlike a module's).
+    crate::database::migrations::run(&target)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Migrations sur la cible impossibles : {e}")))?;
+
+    let db = state.db.clone();
+    let mut done = 0i32;
+    let report = kubuno_db::copy_schema(&state.db, eff, &target, eff, &mut |table, copied| {
+        done += 1;
+        let db = db.clone();
+        let table = table.to_string();
+        // Progress is best-effort and fire-and-forget so it never blocks the copy.
+        tokio::spawn(async move {
+            set_progress(&db, job, &table, done, copied).await;
+        });
+    })
+    .await
+    .map_err(map_admin_err)?;
+
+    Ok((report.tables.len() as i32, report.total_rows))
+}
+
+fn map_admin_err(e: kubuno_db::AdminError) -> AppError {
+    match e {
+        kubuno_db::AdminError::Sqlx(err) => AppError::Database(err),
+        other => AppError::Internal(anyhow::anyhow!(other.to_string())),
+    }
+}
+
+async fn fetch_job(db: &DbPool, id: Uuid) -> Result<Job, AppError> {
+    db.fetch_one_as(
+        &format!("SELECT {JOB_COLS} FROM core.db_migration_jobs WHERE id = $1"),
+        params![id],
+    )
+    .await
+    .map_err(AppError::Database)
+}
+
+/// Writes the new engine and credentials into the running config file, mirroring
+/// the install wizard's field layout (engine + discrete fields, or the SQLite
+/// directory). The schema prefix is left as it was.
+fn persist_core_settings(creds: &DbCredentials, backend: Backend) -> Result<(), AppError> {
+    let target = config_file::target_path();
+    if !config_file::is_writable(&target) {
+        return Err(AppError::Internal(anyhow::anyhow!(
+            "Le fichier de configuration {} n'est pas accessible en écriture.",
+            target.display()
+        )));
+    }
+    let mut assigns = vec![config_file::Assign::text("database", "engine", &creds.engine)];
+    match backend {
+        Backend::Sqlite => {
+            let dir = if creds.path.trim().is_empty() { "/var/lib/kubuno/db" } else { creds.path.trim() };
+            assigns.push(config_file::Assign::text("database", "path", dir));
+        }
+        _ => {
+            assigns.push(config_file::Assign::text("database", "host", creds.host.trim()));
+            assigns.push(config_file::Assign::raw("database", "port", creds.port.to_string()));
+            assigns.push(config_file::Assign::text("database", "user", creds.user.trim()));
+            assigns.push(config_file::Assign::text("database", "password", &creds.password));
+            assigns.push(config_file::Assign::text("database", "database", creds.database.trim()));
+        }
+    }
+    let patched = config_file::patch(&config_file::source_text(&target), &assigns);
+    config_file::write_atomic(&target, &patched).map_err(AppError::Internal)?;
+    Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The per-module switch (with data copy)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `POST /admin/modules/:id/database/migrate` — point a module at another engine
+/// AND carry its existing data across.
+///
+/// Unlike the core, the core cannot build a module's tables (its migrations live
+/// in the module repo), so the target is populated by the module itself: the
+/// override is stored, the module is restarted onto the empty target where it
+/// self-migrates, and once its tables exist the data is copied from the old
+/// database. The source database is left intact, so if anything fails the module
+/// can be reverted to it with no loss.
+pub async fn migrate_module_database(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+    Path(id): Path<String>,
+    Json(dto): Json<TargetDto>,
+) -> Result<Json<Value>, AppError> {
+    ctx.require_superuser("migration de la base de données d'un module")?;
+    dto.validate()?;
+
+    // Module must exist.
+    let exists = state
+        .db
+        .fetch_optional_row("SELECT id FROM core.modules WHERE id = $1", params![id.clone()])
+        .await
+        .map_err(AppError::Database)?
+        .is_some();
+    if !exists {
+        return Err(AppError::NotFound(format!("Module '{id}' introuvable")));
+    }
+
+    // The source (current) credentials, resolved BEFORE we change anything.
+    let source = db_config::resolve(&state.db, &state.settings.database, &state.settings.auth.jwt_secret, &id)
+        .await
+        .map_err(AppError::Internal)?;
+    let source_engine = source.credentials.engine.clone();
+
+    let job = create_job(&state.db, &id, &source_engine, &dto.engine).await?;
+
+    let outcome = do_module_copy(&state, &id, &source, &dto, job).await;
+    match outcome {
+        Ok((tables, rows)) => {
+            finish_ok(&state.db, job, tables, rows).await;
+            Ok(Json(json!({
+                "job":       job_json(&fetch_job(&state.db, job).await?),
+                "restarted": true,
+            })))
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            finish_err(&state.db, job, &msg).await;
+            Err(e)
+        }
+    }
+}
+
+async fn do_module_copy(
+    state: &AppState,
+    module_id: &str,
+    source: &db_config::Resolved,
+    dto: &TargetDto,
+    job: Uuid,
+) -> Result<(i32, i64), AppError> {
+    // Effective schema names carry the prefix each side declares.
+    let src_prefix = source.schema_prefix.clone().unwrap_or_default();
+    let src_eff = SchemaPrefix::new(Some(&src_prefix))
+        .map_err(AppError::Validation)?
+        .schema(module_id);
+    // The target inherits the core's prefix unless the override carried its own;
+    // here we keep the source prefix for the target so the schema name matches.
+    let dst_eff = src_eff.clone();
+
+    // Store the override so the module restarts onto the target and self-migrates.
+    upsert_module_override(state, module_id, dto).await?;
+    let restarted =
+        crate::modules::manager::restart_module(state.settings.clone(), state.db.clone(), module_id).await;
+    if !restarted {
+        return Err(AppError::Internal(anyhow::anyhow!(
+            "Le module n'a pas pu être redémarré sur la base cible."
+        )));
+    }
+
+    // Open both pools. `connect` needs a `'static` schema name; the module id is
+    // owned, so leak it once (bounded, one per migration).
+    let schema_static: &'static str = Box::leak(module_id.to_string().into_boxed_str());
+    let target_settings = settings_from(&dto.credentials(), &src_prefix)?;
+    let target = kubuno_db::connect(&target_settings, schema_static)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Connexion à la base cible impossible : {e}")))?;
+
+    // Wait (bounded) for the module to create its tables on the target.
+    wait_for_tables(&target, &dst_eff, Duration::from_secs(45)).await?;
+
+    // Quiesce the module for the copy, then reopen the source read side.
+    crate::modules::manager::stop_module(module_id);
+    let source_settings = settings_from(&source.credentials, &src_prefix)?;
+    let source_pool = kubuno_db::connect(&source_settings, schema_static)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Connexion à la base source impossible : {e}")))?;
+
+    let db = state.db.clone();
+    let mut done = 0i32;
+    let report = kubuno_db::copy_schema(&source_pool, &src_eff, &target, &dst_eff, &mut |table, copied| {
+        done += 1;
+        let db = db.clone();
+        let table = table.to_string();
+        tokio::spawn(async move { set_progress(&db, job, &table, done, copied).await; });
+    })
+    .await
+    .map_err(map_admin_err)?;
+
+
+    // Bring the module back up on the now-populated target.
+    crate::modules::manager::restart_module(state.settings.clone(), state.db.clone(), module_id).await;
+    Ok((report.tables.len() as i32, report.total_rows))
+}
+
+/// Stores (or updates) the module's database override so the supervisor starts
+/// it on the target. Encrypts the password with the module-database key.
+async fn upsert_module_override(state: &AppState, module_id: &str, dto: &TargetDto) -> Result<(), AppError> {
+    let creds = dto.credentials();
+    let password_enc =
+        db_config::encrypt_password(&state.settings.auth.jwt_secret, &creds.password).map_err(AppError::Internal)?;
+    let port_store: i32 = dto.port.map(i32::from).unwrap_or(0);
+    let conflict = state.db.backend().upsert(
+        "core.module_databases",
+        &["module_id"],
+        &[
+            kubuno_db::dialect::Assign::Incoming("engine"),
+            kubuno_db::dialect::Assign::Incoming("host"),
+            kubuno_db::dialect::Assign::Incoming("port"),
+            kubuno_db::dialect::Assign::Incoming("db_user"),
+            kubuno_db::dialect::Assign::Incoming("password_enc"),
+            kubuno_db::dialect::Assign::Incoming("db_name"),
+            kubuno_db::dialect::Assign::Incoming("db_path"),
+            kubuno_db::dialect::Assign::Incoming("enabled"),
+        ],
+    );
+    let sql = format!(
+        "INSERT INTO core.module_databases \
+            (module_id, engine, host, port, db_user, password_enc, db_name, db_path, enabled) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE){conflict}"
+    );
+    state
+        .db
+        .execute(
+            &sql,
+            params![
+                module_id,
+                creds.engine,
+                creds.host.trim(),
+                port_store,
+                creds.user.trim(),
+                password_enc,
+                creds.database.trim(),
+                creds.path.trim(),
+            ],
+        )
+        .await
+        .map_err(AppError::Database)?;
+    Ok(())
+}
+
+/// Polls the target schema until it holds at least one base table (the module
+/// finished migrating) or the deadline passes.
+async fn wait_for_tables(target: &DbPool, eff: &str, timeout: Duration) -> Result<(), AppError> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let count = count_tables(target, eff).await.unwrap_or(0);
+        if count > 0 {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(AppError::Internal(anyhow::anyhow!(
+                "Le module n'a pas créé ses tables sur la base cible dans le délai imparti ; \
+                 la copie est annulée (les données source sont intactes)."
+            )));
+        }
+        tokio::time::sleep(Duration::from_millis(750)).await;
+    }
+}
+
+async fn count_tables(pool: &DbPool, eff: &str) -> Result<i64, sqlx::Error> {
+    match pool.backend() {
+        Backend::Postgres | Backend::MySql => {
+            pool.fetch_scalar::<i64>(
+                "SELECT COUNT(*) FROM information_schema.tables \
+                  WHERE table_schema = $1 AND table_type = 'BASE TABLE' \
+                    AND table_name <> '_sqlx_migrations'",
+                params![eff],
+            )
+            .await
+        }
+        Backend::Sqlite => {
+            let sql = format!(
+                "SELECT COUNT(*) FROM \"{}\".sqlite_master \
+                   WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '_sqlx_migrations'",
+                eff.replace('"', "\"\"")
+            );
+            pool.fetch_scalar::<i64>(&sql, params![]).await
+        }
+    }
+}

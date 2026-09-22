@@ -261,6 +261,19 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
            .delete(crate::handlers::admin::module_databases::delete_module_database))
         .route("/modules/:id/database/test",
                post(crate::handlers::admin::module_databases::test_module_database))
+        // ── Base de données principale (superadmin) : préfixe de schéma à chaud
+        //    et bascule d'un SGBD vers un autre avec copie des données ────────
+        .route("/database/schema-prefix",
+               get(crate::handlers::admin::schema_prefix::get_schema_prefix)
+              .put(crate::handlers::admin::schema_prefix::put_schema_prefix))
+        .route("/database/migrate",
+               post(crate::handlers::admin::db_switch::migrate_core_database))
+        .route("/database/migration-jobs",
+               get(crate::handlers::admin::db_switch::list_jobs))
+        .route("/database/migration-jobs/:id",
+               get(crate::handlers::admin::db_switch::get_job))
+        .route("/modules/:id/database/migrate",
+               post(crate::handlers::admin::db_switch::migrate_module_database))
         // ── Marketplace (catalogue distant + installation) ────────
         .route("/marketplace",            get(crate::handlers::admin::marketplace::list_marketplace))
         .route("/marketplace/:id/install", post(crate::handlers::admin::marketplace::install_marketplace))
