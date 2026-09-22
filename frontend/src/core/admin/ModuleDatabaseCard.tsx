@@ -5,6 +5,7 @@ import { Database, Check, TriangleAlert } from 'lucide-react'
 import { Button, Callout, Card, OutlinedField, Radio, Spinner, useToast } from '@ui'
 import { api } from '../api/client'
 import { usePrivileges } from '../authz/usePrivileges'
+import KnownConnectionsCard from './database/KnownConnectionsCard'
 
 /**
  * Applications ▸ a module ▸ "Database" — point ONE module at its own engine or
@@ -347,6 +348,17 @@ export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
           )}
         </>
       )}
+
+      {/* Known connections registry, grouped into this database-management card */}
+      <div className="mt-6 pt-6 border-t border-border">
+        <KnownConnectionsCard
+          basePath={`/admin/modules/${moduleId}/database`}
+          queryKey={['module', moduleId]}
+          embedded
+          heading={t('admin.dbconn_title')}
+          onChanged={() => void qc.invalidateQueries({ queryKey: ['module-database', moduleId] })}
+        />
+      </div>
     </Card>
   )
 }

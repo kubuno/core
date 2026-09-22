@@ -1,22 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Database, ArrowRightLeft, Check, TriangleAlert } from 'lucide-react'
+import { Database, Check, TriangleAlert } from 'lucide-react'
 import { Button, Callout, Card, OutlinedField, Radio, useToast } from '@ui'
 import ConfirmDialog from '@ui/ConfirmDialog'
 import { api } from '../../api/client'
 import { apiErrorMessage } from '../../api/errorMessage'
 import { useConfirm } from '../../hooks/useConfirm'
 import { usePrivileges } from '../../authz/usePrivileges'
+import KnownConnectionsCard from './KnownConnectionsCard'
 
 /**
- * Administration ▸ Database ▸ "Migrate the main database" — copy the whole core
- * database onto another engine, keeping the data, then persist the new settings
- * (superadmin only). A core restart finalises it.
+ * Administration ▸ System ▸ "Main database" — one coherent card to MANAGE the
+ * core's own database (superadmin only): the current engine/target, the registry
+ * of known connections (switch back, overwrite, refresh a standby, forget), and —
+ * as one action among these — migrating to another engine.
  *
- * The source is never touched: the target is created, migrated, filled and
- * verified, and only then are the new settings written. If anything fails the
- * instance keeps running on the current engine.
+ * The migration copies the whole core database onto another engine keeping the
+ * data, then persists the new settings; a core restart finalises it. The source
+ * is never touched: the target is created, migrated, filled and verified, and
+ * only then are the new settings written, so a failed copy loses nothing.
  */
 
 const PRIMARY = 'var(--color-primary)'
@@ -108,10 +111,47 @@ export default function MainDbMigrationCard() {
     if (ok) migrate.mutate()
   }
 
+  const cur = data?.current
+
   return (
-    <Card title={t('admin.dbmig_title')} icon={<ArrowRightLeft size={16} />} className="mb-4"
-      subtitle={t('admin.dbmig_subtitle')}>
-      <div className="flex flex-col gap-4">
+    <Card title={t('admin.db_manage_title')} icon={<Database size={16} />} className="mb-4"
+      subtitle={t('admin.db_manage_subtitle')}>
+      <div className="flex flex-col gap-6">
+        {/* Current state */}
+        <div>
+          <h3 className="mb-1 font-medium" style={{ fontSize: 'var(--kb-text-body)' }}>
+            {t('admin.db_current_heading')}
+          </h3>
+          <p className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+            {cur
+              ? t('admin.db_current_state', {
+                  engine: t(`admin.mdb_engine_${cur.engine}`, cur.engine),
+                  target: cur.engine === 'sqlite'
+                    ? (cur.path || '/var/lib/kubuno/db')
+                    : [cur.port ? `${cur.host}:${cur.port}` : cur.host, cur.database].filter(Boolean).join('/'),
+                })
+              : t('admin.db_current_unknown')}
+          </p>
+        </div>
+
+        {/* Known connections registry */}
+        <KnownConnectionsCard
+          basePath="/admin/database"
+          queryKey={['core']}
+          embedded
+          heading={t('admin.dbconn_title')}
+        />
+
+        {/* Migrate to another engine — one action among the management options */}
+        <div className="flex flex-col gap-4">
+          <div>
+            <h3 className="mb-1 font-medium" style={{ fontSize: 'var(--kb-text-body)' }}>
+              {t('admin.db_migrate_heading')}
+            </h3>
+            <p className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+              {t('admin.db_migrate_subheading')}
+            </p>
+          </div>
         <Callout variant="warning">{t('admin.dbmig_warning')}</Callout>
 
         <div className="flex flex-col gap-2">
@@ -165,6 +205,7 @@ export default function MainDbMigrationCard() {
             disabled={migrate.isPending}>
             {t('admin.dbmig_action')}
           </Button>
+        </div>
         </div>
       </div>
       {confirmState && (
