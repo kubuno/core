@@ -1,6 +1,6 @@
 [package]
 name        = "kubuno-db"
-version     = "0.6.0"
+version     = "0.7.0"
 edition     = "2021"
 description = "Kubuno database foundation: one binary over PostgreSQL / MySQL-MariaDB / SQLite, engine chosen at run time, with placeholder rewriting, a dialect layer and RETURNING emulation"
 license     = "AGPL-3.0"
