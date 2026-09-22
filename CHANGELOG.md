@@ -90,6 +90,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The database panels start from the parameters already in use.** The main
+  database migration form and each module's database card now pre-fill the host,
+  port, database name and user from the connection the instance is currently
+  using (never the password, which stays write-only), instead of blank fields —
+  so an administrator adjusts what is known rather than retyping it.
+
 - **Administration, permissions and settings inheritance work on MySQL/MariaDB
   and SQLite.** The organisation-unit tree (a unit's sub-units and its parent
   chain), delegated administration confined to a subtree, the "who is a full

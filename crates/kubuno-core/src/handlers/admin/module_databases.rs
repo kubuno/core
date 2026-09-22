@@ -153,11 +153,28 @@ pub async fn get_module_database(
         })
     });
 
+    // The main database's connection parameters (never its password), so the
+    // card can pre-fill the fields from what the core already uses when a module
+    // that inherits the main database is pointed at a concrete engine.
+    let main_json = match crate::config::settings::database_credentials(&state.settings.database) {
+        Ok(c) => json!({
+            "engine":       c.engine,
+            "host":         c.host,
+            "port":         if c.port == 0 { Value::Null } else { json!(c.port) },
+            "user":         c.user,
+            "database":     c.database,
+            "path":         c.path,
+            "has_password": !c.password.is_empty(),
+        }),
+        Err(_) => Value::Null,
+    };
+
     Ok(Json(json!({
         "module_id":        id,
         "inherited_engine": inherited_engine,
         "engines":          ENGINES,
         "override":         override_json,
+        "main":             main_json,
     })))
 }
 

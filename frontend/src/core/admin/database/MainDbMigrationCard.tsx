@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Database, ArrowRightLeft, Check, TriangleAlert } from 'lucide-react'
 import { Button, Callout, Card, OutlinedField, Radio, useToast } from '@ui'
 import ConfirmDialog from '@ui/ConfirmDialog'
@@ -23,6 +23,17 @@ const PRIMARY = 'var(--color-primary)'
 type Engine = 'postgres' | 'mysql' | 'sqlite'
 const ENGINES: Engine[] = ['postgres', 'mysql', 'sqlite']
 const DEFAULT_PORT: Record<Engine, string> = { postgres: '5432', mysql: '3306', sqlite: '' }
+
+/** The instance's current connection, as returned by GET schema-prefix. */
+interface Cur {
+  engine: string
+  host: string
+  port: number | null
+  user: string
+  database: string
+  path: string
+  has_password: boolean
+}
 
 interface Job {
   status: string
@@ -47,6 +58,27 @@ export default function MainDbMigrationCard() {
   const [path, setPath] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [job, setJob] = useState<Job | null>(null)
+
+  // Pre-fill the form from the connection the instance is already using, so the
+  // administrator starts from the known parameters (never the password) instead
+  // of blank fields. Seed once, so it never overwrites what the user is typing.
+  const seeded = useRef(false)
+  const { data } = useQuery<{ current?: Cur | null }>({
+    queryKey: ['admin', 'database', 'schema-prefix'],
+    queryFn: () => api.get('/admin/database/schema-prefix').then(r => r.data),
+    enabled: isSuperuser,
+  })
+  useEffect(() => {
+    const c = data?.current
+    if (!c || seeded.current) return
+    seeded.current = true
+    if (ENGINES.includes(c.engine as Engine)) setEngine(c.engine as Engine)
+    if (c.host) setHost(c.host)
+    if (c.port != null) setPort(String(c.port))
+    if (c.user) setUser(c.user)
+    if (c.database) setDatabase(c.database)
+    if (c.path) setPath(c.path)
+  }, [data])
 
   const body = () => ({
     engine,

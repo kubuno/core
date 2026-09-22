@@ -38,11 +38,23 @@ interface OverrideView {
   enabled: boolean
 }
 
+/** The main database's connection (no password), to seed the fields from. */
+interface MainView {
+  engine: string
+  host: string
+  port: number | null
+  user: string
+  database: string
+  path: string
+  has_password: boolean
+}
+
 interface DbConfigResponse {
   module_id: string
   inherited_engine: string
   engines: EngineName[]
   override: OverrideView | null
+  main: MainView | null
 }
 
 interface DbTest {
@@ -186,6 +198,22 @@ export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
   const inheritedEngine = cfg.data?.inherited_engine ?? 'postgres'
   const engines: EngineName[] = cfg.data?.engines ?? ['postgres', 'mysql', 'sqlite']
   const hasOverride = !!(ov && ov.enabled)
+  const main = cfg.data?.main ?? null
+
+  // Selecting a concrete engine from "inherit" (no override yet) starts the
+  // fields from the main database's known parameters instead of blank ones. The
+  // port is only carried over when the chosen engine matches the main one.
+  const pickEngine = (e: EngineName) => {
+    if (!hasOverride && mode === 'inherit' && main) {
+      setHost(main.host || '')
+      setUser(main.user || '')
+      setDatabase(main.database || '')
+      setPath(main.path || '')
+      setPort(e === main.engine && main.port != null ? String(main.port) : '')
+    }
+    setMode(e)
+    setTest(null)
+  }
 
   const busy = testMut.isPending || saveMut.isPending || revertMut.isPending || migrateMut.isPending
 
@@ -301,7 +329,7 @@ export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
               <Radio
                 key={e}
                 checked={mode === e}
-                onChange={() => { setMode(e); setTest(null) }}
+                onChange={() => pickEngine(e)}
                 label={engineLabel(t, e)}
               />
             ))}

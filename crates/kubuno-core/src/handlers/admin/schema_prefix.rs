@@ -57,6 +57,24 @@ fn applicable(state: &AppState) -> bool {
     )
 }
 
+/// The connection parameters the instance is currently using, so the migration
+/// form starts from what is already known instead of blank fields. The password
+/// is never exposed — only whether one is set. `null` if it cannot be resolved.
+fn current_connection(state: &AppState) -> Value {
+    match crate::config::settings::database_credentials(&state.settings.database) {
+        Ok(c) => json!({
+            "engine":       c.engine,
+            "host":         c.host,
+            "port":         if c.port == 0 { Value::Null } else { json!(c.port) },
+            "user":         c.user,
+            "database":     c.database,
+            "path":         c.path,
+            "has_password": !c.password.is_empty(),
+        }),
+        Err(_) => Value::Null,
+    }
+}
+
 /// `GET /admin/database/schema-prefix` — the current prefix and whether it can
 /// be changed on this engine.
 pub async fn get_schema_prefix(
@@ -69,6 +87,7 @@ pub async fn get_schema_prefix(
         "prefix":     current_prefix(&state),
         "engine":     engine(&state),
         "applicable": applicable(&state),
+        "current":    current_connection(&state),
     })))
 }
 
