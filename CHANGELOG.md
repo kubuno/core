@@ -11,6 +11,30 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **A maintenance banner that appears on its own during database operations.**
+  While a consequential database operation runs — switching the main database (or
+  a module's) to another engine, changing the schema prefix, restoring a backup,
+  or repointing/syncing a module's database — every connected user now sees a
+  persistent "maintenance in progress" banner, so nobody mistakes the brief
+  inconsistency for a fault. The banner is **global** (across the top of the app)
+  for an instance-wide operation, or shown **on the affected module** for a
+  per-module one. It appears the instant the operation starts and **disappears
+  automatically** the moment it ends — on success, on failure, and even if the
+  operation finishes by restarting the server (a leftover banner is swept away at
+  startup). Clients that load or reconnect mid-operation pick it up too, so it is
+  never missed. Available in English and French.
+
+- **Every sensitive database operation is now recorded in the audit trail, with a
+  summary of what changed.** Switching the main database or a module's database to
+  another engine, changing the schema prefix, restoring a backup, and
+  registering/switching/syncing/forgetting a known connection each write a
+  tamper-evident audit entry stating **who** did it, **when**, **from where**, the
+  **outcome** (success or failure), and a **plain-language summary** — for example
+  "main database migrated postgres→sqlite, 42 tables / 12345 lines", "schema
+  prefix '' → 'kub\_' across N schemas", "restore from backup.ndjson.gz succeeded
+  (12345 rows reloaded, safety backup: …)", or, on failure, the cause. No
+  password or secret ever appears in the banner, the audit summary, or the logs.
+
 - **Back up the whole database, compressed, and restore it from the admin
   console — across any engine.** Scheduled and manual backups now cover **every
   Kubuno schema** (the core and each installed module, plus their secondary

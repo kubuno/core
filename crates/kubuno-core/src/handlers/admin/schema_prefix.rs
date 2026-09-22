@@ -26,12 +26,23 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::{
+    audit::{redact::target, AdminAudit, AuditEntry},
     auth::middleware::AdminUser,
     authz::AdminCtx,
     errors::AppError,
+    maintenance::{MaintenanceGuard, GLOBAL_SCOPE},
     setup::config_file,
     state::AppState,
 };
+
+/// A prefix rendered for a human: the empty prefix reads as "(none)".
+fn prefix_label(prefix: &str) -> &str {
+    if prefix.is_empty() {
+        "(aucun)"
+    } else {
+        prefix
+    }
+}
 
 /// The current prefix, trimmed. Empty string means "no prefix".
 fn current_prefix(state: &AppState) -> String {
@@ -102,7 +113,7 @@ pub struct SchemaPrefixDto {
 /// persist the new value, and report that a core restart finalises it.
 pub async fn put_schema_prefix(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
     ctx: AdminCtx,
     Json(dto): Json<SchemaPrefixDto>,
 ) -> Result<Json<Value>, AppError> {
@@ -139,39 +150,85 @@ pub async fn put_schema_prefix(
     // what finalises the change.
     persist_prefix(&new_prefix)?;
 
+    // A global maintenance banner covers the live rename (an atomic, per-engine
+    // outage on the primary namespace).
+    let guard = MaintenanceGuard::start(
+        &state.db,
+        &state.ws_hub,
+        GLOBAL_SCOPE,
+        format!(
+            "Changement du préfixe de schéma (« {} » → « {} ») en cours…",
+            prefix_label(&old_prefix),
+            prefix_label(&new_prefix)
+        ),
+        "prefix_change",
+    )
+    .await;
+
     // Rename the live namespaces (core + every module schema present, primary and
     // secondary), atomic per engine. On failure, roll the persisted prefix back
     // so the config matches the schemas the transactional rename left unchanged.
-    let outcome = match kubuno_db::rename_schema_prefix(&state.db, &old_prefix, &new_prefix).await {
-        Ok(o) => o,
-        Err(e) => {
-            if let Err(re) = persist_prefix(&old_prefix) {
-                tracing::error!(error = %re, "Rollback du préfixe dans la config impossible après un renommage échoué");
+    let outcome: Result<Json<Value>, AppError> =
+        match kubuno_db::rename_schema_prefix(&state.db, &old_prefix, &new_prefix).await {
+            Ok(o) => {
+                tracing::warn!(
+                    from = %old_prefix,
+                    to = %new_prefix,
+                    renamed = ?o.renamed,
+                    "Préfixe de schéma changé — redémarrage du core requis pour finaliser"
+                );
+                audit
+                    .record(
+                        &state.db,
+                        AuditEntry::new("core.database.prefix_change")
+                            .target(target::DATABASE, "core", "Préfixe de schéma")
+                            .detail(format!(
+                                "préfixe « {} » → « {} » sur {} schéma(s) : {}",
+                                prefix_label(&old_prefix),
+                                prefix_label(&new_prefix),
+                                o.renamed.len(),
+                                o.renamed.join(", ")
+                            )),
+                    )
+                    .await;
+                Ok(Json(json!({
+                    "changed":          true,
+                    "prefix":           new_prefix,
+                    "renamed":          o.renamed,
+                    "restart_required": true,
+                })))
             }
-            tracing::error!(error = %e, from = %old_prefix, to = %new_prefix, "Renommage du préfixe de schéma échoué");
-            return Err(match e {
-                kubuno_db::AdminError::Sqlx(err) => AppError::Database(err),
-                kubuno_db::AdminError::BadPrefix(p) => {
-                    AppError::Validation(format!("Préfixe invalide : {p}"))
+            Err(e) => {
+                if let Err(re) = persist_prefix(&old_prefix) {
+                    tracing::error!(error = %re, "Rollback du préfixe dans la config impossible après un renommage échoué");
                 }
-                other => AppError::Internal(anyhow::anyhow!(other.to_string())),
-            });
-        }
-    };
+                tracing::error!(error = %e, from = %old_prefix, to = %new_prefix, "Renommage du préfixe de schéma échoué");
+                let mapped = match e {
+                    kubuno_db::AdminError::Sqlx(err) => AppError::Database(err),
+                    kubuno_db::AdminError::BadPrefix(p) => {
+                        AppError::Validation(format!("Préfixe invalide : {p}"))
+                    }
+                    other => AppError::Internal(anyhow::anyhow!(other.to_string())),
+                };
+                audit
+                    .record(
+                        &state.db,
+                        AuditEntry::new("core.database.prefix_change")
+                            .target(target::DATABASE, "core", "Préfixe de schéma")
+                            .failed(format!(
+                                "changement de préfixe « {} » → « {} » échoué : {mapped}",
+                                prefix_label(&old_prefix),
+                                prefix_label(&new_prefix)
+                            )),
+                    )
+                    .await;
+                Err(mapped)
+            }
+        };
 
-    tracing::warn!(
-        from = %old_prefix,
-        to = %new_prefix,
-        renamed = ?outcome.renamed,
-        "Préfixe de schéma changé — redémarrage du core requis pour finaliser"
-    );
-
-    Ok(Json(json!({
-        "changed":          true,
-        "prefix":           new_prefix,
-        "renamed":          outcome.renamed,
-        "restart_required": true,
-    })))
+    // Tears the banner down in both branches.
+    guard.finish().await;
+    outcome
 }
 
 /// Writes `[database] schema_prefix = "<prefix>"` into the running config file.

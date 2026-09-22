@@ -11,10 +11,12 @@
 //! (`crate::modules::db_config`) and is never returned in a response.
 
 use crate::{
-    authz::AdminCtx,
+    audit::{redact::target as audit_target, AdminAudit, AuditEntry},
     auth::middleware::AdminUser,
+    authz::AdminCtx,
     config::DbCredentials,
     errors::AppError,
+    maintenance::MaintenanceGuard,
     modules::db_config,
     state::AppState,
 };
@@ -334,7 +336,7 @@ pub async fn test_module_database(
 /// module so it reconnects on it.
 pub async fn put_module_database(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
     ctx: AdminCtx,
     Path(id): Path<String>,
     Json(dto): Json<ModuleDbDto>,
@@ -371,6 +373,17 @@ pub async fn put_module_database(
     let prefix_store = dto.schema_prefix.as_deref().map(str::trim).filter(|p| !p.is_empty());
     let port_store: i32 = dto.port.map(i32::from).unwrap_or(0);
 
+    // A banner scoped to this module covers the write + restart (the module drops
+    // offline while it reconnects on the new target).
+    let guard = MaintenanceGuard::start(
+        &state.db,
+        &state.ws_hub,
+        id.clone(),
+        format!("Maintenance de la base du module {id} en cours…"),
+        "module_db",
+    )
+    .await;
+
     let conflict = state.db.backend().upsert(
         "core.module_databases",
         &["module_id"],
@@ -391,40 +404,79 @@ pub async fn put_module_database(
             (module_id, engine, host, port, db_user, password_enc, db_name, db_path, schema_prefix, enabled) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10){conflict}"
     );
-    state
-        .db
-        .execute(
-            &sql,
-            params![
-                id.clone(),
-                dto.engine.clone(),
-                dto.host.trim(),
-                port_store,
-                dto.user.trim(),
-                password_enc,
-                dto.database.trim(),
-                dto.path.clone().unwrap_or_default(),
-                prefix_store,
-                dto.enabled,
-            ],
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!(module_id = %id, error = %e, "Écriture de l'override DB");
-            AppError::Database(e)
-        })?;
 
-    let restarted = crate::modules::manager::restart_module(state.settings.clone(), state.db.clone(), &id).await;
-    tracing::warn!(module_id = %id, engine = %dto.engine, enabled = dto.enabled, restarted, "Override DB du module enregistré");
+    // A human-readable, secret-free descriptor of the target for the audit trail.
+    let target_desc = target_descriptor(&dto);
+    let enabled = dto.enabled;
+    let engine = dto.engine.clone();
 
-    Ok(Json(json!({ "ok": true, "restarted": restarted })))
+    let outcome: Result<Json<Value>, AppError> = async {
+        state
+            .db
+            .execute(
+                &sql,
+                params![
+                    id.clone(),
+                    dto.engine.clone(),
+                    dto.host.trim(),
+                    port_store,
+                    dto.user.trim(),
+                    password_enc,
+                    dto.database.trim(),
+                    dto.path.clone().unwrap_or_default(),
+                    prefix_store,
+                    dto.enabled,
+                ],
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(module_id = %id, error = %e, "Écriture de l'override DB");
+                AppError::Database(e)
+            })?;
+
+        let restarted = crate::modules::manager::restart_module(state.settings.clone(), state.db.clone(), &id).await;
+        tracing::warn!(module_id = %id, engine = %engine, enabled, restarted, "Override DB du module enregistré");
+
+        Ok(Json(json!({ "ok": true, "restarted": restarted })))
+    }
+    .await;
+
+    guard.finish().await;
+
+    // Best-effort audit with the real outcome.
+    let entry = AuditEntry::new("core.module.database.change")
+        .module(id.as_str())
+        .target(audit_target::DATABASE, &id, format!("Base du module {id}"));
+    let entry = match &outcome {
+        Ok(_) => entry.detail(format!(
+            "module {id} repointé vers {target_desc} (activé : {enabled})"
+        )),
+        Err(e) => entry.failed(format!(
+            "changement de base du module {id} vers {target_desc} échoué : {e}"
+        )),
+    };
+    audit.record(&state.db, entry).await;
+
+    outcome
+}
+
+/// A secret-free, human-readable descriptor of an override target for logs and
+/// the audit trail. Never includes the password.
+fn target_descriptor(dto: &ModuleDbDto) -> String {
+    if dto.engine == "sqlite" {
+        format!("sqlite:{}", dto.path.as_deref().unwrap_or("").trim())
+    } else {
+        let host = dto.host.trim();
+        let port = dto.port.map(|p| format!(":{p}")).unwrap_or_default();
+        format!("{}://{host}{port}/{}", dto.engine, dto.database.trim())
+    }
 }
 
 /// DELETE — drop the override; the module reverts to the inherited database on
 /// its next start, which is triggered here.
 pub async fn delete_module_database(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
     ctx: AdminCtx,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
@@ -433,14 +485,44 @@ pub async fn delete_module_database(
         return Err(AppError::NotFound(format!("Module '{id}' introuvable")));
     }
 
-    state
-        .db
-        .execute("DELETE FROM core.module_databases WHERE module_id = $1", params![id.clone()])
-        .await
-        .map_err(AppError::Database)?;
+    // A banner scoped to this module covers the delete + restart.
+    let guard = MaintenanceGuard::start(
+        &state.db,
+        &state.ws_hub,
+        id.clone(),
+        format!("Maintenance de la base du module {id} en cours…"),
+        "module_db",
+    )
+    .await;
 
-    let restarted = crate::modules::manager::restart_module(state.settings.clone(), state.db.clone(), &id).await;
-    tracing::warn!(module_id = %id, restarted, "Override DB du module supprimé — retour au SGBD principal");
+    let outcome: Result<Json<Value>, AppError> = async {
+        state
+            .db
+            .execute("DELETE FROM core.module_databases WHERE module_id = $1", params![id.clone()])
+            .await
+            .map_err(AppError::Database)?;
 
-    Ok(Json(json!({ "ok": true, "restarted": restarted })))
+        let restarted = crate::modules::manager::restart_module(state.settings.clone(), state.db.clone(), &id).await;
+        tracing::warn!(module_id = %id, restarted, "Override DB du module supprimé — retour au SGBD principal");
+
+        Ok(Json(json!({ "ok": true, "restarted": restarted })))
+    }
+    .await;
+
+    guard.finish().await;
+
+    let entry = AuditEntry::new("core.module.database.change")
+        .module(id.as_str())
+        .target(audit_target::DATABASE, &id, format!("Base du module {id}"));
+    let entry = match &outcome {
+        Ok(_) => entry.detail(format!(
+            "override de base retiré pour le module {id} — retour au SGBD principal"
+        )),
+        Err(e) => entry.failed(format!(
+            "retrait de l'override de base du module {id} échoué : {e}"
+        )),
+    };
+    audit.record(&state.db, entry).await;
+
+    outcome
 }

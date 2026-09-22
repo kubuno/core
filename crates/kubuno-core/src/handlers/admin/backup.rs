@@ -33,11 +33,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::{
-    audit::{redact::target, AdminAudit},
+    audit::{redact::target, AdminAudit, AuditEntry},
     auth::middleware::AdminUser,
     authz::{keys, AdminCtx},
     backup::{self, archive, policy, restore, runs},
     errors::AppError,
+    maintenance::{MaintenanceGuard, GLOBAL_SCOPE},
     state::AppState,
 };
 
@@ -346,27 +347,47 @@ pub async fn restore_now(
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| audit.admin.username.clone());
 
-    // Record the decision before the work: the audit entry is the human act, the
-    // restore row is the operation.
-    audit
-        .record(
-            &state.db,
-            crate::audit::AuditEntry::new("core.backup.restore")
-                .target(target::SETTING, "backup", format!("Restauration depuis {file_name}"))
-                .detail(format!(
-                    "Restauration à chaud demandée depuis « {file_name} » (destination : {})",
-                    policy.destination
-                )),
-        )
-        .await;
+    // A global maintenance banner covers the whole restore: every connected user
+    // is told a restore is in progress until it returns (success, failure, or a
+    // process death caught by the startup sweep).
+    let guard = MaintenanceGuard::start(
+        &state.db,
+        &state.ws_hub,
+        GLOBAL_SCOPE,
+        format!("Restauration de la base de données (« {file_name} ») en cours…"),
+        "restore",
+    )
+    .await;
 
-    let outcome = restore::restore_from_file(
+    let result = restore::restore_from_file(
         &state.db,
         &policy.destination,
         &file_name,
         Some((audit.admin.id, label)),
     )
-    .await?;
+    .await;
+
+    // Tears the banner down in every branch.
+    guard.finish().await;
+
+    // Best-effort audit with the real outcome and a summary of what was restored.
+    // The `core.backup_restores` row carries the operational record; this is the
+    // human act in the tamper-evident trail.
+    let entry = AuditEntry::new("core.database.restore")
+        .target(target::DATABASE, "core", format!("Restauration depuis {file_name}"));
+    let entry = match &result {
+        Ok(o) => entry.detail(format!(
+            "restauration à chaud depuis « {file_name} » réussie ({} lignes rechargées, \
+             sauvegarde de secours : {})",
+            o.rows, o.safety_file
+        )),
+        Err(e) => entry.failed(format!(
+            "restauration à chaud depuis « {file_name} » échouée : {e}"
+        )),
+    };
+    audit.record(&state.db, entry).await;
+
+    let outcome = result?;
 
     Ok(Json(json!({
         "message":     "Restauration terminée",

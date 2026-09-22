@@ -281,7 +281,17 @@ pub async fn public_config(
         )
         .await?;
 
-    let config: HashMap<String, Value> = rows.into_iter().collect();
+    let mut config: HashMap<String, Value> = rows.into_iter().collect();
+
+    // Active maintenance notices ride along in the public config under a
+    // reserved key: the shell reads them on (re)load to show the banner without
+    // waiting for a WebSocket message. The real-time updates come over the
+    // `maintenance` WebSocket channel; this is the fallback for a fresh load.
+    let notices = crate::maintenance::active(&state.db).await;
+    config.insert(
+        "maintenance.notices".to_string(),
+        serde_json::to_value(&notices).unwrap_or_else(|_| json!([])),
+    );
 
     Ok(Json(json!({ "config": config })))
 }

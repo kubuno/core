@@ -23,6 +23,10 @@ pub mod target {
     pub const USER: &str = "user";
     pub const SETTING: &str = "setting";
     pub const MODULE: &str = "module";
+    /// A database of the platform — the core's own, or a module's — as the
+    /// subject of a maintenance operation (engine switch, schema-prefix change,
+    /// restore, connection change/sync).
+    pub const DATABASE: &str = "database";
     pub const GROUP: &str = "group";
     pub const GROUP_MEMBER: &str = "group_member";
     /// A target audience (`core.target_audiences`).

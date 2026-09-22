@@ -32,10 +32,12 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::{
+    audit::{redact::target, AdminAudit, AuditEntry},
     auth::middleware::AdminUser,
     authz::AdminCtx,
     config::{DatabaseSettings, DbCredentials},
     errors::AppError,
+    maintenance::{MaintenanceGuard, GLOBAL_SCOPE},
     modules::db_config,
     setup::config_file,
     state::AppState,
@@ -284,7 +286,7 @@ pub async fn get_job(
 /// engine and persist the new settings; a core restart finalises it.
 pub async fn migrate_core_database(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
     ctx: AdminCtx,
     Json(dto): Json<TargetDto>,
 ) -> Result<Json<Value>, AppError> {
@@ -319,37 +321,86 @@ pub async fn migrate_core_database(
 
     let job = create_job(&state.db, "core", &source_engine, &dto.engine).await?;
 
+    // A global maintenance banner covers the whole copy: every connected user is
+    // told the main database is migrating until this returns (or, if the finalising
+    // restart cuts it short, until the startup sweep clears it).
+    let guard = MaintenanceGuard::start(
+        &state.db,
+        &state.ws_hub,
+        GLOBAL_SCOPE,
+        format!(
+            "Migration de la base de données principale ({source_engine} → {}) en cours…",
+            dto.engine
+        ),
+        "migrate",
+    )
+    .await;
+
     // Everything after this point reports failure onto the job rather than
     // leaving the instance in a half state; the source is never modified.
     let result = do_core_copy(&state, &target_settings, &eff, job).await;
-    match result {
-        Ok((tables, rows)) => {
-            // Persist the new settings so the restarted core adopts the target.
-            if let Err(e) = persist_core_settings(&creds, target_backend) {
+    let outcome: Result<Json<Value>, AppError> = match result {
+        Ok((tables, rows)) => match persist_core_settings(&creds, target_backend) {
+            Err(e) => {
                 let msg = format!("Copie réussie mais configuration non écrite : {e}");
                 finish_err(&state.db, job, &msg).await;
-                return Err(e);
+                record_core_switch(&audit, &state.db, &source_engine, &dto.engine, Err(&msg)).await;
+                Err(e)
             }
-            finish_ok(&state.db, job, tables, rows).await;
-            // Record the adopted target as the scope's new current connection.
-            let p = if prefix_str.is_empty() { None } else { Some(prefix_str.as_str()) };
-            let _ = crate::modules::db_registry::register(
-                &state.db, &state.settings.auth.jwt_secret,
-                crate::modules::db_registry::CORE_SCOPE, &creds, p, None, true,
-            ).await;
-            tracing::warn!(from = %source_engine, to = %dto.engine, tables, rows,
-                "Base principale copiée vers le nouveau moteur — redémarrage du core requis");
-            Ok(Json(json!({
-                "job":              job_json(&fetch_job(&state.db, job).await?),
-                "restart_required": true,
-            })))
-        }
+            Ok(()) => {
+                finish_ok(&state.db, job, tables, rows).await;
+                // Record the adopted target as the scope's new current connection.
+                let p = if prefix_str.is_empty() { None } else { Some(prefix_str.as_str()) };
+                let _ = crate::modules::db_registry::register(
+                    &state.db, &state.settings.auth.jwt_secret,
+                    crate::modules::db_registry::CORE_SCOPE, &creds, p, None, true,
+                ).await;
+                tracing::warn!(from = %source_engine, to = %dto.engine, tables, rows,
+                    "Base principale copiée vers le nouveau moteur — redémarrage du core requis");
+                record_core_switch(
+                    &audit, &state.db, &source_engine, &dto.engine, Ok((tables, rows)),
+                ).await;
+                Ok(Json(json!({
+                    "job":              job_json(&fetch_job(&state.db, job).await?),
+                    "restart_required": true,
+                })))
+            }
+        },
         Err(e) => {
             let msg = e.to_string();
             finish_err(&state.db, job, &msg).await;
+            record_core_switch(&audit, &state.db, &source_engine, &dto.engine, Err(&msg)).await;
             Err(e)
         }
-    }
+    };
+
+    // Tears the banner down in every branch. A `Drop` on the guard is the fallback
+    // if this line is somehow skipped (panic, cancellation).
+    guard.finish().await;
+    outcome
+}
+
+/// Writes the audit trail entry for a core database migration/switch. Best-effort
+/// (a failed audit never turns a completed operation into a 500). `result` is the
+/// `(tables, rows)` copied on success, or the failure cause on error.
+async fn record_core_switch(
+    audit: &AdminAudit,
+    db: &DbPool,
+    from_engine: &str,
+    to_engine: &str,
+    result: Result<(i32, i64), &str>,
+) {
+    let entry = AuditEntry::new("core.database.switch")
+        .target(target::DATABASE, "core", "Base de données principale");
+    let entry = match result {
+        Ok((tables, rows)) => entry.detail(format!(
+            "base principale migrée {from_engine}→{to_engine}, {tables} tables / {rows} lignes"
+        )),
+        Err(cause) => entry.failed(format!(
+            "migration de la base principale {from_engine}→{to_engine} échouée : {cause}"
+        )),
+    };
+    audit.record(db, entry).await;
 }
 
 /// Opens the target, migrates it, and copies the core schema onto it. Returns
@@ -449,7 +500,7 @@ pub(crate) fn persist_core_settings(creds: &DbCredentials, backend: Backend) -> 
 /// can be reverted to it with no loss.
 pub async fn migrate_module_database(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    audit: AdminAudit,
     ctx: AdminCtx,
     Path(id): Path<String>,
     Json(dto): Json<TargetDto>,
@@ -483,14 +534,27 @@ pub async fn migrate_module_database(
 
     let job = create_job(&state.db, &id, &source_engine, &dto.engine).await?;
 
-    let outcome = do_module_copy(&state, &id, &source, &dto, job).await;
-    match outcome {
+    // A banner scoped to this module covers the copy (which restarts the module).
+    let guard = MaintenanceGuard::start(
+        &state.db,
+        &state.ws_hub,
+        id.clone(),
+        format!("Migration de la base du module {id} ({source_engine} → {}) en cours…", dto.engine),
+        "migrate",
+    )
+    .await;
+
+    let result = do_module_copy(&state, &id, &source, &dto, job).await;
+    let outcome: Result<Json<Value>, AppError> = match result {
         Ok((tables, rows)) => {
             finish_ok(&state.db, job, tables, rows).await;
             // Record the adopted target as the module's new current connection.
             let _ = crate::modules::db_registry::register(
                 &state.db, &state.settings.auth.jwt_secret, &id,
                 &dto.credentials(), src_prefix.as_deref(), None, true,
+            ).await;
+            record_module_switch(
+                &audit, &state.db, &id, &source_engine, &dto.engine, Ok((tables, rows)),
             ).await;
             Ok(Json(json!({
                 "job":       job_json(&fetch_job(&state.db, job).await?),
@@ -500,9 +564,38 @@ pub async fn migrate_module_database(
         Err(e) => {
             let msg = e.to_string();
             finish_err(&state.db, job, &msg).await;
+            record_module_switch(&audit, &state.db, &id, &source_engine, &dto.engine, Err(&msg)).await;
             Err(e)
         }
-    }
+    };
+
+    guard.finish().await;
+    outcome
+}
+
+/// Writes the audit trail entry for a module database migration/switch.
+/// Best-effort. `result` is the `(tables, rows)` copied on success, or the cause
+/// on failure.
+async fn record_module_switch(
+    audit: &AdminAudit,
+    db: &DbPool,
+    module_id: &str,
+    from_engine: &str,
+    to_engine: &str,
+    result: Result<(i32, i64), &str>,
+) {
+    let entry = AuditEntry::new("core.module.database.change")
+        .module(module_id)
+        .target(target::DATABASE, module_id, format!("Base du module {module_id}"));
+    let entry = match result {
+        Ok((tables, rows)) => entry.detail(format!(
+            "module {module_id} migré {from_engine}→{to_engine}, {tables} tables / {rows} lignes"
+        )),
+        Err(cause) => entry.failed(format!(
+            "migration du module {module_id} {from_engine}→{to_engine} échouée : {cause}"
+        )),
+    };
+    audit.record(db, entry).await;
 }
 
 pub(crate) async fn do_module_copy(

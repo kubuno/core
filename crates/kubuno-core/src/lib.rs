@@ -6,6 +6,7 @@ pub mod backup;
 pub mod collab;
 pub mod logging;
 pub mod config;
+pub mod maintenance;
 pub mod crypto;
 pub mod data_export;
 /// Importing an organisation's data from a third-party provider — the core

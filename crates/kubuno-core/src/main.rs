@@ -116,6 +116,12 @@ async fn main() -> Result<()> {
     // schema, so mint it here (idempotent, never re-minted once present).
     seed::ensure_instance_identity(&pool).await;
 
+    // Maintenance banners: sweep any notice left up by an operation that a
+    // restart or crash interrupted before it could tear its own banner down.
+    // Every `global` notice present here belongs to a process that is no longer
+    // running (a core engine switch ends by restarting the service).
+    kubuno_core::maintenance::sweep_stale(&pool).await;
+
     // Réglages anti-DDoS : amorce env puis source de vérité = core.settings
     // (pilotables à chaud depuis le panneau d'administration).
     kubuno_core::auth::ddos::seed_from_env();
