@@ -217,7 +217,9 @@ setup_core() {
     fi
 
     install -m 640 config.toml.example "${PKG_DIR}/etc/kubuno/config.toml.example"
-    cp migrations/*.sql "${PKG_DIR}/usr/share/kubuno/migrations/"
+    # Migrations are split per engine (postgres/mysql/sqlite) since the
+    # multi-database port, so copy the whole tree, not a flat *.sql glob.
+    cp -r migrations/. "${PKG_DIR}/usr/share/kubuno/migrations/"
 
     # Thèmes livrés avec l'application (bundles CSS/JS dans themes/). Stagés en
     # lecture seule sous /usr/share, puis semés dans /var/lib/kubuno/themes au
