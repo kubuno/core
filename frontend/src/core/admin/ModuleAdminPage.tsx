@@ -19,6 +19,7 @@ import {
   type AdminModule, type ModuleLiveState, type ModuleSettingGroup,
 } from './adminModules'
 import ModuleAdminSettings, { useModuleInstanceSettings } from './ModuleAdminSettings'
+import ModuleDatabaseCard from './ModuleDatabaseCard'
 import ModuleSidePanel from './settings/ModuleSidePanel'
 import { INSTANCE_SCOPE, type ActiveScope } from './settings/scopeTypes'
 
@@ -365,6 +366,7 @@ export default function ModuleAdminPage({ params, navigate }: AdminSectionProps)
                 being repeated five times over. */}
             {isFirst && scopeCallout}
             {isFirst && <ModuleStateCard module={module} state={state} />}
+            {isFirst && <ModuleDatabaseCard moduleId={module.id} />}
 
             {/* The module's own views for this page, above the form: a
                 diagnostic is read before a setting is changed, and it is what
@@ -414,6 +416,7 @@ export default function ModuleAdminPage({ params, navigate }: AdminSectionProps)
           {scopeCallout}
 
           <ModuleStateCard module={module} state={state} />
+          <ModuleDatabaseCard moduleId={module.id} />
 
           {/* The module's own sections, above the generated form. */}
           {ownSections.map(({ id: sectionId, Component }) => <Component key={sectionId} />)}
