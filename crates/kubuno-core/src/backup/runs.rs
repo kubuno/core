@@ -267,7 +267,11 @@ pub async fn stats(db: &DbPool) -> Result<RunStats, AppError> {
     // PostgreSQL-only literal.
     let backend = db.backend();
     let count = backend.count_bigint("*");
-    let floor = DateTime::<Utc>::MIN_UTC;
+    // The Unix epoch, not `DateTime::MIN_UTC`: chrono's minimum year is far below
+    // what PostgreSQL/MySQL accept for a timestamp, so binding it fails with
+    // "timestamp out of range". Epoch is a valid floor on every engine and is
+    // only a COALESCE fallback for "failures since the last success" anyway.
+    let floor = DateTime::from_timestamp(0, 0).unwrap_or_else(Utc::now);
     let sql = format!(
         r#"WITH last_ok AS (
                SELECT finished_at, size_bytes, file_name
