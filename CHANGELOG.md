@@ -251,6 +251,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Changing the schema prefix is now all-or-nothing, and renames every schema.**
+  Two defects could leave an instance unusable after a prefix change: the rename
+  only covered a fixed list of primary schemas, silently skipping the extra
+  schemas a module owns (e.g. `office_data`) and two modules missing from the
+  list, so those were left unprefixed; and the new prefix was written to the
+  configuration *after* the rename, so if that write failed (e.g. a config
+  directory not writable by the service account) the schemas were renamed while
+  the config still named the old prefix — and the instance could no longer find
+  its own tables. The prefix is now persisted first (nothing is renamed if it
+  cannot be), the rename covers primary and secondary schemas of every module,
+  and a failed rename rolls the configuration back.
+
 - **The login CAPTCHA is legible again.** After the configured number of failed
   sign-ins, some characters in the challenge image were drawn ambiguously — a `9`
   could look like a `3`, a `6` like a `5` — so a person reading and typing what

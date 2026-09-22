@@ -122,11 +122,24 @@ pub async fn discover_prefixed_schemas(
         Backend::Sqlite => return Ok(Vec::new()),
     };
 
-    let wanted: HashSet<String> = KUBUNO_SCHEMAS
-        .iter()
-        .map(|s| format!("{prefix}{s}"))
-        .collect();
-    Ok(existing.into_iter().filter(|n| wanted.contains(n)).collect())
+    // A server namespace belongs to this instance when, after stripping the
+    // active prefix, its bare name is a known Kubuno schema OR a secondary schema
+    // of one — `<root>_<suffix>`, e.g. `office_data`, which a module owns beyond
+    // its primary schema. Matching a fixed list of primary names only (the old
+    // behaviour) silently skipped those, leaving them un-renamed and the modules
+    // that own them broken after a prefix change.
+    let roots: HashSet<&str> = KUBUNO_SCHEMAS.iter().copied().collect();
+    let owns = |bare: &str| roots.contains(bare)
+        || roots.iter().any(|r| bare.len() > r.len() + 1
+            && bare.as_bytes()[r.len()] == b'_'
+            && &bare[..r.len()] == *r);
+    Ok(existing
+        .into_iter()
+        .filter(|n| match n.strip_prefix(prefix) {
+            Some(bare) => !bare.is_empty() && owns(bare),
+            None => false,
+        })
+        .collect())
 }
 
 /// The outcome of a prefix rename: the bare schema names that were renamed from

@@ -131,25 +131,33 @@ pub async fn put_schema_prefix(
         })));
     }
 
-    // Rename the live namespaces (core + every module schema present), atomic per
-    // engine, rolling back on failure.
-    let outcome = kubuno_db::rename_schema_prefix(&state.db, &old_prefix, &new_prefix)
-        .await
-        .map_err(|e| {
+    // Persist the new prefix FIRST. If the config cannot be written (e.g. the
+    // config directory is not writable by the service account), nothing is
+    // renamed, so the instance is never left with renamed schemas and a stale
+    // config — the state that breaks it until a manual repair. The in-memory
+    // settings keep the old value until the process restarts, which is exactly
+    // what finalises the change.
+    persist_prefix(&new_prefix)?;
+
+    // Rename the live namespaces (core + every module schema present, primary and
+    // secondary), atomic per engine. On failure, roll the persisted prefix back
+    // so the config matches the schemas the transactional rename left unchanged.
+    let outcome = match kubuno_db::rename_schema_prefix(&state.db, &old_prefix, &new_prefix).await {
+        Ok(o) => o,
+        Err(e) => {
+            if let Err(re) = persist_prefix(&old_prefix) {
+                tracing::error!(error = %re, "Rollback du préfixe dans la config impossible après un renommage échoué");
+            }
             tracing::error!(error = %e, from = %old_prefix, to = %new_prefix, "Renommage du préfixe de schéma échoué");
-            match e {
+            return Err(match e {
                 kubuno_db::AdminError::Sqlx(err) => AppError::Database(err),
                 kubuno_db::AdminError::BadPrefix(p) => {
                     AppError::Validation(format!("Préfixe invalide : {p}"))
                 }
                 other => AppError::Internal(anyhow::anyhow!(other.to_string())),
-            }
-        })?;
-
-    // Persist the new prefix so it survives the restart. Written to the same
-    // config file the wizard uses; the in-memory settings keep the old value
-    // until the process restarts (which is exactly what finalises the change).
-    persist_prefix(&new_prefix)?;
+            });
+        }
+    };
 
     tracing::warn!(
         from = %old_prefix,

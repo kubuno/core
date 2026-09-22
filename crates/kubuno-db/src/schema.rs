@@ -54,6 +54,8 @@ pub const KUBUNO_SCHEMAS: &[&str] = &[
     "photos",
     "tasks",
     "wiki",
+    "build",
+    "stt",
 ];
 
 /// The maximum length of a prefix. Bounded so `<prefix><schema>` always stays a
