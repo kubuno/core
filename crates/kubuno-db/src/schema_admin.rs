@@ -1270,7 +1270,12 @@ fn pg_col(name: String, data_type: &str, udt: &str) -> Col {
         "integer" => (Codec::I32, q.clone()),
         "bigint" => (Codec::I64, q.clone()),
         "real" => (Codec::F32, q.clone()),
-        "double precision" | "numeric" => (Codec::F64, q.clone()),
+        "double precision" => (Codec::F64, q.clone()),
+        // sqlx refuses to decode a PostgreSQL `numeric` straight into `f64`
+        // (NUMERIC maps to a decimal type, not FLOAT8), so read it through a
+        // `::double precision` cast. Precision beyond f64 is dropped — the same
+        // parity the portable format already accepts for numeric values.
+        "numeric" => (Codec::F64, format!("{q}::double precision")),
         "uuid" => (Codec::Uuid, q.clone()),
         "json" | "jsonb" => (Codec::Json, q.clone()),
         "bytea" => (Codec::Blob, q.clone()),
@@ -1340,7 +1345,14 @@ async fn mysql_columns(
     Ok(rows
         .into_iter()
         .map(|(name, data_type, column_type)| {
-            let read_expr = quote_ident(&name);
+            let q = quote_ident(&name);
+            // A MySQL/MariaDB `DECIMAL`/`NUMERIC` does not decode into `f64`
+            // directly, so read it through a `CAST(... AS DOUBLE)` — mirroring the
+            // PostgreSQL `numeric` handling.
+            let read_expr = match data_type.to_ascii_lowercase().as_str() {
+                "decimal" | "numeric" => format!("CAST({q} AS DOUBLE)"),
+                _ => q,
+            };
             Col { codec: mysql_codec(&data_type, &column_type), name, read_expr }
         })
         .collect())

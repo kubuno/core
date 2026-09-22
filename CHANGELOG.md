@@ -312,6 +312,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **A backup no longer fails on `NUMERIC` columns.** Reading a PostgreSQL
+  `numeric` (or a MySQL/MariaDB `DECIMAL`) value straight into a 64-bit float is
+  rejected by the driver, so a whole-database backup aborted as soon as it
+  reached such a column (e.g. a latitude). Those columns are now read through a
+  `double precision` cast, so the backup — and a cross-engine copy — completes.
+
 - **Changing the schema prefix is now all-or-nothing, and renames every schema.**
   Two defects could leave an instance unusable after a prefix change: the rename
   only covered a fixed list of primary schemas, silently skipping the extra
