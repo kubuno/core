@@ -274,6 +274,27 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
                get(crate::handlers::admin::db_switch::get_job))
         .route("/modules/:id/database/migrate",
                post(crate::handlers::admin::db_switch::migrate_module_database))
+        // ── Registre des connexions de base de données (superadmin) : préserve
+        //    l'accès aux bases précédentes après une bascule, permet d'y revenir
+        //    (données existantes / en écrasant), de rafraîchir un secours et
+        //    d'oublier une connexion. Pour la base principale ET par module. ──────
+        .route("/database/connections",
+               get(crate::handlers::admin::db_connections::list_core_connections)
+              .post(crate::handlers::admin::db_connections::register_core_connection))
+        .route("/database/connections/:cid/switch",
+               post(crate::handlers::admin::db_connections::switch_core_connection))
+        .route("/database/connections/:cid/sync",
+               post(crate::handlers::admin::db_connections::sync_core_connection))
+        .route("/database/connections/:cid",
+               delete(crate::handlers::admin::db_connections::forget_core_connection))
+        .route("/modules/:id/database/connections",
+               get(crate::handlers::admin::db_connections::list_module_connections))
+        .route("/modules/:id/database/connections/:cid/switch",
+               post(crate::handlers::admin::db_connections::switch_module_connection))
+        .route("/modules/:id/database/connections/:cid/sync",
+               post(crate::handlers::admin::db_connections::sync_module_connection))
+        .route("/modules/:id/database/connections/:cid",
+               delete(crate::handlers::admin::db_connections::forget_module_connection))
         // ── Marketplace (catalogue distant + installation) ────────
         .route("/marketplace",            get(crate::handlers::admin::marketplace::list_marketplace))
         .route("/marketplace/:id/install", post(crate::handlers::admin::marketplace::install_marketplace))

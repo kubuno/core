@@ -68,7 +68,7 @@ pub struct TargetDto {
 }
 
 impl TargetDto {
-    fn validate(&self) -> Result<Backend, AppError> {
+    pub(crate) fn validate(&self) -> Result<Backend, AppError> {
         let backend = Backend::parse(&self.engine)
             .filter(|_| ENGINES.contains(&self.engine.as_str()))
             .ok_or_else(|| AppError::Validation(format!("Moteur inconnu : {}", self.engine)))?;
@@ -90,7 +90,7 @@ impl TargetDto {
         }
     }
 
-    fn credentials(&self) -> DbCredentials {
+    pub(crate) fn credentials(&self) -> DbCredentials {
         DbCredentials {
             engine:   self.engine.clone(),
             host:     self.host.trim().to_string(),
@@ -101,12 +101,26 @@ impl TargetDto {
             path:     self.path.clone().unwrap_or_default(),
         }
     }
+
+    /// Builds a target from concrete credentials, so a registered connection can
+    /// drive the same copy path as an operator-typed form.
+    pub(crate) fn from_credentials(creds: &DbCredentials) -> Self {
+        TargetDto {
+            engine:   creds.engine.clone(),
+            host:     creds.host.clone(),
+            port:     if creds.port == 0 { None } else { Some(creds.port) },
+            user:     creds.user.clone(),
+            password: creds.password.clone(),
+            database: creds.database.clone(),
+            path:     if creds.path.is_empty() { None } else { Some(creds.path.clone()) },
+        }
+    }
 }
 
 /// Builds engine-agnostic [`DatabaseSettings`] from credentials plus an optional
 /// prefix, going through deserialization so it stays in step with the running
 /// instance's own parsing.
-fn settings_from(creds: &DbCredentials, prefix: &str) -> Result<DatabaseSettings, AppError> {
+pub(crate) fn settings_from(creds: &DbCredentials, prefix: &str) -> Result<DatabaseSettings, AppError> {
     let mut obj = json!({
         "engine": creds.engine,
         "max_connections": 4,
@@ -154,7 +168,7 @@ pub struct Job {
     pub error:         String,
 }
 
-fn job_json(j: &Job) -> Value {
+pub(crate) fn job_json(j: &Job) -> Value {
     json!({
         "id":            j.id,
         "scope":         j.scope,
@@ -170,10 +184,10 @@ fn job_json(j: &Job) -> Value {
     })
 }
 
-const JOB_COLS: &str = "id, scope, source_engine, target_engine, status, tables_total, \
+pub(crate) const JOB_COLS: &str = "id, scope, source_engine, target_engine, status, tables_total, \
                         tables_done, total_rows, copied_rows, current_table, error";
 
-async fn create_job(db: &DbPool, scope: &str, source: &str, target: &str) -> Result<Uuid, AppError> {
+pub(crate) async fn create_job(db: &DbPool, scope: &str, source: &str, target: &str) -> Result<Uuid, AppError> {
     let id = Uuid::new_v4();
     db.execute(
         "INSERT INTO core.db_migration_jobs (id, scope, source_engine, target_engine, status) \
@@ -185,7 +199,7 @@ async fn create_job(db: &DbPool, scope: &str, source: &str, target: &str) -> Res
     Ok(id)
 }
 
-async fn set_progress(db: &DbPool, id: Uuid, table: &str, tables_done: i32, copied: i64) {
+pub(crate) async fn set_progress(db: &DbPool, id: Uuid, table: &str, tables_done: i32, copied: i64) {
     if let Err(e) = db
         .execute(
             "UPDATE core.db_migration_jobs \
@@ -198,7 +212,7 @@ async fn set_progress(db: &DbPool, id: Uuid, table: &str, tables_done: i32, copi
     }
 }
 
-async fn finish_ok(db: &DbPool, id: Uuid, tables_total: i32, total_rows: i64) {
+pub(crate) async fn finish_ok(db: &DbPool, id: Uuid, tables_total: i32, total_rows: i64) {
     let _ = db
         .execute(
             "UPDATE core.db_migration_jobs \
@@ -209,7 +223,7 @@ async fn finish_ok(db: &DbPool, id: Uuid, tables_total: i32, total_rows: i64) {
         .await;
 }
 
-async fn finish_err(db: &DbPool, id: Uuid, message: &str) {
+pub(crate) async fn finish_err(db: &DbPool, id: Uuid, message: &str) {
     let _ = db
         .execute(
             "UPDATE core.db_migration_jobs SET status = 'failed', error = $1 WHERE id = $2",
@@ -293,6 +307,16 @@ pub async fn migrate_core_database(
     let creds = dto.credentials();
     let target_settings = settings_from(&creds, &prefix_str)?;
 
+    // Preserve the connection we are leaving so it stays reachable from the
+    // registry (best-effort: a registry hiccup must not block the switch).
+    if let Ok(src_creds) = crate::config::settings::database_credentials(&state.settings.database) {
+        let p = if prefix_str.is_empty() { None } else { Some(prefix_str.as_str()) };
+        let _ = crate::modules::db_registry::register(
+            &state.db, &state.settings.auth.jwt_secret,
+            crate::modules::db_registry::CORE_SCOPE, &src_creds, p, None, true,
+        ).await;
+    }
+
     let job = create_job(&state.db, "core", &source_engine, &dto.engine).await?;
 
     // Everything after this point reports failure onto the job rather than
@@ -307,6 +331,12 @@ pub async fn migrate_core_database(
                 return Err(e);
             }
             finish_ok(&state.db, job, tables, rows).await;
+            // Record the adopted target as the scope's new current connection.
+            let p = if prefix_str.is_empty() { None } else { Some(prefix_str.as_str()) };
+            let _ = crate::modules::db_registry::register(
+                &state.db, &state.settings.auth.jwt_secret,
+                crate::modules::db_registry::CORE_SCOPE, &creds, p, None, true,
+            ).await;
             tracing::warn!(from = %source_engine, to = %dto.engine, tables, rows,
                 "Base principale copiée vers le nouveau moteur — redémarrage du core requis");
             Ok(Json(json!({
@@ -324,7 +354,7 @@ pub async fn migrate_core_database(
 
 /// Opens the target, migrates it, and copies the core schema onto it. Returns
 /// `(tables, rows)`.
-async fn do_core_copy(
+pub(crate) async fn do_core_copy(
     state: &AppState,
     target_settings: &DatabaseSettings,
     eff: &str,
@@ -358,14 +388,14 @@ async fn do_core_copy(
     Ok((report.tables.len() as i32, report.total_rows))
 }
 
-fn map_admin_err(e: kubuno_db::AdminError) -> AppError {
+pub(crate) fn map_admin_err(e: kubuno_db::AdminError) -> AppError {
     match e {
         kubuno_db::AdminError::Sqlx(err) => AppError::Database(err),
         other => AppError::Internal(anyhow::anyhow!(other.to_string())),
     }
 }
 
-async fn fetch_job(db: &DbPool, id: Uuid) -> Result<Job, AppError> {
+pub(crate) async fn fetch_job(db: &DbPool, id: Uuid) -> Result<Job, AppError> {
     db.fetch_one_as(
         &format!("SELECT {JOB_COLS} FROM core.db_migration_jobs WHERE id = $1"),
         params![id],
@@ -377,7 +407,7 @@ async fn fetch_job(db: &DbPool, id: Uuid) -> Result<Job, AppError> {
 /// Writes the new engine and credentials into the running config file, mirroring
 /// the install wizard's field layout (engine + discrete fields, or the SQLite
 /// directory). The schema prefix is left as it was.
-fn persist_core_settings(creds: &DbCredentials, backend: Backend) -> Result<(), AppError> {
+pub(crate) fn persist_core_settings(creds: &DbCredentials, backend: Backend) -> Result<(), AppError> {
     let target = config_file::target_path();
     if !config_file::is_writable(&target) {
         return Err(AppError::Internal(anyhow::anyhow!(
@@ -443,6 +473,13 @@ pub async fn migrate_module_database(
         .await
         .map_err(AppError::Internal)?;
     let source_engine = source.credentials.engine.clone();
+    let src_prefix = source.schema_prefix.clone();
+
+    // Preserve the connection we are leaving so it stays reachable (best-effort).
+    let _ = crate::modules::db_registry::register(
+        &state.db, &state.settings.auth.jwt_secret, &id,
+        &source.credentials, src_prefix.as_deref(), None, true,
+    ).await;
 
     let job = create_job(&state.db, &id, &source_engine, &dto.engine).await?;
 
@@ -450,6 +487,11 @@ pub async fn migrate_module_database(
     match outcome {
         Ok((tables, rows)) => {
             finish_ok(&state.db, job, tables, rows).await;
+            // Record the adopted target as the module's new current connection.
+            let _ = crate::modules::db_registry::register(
+                &state.db, &state.settings.auth.jwt_secret, &id,
+                &dto.credentials(), src_prefix.as_deref(), None, true,
+            ).await;
             Ok(Json(json!({
                 "job":       job_json(&fetch_job(&state.db, job).await?),
                 "restarted": true,
@@ -463,7 +505,7 @@ pub async fn migrate_module_database(
     }
 }
 
-async fn do_module_copy(
+pub(crate) async fn do_module_copy(
     state: &AppState,
     module_id: &str,
     source: &db_config::Resolved,
@@ -480,7 +522,10 @@ async fn do_module_copy(
     let dst_eff = src_eff.clone();
 
     // Store the override so the module restarts onto the target and self-migrates.
-    upsert_module_override(state, module_id, dto).await?;
+    // The override carries the same prefix the copy uses, so the module creates
+    // its tables at exactly the schema name the copy targets.
+    let prefix_opt = if src_prefix.is_empty() { None } else { Some(src_prefix.as_str()) };
+    upsert_module_override(state, module_id, dto, prefix_opt).await?;
     let restarted =
         crate::modules::manager::restart_module(state.settings.clone(), state.db.clone(), module_id).await;
     if !restarted {
@@ -526,11 +571,17 @@ async fn do_module_copy(
 
 /// Stores (or updates) the module's database override so the supervisor starts
 /// it on the target. Encrypts the password with the module-database key.
-async fn upsert_module_override(state: &AppState, module_id: &str, dto: &TargetDto) -> Result<(), AppError> {
+pub(crate) async fn upsert_module_override(
+    state: &AppState,
+    module_id: &str,
+    dto: &TargetDto,
+    prefix: Option<&str>,
+) -> Result<(), AppError> {
     let creds = dto.credentials();
     let password_enc =
         db_config::encrypt_password(&state.settings.auth.jwt_secret, &creds.password).map_err(AppError::Internal)?;
     let port_store: i32 = dto.port.map(i32::from).unwrap_or(0);
+    let prefix_store = prefix.map(str::trim).filter(|p| !p.is_empty());
     let conflict = state.db.backend().upsert(
         "core.module_databases",
         &["module_id"],
@@ -542,13 +593,14 @@ async fn upsert_module_override(state: &AppState, module_id: &str, dto: &TargetD
             kubuno_db::dialect::Assign::Incoming("password_enc"),
             kubuno_db::dialect::Assign::Incoming("db_name"),
             kubuno_db::dialect::Assign::Incoming("db_path"),
+            kubuno_db::dialect::Assign::Incoming("schema_prefix"),
             kubuno_db::dialect::Assign::Incoming("enabled"),
         ],
     );
     let sql = format!(
         "INSERT INTO core.module_databases \
-            (module_id, engine, host, port, db_user, password_enc, db_name, db_path, enabled) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE){conflict}"
+            (module_id, engine, host, port, db_user, password_enc, db_name, db_path, schema_prefix, enabled) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE){conflict}"
     );
     state
         .db
@@ -563,6 +615,7 @@ async fn upsert_module_override(state: &AppState, module_id: &str, dto: &TargetD
                 password_enc,
                 creds.database.trim(),
                 creds.path.trim(),
+                prefix_store,
             ],
         )
         .await
@@ -572,7 +625,7 @@ async fn upsert_module_override(state: &AppState, module_id: &str, dto: &TargetD
 
 /// Polls the target schema until it holds at least one base table (the module
 /// finished migrating) or the deadline passes.
-async fn wait_for_tables(target: &DbPool, eff: &str, timeout: Duration) -> Result<(), AppError> {
+pub(crate) async fn wait_for_tables(target: &DbPool, eff: &str, timeout: Duration) -> Result<(), AppError> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
         let count = count_tables(target, eff).await.unwrap_or(0);
@@ -589,7 +642,7 @@ async fn wait_for_tables(target: &DbPool, eff: &str, timeout: Duration) -> Resul
     }
 }
 
-async fn count_tables(pool: &DbPool, eff: &str) -> Result<i64, sqlx::Error> {
+pub(crate) async fn count_tables(pool: &DbPool, eff: &str) -> Result<i64, sqlx::Error> {
     match pool.backend() {
         Backend::Postgres | Backend::MySql => {
             pool.fetch_scalar::<i64>(

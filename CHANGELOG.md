@@ -11,6 +11,24 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Never lose access to a previous database after a switch — a registry of
+  known connections.** The **System ▸ Main database** page, and every module's
+  database card, gain a **Known connections** section listing every database that
+  scope has ever pointed at (engine, host, database, label, which one is current,
+  when it was last used). Switching from A to B now keeps A in the registry — with
+  its engine, host, port, user, encrypted password, path and prefix — so an
+  administrator can always go back. Each recorded connection offers, per row:
+  *Switch (existing data)* to re-point at it and restart using its data as it
+  stands; *Switch (overwrite)* to copy the current data onto it (overwriting its
+  old data) before switching; *Update its data* to copy the current data onto it
+  **without** switching, to refresh a standby in place; and *Forget* to drop it
+  from the registry (the current connection can never be forgotten). Every
+  destructive action asks for confirmation explaining the impact (overwrite,
+  restart, brief outage). The current live connection is auto-recorded, and both
+  sides of a plain engine switch are registered automatically, so the list is
+  always complete. Passwords are never shown — a connection only reports whether
+  one is stored. All endpoints are restricted to superadministrators.
+
 - **Change the schema prefix of a running instance from the admin console.**
   A new **System ▸ Main database** page lets a superadministrator change the
   global schema prefix (the WordPress-style `[database] schema_prefix`) without

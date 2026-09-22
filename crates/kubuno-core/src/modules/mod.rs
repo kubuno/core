@@ -1,4 +1,5 @@
 pub mod db_config;
+pub mod db_registry;
 pub mod manager;
 pub mod manifest;
 pub mod marketplace;
