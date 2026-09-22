@@ -108,6 +108,20 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Migrating an instance to another engine now preserves identifiers, booleans,
+  dates and JSON faithfully.** When the source database stores values ambiguously —
+  SQLite keeps a UUID as a blob, a boolean as an integer, and timestamps, dates
+  and JSON as text; MariaDB reports a `JSON` column as plain text — a data copy
+  used to fail rather than risk mis-storing those columns into a strict PostgreSQL
+  or MySQL destination. The copy is now steered by the destination column's real
+  type, so switching from SQLite to PostgreSQL or MySQL (and MariaDB `JSON` into
+  PostgreSQL `jsonb`) keeps every UUID, boolean, timestamp, date and JSON value
+  intact. Native PostgreSQL array columns (`text[]`, `uuid[]`) are also filled
+  correctly from the portable list shape — a case that previously failed even
+  between two PostgreSQL databases. A value that genuinely cannot be converted
+  still fails safely, rolling the copy back and leaving the source untouched,
+  rather than storing something wrong.
+
 - **The database panels start from the parameters already in use.** The main
   database migration form and each module's database card now pre-fill the host,
   port, database name and user from the connection the instance is currently

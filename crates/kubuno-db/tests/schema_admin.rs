@@ -312,6 +312,13 @@ async fn copy_mysql_to_sqlite() {
         return;
     };
     let s = settings("mysql", serde_json::json!({ "url": url }));
+    // A MySQL connection opens *against* a named database, so the throwaway
+    // `srcmy` database must be created through an admin pool first (a MySQL
+    // database *is* a schema). Cleaned up at the end.
+    let admin = connect(&s, "mysql").await.expect("mysql admin connect");
+    let _ = admin.execute("DROP DATABASE IF EXISTS `srcmy`", params![]).await;
+    admin.execute("CREATE DATABASE `srcmy`", params![]).await.expect("create srcmy");
+
     let src = connect(&s, "srcmy").await.expect("mysql connect");
     let _ = src.execute("DROP TABLE IF EXISTS `srcmy`.`books`", params![]).await;
     let _ = src.execute("DROP TABLE IF EXISTS `srcmy`.`authors`", params![]).await;
@@ -322,4 +329,6 @@ async fn copy_mysql_to_sqlite() {
     create_demo_tables(&dst, "mydst").await;
     run_copy(&src, "srcmy", &dst, "mydst").await;
     let _ = JWT; // reserved for parity with the other suites
+
+    let _ = admin.execute("DROP DATABASE IF EXISTS `srcmy`", params![]).await;
 }

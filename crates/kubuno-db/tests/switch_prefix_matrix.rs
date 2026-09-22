@@ -5,7 +5,11 @@
 //!   `(src, dst)` of the available engines is exercised on a rich schema (uuid,
 //!   timestamptz, json, bool, int4/int8, bytea/blob, JSON-encoded arrays, text,
 //!   NULLs, two tables with a foreign key). Each case verifies row counts,
-//!   pointwise value fidelity, and that the source is left untouched.
+//!   pointwise value fidelity, and that the source is left untouched. Copying out
+//!   of a type-poor source (SQLite's storage classes, MariaDB's `JSON`-as-
+//!   `LONGTEXT`) into a strict destination is destination-directed, so those
+//!   directions are faithful too; a dedicated test covers writing into a native
+//!   PostgreSQL array column (`text[]`/`uuid[]`).
 //! * **#2 — schema-prefix rename** ([`rename_schema_prefix`] /
 //!   [`discover_prefixed_schemas`]): a miniature instance (core + a primary
 //!   module + its *secondary* schemas `office_data/maths/script/wb` + the two
@@ -202,14 +206,13 @@ fn avatar_ref() -> Vec<u8> {
 
 /// Creates `people` (parent) and `posts` (child, FK → people) with the richest
 /// types each engine offers. SQLite declares only storage classes on purpose:
-/// that is what makes a copy *out of* SQLite unable to re-derive `boolean`/`uuid`
-/// on a strict destination — the documented fidelity caveat.
+/// that is what exercises the destination-directed rebuild, which now re-derives
+/// `boolean`/`uuid`/timestamp/date/json on a strict destination out of SQLite's
+/// ambiguous storage classes.
 ///
-/// `with_json` includes the two JSON columns. It is left out for the MySQL→
-/// PostgreSQL direction because MariaDB reports a `JSON` column as `LONGTEXT` in
-/// its catalog (it has no distinct JSON type), so the generic copy reads it as
-/// text and a strict PostgreSQL `jsonb` destination rejects it — a MariaDB-
-/// specific fidelity caveat covered by its own dedicated test.
+/// `with_json` includes the two JSON columns. Every direction — including
+/// MySQL→PostgreSQL, where MariaDB reports a `JSON` column as `LONGTEXT` — now
+/// copies them faithfully, so the copy tests keep the JSON columns on.
 async fn create_rich(pool: &DbPool, schema: &str, with_json: bool) {
     let json_cols = match (pool.backend(), with_json) {
         (_, false) => "",
@@ -508,7 +511,7 @@ async fn copy_pg_to_sqlite() {
 }
 
 #[tokio::test]
-async fn copy_sqlite_to_pg_documents_the_caveat() {
+async fn copy_sqlite_to_pg_is_faithful() {
     if pg_base_url().is_none() {
         eprintln!("KUBUNO_PG_TEST_URL non défini — copy_sqlite_to_pg ignoré");
         return;
@@ -518,22 +521,12 @@ async fn copy_sqlite_to_pg_documents_the_caveat() {
     let dst = open_pg().await;
     create_rich(&src.pool, &src.schema, true).await;
     create_rich(&dst.pool, &dst.schema, true).await;
-    seed(&src.pool, &src.schema, true).await;
 
-    // The documented fidelity limit: SQLite stored the uuid as BLOB and the bool
-    // as INTEGER, so copying into a strict PostgreSQL `uuid`/`boolean` column
-    // cannot re-derive those types — the copy fails *safely* (an error, not a
-    // silent mis-store) and the destination transaction rolls back, leaving it
-    // empty. This proves the limitation is a hard, visible boundary.
-    let result = copy_schema(&src.pool, &src.schema, &dst.pool, &dst.schema, &mut |_, _| {}).await;
-    assert!(
-        result.is_err(),
-        "SQLite→PostgreSQL of a bool/uuid column must fail rather than mis-store; got {result:?}"
-    );
-    assert_eq!(count(&dst.pool, &dst.schema, "people").await, 0, "destination rolled back");
-    // The source is untouched by the failed attempt.
-    assert_eq!(count(&src.pool, &src.schema, "people").await, 2, "source intact after failure");
-    eprintln!("SQLite→PostgreSQL caveat confirmed (safe failure): {:?}", result.err());
+    // SQLite stored the uuid as BLOB, the bool as INTEGER and the timestamp/date/
+    // json as TEXT. The destination-directed copy reads the strict PostgreSQL
+    // catalog and rebuilds each of those from the target type, so the migration
+    // is now fully faithful — the identifiers, booleans, dates and JSON survive.
+    run_copy(&src, &dst, true, true).await;
 
     src.cleanup().await;
     dst.cleanup().await;
@@ -579,26 +572,25 @@ async fn copy_mysql_to_pg() {
     }
     let src = open_mysql().await;
     let dst = open_pg().await;
-    // JSON columns are excluded here: on MariaDB a `JSON` column is reported as
-    // `LONGTEXT` in the catalog, so the generic copy reads it as text and a
-    // strict PostgreSQL `jsonb` destination rejects it. That MariaDB-specific
-    // caveat has its own test below; the distinctly-typed columns
-    // (uuid/bool/timestamp/int/bytea) copy out of MySQL into PostgreSQL exactly.
-    create_rich(&src.pool, &src.schema, false).await;
-    create_rich(&dst.pool, &dst.schema, false).await;
-    run_copy(&src, &dst, true, false).await;
+    // JSON columns are included: on MariaDB a `JSON` column is reported as
+    // `LONGTEXT` in the catalog, so the generic read carries it as text; the
+    // destination-directed copy now reparses that text into the strict PostgreSQL
+    // `jsonb` column, so the whole rich schema — including JSON — copies faithfully.
+    create_rich(&src.pool, &src.schema, true).await;
+    create_rich(&dst.pool, &dst.schema, true).await;
+    run_copy(&src, &dst, true, true).await;
     src.cleanup().await;
     dst.cleanup().await;
 }
 
-/// Documents the MariaDB `JSON`→PostgreSQL `jsonb` fidelity caveat directly: a
-/// MariaDB `JSON` column is catalog-indistinguishable from `LONGTEXT`, so the
-/// generic copy carries it as text, which a strict `jsonb` destination rejects.
-/// The copy fails safely (an error, empty destination) rather than mis-storing.
+/// Proves the MariaDB `JSON`→PostgreSQL `jsonb` direction directly, in isolation:
+/// a MariaDB `JSON` column is catalog-indistinguishable from `LONGTEXT`, so the
+/// generic read carries it as text; the destination-directed copy reparses it
+/// into `jsonb` and the object round-trips exactly.
 #[tokio::test]
-async fn copy_mariadb_json_into_pg_jsonb_caveat() {
+async fn copy_mariadb_json_into_pg_jsonb_is_faithful() {
     if pg_base_url().is_none() || mysql_base_url().is_none() {
-        eprintln!("PG ou MySQL non défini — copy_mariadb_json_caveat ignoré");
+        eprintln!("PG ou MySQL non défini — copy_mariadb_json ignoré");
         return;
     }
     let src = open_mysql().await;
@@ -626,18 +618,15 @@ async fn copy_mariadb_json_into_pg_jsonb_caveat() {
         .await
         .expect("create pg j");
 
-    let result = copy_schema(&src.pool, &src.schema, &dst.pool, &dst.schema, &mut |_, _| {}).await;
-    assert!(
-        result.is_err(),
-        "MariaDB JSON→PostgreSQL jsonb must fail rather than mis-store; got {result:?}"
-    );
-    let n: i64 = dst
-        .pool
-        .fetch_scalar(&format!("SELECT COUNT(*) FROM \"{}\".\"j\"", dst.schema), params![])
+    copy_schema(&src.pool, &src.schema, &dst.pool, &dst.schema, &mut |_, _| {})
         .await
-        .unwrap();
-    assert_eq!(n, 0, "destination rolled back");
-    eprintln!("MariaDB JSON→PostgreSQL jsonb caveat confirmed (safe failure): {:?}", result.err());
+        .expect("MariaDB JSON→PostgreSQL jsonb copy");
+    let got: serde_json::Value = dst
+        .pool
+        .fetch_scalar(&format!("SELECT meta FROM \"{}\".\"j\" WHERE id = $1", dst.schema), params![1_i32])
+        .await
+        .expect("read pg meta");
+    assert_eq!(got, meta_ref(), "MariaDB JSON object survived into jsonb");
 
     src.cleanup().await;
     dst.cleanup().await;
@@ -660,7 +649,7 @@ async fn copy_mysql_to_sqlite() {
 }
 
 #[tokio::test]
-async fn copy_sqlite_to_mysql_documents_the_caveat() {
+async fn copy_sqlite_to_mysql_is_faithful() {
     if mysql_base_url().is_none() {
         eprintln!("KUBUNO_MYSQL_TEST_URL non défini — copy_sqlite_to_mysql ignoré");
         return;
@@ -670,20 +659,190 @@ async fn copy_sqlite_to_mysql_documents_the_caveat() {
     let dst = open_mysql().await;
     create_rich(&src.pool, &src.schema, true).await;
     create_rich(&dst.pool, &dst.schema, true).await;
-    seed(&src.pool, &src.schema, true).await;
 
-    // Same caveat as SQLite→PostgreSQL: SQLite's storage classes cannot be
-    // re-derived into MySQL's strict `datetime(6)`/`json` columns (the timestamp
-    // and json were stored as TEXT in SQLite), so the copy fails rather than
-    // mis-store. Asserted so the boundary is pinned.
-    let result = copy_schema(&src.pool, &src.schema, &dst.pool, &dst.schema, &mut |_, _| {}).await;
-    assert!(
-        result.is_err(),
-        "SQLite→MySQL of text-stored datetime/json must fail rather than mis-store; got {result:?}"
+    // Like SQLite→PostgreSQL: SQLite stored the timestamp/date/json as TEXT. The
+    // destination-directed copy rebuilds them into MySQL's strict `datetime(6)`/
+    // `date`/`json` columns, so the migration is faithful rather than a failure.
+    run_copy(&src, &dst, true, true).await;
+
+    src.cleanup().await;
+    dst.cleanup().await;
+}
+
+// ── native PostgreSQL array columns (text[]/uuid[]) ───────────────────────────
+// Writing into a native PostgreSQL array is a distinct path: the value travels
+// as a portable JSON array and is landed through a `$n::<elem>[]` cast. Before
+// this it failed even PG→PG (a jsonb value cannot bind into a `text[]` column).
+
+/// The destination PostgreSQL table with two native array columns.
+async fn make_pg_array_dst(pool: &DbPool, schema: &str) {
+    pool.execute(
+        &format!(
+            "CREATE TABLE \"{schema}\".\"arr\" \
+                (id int PRIMARY KEY, tags text[], ids uuid[])"
+        ),
+        params![],
+    )
+    .await
+    .expect("create pg arr");
+}
+
+/// Row 1 has populated arrays, row 2 has a NULL `tags` and an empty `ids` — so
+/// both the empty-array and the typed-NULL array paths are checked.
+async fn verify_pg_arrays(dst: &DbPool, schema: &str) {
+    let tags: serde_json::Value = dst
+        .fetch_scalar(&format!("SELECT to_jsonb(tags) FROM \"{schema}\".\"arr\" WHERE id = $1"), params![1_i32])
+        .await
+        .expect("read tags");
+    assert_eq!(tags, serde_json::json!(["red", "blue"]), "text[] survived");
+    let ids: serde_json::Value = dst
+        .fetch_scalar(&format!("SELECT to_jsonb(ids) FROM \"{schema}\".\"arr\" WHERE id = $1"), params![1_i32])
+        .await
+        .expect("read ids");
+    assert_eq!(
+        ids,
+        serde_json::json!([a1_id().to_string(), a2_id().to_string()]),
+        "uuid[] survived"
     );
-    assert_eq!(count(&dst.pool, &dst.schema, "people").await, 0, "destination rolled back");
-    assert_eq!(count(&src.pool, &src.schema, "people").await, 2, "source intact after failure");
-    eprintln!("SQLite→MySQL caveat confirmed (safe failure): {:?}", result.err());
+    // A NULL array column reads back as a SQL NULL (not a JSON `null`); the row
+    // exists, so decode the scalar itself as optional.
+    let tags2: Option<serde_json::Value> = dst
+        .fetch_scalar(
+            &format!("SELECT to_jsonb(tags) FROM \"{schema}\".\"arr\" WHERE id = $1"),
+            params![2_i32],
+        )
+        .await
+        .expect("read tags2");
+    assert_eq!(tags2, None, "NULL array stays NULL");
+    let ids2: serde_json::Value = dst
+        .fetch_scalar(&format!("SELECT to_jsonb(ids) FROM \"{schema}\".\"arr\" WHERE id = $1"), params![2_i32])
+        .await
+        .expect("read ids2");
+    assert_eq!(ids2, serde_json::json!([]), "empty array stays empty");
+}
+
+#[tokio::test]
+async fn copy_native_pg_arrays_pg_to_pg() {
+    if pg_base_url().is_none() {
+        eprintln!("KUBUNO_PG_TEST_URL non défini — copy_native_pg_arrays_pg_to_pg ignoré");
+        return;
+    }
+    let src = open_pg().await;
+    let dst = open_pg().await;
+    make_pg_array_dst(&src.pool, &src.schema).await;
+    make_pg_array_dst(&dst.pool, &dst.schema).await;
+    // Seed the source arrays with array literals (a jsonb value cannot bind into
+    // a text[]/uuid[] column — the very reason the copy needs its cast).
+    src.pool
+        .execute(
+            &format!(
+                "INSERT INTO \"{}\".\"arr\" (id, tags, ids) \
+                 VALUES (1, '{{red,blue}}'::text[], $1::uuid[]), (2, NULL, '{{}}'::uuid[])",
+                src.schema
+            ),
+            params![format!("{{{},{}}}", a1_id(), a2_id())],
+        )
+        .await
+        .expect("seed pg arr");
+
+    copy_schema(&src.pool, &src.schema, &dst.pool, &dst.schema, &mut |_, _| {})
+        .await
+        .expect("copy native arrays PG→PG");
+    verify_pg_arrays(&dst.pool, &dst.schema).await;
+
+    src.cleanup().await;
+    dst.cleanup().await;
+}
+
+#[tokio::test]
+async fn copy_native_pg_arrays_sqlite_to_pg() {
+    if pg_base_url().is_none() {
+        eprintln!("KUBUNO_PG_TEST_URL non défini — copy_native_pg_arrays_sqlite_to_pg ignoré");
+        return;
+    }
+    let dir = TempDir::new();
+    let src = open_sqlite(dir.str(), "arrsq").await;
+    let dst = open_pg().await;
+    // SQLite stores each list column as TEXT holding a JSON array.
+    src.pool
+        .execute(
+            &format!(
+                "CREATE TABLE \"{}\".\"arr\" (id INTEGER PRIMARY KEY, tags TEXT, ids TEXT)",
+                src.schema
+            ),
+            params![],
+        )
+        .await
+        .expect("create sqlite arr");
+    let ids_json = serde_json::json!([a1_id().to_string(), a2_id().to_string()]).to_string();
+    src.pool
+        .execute(
+            &format!("INSERT INTO \"{}\".\"arr\" (id, tags, ids) VALUES ($1,$2,$3)", src.schema),
+            params![1_i32, r#"["red","blue"]"#, ids_json],
+        )
+        .await
+        .expect("seed sqlite arr row1");
+    src.pool
+        .execute(
+            &format!("INSERT INTO \"{}\".\"arr\" (id, tags, ids) VALUES ($1,$2,$3)", src.schema),
+            params![2_i32, None::<&str>, "[]"],
+        )
+        .await
+        .expect("seed sqlite arr row2");
+    make_pg_array_dst(&dst.pool, &dst.schema).await;
+
+    copy_schema(&src.pool, &src.schema, &dst.pool, &dst.schema, &mut |_, _| {})
+        .await
+        .expect("copy native arrays SQLite→PG");
+    verify_pg_arrays(&dst.pool, &dst.schema).await;
+
+    src.cleanup().await;
+    dst.cleanup().await;
+}
+
+#[tokio::test]
+async fn copy_native_pg_arrays_mysql_to_pg() {
+    if pg_base_url().is_none() || mysql_base_url().is_none() {
+        eprintln!("PG ou MySQL non défini — copy_native_pg_arrays_mysql_to_pg ignoré");
+        return;
+    }
+    let src = open_mysql().await;
+    let dst = open_pg().await;
+    // MariaDB stores each list column as JSON (reported LONGTEXT).
+    src.pool
+        .execute(
+            &format!(
+                "CREATE TABLE \"{}\".\"arr\" (id int PRIMARY KEY, tags json, ids json)",
+                src.schema
+            ),
+            params![],
+        )
+        .await
+        .expect("create mysql arr");
+    src.pool
+        .execute(
+            &format!("INSERT INTO \"{}\".\"arr\" (id, tags, ids) VALUES ($1,$2,$3)", src.schema),
+            params![
+                1_i32,
+                serde_json::json!(["red", "blue"]),
+                serde_json::json!([a1_id().to_string(), a2_id().to_string()])
+            ],
+        )
+        .await
+        .expect("seed mysql arr row1");
+    src.pool
+        .execute(
+            &format!("INSERT INTO \"{}\".\"arr\" (id, tags, ids) VALUES ($1,$2,$3)", src.schema),
+            params![2_i32, None::<serde_json::Value>, serde_json::json!([])],
+        )
+        .await
+        .expect("seed mysql arr row2");
+    make_pg_array_dst(&dst.pool, &dst.schema).await;
+
+    copy_schema(&src.pool, &src.schema, &dst.pool, &dst.schema, &mut |_, _| {})
+        .await
+        .expect("copy native arrays MySQL→PG");
+    verify_pg_arrays(&dst.pool, &dst.schema).await;
 
     src.cleanup().await;
     dst.cleanup().await;

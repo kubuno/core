@@ -23,12 +23,24 @@
 //! A value is read at the source engine's native shape and carried as a
 //! [`DbValue`]; the destination coerces it into its column. PostgreSQL and MySQL
 //! keep a UUID, a boolean and a timestamp as distinct types, so a copy *from*
-//! one of them is fully faithful. SQLite has only storage classes (a UUID and a
-//! hash are both `BLOB`, a boolean and a count both `INTEGER`), so copying *from*
-//! SQLite *into* PostgreSQL cannot re-derive a `boolean` or a `uuid` column that
-//! SQLite stored as `INTEGER`/`BLOB`. That is the one direction with a caveat,
-//! and it is the same limitation the portable backup documents. Same-engine
-//! copies and copies out of a richly-typed engine are exact.
+//! one of them stays richly typed. SQLite has only storage classes (a UUID and a
+//! hash are both `BLOB`, a boolean and a count both `INTEGER`, a timestamp and a
+//! label both `TEXT`), and MariaDB reports a `JSON` column as `LONGTEXT` in its
+//! catalog, so a value read from either engine can arrive *ambiguously typed*.
+//!
+//! To copy faithfully out of such a "type-poor" source, the copy is
+//! **destination-directed**: it also reads the destination catalog (freshly
+//! migrated, so its columns carry the real logical types) and, when the source
+//! codec is ambiguous while the destination column is strict, it *reconstructs*
+//! the value from the destination type — a `BLOB(16)`/`TEXT` becomes a `uuid`, an
+//! `INTEGER` a `boolean`, an ISO `TEXT` a `timestamp`/`date`, and a JSON `TEXT`
+//! (SQLite list column, or MariaDB `LONGTEXT`) a `json`/`jsonb`. A native
+//! PostgreSQL array column (`text[]`, `uuid[]`, …) is written from the portable
+//! JSON-array shape through a `$n::<elem>[]` cast. Reconstruction never guesses
+//! silently: a value that cannot be parsed into the destination type is a hard
+//! [`AdminError::Convert`] and rolls the whole copy back, leaving the source
+//! intact. Same-engine copies and copies out of a richly-typed engine keep their
+//! existing, exact path.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -55,6 +67,16 @@ pub enum AdminError {
     },
     #[error("préfixe de schéma invalide : {0}")]
     BadPrefix(String),
+    /// A type-poor source value could not be reconstructed into the destination
+    /// column's strict logical type. Returned instead of mis-storing, so the copy
+    /// fails safely and the source is left intact.
+    #[error("conversion impossible de {table}.{column} vers {target} : {detail}")]
+    Convert {
+        table: String,
+        column: String,
+        target: &'static str,
+        detail: String,
+    },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -343,6 +365,44 @@ enum Codec {
     DateTimeNaive,
 }
 
+/// The strict destination logical type a type-poor source value is rebuilt into.
+/// Derived from the destination column's own catalog entry, not the source's.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Target {
+    Uuid,
+    Bool,
+    /// Any timestamp column (`timestamptz`, `timestamp`, MySQL `datetime`): the
+    /// value is carried as UTC and re-encoded per engine.
+    DateTime,
+    Date,
+    Json,
+}
+
+impl Target {
+    /// A stable label for [`AdminError::Convert`].
+    fn label(self) -> &'static str {
+        match self {
+            Target::Uuid => "uuid",
+            Target::Bool => "boolean",
+            Target::DateTime => "timestamp",
+            Target::Date => "date",
+            Target::Json => "json",
+        }
+    }
+}
+
+/// One destination column's real logical type, read from the freshly-migrated
+/// destination catalog and used to steer reconstruction of a type-poor source.
+#[derive(Clone)]
+struct DstCol {
+    /// The destination column's logical codec (its strict type).
+    codec: Codec,
+    /// For a native PostgreSQL array column (`text[]`, `uuid[]`, …), the element
+    /// type name for a `$n::<elem>[]` write cast; `None` for every other column
+    /// (including a `jsonb` that merely holds an array).
+    array_elem: Option<String>,
+}
+
 /// One copyable column: its name, the codec its values travel as, and the SQL
 /// expression that reads it from the source (usually the quoted name, but a
 /// PostgreSQL `citext`/`inet`/array is cast to a portable shape — `::text` or
@@ -404,6 +464,15 @@ pub async fn copy_schema(
 ) -> Result<CopyReport, AdminError> {
     let specs = table_specs(src, src_schema).await?;
 
+    // Read the destination catalog too: the destination is freshly migrated, so
+    // its columns carry the real logical types. Pairing source columns with these
+    // by name is what lets a type-poor source (SQLite, MariaDB JSON) be rebuilt
+    // faithfully into a strict destination.
+    let mut dst_cols: HashMap<String, HashMap<String, DstCol>> = HashMap::new();
+    for spec in &specs {
+        dst_cols.insert(spec.name.clone(), dst_columns(dst, dst_schema, &spec.name).await?);
+    }
+
     let mut tx = dst.begin().await?;
     // Relax foreign-key checks for the load, so tables can be emptied and
     // refilled without a mid-statement violation. PostgreSQL keeps its
@@ -425,8 +494,10 @@ pub async fn copy_schema(
     }
 
     let mut report = CopyReport::default();
+    let empty_dst = HashMap::new();
     for spec in &specs {
-        let rows = copy_one_table(src, src_schema, &mut tx, dst_schema, spec).await?;
+        let dcols = dst_cols.get(&spec.name).unwrap_or(&empty_dst);
+        let rows = copy_one_table(src, src_schema, &mut tx, dst_schema, spec, dcols).await?;
         report.total_rows += rows;
         report.tables.push(TableCopy { table: spec.name.clone(), rows });
         progress(&spec.name, report.total_rows);
@@ -467,7 +538,26 @@ async fn copy_one_table(
     tx: &mut crate::exec::DbTx,
     dst_schema: &str,
     spec: &TableSpec,
+    dst_cols: &HashMap<String, DstCol>,
 ) -> Result<i64, AdminError> {
+    let src_backend = src.backend();
+    let dst_backend = tx.backend();
+
+    // Pair each source column with its destination column (by name, case-
+    // insensitively) and decide how to carry it: pass the source value through,
+    // or rebuild it into the destination's strict type. The write cast is only
+    // needed for a native PostgreSQL array column.
+    let plans: Vec<ColPlan> = spec
+        .columns
+        .iter()
+        .map(|col| {
+            let dst = lookup_dst(dst_cols, &col.name);
+            let rebuild = dst.and_then(|d| plan_rebuild(dst_backend, col.codec, d.codec));
+            let array_elem = dst.and_then(|d| d.array_elem.clone());
+            ColPlan { rebuild, array_elem }
+        })
+        .collect();
+
     // The INSERT column list is the plain names; the SELECT list aliases each
     // read expression back to its column name so the row is keyed the same way.
     let insert_cols = spec
@@ -487,7 +577,6 @@ async fn copy_one_table(
         quote_ident(src_schema),
         quote_ident(&spec.name)
     );
-    let src_backend = src.backend();
     let rows = src.fetch_all_row(&select, params![]).await?;
 
     let ncols = spec.columns.len();
@@ -506,9 +595,26 @@ async fn copy_one_table(
                     values_sql.push_str(", ");
                 }
                 let idx = r * ncols + c + 1;
+                let plan = &plans[c];
                 values_sql.push('$');
                 values_sql.push_str(&idx.to_string());
-                binds.push(read_cell(row, &col.name, col.codec, src_backend)?);
+                // A native PostgreSQL array column takes the portable JSON-array
+                // value as an array literal through a `::<elem>[]` write cast.
+                if let Some(elem) = &plan.array_elem {
+                    values_sql.push_str("::");
+                    values_sql.push_str(elem);
+                    values_sql.push_str("[]");
+                }
+                let raw = read_cell(row, &col.name, col.codec, src_backend)?;
+                let rebuilt = match plan.rebuild {
+                    Some(t) => rebuild_cell(raw, t, &spec.name, &col.name)?,
+                    None => raw,
+                };
+                let bound = match &plan.array_elem {
+                    Some(_) => to_pg_array_literal(rebuilt, &spec.name, &col.name)?,
+                    None => rebuilt,
+                };
+                binds.push(bound);
             }
             values_sql.push(')');
         }
@@ -521,6 +627,206 @@ async fn copy_one_table(
         copied += chunk.len() as i64;
     }
     Ok(copied)
+}
+
+/// How one column is carried from source to destination.
+struct ColPlan {
+    /// When set, the source value is reconstructed into this destination type
+    /// before binding (the source engine could not express it losslessly).
+    rebuild: Option<Target>,
+    /// When set (native PostgreSQL array destination), the value is written as a
+    /// PostgreSQL array literal through a `::<elem>[]` cast on this element type.
+    array_elem: Option<String>,
+}
+
+/// Finds a destination column by name, falling back to a case-insensitive match
+/// (destination columns are the same names, freshly migrated, so this normally
+/// hits directly).
+fn lookup_dst<'a>(dst_cols: &'a HashMap<String, DstCol>, name: &str) -> Option<&'a DstCol> {
+    dst_cols
+        .get(name)
+        .or_else(|| dst_cols.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v))
+}
+
+/// Decides whether a source column read at `src_codec` must be rebuilt to reach
+/// the destination column's strict `dst_codec`.
+///
+/// Only a strict destination (PostgreSQL/MySQL) can reject an ambiguous value; a
+/// SQLite destination stores every storage class as-is, so it never needs a
+/// rebuild. A rebuild is required exactly when the destination is strict, the
+/// column's logical type is one SQLite/MariaDB cannot express distinctly, and the
+/// source did not already read it at that type (so PostgreSQL→anything, and every
+/// already-matching pair, keep their exact pass-through path).
+fn plan_rebuild(dst_backend: Backend, src_codec: Codec, dst_codec: Codec) -> Option<Target> {
+    if dst_backend == Backend::Sqlite {
+        return None;
+    }
+    match dst_codec {
+        Codec::Uuid if src_codec != Codec::Uuid => Some(Target::Uuid),
+        Codec::Bool if src_codec != Codec::Bool => Some(Target::Bool),
+        Codec::Json if src_codec != Codec::Json => Some(Target::Json),
+        Codec::Date if src_codec != Codec::Date => Some(Target::Date),
+        Codec::DateTime | Codec::DateTimeNaive
+            if !matches!(src_codec, Codec::DateTime | Codec::DateTimeNaive) =>
+        {
+            Some(Target::DateTime)
+        }
+        _ => None,
+    }
+}
+
+/// Reconstructs a type-poor source value into the destination's strict logical
+/// type. A `NULL` stays a typed `NULL`; a value that cannot be parsed is a hard
+/// [`AdminError::Convert`] rather than a silent mis-store.
+fn rebuild_cell(v: DbValue, target: Target, table: &str, column: &str) -> Result<DbValue, AdminError> {
+    let err = |detail: String| AdminError::Convert {
+        table: table.to_string(),
+        column: column.to_string(),
+        target: target.label(),
+        detail,
+    };
+    Ok(match target {
+        Target::Uuid => match v {
+            DbValue::Uuid(o) => DbValue::Uuid(o),
+            DbValue::Blob(Some(b)) => DbValue::Uuid(Some(
+                uuid::Uuid::from_slice(&b).map_err(|e| err(format!("blob de {} octets : {e}", b.len())))?,
+            )),
+            DbValue::Text(Some(s)) => {
+                DbValue::Uuid(Some(uuid::Uuid::parse_str(&s).map_err(|e| err(format!("« {s} » : {e}")))?))
+            }
+            DbValue::Blob(None) | DbValue::Text(None) | DbValue::Null => DbValue::Uuid(None),
+            other => return Err(err(format!("valeur source inattendue {other:?}"))),
+        },
+        Target::Bool => match v {
+            DbValue::Bool(o) => DbValue::Bool(o),
+            DbValue::I64(Some(n)) => DbValue::Bool(Some(n != 0)),
+            DbValue::I32(Some(n)) => DbValue::Bool(Some(n != 0)),
+            DbValue::I16(Some(n)) => DbValue::Bool(Some(n != 0)),
+            DbValue::I64(None) | DbValue::I32(None) | DbValue::I16(None) | DbValue::Null => {
+                DbValue::Bool(None)
+            }
+            other => return Err(err(format!("valeur source inattendue {other:?}"))),
+        },
+        Target::Json => match v {
+            DbValue::Json(o) => DbValue::Json(o),
+            DbValue::Text(Some(s)) => DbValue::Json(Some(
+                serde_json::from_str(&s).map_err(|e| err(format!("texte non-JSON : {e}")))?,
+            )),
+            DbValue::Text(None) | DbValue::Null => DbValue::Json(None),
+            other => return Err(err(format!("valeur source inattendue {other:?}"))),
+        },
+        Target::Date => match v {
+            DbValue::NaiveDate(o) => DbValue::NaiveDate(o),
+            DbValue::Text(Some(s)) => DbValue::NaiveDate(Some(
+                parse_date(&s).ok_or_else(|| err(format!("« {s} » n'est pas une date")))?,
+            )),
+            DbValue::Text(None) | DbValue::Null => DbValue::NaiveDate(None),
+            other => return Err(err(format!("valeur source inattendue {other:?}"))),
+        },
+        Target::DateTime => match v {
+            DbValue::DateTimeUtc(o) => DbValue::DateTimeUtc(o),
+            DbValue::Text(Some(s)) => DbValue::DateTimeUtc(Some(
+                parse_datetime_utc(&s).ok_or_else(|| err(format!("« {s} » n'est pas un horodatage")))?,
+            )),
+            DbValue::Text(None) | DbValue::Null => DbValue::DateTimeUtc(None),
+            other => return Err(err(format!("valeur source inattendue {other:?}"))),
+        },
+    })
+}
+
+/// Parses the timestamp text kubuno-db writes on SQLite (`DateTime<Utc>` encodes
+/// as RFC 3339) as well as the SQL `strftime`-default and other common shapes,
+/// every naive form read as UTC. Mirrors sqlx-sqlite's own decoder so a value
+/// this platform wrote always round-trips.
+fn parse_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
+    let s = s.trim();
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    for fmt in [
+        "%F %T%.f", "%F %T", "%FT%T%.f", "%FT%T", "%F %R", "%FT%R", "%F %T%.f%:z", "%FT%T%.f%:z",
+    ] {
+        if let Ok(nd) = NaiveDateTime::parse_from_str(s, fmt) {
+            return Some(DateTime::<Utc>::from_naive_utc_and_offset(nd, Utc));
+        }
+        if let Ok(dt) = DateTime::parse_from_str(s, fmt) {
+            return Some(dt.with_timezone(&Utc));
+        }
+    }
+    None
+}
+
+/// Parses a date, accepting a plain `YYYY-MM-DD` or a fuller timestamp truncated
+/// to its date part.
+fn parse_date(s: &str) -> Option<NaiveDate> {
+    let s = s.trim();
+    if let Ok(d) = NaiveDate::parse_from_str(s, "%F") {
+        return Some(d);
+    }
+    parse_datetime_utc(s).map(|dt| dt.date_naive())
+}
+
+/// Turns a portable JSON-array value into a PostgreSQL array literal (`{a,b}`)
+/// bound as text, so a `$n::<elem>[]` cast lands it in a native array column. A
+/// `NULL` stays a typed `NULL`; a non-array JSON value is a hard error rather
+/// than a mis-store.
+fn to_pg_array_literal(v: DbValue, table: &str, column: &str) -> Result<DbValue, AdminError> {
+    let json = match v {
+        DbValue::Json(Some(j)) => j,
+        DbValue::Json(None) | DbValue::Null => return Ok(DbValue::Text(None)),
+        other => {
+            return Err(AdminError::Convert {
+                table: table.to_string(),
+                column: column.to_string(),
+                target: "array",
+                detail: format!("valeur source inattendue {other:?}"),
+            })
+        }
+    };
+    match json_to_pg_array_literal(&json) {
+        Some(lit) => Ok(DbValue::Text(Some(lit))),
+        None => Err(AdminError::Convert {
+            table: table.to_string(),
+            column: column.to_string(),
+            target: "array",
+            detail: "la valeur JSON n'est pas un tableau".to_string(),
+        }),
+    }
+}
+
+/// Renders a JSON array as a PostgreSQL array literal, quoting and escaping every
+/// element. Returns `None` when the value is not a JSON array.
+fn json_to_pg_array_literal(v: &serde_json::Value) -> Option<String> {
+    let arr = v.as_array()?;
+    let mut out = String::from("{");
+    for (i, el) in arr.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        match el {
+            serde_json::Value::Null => out.push_str("NULL"),
+            serde_json::Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            serde_json::Value::Number(n) => out.push_str(&n.to_string()),
+            serde_json::Value::String(s) => push_pg_array_element(&mut out, s),
+            // A nested array/object has no array-literal spelling of its own; carry
+            // its compact JSON text as a quoted element (round-trips as text).
+            other => push_pg_array_element(&mut out, &other.to_string()),
+        }
+    }
+    out.push('}');
+    Some(out)
+}
+
+/// Appends one double-quoted, backslash-escaped PostgreSQL array element.
+fn push_pg_array_element(out: &mut String, s: &str) {
+    out.push('"');
+    for c in s.chars() {
+        if c == '"' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
 }
 
 /// Reads one column of one row into a typed [`DbValue`], choosing the concrete
@@ -589,6 +895,83 @@ async fn table_specs(pool: &DbPool, schema: &str) -> Result<Vec<TableSpec>, Admi
         }
     }
     Ok(specs)
+}
+
+/// The destination columns of one table, keyed by name, with their strict
+/// logical codec and (for a native PostgreSQL array) the element type for the
+/// write cast. Used to steer reconstruction of a type-poor source.
+async fn dst_columns(
+    pool: &DbPool,
+    schema: &str,
+    table: &str,
+) -> Result<HashMap<String, DstCol>, AdminError> {
+    let mut map = HashMap::new();
+    match pool.backend() {
+        Backend::Postgres => {
+            let rows: Vec<(String, String, String)> = pool
+                .fetch_all_as(
+                    "SELECT column_name, data_type, udt_name FROM information_schema.columns \
+                      WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+                    params![schema, table],
+                )
+                .await?;
+            for (name, data_type, udt) in rows {
+                let codec = pg_col(name.clone(), &data_type, &udt).codec;
+                // A PostgreSQL array reports data_type 'ARRAY' and an element type
+                // in `udt_name` spelled `_<elem>` (e.g. `_text`, `_uuid`).
+                let array_elem = if data_type.eq_ignore_ascii_case("array") {
+                    safe_pg_type(&udt)
+                } else {
+                    None
+                };
+                map.insert(name, DstCol { codec, array_elem });
+            }
+        }
+        Backend::MySql => {
+            let rows: Vec<(String, String, String)> = pool
+                .fetch_all_as(
+                    "SELECT column_name, data_type, column_type FROM information_schema.columns \
+                      WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+                    params![schema, table],
+                )
+                .await?;
+            for (name, data_type, column_type) in rows {
+                map.insert(
+                    name,
+                    DstCol { codec: mysql_codec(&data_type, &column_type), array_elem: None },
+                );
+            }
+        }
+        Backend::Sqlite => {
+            let sql = format!(
+                "PRAGMA {}.table_info({})",
+                quote_ident(schema),
+                quote_ident(table)
+            );
+            for row in &pool.fetch_all_row(&sql, params![]).await? {
+                let name: String = row.try_get("name")?;
+                let decl: String = row.try_get("type")?;
+                map.insert(name, DstCol { codec: sqlite_codec(&decl), array_elem: None });
+            }
+        }
+    }
+    Ok(map)
+}
+
+/// Validates a PostgreSQL element type name from a catalog `udt_name` (stripping
+/// the array's leading `_`), so it can be interpolated into a `::<elem>[]` cast.
+/// Anything unexpected returns `None`, which falls the column back to a direct
+/// bind that fails safely rather than injecting text.
+fn safe_pg_type(udt: &str) -> Option<String> {
+    let t = udt.trim_start_matches('_');
+    if !t.is_empty()
+        && t.len() <= 64
+        && t.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    {
+        Some(t.to_string())
+    } else {
+        None
+    }
 }
 
 /// Kahn's algorithm: parents before children. Self-references are ignored and a
@@ -869,6 +1252,7 @@ fn sqlite_codec(decl: &str) -> Codec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     #[test]
     fn safe_ident_rules() {
@@ -926,6 +1310,121 @@ mod tests {
         assert_eq!(sqlite_codec("BLOB"), Codec::Blob);
         assert_eq!(sqlite_codec("REAL"), Codec::F64);
         assert_eq!(sqlite_codec("TEXT"), Codec::Text);
+    }
+
+    #[test]
+    fn plan_rebuild_only_helps_a_strict_destination() {
+        // A SQLite destination is lenient — never rebuilt.
+        assert_eq!(plan_rebuild(Backend::Sqlite, Codec::Blob, Codec::Uuid), None);
+        // SQLite→PostgreSQL: the poor storage classes are rebuilt to the strict type.
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::Blob, Codec::Uuid), Some(Target::Uuid));
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::Text, Codec::Uuid), Some(Target::Uuid));
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::I64, Codec::Bool), Some(Target::Bool));
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::Text, Codec::Json), Some(Target::Json));
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::Text, Codec::Date), Some(Target::Date));
+        assert_eq!(
+            plan_rebuild(Backend::Postgres, Codec::Text, Codec::DateTime),
+            Some(Target::DateTime)
+        );
+        assert_eq!(
+            plan_rebuild(Backend::Postgres, Codec::Text, Codec::DateTimeNaive),
+            Some(Target::DateTime)
+        );
+        // MariaDB LONGTEXT (read as Text) → PostgreSQL jsonb is the JSON rebuild.
+        assert_eq!(plan_rebuild(Backend::MySql, Codec::Text, Codec::Json), Some(Target::Json));
+        // Already-matching pairs (PostgreSQL source, or same type) stay pass-through.
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::Uuid, Codec::Uuid), None);
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::Json, Codec::Json), None);
+        assert_eq!(plan_rebuild(Backend::Postgres, Codec::DateTime, Codec::DateTime), None);
+        assert_eq!(plan_rebuild(Backend::MySql, Codec::Uuid, Codec::Uuid), None);
+    }
+
+    #[test]
+    fn rebuild_reconstructs_each_strict_type() {
+        let u = uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+        // uuid from a 16-byte blob and from text.
+        assert_eq!(
+            rebuild_cell(DbValue::Blob(Some(u.as_bytes().to_vec())), Target::Uuid, "t", "id").unwrap(),
+            DbValue::Uuid(Some(u))
+        );
+        assert_eq!(
+            rebuild_cell(DbValue::Text(Some(u.to_string())), Target::Uuid, "t", "id").unwrap(),
+            DbValue::Uuid(Some(u))
+        );
+        // boolean from integer.
+        assert_eq!(
+            rebuild_cell(DbValue::I64(Some(1)), Target::Bool, "t", "a").unwrap(),
+            DbValue::Bool(Some(true))
+        );
+        assert_eq!(
+            rebuild_cell(DbValue::I64(Some(0)), Target::Bool, "t", "a").unwrap(),
+            DbValue::Bool(Some(false))
+        );
+        // json from text.
+        assert_eq!(
+            rebuild_cell(DbValue::Text(Some(r#"{"k":3}"#.into())), Target::Json, "t", "m").unwrap(),
+            DbValue::Json(Some(serde_json::json!({ "k": 3 })))
+        );
+        // NULLs stay typed NULLs.
+        assert_eq!(rebuild_cell(DbValue::Blob(None), Target::Uuid, "t", "id").unwrap(), DbValue::Uuid(None));
+        assert_eq!(rebuild_cell(DbValue::I64(None), Target::Bool, "t", "a").unwrap(), DbValue::Bool(None));
+        assert_eq!(rebuild_cell(DbValue::Text(None), Target::Json, "t", "m").unwrap(), DbValue::Json(None));
+
+        // A bad blob length or non-JSON text is a hard error, not a mis-store.
+        assert!(rebuild_cell(DbValue::Blob(Some(vec![1, 2, 3])), Target::Uuid, "t", "id").is_err());
+        assert!(rebuild_cell(DbValue::Text(Some("not json".into())), Target::Json, "t", "m").is_err());
+    }
+
+    #[test]
+    fn parses_the_timestamp_shapes_sqlite_holds() {
+        // sqlx-sqlite writes DateTime<Utc> as RFC 3339.
+        let want = Utc.with_ymd_and_hms(2024, 3, 15, 12, 34, 56).unwrap()
+            + chrono::Duration::microseconds(123_456);
+        assert_eq!(parse_datetime_utc("2024-03-15T12:34:56.123456+00:00"), Some(want));
+        // The `strftime('%Y-%m-%d %H:%M:%f')` SQL default (space, millis, no zone).
+        assert_eq!(
+            parse_datetime_utc("2024-03-15 12:34:56.123"),
+            Some(Utc.with_ymd_and_hms(2024, 3, 15, 12, 34, 56).unwrap() + chrono::Duration::milliseconds(123))
+        );
+        // Seconds only.
+        assert_eq!(
+            parse_datetime_utc("2020-01-02 03:04:05"),
+            Some(Utc.with_ymd_and_hms(2020, 1, 2, 3, 4, 5).unwrap())
+        );
+        assert_eq!(parse_datetime_utc("nonsense"), None);
+
+        assert_eq!(parse_date("1990-05-20"), NaiveDate::from_ymd_opt(1990, 5, 20));
+        assert_eq!(parse_date("1990-05-20T00:00:00"), NaiveDate::from_ymd_opt(1990, 5, 20));
+        assert_eq!(parse_date("bad"), None);
+    }
+
+    #[test]
+    fn json_array_becomes_a_pg_array_literal() {
+        assert_eq!(
+            json_to_pg_array_literal(&serde_json::json!(["x", "y", "z"])).as_deref(),
+            Some(r#"{"x","y","z"}"#)
+        );
+        // Empty array, embedded quotes/backslashes, and non-string elements.
+        assert_eq!(json_to_pg_array_literal(&serde_json::json!([])).as_deref(), Some("{}"));
+        assert_eq!(
+            json_to_pg_array_literal(&serde_json::json!([r#"a"b\c"#])).as_deref(),
+            Some(r#"{"a\"b\\c"}"#)
+        );
+        assert_eq!(
+            json_to_pg_array_literal(&serde_json::json!([1, 2, null, true])).as_deref(),
+            Some("{1,2,NULL,true}")
+        );
+        // A non-array JSON value has no array-literal spelling.
+        assert_eq!(json_to_pg_array_literal(&serde_json::json!({ "k": 1 })), None);
+    }
+
+    #[test]
+    fn safe_pg_type_accepts_element_names_only() {
+        assert_eq!(safe_pg_type("_text").as_deref(), Some("text"));
+        assert_eq!(safe_pg_type("_uuid").as_deref(), Some("uuid"));
+        assert_eq!(safe_pg_type("_int4").as_deref(), Some("int4"));
+        assert_eq!(safe_pg_type("_var char"), None);
+        assert_eq!(safe_pg_type("_"), None);
     }
 
     #[test]
