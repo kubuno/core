@@ -11,6 +11,31 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Change the schema prefix of a running instance from the admin console.**
+  A new **System ▸ Main database** page lets a superadministrator change the
+  global schema prefix (the WordPress-style `[database] schema_prefix`) without
+  reinstalling: it renames the live namespaces on the primary server — every
+  PostgreSQL schema (`ALTER SCHEMA`) or MySQL/MariaDB database (`RENAME TABLE`
+  into a new database) whose name carries the old prefix — atomically per engine,
+  rolling back on failure so the database is never left half-renamed. The new
+  value is written to the configuration and a short core restart finalises it
+  (also restarting every module with the new prefix). SQLite has no server
+  namespace to rename, so the page reports that the prefix does not apply there.
+  The endpoints are restricted to superadministrators.
+
+- **Switch the whole instance — or a single module — from one database engine to
+  another, keeping the data.** The same **Main database** page offers *Migrate to
+  another engine*: the core copies every table of its own schema onto a
+  freshly-migrated target on the chosen engine (PostgreSQL, MySQL/MariaDB or
+  SQLite), in foreign-key order, preserving types (UUIDs, timestamps, JSON,
+  booleans, binary), verifies the row counts, writes the new settings and asks
+  for a restart to finish — all while the current database stays intact, so a
+  failed copy loses nothing. Per module, the database card gains a **Copy data to
+  the new engine** action beside the existing repoint: it restarts the module on
+  the target so it builds its tables, then copies its previous data across. The
+  progress of every migration is recorded (a `core.db_migration_jobs` row) and the
+  operations are restricted to superadministrators.
+
 - **Each module can run on its own database engine or server.** From the admin
   console a superadministrator can point any single module at a different
   PostgreSQL, MySQL/MariaDB or SQLite target instead of the main one — useful to
