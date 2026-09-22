@@ -25,24 +25,25 @@
 //! never made. That is a monitor for a backup that does not exist yet.
 //!
 //! What is left is the option that needs neither: a **logical, data-only dump of
-//! the `core` schema, written from the connection pool** with `COPY … TO
-//! STDOUT`. No external binary, no credential handed to a child process, no
-//! second thing to install. The output is deliberately the exact text format
-//! `psql` consumes, so the file the scheduler writes is restorable by the
-//! `kubuno db:restore` command that already exists — see [`dump`].
+//! every Kubuno schema, written from the connection pool** — `COPY … TO STDOUT`
+//! on PostgreSQL, a portable NDJSON stream on MySQL/SQLite — **gzip-compressed**
+//! on the way to disk. No external binary, no credential handed to a child
+//! process, no second thing to install. The archive restores **in process**, so
+//! the admin console can trigger a hot restore without `psql` — see [`dump`],
+//! [`portable`] and [`restore`].
 //!
 //! ## What is covered, and what is not
 //!
-//! Covered: every row of every table of the PostgreSQL schema `core` — accounts,
-//! settings, roles, sessions, audit trail, alerts, jobs, labels — plus the
-//! sequence positions.
+//! Covered: every row of every table of **every schema this instance owns** — the
+//! core plus each installed module (drive, calendar, mail…) and their secondary
+//! schemas — plus the sequence positions. On a shared server (PostgreSQL/MySQL)
+//! the schemas are discovered dynamically; on SQLite the core backs up the
+//! schemas attached to its connection.
 //!
 //! **Not covered**, and said on screen in as many words:
 //!
 //! * the **stored files** (`storage.local_path`, or the S3 bucket). What users
 //!   uploaded is not in the database and is not copied by this;
-//! * the **schemas of the installed modules** (drive, calendar, mail…). Each
-//!   module owns its schema; the core does not reach into it;
 //! * the **DDL**. The dump is data-only and restores onto an instance whose
 //!   migrations have already run — which is also what keeps it small;
 //! * the **configuration file**, where the JWT and internal secrets live. It is
@@ -50,20 +51,25 @@
 //!
 //! ## Layout
 //!
-//! * [`policy`] — the five settings, and when the next run is due;
-//! * [`dump`]   — the writer: table order, `COPY`, sequences, permissions;
-//! * [`runs`]   — `core.backup_runs`: open, close, list, prune;
-//! * [`jobs`]   — `core.backup.run`, a type of the existing runner.
+//! * [`policy`]   — the settings, and when the next run is due;
+//! * [`archive`]  — gzip streaming, schema discovery, naming, the listing;
+//! * [`dump`]     — the PostgreSQL writer and in-process COPY loader;
+//! * [`portable`] — the MySQL/SQLite writer and loader;
+//! * [`restore`]  — the hot restore: safety backup, then load, recorded;
+//! * [`runs`]     — `core.backup_runs`: open, close, list, prune;
+//! * [`jobs`]     — `core.backup.run`, a type of the existing runner.
 //!
 //! Health and alerts are **not** duplicated here. `continuity.backup` and
 //! `continuity.restore_tested` live in [`crate::health::checks`] with every
 //! other check, and the failure alert lives in [`crate::alerts`] with every
 //! other producer.
 
+pub mod archive;
 pub mod dump;
 pub mod jobs;
 pub mod policy;
 pub mod portable;
+pub mod restore;
 pub mod runs;
 
 pub use policy::{Frequency, Policy};
@@ -75,13 +81,8 @@ pub use runs::{BackupRun, Trigger};
 /// Kept here rather than in the frontend so the claim and the code that honours
 /// it live in one place: whoever widens [`dump`] to cover something new has to
 /// walk past this list.
-pub const COVERED: &[&str] = &["core_schema_rows", "core_sequences"];
+pub const COVERED: &[&str] = &["all_schema_rows", "database_sequences"];
 
 /// What it deliberately does not contain. Same reasoning, opposite direction —
 /// and this is the half that must never silently shrink.
-pub const NOT_COVERED: &[&str] = &[
-    "stored_files",
-    "module_schemas",
-    "database_ddl",
-    "config_file",
-];
+pub const NOT_COVERED: &[&str] = &["stored_files", "database_ddl", "config_file"];

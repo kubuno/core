@@ -68,6 +68,7 @@ ipnet.workspace  = true
 
 bytes.workspace   = true
 zip.workspace     = true
+flate2.workspace  = true
 futures.workspace = true
 tokio-util.workspace = true
 yrs.workspace     = true

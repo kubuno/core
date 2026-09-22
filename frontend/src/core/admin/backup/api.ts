@@ -51,19 +51,54 @@ export interface BackupStats {
   total_runs:           number
 }
 
+/** One recorded hot restore. */
+export interface RestoreRun {
+  id:            string
+  triggered_by:  string | null
+  actor_label:   string | null
+  status:        'running' | 'success' | 'failed'
+  source_file:   string
+  safety_file:   string | null
+  format:        string | null
+  started_at:    string
+  finished_at:   string | null
+  duration_ms:   number | null
+  schemas_count: number | null
+  rows_count:    number | null
+  error:         string | null
+}
+
+/** One backup file present in the destination directory. */
+export interface BackupFile {
+  name:        string
+  size_bytes:  number
+  modified_at: string | null
+  /** 'postgres' (a COPY archive) or 'portable' (NDJSON, MySQL/SQLite). */
+  format:      'postgres' | 'portable'
+}
+
 export interface BackupOverview {
-  policy:       BackupPolicy
-  next_run_at:  string | null
-  running:      boolean
-  stats:        BackupStats
-  history:      BackupRun[]
-  restore_test: { at: string | null; declared: boolean }
+  policy:          BackupPolicy
+  next_run_at:     string | null
+  running:         boolean
+  stats:           BackupStats
+  history:         BackupRun[]
+  restore_history: RestoreRun[]
+  restore_test:    { at: string | null; declared: boolean }
   /** Stable identifiers translated as `admin.bk_cov_<id>`. */
-  covers:       string[]
+  covers:          string[]
   /** Same, as `admin.bk_notcov_<id>`. This half must never silently shrink. */
-  not_covers:   string[]
-  schema:       string
-  can_manage:   boolean
+  not_covers:      string[]
+  /** The schemas actually covered by the dump, discovered on the server. */
+  schemas:         string[]
+  can_manage:      boolean
+  /** Restoring is super-user only; the console hides the control otherwise. */
+  can_restore:     boolean
+}
+
+export interface BackupFilesResponse {
+  destination: string
+  files:       BackupFile[]
 }
 
 export const BACKUP_KEY = ['admin-backup'] as const
@@ -99,6 +134,40 @@ function useBackupMutation<V>(fn: (v: V) => Promise<unknown>) {
 
 export function useRunBackup() {
   return useBackupMutation<void>(() => api.post('/admin/backup/run', {}))
+}
+
+export const BACKUP_FILES_KEY = ['admin-backup-files'] as const
+
+/** The backup files present in the destination, for the restore picker. */
+export function useBackupFiles(enabled: boolean) {
+  return useQuery({
+    queryKey: BACKUP_FILES_KEY,
+    enabled,
+    queryFn:  () => api.get<BackupFilesResponse>('/admin/backup/files').then(r => r.data),
+    staleTime: 10_000,
+  })
+}
+
+export interface RestoreResult {
+  message:     string
+  id:          string
+  source_file: string
+  safety_file: string
+  rows:        number
+}
+
+/** Hot restore. The caller must retype the exact file name as confirmation. */
+export function useRestoreBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { file_name: string; confirm: string }) =>
+      api.post<RestoreResult>('/admin/backup/restore', body).then(r => r.data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: BACKUP_KEY })
+      void qc.invalidateQueries({ queryKey: BACKUP_FILES_KEY })
+      void qc.invalidateQueries({ queryKey: ['admin-health-checks'] })
+    },
+  })
 }
 
 export function useDeclareRestoreTest() {

@@ -69,17 +69,20 @@ pub async fn execute(
     let run_id = runs::open(db, trigger, actor, &policy.destination).await?;
     let started = std::time::Instant::now();
 
-    match super::dump::write_dump(db, &destination).await {
+    // The portable format is written on every engine, so a backup taken here can
+    // be restored onto any engine from the admin console.
+    match super::portable::write_dump(db, &destination).await {
         Ok(outcome) => {
             let elapsed = started.elapsed().as_millis() as i64;
             tracing::info!(
                 run_id = %run_id,
                 fichier = %outcome.file_name,
                 octets = outcome.size_bytes,
+                schémas = outcome.schemas,
                 tables = outcome.tables,
                 lignes = outcome.rows,
                 durée_ms = elapsed,
-                "Sauvegarde du schéma core écrite"
+                "Sauvegarde de la base écrite"
             );
             runs::succeed(db, run_id, &outcome, elapsed).await?;
 

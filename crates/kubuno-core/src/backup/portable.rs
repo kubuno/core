@@ -1,134 +1,81 @@
-//! The portable backup: an engine-neutral, data-only dump of the `core` schema
-//! and the loader that reads it back.
+//! The portable backup: an engine-neutral, data-only dump of **every Kubuno
+//! schema**, and the loader that reads it back onto **any** engine.
 //!
-//! ## Why a second format
+//! ## One format, every engine, cross-restorable
 //!
-//! PostgreSQL's dump ([`super::dump`]) is `COPY` text — fast, and loadable by the
-//! `psql` that ships with the server. MySQL and SQLite have neither `COPY … TO
-//! STDOUT` nor a `psql`, so a backup written for them has to be readable *in
-//! process*, on any engine, with no external tool. This module is that: a
-//! **NDJSON** stream (one JSON object per line) that names each table, its
-//! columns and a per-column *codec*, then the rows as arrays of JSON scalars.
+//! This is the format the scheduler writes and the admin console restores, on
+//! PostgreSQL, MySQL/MariaDB and SQLite alike. A backup taken on one engine
+//! restores faithfully onto another: the writer reads each value at its source
+//! type into a portable JSON shape (a PostgreSQL array/`inet`/`citext` is cast on
+//! the way out), and the loader is **directed by the destination column's own
+//! type** — the exact reconstruction a live engine switch performs
+//! ([`kubuno_db::copy_schema`]): a `BLOB`/`TEXT` becomes a `uuid`, an integer a
+//! boolean, ISO text a timestamp, JSON text a `json`/`jsonb`, and a JSON array a
+//! native `text[]`/`uuid[]` through a `$n::<elem>[]` cast. That machinery is
+//! reused, not re-written, so what round-trips through an engine switch
+//! round-trips through a backup.
 //!
-//! Because every value is bound back through [`DbValue`] on restore, the loader
-//! re-encodes it for whatever engine it is writing to. MySQL and SQLite store
-//! the same shapes (a UUID is 16 bytes, JSON is text, a timestamp is a string,
-//! a boolean is an integer), so a dump taken on one restores onto the other as
-//! well as onto itself. PostgreSQL keeps its own `COPY` path.
-//!
-//! ## The format
+//! ## The format (gzip-compressed NDJSON)
 //!
 //! ```text
-//! {"kubuno_dump":1,"schema":"core","engine":"sqlite","taken_at":"…","tables":["a","b"]}
-//! {"table":"a","columns":[["id","uuid"],["name","text"]]}
-//! {"cells":["4f…","Alice"]}
-//! {"table":"b","columns":[…]}
-//! …
+//! {"kubuno_dump":3,"engine":"sqlite","kubuno_version":"…","taken_at":"…","compressed":true,"tables":[["core","settings"]]}
+//! {"schema":"core","table":"settings","columns":[["key","text"],["value","json"]]}
+//! {"cells":["theme","\"dark\""]}
 //! ```
 //!
-//! ## What restore does
-//!
-//! It runs in a single transaction with foreign keys deferred (SQLite) or off
-//! (MySQL): every table named in the header is emptied, then every dumped row is
-//! inserted. The final state is exactly the dump — restoring onto a
-//! freshly-migrated database (whose migrations seeded settings, roles and the
-//! like) replaces those seeds with the backed-up rows rather than colliding with
-//! them.
+//! The `engine` is informational; restore adapts to the engine of the current
+//! instance, never to the one the backup came from.
 
-use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use anyhow::{bail, Context};
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-use kubuno_db::{params, DbPool, DbRow, DbValue};
+use kubuno_db::{params, Backend, Codec, DbPool, DbValue};
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::AsyncBufReadExt;
 
-use super::dump::{
-    ensure_directory, free_bytes, DumpOutcome, ABORT_FREE_BYTES, MIN_FREE_BYTES, PARTIAL_SUFFIX,
-};
-
-/// The schema this feature backs up. The same constant [`super::dump`] uses.
-const SCHEMA: &str = "core";
+use super::archive::{self, GzFileWriter, QTable};
+use super::dump::{ensure_directory, free_bytes, DumpOutcome, ABORT_FREE_BYTES, MIN_FREE_BYTES, PARTIAL_SUFFIX};
 
 /// The base64 alphabet used for binary/UUID values.
 const B64: base64::engine::general_purpose::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
-/// How one column's values travel in the dump, and how they are bound back.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Codec {
-    Bool,
-    Int,
-    Float,
-    Text,
-    Blob,
-    Uuid,
-    Json,
-    Date,
-    /// A wall-clock timestamp read as a string and re-bound as text; the engine
-    /// coerces it into its DATETIME/TEXT column on insert.
-    DateTime,
+/// A `"schema"."table"` qualifier.
+fn q(schema: &str, table: &str) -> String {
+    format!("\"{}\".\"{}\"", schema.replace('"', "\"\""), table.replace('"', "\"\""))
 }
 
-impl Codec {
-    fn tag(self) -> &'static str {
-        match self {
-            Codec::Bool => "bool",
-            Codec::Int => "int",
-            Codec::Float => "float",
-            Codec::Text => "text",
-            Codec::Blob => "blob",
-            Codec::Uuid => "uuid",
-            Codec::Json => "json",
-            Codec::Date => "date",
-            Codec::DateTime => "datetime",
-        }
-    }
-
-    fn from_tag(tag: &str) -> Codec {
-        match tag {
-            "bool" => Codec::Bool,
-            "int" => Codec::Int,
-            "float" => Codec::Float,
-            "blob" => Codec::Blob,
-            "uuid" => Codec::Uuid,
-            "json" => Codec::Json,
-            "date" => Codec::Date,
-            "datetime" => Codec::DateTime,
-            // "text" and anything unknown are safe as text.
-            _ => Codec::Text,
-        }
-    }
+/// The backup feature's own tables, excluded from the backup so a restore never
+/// rewrites the history of backups and restores. Their `triggered_by` link to a
+/// user is `ON DELETE SET NULL`, so replacing `core.users` during a restore
+/// leaves these rows intact (the link simply nulls if that user is gone).
+fn is_bookkeeping(table: &str) -> bool {
+    matches!(table, "backup_runs" | "backup_restores")
 }
 
-/// One table's exportable columns, in order.
-struct TableSpec {
-    name: String,
-    columns: Vec<(String, Codec)>,
-}
-
-/// The engine's name as it travels in the dump header.
-fn backend_name(b: kubuno_db::Backend) -> &'static str {
+fn backend_name(b: Backend) -> &'static str {
     match b {
-        kubuno_db::Backend::Postgres => "postgres",
-        kubuno_db::Backend::MySql => "mysql",
-        kubuno_db::Backend::Sqlite => "sqlite",
+        Backend::Postgres => "postgres",
+        Backend::MySql => "mysql",
+        Backend::Sqlite => "sqlite",
     }
 }
 
-// ── file naming ─────────────────────────────────────────────────────────────
-
-/// The name a portable dump taken at `at` receives — the same sortable stamp as
-/// the PostgreSQL dumps, with a `.ndjson` suffix so the two are told apart while
-/// both being recognised by the retention pass.
-pub fn file_name_for(at: DateTime<Utc>) -> String {
-    format!("kubuno-core-{}.ndjson", at.format("%Y%m%dT%H%M%SZ"))
+/// Orders the discovered schemas so `core` comes first (modules reference
+/// `core.users`; nothing in `core` references a module), then the rest by name.
+/// This satisfies cross-schema foreign keys on the strict engine that keeps them
+/// immediate (PostgreSQL) without disabling anything.
+fn order_schemas(db: &DbPool, mut schemas: Vec<String>) -> Vec<String> {
+    let core = db.schema_prefix().schema("core");
+    schemas.sort();
+    schemas.sort_by_key(|s| usize::from(*s != core));
+    schemas
 }
 
 // ── writing ─────────────────────────────────────────────────────────────────
 
-/// Writes one complete portable dump into `destination`.
+/// Writes one complete portable dump of every Kubuno schema into `destination`.
 pub async fn write_dump(db: &DbPool, destination: &Path) -> anyhow::Result<DumpOutcome> {
     ensure_directory(destination).await?;
 
@@ -144,17 +91,17 @@ pub async fn write_dump(db: &DbPool, destination: &Path) -> anyhow::Result<DumpO
     }
 
     let started = Utc::now();
-    let file_name = file_name_for(started);
+    let file_name = archive::file_name_for(started, archive::NDJSON_GZ_EXT);
     let final_path = destination.join(&file_name);
     let partial_path = destination.join(format!("{file_name}{PARTIAL_SUFFIX}"));
 
     match write_into(db, destination, &partial_path, started).await {
-        Ok((tables, rows)) => {
+        Ok((schemas, tables, rows)) => {
             tokio::fs::rename(&partial_path, &final_path)
                 .await
                 .with_context(|| format!("Publication de {}", final_path.display()))?;
             let size_bytes = tokio::fs::metadata(&final_path).await.map(|m| m.len()).unwrap_or(0);
-            Ok(DumpOutcome { file_name, path: final_path, size_bytes, tables, rows })
+            Ok(DumpOutcome { file_name, path: final_path, size_bytes, schemas, tables, rows })
         }
         Err(e) => {
             if let Err(rm) = tokio::fs::remove_file(&partial_path).await {
@@ -170,8 +117,28 @@ async fn write_into(
     destination: &Path,
     partial_path: &Path,
     started: DateTime<Utc>,
-) -> anyhow::Result<(usize, u64)> {
-    let specs = table_specs(db).await?;
+) -> anyhow::Result<(usize, usize, u64)> {
+    let schemas = order_schemas(db, archive::discover_schemas(db).await?);
+    if schemas.is_empty() {
+        bail!("Aucun schéma Kubuno trouvé à sauvegarder");
+    }
+
+    // The ordered table plan across every schema (parents first, core first).
+    let mut plan: Vec<(QTable, Vec<kubuno_db::ExportColumn>)> = Vec::new();
+    for schema in &schemas {
+        for (table, cols) in kubuno_db::portable_export_plan(db, schema).await? {
+            // The backup's own bookkeeping is left out of the backup: a restore
+            // must not overwrite the log of backups and restores with an older
+            // one — that would erase the record of the restore being performed,
+            // and of every backup taken since the one being restored.
+            if is_bookkeeping(&table) {
+                continue;
+            }
+            if !cols.is_empty() {
+                plan.push((QTable::new(schema.clone(), table), cols));
+            }
+        }
+    }
 
     let file = tokio::fs::File::create(partial_path)
         .await
@@ -184,20 +151,23 @@ async fn write_into(
             tracing::warn!(error = %e, "backup: droits 0600 non appliqués au fichier");
         }
     }
-    let mut out = tokio::io::BufWriter::with_capacity(256 * 1024, file);
+    let buffered = tokio::io::BufWriter::with_capacity(256 * 1024, file);
+    let mut out = GzFileWriter::new(buffered);
 
-    // Header line.
     let header = json!({
-        "kubuno_dump": 1,
-        "schema": SCHEMA,
+        "kubuno_dump": 3,
         "engine": backend_name(db.backend()),
+        "kubuno_version": env!("CARGO_PKG_VERSION"),
         "taken_at": started.to_rfc3339(),
-        "tables": specs.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+        "compressed": true,
+        "schemas": schemas,
+        "tables": plan.iter().map(|(t, _)| json!([t.schema, t.table])).collect::<Vec<_>>(),
     });
     write_line(&mut out, &header).await?;
 
+    let backend = db.backend();
     let mut total_rows: u64 = 0;
-    for spec in &specs {
+    for (table, cols) in &plan {
         if let Some(free) = free_bytes(destination) {
             if free < ABORT_FREE_BYTES {
                 bail!(
@@ -208,92 +178,151 @@ async fn write_into(
             }
         }
 
-        let columns_meta: Vec<Value> = spec
-            .columns
-            .iter()
-            .map(|(name, codec)| json!([name, codec.tag()]))
-            .collect();
-        write_line(&mut out, &json!({ "table": spec.name, "columns": columns_meta })).await?;
+        let columns_meta: Vec<Value> =
+            cols.iter().map(|c| json!([c.name, c.codec_tag()])).collect();
+        write_line(
+            &mut out,
+            &json!({ "schema": table.schema, "table": table.table, "columns": columns_meta }),
+        )
+        .await?;
 
-        let column_list = spec
-            .columns
+        // The SELECT reads each column through its portable expression, aliased
+        // back to its name so `portable_read_row` keys it correctly.
+        let select_cols = cols
             .iter()
-            .map(|(c, _)| format!("\"{}\"", c.replace('"', "\"\"")))
+            .map(|c| format!("{} AS \"{}\"", c.read_expr(), c.name.replace('"', "\"\"")))
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!("SELECT {column_list} FROM core.\"{}\"", spec.name.replace('"', "\"\""));
+        let sql = format!("SELECT {select_cols} FROM {}", q(&table.schema, &table.table));
         let rows = db
             .fetch_all_row(&sql, params![])
             .await
-            .with_context(|| format!("Export de core.{}", spec.name))?;
+            .with_context(|| format!("Export de {}.{}", table.schema, table.table))?;
 
         for row in &rows {
-            let cells: Result<Vec<Value>, sqlx::Error> = spec
-                .columns
-                .iter()
-                .map(|(name, codec)| read_cell(row, name, *codec))
-                .collect();
-            let cells = cells.with_context(|| format!("Lecture d'une ligne de core.{}", spec.name))?;
+            let values = kubuno_db::portable_read_row(row, cols, backend)
+                .with_context(|| format!("Lecture d'une ligne de {}.{}", table.schema, table.table))?;
+            let cells: Vec<Value> = values.iter().map(value_to_json).collect();
             write_line(&mut out, &json!({ "cells": cells })).await?;
             total_rows += 1;
         }
     }
 
-    out.flush().await.context("Vidage du tampon d'écriture")?;
-    out.into_inner().sync_all().await.context("Synchronisation du fichier de sauvegarde")?;
-    Ok((specs.len(), total_rows))
+    let mut buffered = out.finish().await?;
+    use tokio::io::AsyncWriteExt as _;
+    buffered.flush().await.context("Vidage du tampon d'écriture")?;
+    buffered.into_inner().sync_all().await.context("Synchronisation du fichier de sauvegarde")?;
+    Ok((schemas.len(), plan.len(), total_rows))
 }
 
-async fn write_line<W: AsyncWriteExt + Unpin>(out: &mut W, value: &Value) -> anyhow::Result<()> {
+async fn write_line<W: tokio::io::AsyncWriteExt + Unpin>(
+    out: &mut GzFileWriter<W>,
+    value: &Value,
+) -> anyhow::Result<()> {
     let mut line = serde_json::to_vec(value).context("Sérialisation d'une ligne du dump")?;
     line.push(b'\n');
     out.write_all(&line).await.context("Écriture d'une ligne du dump")?;
     Ok(())
 }
 
-/// Reads one column of one row into the JSON representation its codec dictates.
-fn read_cell(row: &DbRow, name: &str, codec: Codec) -> Result<Value, sqlx::Error> {
-    Ok(match codec {
-        Codec::Bool => row.try_get::<Option<bool>>(name)?.map_or(Value::Null, Value::from),
-        Codec::Int => row.try_get::<Option<i64>>(name)?.map_or(Value::Null, Value::from),
-        Codec::Float => row.try_get::<Option<f64>>(name)?.map_or(Value::Null, Value::from),
-        Codec::Text => row.try_get::<Option<String>>(name)?.map_or(Value::Null, Value::from),
-        Codec::Blob => match row.try_get::<Option<Vec<u8>>>(name)? {
-            Some(b) => Value::String(B64.encode(b)),
-            None => Value::Null,
-        },
-        Codec::Uuid => match row.try_get::<Option<uuid::Uuid>>(name)? {
-            Some(u) => Value::String(u.to_string()),
-            None => Value::Null,
-        },
-        Codec::Json => row.try_get::<Option<Value>>(name)?.unwrap_or(Value::Null),
-        Codec::Date => match row.try_get::<Option<NaiveDate>>(name)? {
-            Some(d) => Value::String(d.format("%Y-%m-%d").to_string()),
-            None => Value::Null,
-        },
-        Codec::DateTime => match row.try_get::<Option<NaiveDateTime>>(name)? {
-            Some(dt) => Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string()),
-            None => Value::Null,
-        },
-    })
+/// Serialises one typed [`DbValue`] into its portable JSON form. Binary and UUID
+/// travel base64/string; a timestamp as RFC 3339; a date as `YYYY-MM-DD`.
+fn value_to_json(v: &DbValue) -> Value {
+    match v {
+        DbValue::Null => Value::Null,
+        DbValue::Bool(o) => o.map_or(Value::Null, Value::from),
+        DbValue::I16(o) => o.map_or(Value::Null, |n| Value::from(i64::from(n))),
+        DbValue::I32(o) => o.map_or(Value::Null, |n| Value::from(i64::from(n))),
+        DbValue::I64(o) => o.map_or(Value::Null, Value::from),
+        DbValue::F32(o) => o.map_or(Value::Null, |f| Value::from(f64::from(f))),
+        DbValue::F64(o) => o.map_or(Value::Null, Value::from),
+        DbValue::Text(o) => o.clone().map_or(Value::Null, Value::from),
+        DbValue::Blob(o) => o.as_ref().map_or(Value::Null, |b| Value::String(B64.encode(b))),
+        DbValue::Uuid(o) => o.map_or(Value::Null, |u| Value::String(u.to_string())),
+        // A JSON value travels as the STRING of its compact JSON, so a genuine
+        // JSON `null` (a present value) stays distinct from a SQL NULL (an absent
+        // cell): the first becomes the string "null", the second stays `null`.
+        // Without this a `NOT NULL jsonb` column holding `'null'` would restore as
+        // a SQL NULL and be rejected.
+        DbValue::Json(o) => o.as_ref().map_or(Value::Null, |v| Value::String(v.to_string())),
+        DbValue::DateTimeUtc(o) => o.map_or(Value::Null, |dt| Value::String(dt.to_rfc3339())),
+        DbValue::NaiveDate(o) => o.map_or(Value::Null, |d| Value::String(d.format("%Y-%m-%d").to_string())),
+    }
+}
+
+/// Rebuilds the raw [`DbValue`] the source recorded, in the variant its codec
+/// dictates, so the destination-directed reconstruction ([`kubuno_db::portable_bind_cell`])
+/// sees the true source type.
+fn json_to_raw(codec: Codec, v: &Value) -> DbValue {
+    if v.is_null() {
+        return match codec {
+            Codec::Bool => DbValue::Bool(None),
+            Codec::I16 => DbValue::I16(None),
+            Codec::I32 => DbValue::I32(None),
+            Codec::I64 => DbValue::I64(None),
+            Codec::F32 => DbValue::F32(None),
+            Codec::F64 => DbValue::F64(None),
+            Codec::Blob => DbValue::Blob(None),
+            Codec::Uuid => DbValue::Uuid(None),
+            Codec::Json => DbValue::Json(None),
+            Codec::Date => DbValue::NaiveDate(None),
+            Codec::DateTime | Codec::DateTimeNaive => DbValue::DateTimeUtc(None),
+            Codec::Text => DbValue::Text(None),
+        };
+    }
+    match codec {
+        Codec::Bool => DbValue::Bool(v.as_bool()),
+        Codec::I16 => DbValue::I16(v.as_i64().map(|n| n as i16)),
+        Codec::I32 => DbValue::I32(v.as_i64().map(|n| n as i32)),
+        Codec::I64 => DbValue::I64(v.as_i64()),
+        Codec::F32 => DbValue::F32(v.as_f64().map(|f| f as f32)),
+        Codec::F64 => DbValue::F64(v.as_f64()),
+        Codec::Text => DbValue::Text(v.as_str().map(str::to_owned)),
+        Codec::Blob => DbValue::Blob(v.as_str().and_then(|s| B64.decode(s).ok())),
+        Codec::Uuid => DbValue::Uuid(v.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok())),
+        // The JSON value travelled as the string of its compact JSON (see
+        // `value_to_json`); a raw JSON value (a legacy file) is accepted too.
+        Codec::Json => DbValue::Json(Some(match v {
+            Value::String(s) => serde_json::from_str(s).unwrap_or(Value::Null),
+            other => other.clone(),
+        })),
+        Codec::Date => DbValue::NaiveDate(v.as_str().and_then(parse_date)),
+        Codec::DateTime | Codec::DateTimeNaive => DbValue::DateTimeUtc(v.as_str().and_then(parse_dt)),
+    }
+}
+
+fn parse_date(s: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+        .ok()
+        .or_else(|| parse_dt(s).map(|dt| dt.date_naive()))
+}
+
+fn parse_dt(s: &str) -> Option<DateTime<Utc>> {
+    let s = s.trim();
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    for fmt in ["%F %T%.f", "%F %T", "%FT%T%.f", "%FT%T"] {
+        if let Ok(nd) = NaiveDateTime::parse_from_str(s, fmt) {
+            return Some(DateTime::<Utc>::from_naive_utc_and_offset(nd, Utc));
+        }
+    }
+    None
 }
 
 // ── restore ─────────────────────────────────────────────────────────────────
 
-/// Loads a portable NDJSON dump into `db`, replacing the current contents of
-/// every table it names. Returns the number of rows inserted.
-///
-/// Runs in one transaction with foreign keys deferred (SQLite) or disabled
-/// (MySQL): the tables are emptied and refilled as a unit, so a failure leaves
-/// the database as it was.
-pub async fn restore(db: &DbPool, path: &Path) -> anyhow::Result<u64> {
-    let file = tokio::fs::File::open(path)
+/// Loads a portable dump (`.ndjson.gz` or a legacy `.ndjson`) onto `db`,
+/// replacing the current contents of every table it names — on **any** engine.
+/// Returns the number of rows inserted.
+pub async fn restore(db: &DbPool, archive_path: &Path) -> anyhow::Result<u64> {
+    let temp = archive::decompress_to_temp(archive_path).await?;
+
+    let file = tokio::fs::File::open(temp.path())
         .await
-        .with_context(|| format!("Ouverture de {}", path.display()))?;
+        .with_context(|| format!("Ouverture de {}", temp.path().display()))?;
     let mut lines = tokio::io::BufReader::with_capacity(256 * 1024, file).lines();
 
-    // First line: the header, which names every table so they can all be emptied
-    // before anything is loaded.
     let first = lines
         .next_line()
         .await
@@ -303,61 +332,153 @@ pub async fn restore(db: &DbPool, path: &Path) -> anyhow::Result<u64> {
     if header.get("kubuno_dump").is_none() {
         bail!("Ce fichier n'est pas un dump portable Kubuno");
     }
-    let tables: Vec<String> = header
+    // v2/v3 tables are `[schema, table]`; v1 tables are bare names in `core`.
+    let tables: Vec<QTable> = header
         .get("tables")
-        .and_then(|t| serde_json::from_value(t.clone()).ok())
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|entry| match entry {
+                    Value::Array(pair) => {
+                        let schema = pair.first()?.as_str()?.to_string();
+                        let table = pair.get(1)?.as_str()?.to_string();
+                        Some(QTable::new(schema, table))
+                    }
+                    Value::String(name) => Some(QTable::new("core", name.clone())),
+                    _ => None,
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
-    let mut tx = db.begin().await.context("Ouverture de la transaction de restauration")?;
+    let backend = db.backend();
 
-    // Foreign keys off/deferred for the whole load, so tables can be emptied and
-    // refilled in any order without a mid-statement violation.
-    match db.backend() {
-        kubuno_db::Backend::MySql => {
-            tx.execute("SET FOREIGN_KEY_CHECKS = 0", params![]).await?;
-        }
-        kubuno_db::Backend::Sqlite => {
-            tx.execute("PRAGMA defer_foreign_keys = ON", params![]).await?;
-        }
-        // PostgreSQL restores go through psql/the COPY dump, not this loader.
-        kubuno_db::Backend::Postgres => {}
+    // Load every covered table's destination plan up front. A table the
+    // destination does not have (a module the current instance has not installed,
+    // or a schema not attached) is **skipped** — a cross-engine restore adapts to
+    // the instance it runs on rather than failing on a table it cannot hold.
+    let mut plans: std::collections::HashMap<QTable, std::collections::HashMap<String, kubuno_db::ImportColumn>> =
+        std::collections::HashMap::new();
+    let mut present: Vec<QTable> = Vec::new();
+    for t in &tables {
+        // An absent schema/table is skipped, not fatal: on some engines the
+        // catalog lookup returns empty, on SQLite it errors ("unknown database"
+        // for a schema this instance has not attached). Both mean the same thing —
+        // this instance does not hold that table — so a cross-engine restore
+        // adapts to what it can hold rather than failing.
+        let plan = match kubuno_db::portable_import_plan(db, &t.schema, &t.table).await {
+            Ok(plan) if !plan.is_empty() => plan,
+            Ok(_) => {
+                tracing::warn!(table = %format!("{}.{}", t.schema, t.table), "backup: table absente de cette instance — ignorée à la restauration");
+                continue;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, table = %format!("{}.{}", t.schema, t.table), "backup: table injoignable sur cette instance — ignorée à la restauration");
+                continue;
+            }
+        };
+        present.push(t.clone());
+        plans.insert(t.clone(), plan);
     }
 
-    // Empty every table named in the header (reverse order, tidy even with FKs
-    // off).
-    for name in tables.iter().rev() {
-        let sql = format!("DELETE FROM core.\"{}\"", name.replace('"', "\"\""));
-        tx.execute(&sql, params![])
-            .await
-            .with_context(|| format!("Vidage de core.{name}"))?;
+    let inserted;
+    {
+        let mut tx = db.begin().await.context("Ouverture de la transaction de restauration")?;
+
+        // Relax foreign-key enforcement for the load — the strict engine keeps
+        // its immediate constraints, satisfied by the core-first, parent-first
+        // order the dump was written in.
+        match backend {
+            Backend::MySql => {
+                tx.execute("SET FOREIGN_KEY_CHECKS = 0", params![]).await?;
+            }
+            Backend::Sqlite => {
+                tx.execute("PRAGMA defer_foreign_keys = ON", params![]).await?;
+            }
+            Backend::Postgres => {}
+        }
+
+        // PostgreSQL: disable application triggers for the load (owner privilege).
+        // `core.settings` carries an AFTER INSERT trigger that mirrors rows into
+        // `core.setting_values` (migration 000060); left live, restoring both
+        // tables makes the second insert collide with the row the first caused.
+        if backend == Backend::Postgres {
+            for t in &present {
+                let sql = format!("ALTER TABLE {} DISABLE TRIGGER USER", q(&t.schema, &t.table));
+                if let Err(e) = tx.execute(&sql, params![]).await {
+                    tracing::warn!(error = %e, table = %t.table, "backup: désactivation des triggers impossible");
+                }
+            }
+        }
+
+        // Empty every present covered table, in reverse of the dump order.
+        for t in present.iter().rev() {
+            let sql = format!("DELETE FROM {}", q(&t.schema, &t.table));
+            tx.execute(&sql, params![])
+                .await
+                .with_context(|| format!("Vidage de {}.{}", t.schema, t.table))?;
+        }
+
+        // Stream: a table marker sets the current schema/columns; each row is
+        // rebuilt for the destination and inserted. Rows for an absent table are
+        // dropped along with it.
+        let mut current: Option<TableCtx> = None;
+        let mut n: u64 = 0;
+        while let Some(line) = lines.next_line().await.context("Lecture d'une ligne du dump")? {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(&line).context("Ligne du dump illisible")?;
+            if let Some(table) = value.get("table").and_then(|t| t.as_str()) {
+                let schema = value.get("schema").and_then(|s| s.as_str()).unwrap_or("core").to_string();
+                let qt = QTable::new(schema.clone(), table.to_string());
+                current = plans.remove(&qt).map(|plan| TableCtx {
+                    schema,
+                    table: table.to_string(),
+                    columns: parse_columns(value.get("columns")),
+                    plan,
+                });
+            } else if let Some(cells) = value.get("cells").and_then(|c| c.as_array()) {
+                if let Some(ctx) = current.as_ref() {
+                    insert_row(&mut tx, backend, ctx, cells).await?;
+                    n += 1;
+                }
+            }
+        }
+
+        // Application triggers back on, inside the same transaction.
+        if backend == Backend::Postgres {
+            for t in &present {
+                let sql = format!("ALTER TABLE {} ENABLE TRIGGER USER", q(&t.schema, &t.table));
+                if let Err(e) = tx.execute(&sql, params![]).await {
+                    tracing::warn!(error = %e, table = %t.table, "backup: réactivation des triggers impossible");
+                }
+            }
+        }
+        if backend == Backend::MySql {
+            tx.execute("SET FOREIGN_KEY_CHECKS = 1", params![]).await?;
+        }
+        tx.commit().await.context("Validation de la restauration")?;
+        inserted = n;
     }
 
-    // Stream the rest: a table marker sets the current column codecs, each row
-    // line is inserted at once.
-    let mut current: Option<(String, Vec<(String, Codec)>)> = None;
-    let mut inserted: u64 = 0;
-    while let Some(line) = lines.next_line().await.context("Lecture d'une ligne du dump")? {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let value: Value = serde_json::from_str(&line).context("Ligne du dump illisible")?;
-        if let Some(table) = value.get("table").and_then(|t| t.as_str()) {
-            let columns = parse_columns(value.get("columns"));
-            current = Some((table.to_string(), columns));
-        } else if let Some(cells) = value.get("cells").and_then(|c| c.as_array()) {
-            let (table, columns) = current
-                .as_ref()
-                .context("Ligne de données avant toute déclaration de table")?;
-            insert_row(&mut tx, table, columns, cells).await?;
-            inserted += 1;
-        }
+    // Auto-increment counters are not part of the row data; realign them so the
+    // next insert does not collide with a restored identifier. Best-effort and
+    // post-commit (sequences are non-transactional).
+    if let Err(e) = realign_autoincrement(db, &present).await {
+        tracing::warn!(error = %format!("{e:#}"), "backup: réalignement des séquences incomplet");
     }
 
-    if db.backend() == kubuno_db::Backend::MySql {
-        tx.execute("SET FOREIGN_KEY_CHECKS = 1", params![]).await?;
-    }
-    tx.commit().await.context("Validation de la restauration")?;
     Ok(inserted)
+}
+
+/// The current table being loaded: its identity, the source codecs (from the
+/// dump), and the destination column plan (from the live catalog).
+struct TableCtx {
+    schema: String,
+    table: String,
+    columns: Vec<(String, Codec)>,
+    plan: std::collections::HashMap<String, kubuno_db::ImportColumn>,
 }
 
 fn parse_columns(value: Option<&Value>) -> Vec<(String, Codec)> {
@@ -378,283 +499,150 @@ fn parse_columns(value: Option<&Value>) -> Vec<(String, Codec)> {
 
 async fn insert_row(
     tx: &mut kubuno_db::DbTx,
-    table: &str,
-    columns: &[(String, Codec)],
+    backend: Backend,
+    ctx: &TableCtx,
     cells: &[Value],
 ) -> anyhow::Result<()> {
-    if columns.is_empty() {
+    if ctx.columns.is_empty() {
         return Ok(());
     }
-    let column_list = columns
-        .iter()
-        .map(|(c, _)| format!("\"{}\"", c.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let placeholders = (1..=columns.len()).map(|i| format!("${i}")).collect::<Vec<_>>().join(", ");
+    let mut column_list = String::new();
+    let mut placeholders = String::new();
+    let mut binds: Vec<DbValue> = Vec::with_capacity(ctx.columns.len());
+
+    for (i, (name, src_codec)) in ctx.columns.iter().enumerate() {
+        let raw = json_to_raw(*src_codec, cells.get(i).unwrap_or(&Value::Null));
+        // Destination-directed: rebuild the value into the destination column's
+        // strict type (or pass through), exactly as an engine switch would.
+        let (bound, cast) = kubuno_db::portable_bind_cell(
+            backend,
+            *src_codec,
+            ctx.plan.get(name),
+            raw,
+            &ctx.table,
+            name,
+        )
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        if i > 0 {
+            column_list.push_str(", ");
+            placeholders.push_str(", ");
+        }
+        column_list.push('"');
+        column_list.push_str(&name.replace('"', "\"\""));
+        column_list.push('"');
+        placeholders.push('$');
+        placeholders.push_str(&(i + 1).to_string());
+        // A write cast the destination column needs (`::uuid[]`, `::inet`, …).
+        if let Some(suffix) = cast {
+            placeholders.push_str(&suffix);
+        }
+        binds.push(bound);
+    }
+
     let sql = format!(
-        "INSERT INTO core.\"{}\" ({column_list}) VALUES ({placeholders})",
-        table.replace('"', "\"\"")
+        "INSERT INTO {} ({column_list}) VALUES ({placeholders})",
+        q(&ctx.schema, &ctx.table)
     );
-    let values: Vec<DbValue> = columns
-        .iter()
-        .enumerate()
-        .map(|(i, (_, codec))| cell_to_dbvalue(*codec, cells.get(i).unwrap_or(&Value::Null)))
-        .collect();
-    tx.execute(&sql, values)
+    tx.execute(&sql, binds)
         .await
-        .with_context(|| format!("Insertion dans core.{table}"))?;
+        .with_context(|| format!("Insertion dans {}.{}", ctx.schema, ctx.table))?;
     Ok(())
 }
 
-/// Binds one dumped cell back as the engine-agnostic value its codec dictates.
-fn cell_to_dbvalue(codec: Codec, v: &Value) -> DbValue {
-    if v.is_null() {
-        // A typed NULL keeps the parameter's column type where the engine is
-        // strict about it.
-        return match codec {
-            Codec::Bool => DbValue::Bool(None),
-            Codec::Int => DbValue::I64(None),
-            Codec::Float => DbValue::F64(None),
-            Codec::Blob => DbValue::Blob(None),
-            Codec::Uuid => DbValue::Uuid(None),
-            Codec::Json => DbValue::Json(None),
-            Codec::Date => DbValue::NaiveDate(None),
-            Codec::Text | Codec::DateTime => DbValue::Text(None),
-        };
-    }
-    match codec {
-        Codec::Bool => DbValue::Bool(v.as_bool()),
-        Codec::Int => DbValue::I64(v.as_i64()),
-        Codec::Float => DbValue::F64(v.as_f64()),
-        Codec::Text | Codec::DateTime => DbValue::Text(v.as_str().map(str::to_owned)),
-        Codec::Blob => DbValue::Blob(v.as_str().and_then(|s| B64.decode(s).ok())),
-        Codec::Uuid => DbValue::Uuid(v.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok())),
-        Codec::Json => DbValue::Json(Some(v.clone())),
-        Codec::Date => DbValue::NaiveDate(
-            v.as_str().and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()),
-        ),
+/// Realigns identity generators after a restore that inserted explicit ids:
+/// PostgreSQL sequences and MySQL `AUTO_INCREMENT`. SQLite's `rowid` self-heals
+/// (it always picks `max + 1`), so nothing is needed there.
+async fn realign_autoincrement(db: &DbPool, tables: &[QTable]) -> anyhow::Result<()> {
+    match db.backend() {
+        Backend::Postgres => realign_pg_sequences(db, tables).await,
+        Backend::MySql => realign_mysql_autoincrement(db, tables).await,
+        Backend::Sqlite => Ok(()),
     }
 }
 
-// ── schema introspection (MySQL / SQLite) ───────────────────────────────────
+#[derive(sqlx::FromRow)]
+struct SeqRow {
+    schema: String,
+    seq: String,
+    tbl: String,
+    col: String,
+}
 
-/// The tables of the `core` schema in a portable foreign-key order, each with
-/// its exportable columns and their codecs.
-async fn table_specs(db: &DbPool) -> anyhow::Result<Vec<TableSpec>> {
-    let (names, edges) = match db.backend() {
-        kubuno_db::Backend::MySql => mysql_tables_and_edges(db).await?,
-        kubuno_db::Backend::Sqlite => sqlite_tables_and_edges(db).await?,
-        kubuno_db::Backend::Postgres => {
-            bail!("La sauvegarde portable est réservée à MySQL et SQLite")
-        }
+async fn realign_pg_sequences(db: &DbPool, tables: &[QTable]) -> anyhow::Result<()> {
+    let Some(pg) = db.as_pg() else { return Ok(()) };
+    let schemas: Vec<String> = {
+        let mut s: Vec<String> = tables.iter().map(|t| t.schema.clone()).collect();
+        s.sort();
+        s.dedup();
+        s
     };
-    let ordered = topo_order(&names, &edges);
+    // Every sequence owned by a column of a covered schema, with that column. The
+    // `= ANY($1)` array is bound on the raw PostgreSQL pool as a real `text[]`.
+    let rows: Vec<SeqRow> = sqlx::query_as::<_, SeqRow>(
+        "SELECT n.nspname AS schema, s.relname AS seq, t.relname AS tbl, a.attname AS col \
+           FROM pg_class s \
+           JOIN pg_depend d  ON d.objid = s.oid AND d.deptype = 'a' \
+           JOIN pg_class t   ON t.oid = d.refobjid \
+           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid \
+           JOIN pg_namespace n ON n.oid = s.relnamespace \
+          WHERE s.relkind = 'S' AND n.nspname = ANY($1)",
+    )
+    .bind(&schemas)
+    .fetch_all(pg)
+    .await
+    .context("Lecture des séquences PostgreSQL")?;
 
-    let mut specs = Vec::with_capacity(ordered.len());
-    for name in ordered {
-        let columns = match db.backend() {
-            kubuno_db::Backend::MySql => mysql_columns(db, &name).await?,
-            kubuno_db::Backend::Sqlite => sqlite_columns(db, &name).await?,
-            kubuno_db::Backend::Postgres => unreachable!(),
-        };
-        if columns.is_empty() {
-            tracing::warn!(table = %name, "backup: table sans colonne exportable, ignorée");
-            continue;
-        }
-        specs.push(TableSpec { name, columns });
-    }
-    Ok(specs)
-}
-
-/// Kahn's algorithm: parents before children. Self-references are skipped and a
-/// genuine cycle degrades into "emit the rest in name order" — an incomplete
-/// backup that says nothing is the one outcome to avoid.
-fn topo_order(names: &[String], edges: &[(String, String)]) -> Vec<String> {
-    let known: HashSet<&str> = names.iter().map(String::as_str).collect();
-    let mut children: HashMap<String, Vec<String>> = HashMap::new();
-    let mut indegree: HashMap<&str, usize> = names.iter().map(|n| (n.as_str(), 0)).collect();
-    let mut seen: HashSet<(String, String)> = HashSet::new();
-
-    for (parent, child) in edges {
-        if parent == child || !known.contains(parent.as_str()) || !known.contains(child.as_str()) {
-            continue;
-        }
-        if !seen.insert((parent.clone(), child.clone())) {
-            continue;
-        }
-        children.entry(parent.clone()).or_default().push(child.clone());
-        if let Some(d) = indegree.get_mut(child.as_str()) {
-            *d += 1;
+    for r in rows {
+        let seq_lit = format!("'{}.{}'", r.schema.replace('\'', "''"), r.seq.replace('\'', "''"));
+        let tbl = q(&r.schema, &r.tbl);
+        let col = format!("\"{}\"", r.col.replace('"', "\"\""));
+        let sql = format!(
+            "SELECT setval({seq_lit}, COALESCE((SELECT MAX({col}) FROM {tbl}), 1), \
+                    (SELECT MAX({col}) FROM {tbl}) IS NOT NULL)"
+        );
+        if let Err(e) = db.execute(&sql, params![]).await {
+            tracing::warn!(error = %e, séquence = %r.seq, "backup: setval d'une séquence impossible");
         }
     }
-
-    let mut queue: VecDeque<String> = names
-        .iter()
-        .filter(|n| indegree.get(n.as_str()).copied().unwrap_or(0) == 0)
-        .cloned()
-        .collect();
-    let mut ordered = Vec::with_capacity(names.len());
-    while let Some(name) = queue.pop_front() {
-        ordered.push(name.clone());
-        for child in children.get(&name).into_iter().flatten() {
-            if let Some(d) = indegree.get_mut(child.as_str()) {
-                *d -= 1;
-                if *d == 0 {
-                    queue.push_back(child.clone());
-                }
-            }
-        }
-    }
-    if ordered.len() < names.len() {
-        let missing: Vec<String> = names.iter().filter(|n| !ordered.contains(n)).cloned().collect();
-        tracing::warn!(tables = ?missing, "backup: cycle de clés étrangères — tables écrites en fin");
-        ordered.extend(missing);
-    }
-    ordered
+    Ok(())
 }
 
 #[derive(sqlx::FromRow)]
-struct NameRow {
-    name: String,
+struct MyAutoRow {
+    tbl: String,
+    col: String,
 }
 
-#[derive(sqlx::FromRow)]
-struct EdgeRow {
-    parent: String,
-    child: String,
-}
-
-async fn mysql_tables_and_edges(db: &DbPool) -> anyhow::Result<(Vec<String>, Vec<(String, String)>)> {
-    let tables: Vec<NameRow> = db
-        .fetch_all_as(
-            "SELECT table_name AS name FROM information_schema.tables \
-              WHERE table_schema = 'core' AND table_type = 'BASE TABLE' \
-                AND table_name <> '_sqlx_migrations'",
-            params![],
-        )
-        .await
-        .context("Lecture de la liste des tables (MySQL)")?;
-    let names: Vec<String> = tables.into_iter().map(|r| r.name).collect();
-
-    let edges: Vec<EdgeRow> = db
-        .fetch_all_as(
-            "SELECT referenced_table_name AS parent, table_name AS child \
-               FROM information_schema.key_column_usage \
-              WHERE table_schema = 'core' AND referenced_table_name IS NOT NULL",
-            params![],
-        )
-        .await
-        .context("Lecture des clés étrangères (MySQL)")?;
-    Ok((names, edges.into_iter().map(|e| (e.parent, e.child)).collect()))
-}
-
-#[derive(sqlx::FromRow)]
-struct MysqlColRow {
-    name: String,
-    data_type: String,
-    column_type: String,
-}
-
-async fn mysql_columns(db: &DbPool, table: &str) -> anyhow::Result<Vec<(String, Codec)>> {
-    let rows: Vec<MysqlColRow> = db
-        .fetch_all_as(
-            "SELECT column_name AS name, data_type, column_type \
-               FROM information_schema.columns \
-              WHERE table_schema = 'core' AND table_name = $1 \
-              ORDER BY ordinal_position",
-            params![table],
-        )
-        .await
-        .with_context(|| format!("Lecture des colonnes de core.{table} (MySQL)"))?;
-    Ok(rows
-        .into_iter()
-        .map(|c| (c.name, mysql_codec(&c.data_type, &c.column_type)))
-        .collect())
-}
-
-fn mysql_codec(data_type: &str, column_type: &str) -> Codec {
-    match data_type.to_ascii_lowercase().as_str() {
-        // BINARY(16) is Kubuno's UUID representation; other binary is opaque bytes.
-        "binary" | "varbinary" if column_type.to_ascii_lowercase().contains("(16)") => Codec::Uuid,
-        "binary" | "varbinary" | "blob" | "tinyblob" | "mediumblob" | "longblob" => Codec::Blob,
-        "tinyint" | "smallint" | "mediumint" | "int" | "integer" | "bigint" => Codec::Int,
-        "decimal" | "numeric" | "float" | "double" => Codec::Float,
-        "json" => Codec::Json,
-        "datetime" | "timestamp" => Codec::DateTime,
-        "date" => Codec::Date,
-        // char/varchar/text/enum/set/time/year and anything else travel as text.
-        _ => Codec::Text,
-    }
-}
-
-#[derive(sqlx::FromRow)]
-struct SqliteFkRow {
-    #[sqlx(rename = "table")]
-    parent: String,
-}
-
-async fn sqlite_tables_and_edges(
-    db: &DbPool,
-) -> anyhow::Result<(Vec<String>, Vec<(String, String)>)> {
-    let tables: Vec<NameRow> = db
-        .fetch_all_as(
-            "SELECT name FROM core.sqlite_master \
-              WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
-                AND name <> '_sqlx_migrations'",
-            params![],
-        )
-        .await
-        .context("Lecture de la liste des tables (SQLite)")?;
-    let names: Vec<String> = tables.into_iter().map(|r| r.name).collect();
-
-    let mut edges = Vec::new();
-    for child in &names {
-        let sql = format!("PRAGMA core.foreign_key_list(\"{}\")", child.replace('"', "\"\""));
-        let fks: Vec<SqliteFkRow> = db
-            .fetch_all_as(&sql, params![])
+async fn realign_mysql_autoincrement(db: &DbPool, tables: &[QTable]) -> anyhow::Result<()> {
+    for t in tables {
+        let cols: Vec<MyAutoRow> = db
+            .fetch_all_as(
+                "SELECT table_name AS tbl, column_name AS col FROM information_schema.columns \
+                  WHERE table_schema = $1 AND table_name = $2 AND extra LIKE '%auto_increment%'",
+                params![&t.schema, &t.table],
+            )
             .await
-            .with_context(|| format!("Lecture des clés étrangères de core.{child} (SQLite)"))?;
-        for fk in fks {
-            edges.push((fk.parent, child.clone()));
+            .unwrap_or_default();
+        let Some(c) = cols.into_iter().next() else { continue };
+        // MAX+1, or 1 for an empty table.
+        let next: i64 = db
+            .fetch_scalar::<i64>(
+                &format!(
+                    "SELECT COALESCE(MAX(`{}`), 0) + 1 FROM {}",
+                    c.col.replace('`', "``"),
+                    q(&t.schema, &t.table)
+                ),
+                params![],
+            )
+            .await
+            .unwrap_or(1);
+        let sql = format!("ALTER TABLE {} AUTO_INCREMENT = {next}", q(&t.schema, &c.tbl));
+        if let Err(e) = db.execute(&sql, params![]).await {
+            tracing::warn!(error = %e, table = %t.table, "backup: réalignement AUTO_INCREMENT impossible");
         }
     }
-    Ok((names, edges))
-}
-
-#[derive(sqlx::FromRow)]
-struct SqliteColRow {
-    name: String,
-    #[sqlx(rename = "type")]
-    col_type: String,
-}
-
-async fn sqlite_columns(db: &DbPool, table: &str) -> anyhow::Result<Vec<(String, Codec)>> {
-    let sql = format!("PRAGMA core.table_info(\"{}\")", table.replace('"', "\"\""));
-    let rows: Vec<SqliteColRow> = db
-        .fetch_all_as(&sql, params![])
-        .await
-        .with_context(|| format!("Lecture des colonnes de core.{table} (SQLite)"))?;
-    Ok(rows.into_iter().map(|c| (c.name, sqlite_codec(&c.col_type))).collect())
-}
-
-/// SQLite's declared type carries only a storage class. A UUID and a hash both
-/// live in a `BLOB`, a timestamp and a name both in `TEXT`: the dump keeps the
-/// storage faithful, which round-trips on SQLite and, because MySQL stores the
-/// same shapes, onto MySQL too.
-fn sqlite_codec(decl: &str) -> Codec {
-    let d = decl.to_ascii_uppercase();
-    if d.contains("INT") {
-        Codec::Int
-    } else if d.contains("BLOB") {
-        Codec::Blob
-    } else if d.contains("REAL") || d.contains("FLOA") || d.contains("DOUB") || d.contains("NUMERIC")
-        || d.contains("DECIMAL")
-    {
-        Codec::Float
-    } else {
-        // TEXT, and the SQLite default affinity, travel as text.
-        Codec::Text
-    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -662,50 +650,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codec_tags_round_trip() {
-        for c in [
-            Codec::Bool,
-            Codec::Int,
-            Codec::Float,
-            Codec::Text,
-            Codec::Blob,
-            Codec::Uuid,
-            Codec::Json,
-            Codec::Date,
-            Codec::DateTime,
-        ] {
-            assert_eq!(Codec::from_tag(c.tag()), c);
-        }
-        // An unknown tag is text, never a panic.
-        assert_eq!(Codec::from_tag("mystery"), Codec::Text);
+    fn value_json_round_trips_each_codec() {
+        // A UUID travels as its canonical string, a blob as base64, a timestamp
+        // as RFC 3339 — and comes back the same raw variant.
+        let u = uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+        let j = value_to_json(&DbValue::Uuid(Some(u)));
+        assert_eq!(json_to_raw(Codec::Uuid, &j), DbValue::Uuid(Some(u)));
+
+        let blob = vec![0u8, 1, 2, 255];
+        let j = value_to_json(&DbValue::Blob(Some(blob.clone())));
+        assert_eq!(json_to_raw(Codec::Blob, &j), DbValue::Blob(Some(blob)));
+
+        // A typed NULL stays a typed NULL of the same variant.
+        assert_eq!(json_to_raw(Codec::Uuid, &Value::Null), DbValue::Uuid(None));
+        assert_eq!(json_to_raw(Codec::Bool, &Value::Null), DbValue::Bool(None));
     }
 
     #[test]
-    fn mysql_binary_16_is_a_uuid_but_other_binary_is_bytes() {
-        assert_eq!(mysql_codec("binary", "binary(16)"), Codec::Uuid);
-        assert_eq!(mysql_codec("binary", "binary(32)"), Codec::Blob);
-        assert_eq!(mysql_codec("json", "json"), Codec::Json);
-        assert_eq!(mysql_codec("datetime", "datetime(6)"), Codec::DateTime);
-        assert_eq!(mysql_codec("bigint", "bigint"), Codec::Int);
-        assert_eq!(mysql_codec("varchar", "varchar(255)"), Codec::Text);
-    }
-
-    #[test]
-    fn sqlite_storage_classes_map_to_codecs() {
-        assert_eq!(sqlite_codec("BLOB"), Codec::Blob);
-        assert_eq!(sqlite_codec("TEXT"), Codec::Text);
-        assert_eq!(sqlite_codec("INTEGER"), Codec::Int);
-        assert_eq!(sqlite_codec("REAL"), Codec::Float);
-        assert_eq!(sqlite_codec("NUMERIC"), Codec::Float);
-    }
-
-    #[test]
-    fn a_uuid_cell_round_trips_through_the_codec() {
-        let id = uuid::Uuid::new_v4();
-        let cell = Value::String(id.to_string());
-        match cell_to_dbvalue(Codec::Uuid, &cell) {
-            DbValue::Uuid(Some(u)) => assert_eq!(u, id),
-            other => panic!("attendu Uuid, obtenu {other:?}"),
-        }
+    fn dates_and_times_parse_back() {
+        assert!(parse_date("2026-09-22").is_some());
+        assert!(parse_dt("2026-09-22T03:04:05+00:00").is_some());
+        assert!(parse_dt("2026-09-22 03:04:05.123456").is_some());
+        assert!(parse_dt("nope").is_none());
     }
 }

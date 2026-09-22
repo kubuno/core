@@ -331,14 +331,180 @@ async fn mysql_table_names(pool: &DbPool, eff_db: &str) -> Result<Vec<String>, A
         .collect())
 }
 
+impl Codec {
+    /// A short, stable tag for the on-disk backup format.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Codec::Bool => "bool",
+            Codec::I16 => "i16",
+            Codec::I32 => "i32",
+            Codec::I64 => "i64",
+            Codec::F32 => "f32",
+            Codec::F64 => "f64",
+            Codec::Text => "text",
+            Codec::Blob => "blob",
+            Codec::Uuid => "uuid",
+            Codec::Json => "json",
+            Codec::Date => "date",
+            Codec::DateTime => "datetime",
+            Codec::DateTimeNaive => "datetime_naive",
+        }
+    }
+
+    /// The codec for a tag written by [`Codec::tag`]. An unknown tag is `Text`,
+    /// which every engine stores, so a forward-compatible file never fails to load.
+    pub fn from_tag(tag: &str) -> Codec {
+        match tag {
+            "bool" => Codec::Bool,
+            "i16" => Codec::I16,
+            "i32" => Codec::I32,
+            "i64" => Codec::I64,
+            "f32" => Codec::F32,
+            "f64" => Codec::F64,
+            "blob" => Codec::Blob,
+            "uuid" => Codec::Uuid,
+            "json" => Codec::Json,
+            "date" => Codec::Date,
+            "datetime" => Codec::DateTime,
+            "datetime_naive" => Codec::DateTimeNaive,
+            _ => Codec::Text,
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Portable backup: the same faithful cross-engine machinery, through a file
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One source column prepared for a portable export: its name, the SQL that
+/// reads it into a portable shape (a PostgreSQL array/`inet`/`citext` is cast),
+/// and the codec its value travels as.
+pub struct ExportColumn {
+    pub name: String,
+    read_expr: String,
+    codec: Codec,
+}
+
+impl ExportColumn {
+    /// The SELECT expression that reads this column into a portable shape.
+    pub fn read_expr(&self) -> &str {
+        &self.read_expr
+    }
+    /// The codec tag to record in the backup, so restore knows the source type.
+    pub fn codec_tag(&self) -> &'static str {
+        self.codec.tag()
+    }
+}
+
+/// The ordered export plan for a whole schema: every base table (parents first),
+/// each with its copyable columns. Reuses the exact introspection a live engine
+/// switch uses.
+pub async fn portable_export_plan(
+    pool: &DbPool,
+    schema: &str,
+) -> Result<Vec<(String, Vec<ExportColumn>)>, AdminError> {
+    let specs = table_specs(pool, schema).await?;
+    Ok(specs
+        .into_iter()
+        .map(|s| {
+            let cols = s
+                .columns
+                .into_iter()
+                .map(|c| ExportColumn { name: c.name, read_expr: c.read_expr, codec: c.codec })
+                .collect();
+            (s.name, cols)
+        })
+        .collect())
+}
+
+/// Reads one row's cells as typed [`DbValue`]s, per the export columns and the
+/// source engine — the engine-aware read that makes the value portable.
+pub fn portable_read_row(
+    row: &DbRow,
+    columns: &[ExportColumn],
+    backend: Backend,
+) -> Result<Vec<DbValue>, sqlx::Error> {
+    columns.iter().map(|c| read_cell(row, &c.name, c.codec, backend)).collect()
+}
+
+/// One destination column prepared for a portable import: the strict logical type
+/// to rebuild a type-poor source into, and (for a native PostgreSQL array) the
+/// element type for a `$n::<elem>[]` write cast.
+pub struct ImportColumn {
+    codec: Codec,
+    array_elem: Option<String>,
+    text_cast: Option<String>,
+}
+
+/// The destination column plan for one table, keyed by column name — read from
+/// the freshly-migrated destination catalog, so its columns carry the real types.
+pub async fn portable_import_plan(
+    pool: &DbPool,
+    schema: &str,
+    table: &str,
+) -> Result<HashMap<String, ImportColumn>, AdminError> {
+    Ok(dst_columns(pool, schema, table)
+        .await?
+        .into_iter()
+        .map(|(name, d)| {
+            (name, ImportColumn { codec: d.codec, array_elem: d.array_elem, text_cast: d.text_cast })
+        })
+        .collect())
+}
+
+/// Rebuilds one source cell (read on the source at `src_codec`) for a destination
+/// column, exactly as a live engine switch does: an ambiguous value from a
+/// type-poor source (SQLite `BLOB`/`INTEGER`/`TEXT`, MariaDB JSON-as-text) is
+/// reconstructed into the destination's strict type, a PostgreSQL array into a
+/// `text[]`/`uuid[]` literal, and a text value into a non-text PostgreSQL column
+/// (`inet`, `citext`, an enum…). Returns the value to bind and, when set, the
+/// SQL cast suffix to append after its placeholder — e.g. `::uuid[]` or `::inet`.
+///
+/// A value that cannot be reconstructed is a hard [`AdminError::Convert`] rather
+/// than a silent mis-store — so a bad restore fails cleanly instead of corrupting.
+pub fn portable_bind_cell(
+    dst_backend: Backend,
+    src_codec: Codec,
+    dst: Option<&ImportColumn>,
+    raw: DbValue,
+    table: &str,
+    column: &str,
+) -> Result<(DbValue, Option<String>), AdminError> {
+    let Some(dst) = dst else {
+        // No such destination column (a dropped column): bind the raw value; the
+        // INSERT will surface a real error if the column truly does not exist.
+        return Ok((raw, None));
+    };
+    let rebuilt = match plan_rebuild(dst_backend, src_codec, dst.codec) {
+        Some(t) => rebuild_cell(raw, t, table, column)?,
+        None => raw,
+    };
+    if let Some(elem) = &dst.array_elem {
+        return Ok((to_pg_array_literal(rebuilt, table, column)?, Some(format!("::{elem}[]"))));
+    }
+    if let Some(ty) = &dst.text_cast {
+        // Only a text value needs the cast; a typed NULL of any kind is bound as
+        // itself (a bare `NULL::inet` is equally fine, but the value may already
+        // be a typed NULL that PostgreSQL accepts directly).
+        return Ok((rebuilt, Some(format!("::{ty}"))));
+    }
+    Ok((rebuilt, None))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic cross-engine copy
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// How one column's values are read from the source and re-bound onto the
 /// destination. The read is engine-aware; the [`DbValue`] it produces is not.
+///
+/// Public so the backup module can serialise a value with its source codec and,
+/// on restore, rebuild it into the destination column's strict type through the
+/// very same [`plan_rebuild`]/[`rebuild_cell`] path a live engine switch uses —
+/// see the `portable_*` functions below. A backup taken on one engine therefore
+/// restores faithfully onto any other.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Codec {
+pub enum Codec {
     Bool,
     /// A 16-bit integer (PostgreSQL `smallint`).
     I16,
@@ -401,6 +567,12 @@ struct DstCol {
     /// type name for a `$n::<elem>[]` write cast; `None` for every other column
     /// (including a `jsonb` that merely holds an array).
     array_elem: Option<String>,
+    /// For a PostgreSQL column whose value travels as text but whose column type
+    /// is not plain text (`inet`, `cidr`, `macaddr`, `citext`, an enum/domain, a
+    /// `time`), the type name for a `$n::<type>` write cast so a bound text value
+    /// lands in it. `None` for every other column and every other engine (which
+    /// coerce a text value into such columns on their own).
+    text_cast: Option<String>,
 }
 
 /// One copyable column: its name, the codec its values travel as, and the SQL
@@ -924,7 +1096,8 @@ async fn dst_columns(
                 } else {
                     None
                 };
-                map.insert(name, DstCol { codec, array_elem });
+                let text_cast = pg_text_cast(&data_type, &udt);
+                map.insert(name, DstCol { codec, array_elem, text_cast });
             }
         }
         Backend::MySql => {
@@ -938,7 +1111,7 @@ async fn dst_columns(
             for (name, data_type, column_type) in rows {
                 map.insert(
                     name,
-                    DstCol { codec: mysql_codec(&data_type, &column_type), array_elem: None },
+                    DstCol { codec: mysql_codec(&data_type, &column_type), array_elem: None, text_cast: None },
                 );
             }
         }
@@ -951,11 +1124,25 @@ async fn dst_columns(
             for row in &pool.fetch_all_row(&sql, params![]).await? {
                 let name: String = row.try_get("name")?;
                 let decl: String = row.try_get("type")?;
-                map.insert(name, DstCol { codec: sqlite_codec(&decl), array_elem: None });
+                map.insert(name, DstCol { codec: sqlite_codec(&decl), array_elem: None, text_cast: None });
             }
         }
     }
     Ok(map)
+}
+
+/// The PostgreSQL type a text value must be cast to (`$n::<type>`) to land in a
+/// column whose type is not plain text — `inet`/`cidr`/`macaddr`, a `time`, or a
+/// `citext`/enum/domain (`USER-DEFINED`). `None` for a plain text column (no cast
+/// needed) and for an array (handled by the element cast instead).
+fn pg_text_cast(data_type: &str, udt: &str) -> Option<String> {
+    match data_type.to_ascii_lowercase().as_str() {
+        "inet" | "cidr" | "macaddr" | "macaddr8" => safe_pg_type(&format!("_{}", udt.trim_start_matches('_'))),
+        "time without time zone" => Some("time".to_string()),
+        "time with time zone" => Some("timetz".to_string()),
+        "user-defined" => safe_pg_type(&format!("_{}", udt.trim_start_matches('_'))),
+        _ => None,
+    }
 }
 
 /// Validates a PostgreSQL element type name from a catalog `udt_name` (stripping
@@ -1161,8 +1348,11 @@ async fn mysql_columns(
 
 fn mysql_codec(data_type: &str, column_type: &str) -> Codec {
     match data_type.to_ascii_lowercase().as_str() {
-        // BINARY(16) is Kubuno's UUID; other binary is opaque bytes.
-        "binary" | "varbinary" if column_type.to_ascii_lowercase().contains("(16)") => Codec::Uuid,
+        // Fixed-width BINARY(16) is Kubuno's UUID (always exactly 16 bytes). A
+        // VARBINARY(16) is variable and holds opaque bytes shorter than 16 (an
+        // AES-GCM nonce is 12), so it must NOT be read as a UUID or the decode
+        // fails on the short value — it is a blob.
+        "binary" if column_type.to_ascii_lowercase().contains("(16)") => Codec::Uuid,
         "binary" | "varbinary" | "blob" | "tinyblob" | "mediumblob" | "longblob" => Codec::Blob,
         // tinyint(1) is the boolean convention.
         "tinyint" if column_type.to_ascii_lowercase().contains("(1)") => Codec::Bool,

@@ -11,6 +11,29 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Back up the whole database, compressed, and restore it from the admin
+  console — across any engine.** Scheduled and manual backups now cover **every
+  Kubuno schema** (the core and each installed module, plus their secondary
+  schemas), not just the core, and are written **gzip-compressed** (streamed, so a
+  large instance never sits in RAM). The **Sauvegarde** page gains a **Sauvegardes
+  et restauration** section that lists the backup files present in the destination
+  directory (name, date, size) and, for a superadministrator, a **Restaurer**
+  button on each. A restore replaces the entire database in place, in one
+  transaction, and is a **hot** operation performed **100% in-process** — it never
+  shells out to `pg_dump`/`psql`, honouring the sandbox. Before replacing
+  anything, an **automatic safety backup** of the current state is taken (and
+  recorded in the history), so an administrator can always go back; on failure the
+  database is rolled back and left exactly as it was, and both the source file and
+  the safety backup are untouched. Restoring asks for a strong confirmation
+  (retype the file name), warns about the brief window during which requests may
+  still see the previous data, and records every restore. A backup taken on one
+  engine can be restored onto an instance running **another** engine (PostgreSQL,
+  MySQL/MariaDB or SQLite): the loader rebuilds each value from the destination
+  column's own type, so uuid/boolean/date/timestamp/json and native arrays all
+  round-trip faithfully. The destination directory and the file to restore are
+  validated (absolute path, no traversal, one of our own archives). Restoring is
+  restricted to superadministrators.
+
 - **Never lose access to a previous database after a switch — a registry of
   known connections.** The **System ▸ Main database** page, and every module's
   database card, gain a **Known connections** section listing every database that

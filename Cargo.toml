@@ -117,6 +117,7 @@ tokio-tungstenite   = { version = "0.24", features = ["native-tls"] }
 async-stream        = "0.3"
 totp-rs             = { version = "5", features = ["gen_secret", "otpauth"] }
 zip                 = "2"
+flate2              = "1"
 quick-xml           = { version = "0.37", features = ["serialize"] }
 utoipa              = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 # Outbound SMTP (crate::mailer). rustls rather than native-tls: the rest of the

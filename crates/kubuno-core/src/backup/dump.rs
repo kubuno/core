@@ -1,67 +1,61 @@
-//! The writer: a logical, data-only dump of the `core` schema, produced from
-//! the connection pool.
+//! The PostgreSQL writer and in-process loader: a logical, data-only dump of
+//! **every Kubuno schema**, produced from the connection pool as compressed
+//! `COPY` text.
 //!
-//! ## Why the output is `psql` text format
+//! ## Why `COPY` text, and why gzip
 //!
-//! Because a backup nobody can restore is a file, not a backup. Every block
-//! below is exactly what `pg_dump --data-only --disable-triggers` emits, so the
-//! file this writes is loadable by the `kubuno db:restore` command that already
-//! exists — no new restore path, no new format, nothing to learn in the hour an
-//! operator is least able to learn it.
+//! `COPY … TO STDOUT` serialises every PostgreSQL type to text natively — the
+//! same representation `pg_dump` writes — so a dump covers `bytea`, `inet`,
+//! arrays, `numeric`, `timestamptz` and sequences without a per-type codec. The
+//! stream is gzip-compressed on the way to disk (`.sql.gz`), streamed so a large
+//! instance never sits in RAM.
 //!
-//! ## The four things that make it actually restorable
+//! ## Restored in process, never with `psql`
 //!
-//! * **One snapshot.** Every table is read on the *same* connection inside a
-//!   single `REPEATABLE READ, READ ONLY` transaction. Dumping table by table
-//!   from a pool would interleave writes and produce a file whose foreign keys
-//!   do not close.
-//! * **Dependency order.** Tables are emitted parents-first (Kahn over
-//!   `pg_constraint`), because foreign keys are *system* triggers and stay
-//!   enforced whatever else is disabled.
-//! * **User triggers off during the load.** `core.settings` carries an
-//!   `AFTER INSERT` trigger that mirrors values into `core.setting_values`
-//!   (migration `000060`). Restoring both tables with that trigger live makes
-//!   the second `COPY` collide with rows the first one caused. `ALTER TABLE …
-//!   DISABLE TRIGGER USER` needs table ownership, not superuser — unlike
-//!   `session_replication_role`, which the instance account cannot set.
-//! * **Sequences.** Emitted as `setval` after the data, or the first insert
-//!   after a restore collides with a key that is already there.
+//! `kubuno-seccomp` forbids `execve` in the server, so the admin hot-restore
+//! cannot shell out to `psql`. [`restore`] loads the archive **in process** with
+//! sqlx's `copy_in` protocol: it empties the covered tables (reverse dependency
+//! order, application triggers disabled) and replays each `COPY` block, all in
+//! one transaction, so a failure rolls back and leaves the database as it was.
+//!
+//! ## The four things that make it restorable
+//!
+//! * **One snapshot.** Every table is read on the same connection inside one
+//!   `REPEATABLE READ, READ ONLY` transaction.
+//! * **Dependency order**, across schemas (Kahn over `pg_constraint`), because a
+//!   foreign key is a system trigger enforced whatever else is disabled.
+//! * **User triggers off during the load** (`DISABLE TRIGGER USER`, owner
+//!   privilege — not the superuser-only `session_replication_role`), so the
+//!   `core.settings` mirror trigger does not collide with the rows it restores.
+//! * **Sequences.** Emitted as `setval` after the data.
 //!
 //! ## What it refuses to do
 //!
-//! It never spawns anything (`kubuno-seccomp` forbids `execve`, and that is the
-//! point of the sandbox), never reads the configuration file, and never writes a
-//! connection string, a password or a token into the file, the file *name* or a
-//! log line. The dump does contain password **hashes** — that is what a database
-//! backup is — which is why the directory is created `0700` and the file `0600`.
+//! It never spawns anything, never reads the configuration file, and never
+//! writes a connection string, a password or a token into the file, the file
+//! name or a log line. The dump does contain password **hashes** — that is what
+//! a database backup is — which is why the directory is `0700` and the file
+//! `0600`.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use kubuno_db::DbPool;
-use sqlx::{PgPool, Row};
-use tokio::io::AsyncWriteExt;
+use sqlx::{PgConnection, PgPool, Row};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-/// The schema this feature backs up. Deliberately a constant and not a
-/// parameter: the core owns exactly one schema, and a dump that could be
-/// pointed at somebody else's would be a data-exfiltration primitive with a
-/// scheduler attached.
-pub const SCHEMA: &str = "core";
+use super::archive::{self, GzFileWriter, QTable};
 
-/// Free space required before a dump is even attempted. A backup that fills the
-/// volume it is protecting takes the instance down to save it.
+/// Free space required before a dump is even attempted.
 pub(crate) const MIN_FREE_BYTES: u64 = 256 * 1024 * 1024;
 
-/// Free space below which a dump in progress is abandoned. Lower than the entry
-/// bar: the file being written is already accounted for in what is left.
+/// Free space below which a dump in progress is abandoned.
 pub(crate) const ABORT_FREE_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Suffix of a dump still being written. Renamed into place only once the file
-/// is complete and fsynced, so a crash never leaves something that *looks* like
-/// a backup and is half a table short.
+/// Suffix of a dump still being written, renamed into place only after `fsync`.
 pub(crate) const PARTIAL_SUFFIX: &str = ".part";
 
 /// What one completed dump produced.
@@ -70,44 +64,17 @@ pub struct DumpOutcome {
     pub file_name: String,
     pub path: PathBuf,
     pub size_bytes: u64,
+    pub schemas: usize,
     pub tables: usize,
     pub rows: u64,
 }
 
-/// The name a dump taken at `at` receives.
-///
-/// Sortable as text, so the retention pass can order the directory without
-/// stat-ing anything, and it carries nothing but a timestamp — never the
-/// instance name, never a host, never anything derived from a credential.
-pub fn file_name_for(at: DateTime<Utc>) -> String {
-    format!("kubuno-core-{}.sql", at.format("%Y%m%dT%H%M%SZ"))
-}
-
-/// True when `name` is a file this feature produced.
-///
-/// Used by the retention pass, which must delete only its own output: a
-/// destination directory is an operator's directory, and anything else in it is
-/// somebody else's file. Both the PostgreSQL `.sql` dumps and the portable
-/// `.ndjson` dumps (MySQL/SQLite) are recognised.
+/// Recognised by the retention pass — delegated so the rule lives in one place.
 pub fn is_dump_file(name: &str) -> bool {
-    let Some(rest) = name.strip_prefix("kubuno-core-") else {
-        return false;
-    };
-    let stamp = match rest.strip_suffix(".sql").or_else(|| rest.strip_suffix(".ndjson")) {
-        Some(s) => s,
-        None => return false,
-    };
-    stamp.len() == 16
-        && stamp.char_indices().all(|(i, c)| match i {
-            8 => c == 'T',
-            15 => c == 'Z',
-            _ => c.is_ascii_digit(),
-        })
+    archive::is_dump_file(name)
 }
 
 /// Doubles embedded quotes, the only escape a quoted SQL identifier needs.
-/// The names come from the catalogue, not from a user, but building SQL by
-/// concatenation without quoting is a habit that eventually meets one that does.
 fn quote_ident(raw: &str) -> String {
     format!("\"{}\"", raw.replace('"', "\"\""))
 }
@@ -117,13 +84,17 @@ fn quote_literal(raw: &str) -> String {
     format!("'{}'", raw.replace('\'', "''"))
 }
 
+/// A schema-qualified `"schema"."table"`.
+fn qualified(t: &QTable) -> String {
+    format!("{}.{}", quote_ident(&t.schema), quote_ident(&t.table))
+}
+
 struct TableSpec {
-    name: String,
+    table: QTable,
     columns: Vec<String>,
 }
 
-/// Creates the destination if needed, with permissions that match what the file
-/// will contain.
+/// Creates the destination if needed, with permissions that match the content.
 pub(crate) async fn ensure_directory(destination: &Path) -> anyhow::Result<()> {
     tokio::fs::create_dir_all(destination)
         .await
@@ -132,9 +103,7 @@ pub(crate) async fn ensure_directory(destination: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        // 0700 and not 0755: the files inside carry every password hash of the
-        // instance. Applied on every run, so a directory created by hand with
-        // loose permissions is tightened rather than trusted.
+        // 0700: the files inside carry every password hash of the instance.
         let perms = std::fs::Permissions::from_mode(0o700);
         if let Err(e) = tokio::fs::set_permissions(destination, perms).await {
             tracing::warn!(
@@ -151,101 +120,57 @@ pub(crate) fn free_bytes(destination: &Path) -> Option<u64> {
     crate::health::disk::usage_of(destination).map(|u| u.available_bytes)
 }
 
-/// Tables of the schema, ordered parents-first.
-///
-/// Self-references are skipped (a tree table depends on itself and would
-/// otherwise never become ready) and a genuine cycle degrades into "emit the
-/// rest alphabetically" with a warning rather than dropping tables: an
-/// incomplete backup that says nothing is the failure mode this whole feature
-/// exists to remove.
-async fn ordered_tables(conn: &mut sqlx::PgConnection) -> anyhow::Result<Vec<String>> {
+/// Every table of `schemas`, in global (cross-schema) foreign-key order.
+async fn ordered_tables(
+    conn: &mut PgConnection,
+    schemas: &[String],
+) -> anyhow::Result<Vec<QTable>> {
     let rows = sqlx::query(
-        "SELECT c.relname AS name \
+        "SELECT n.nspname AS schema, c.relname AS name \
            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
-          WHERE n.nspname = $1 AND c.relkind = 'r' AND NOT c.relispartition \
-          ORDER BY c.relname",
+          WHERE n.nspname = ANY($1) AND c.relkind = 'r' AND NOT c.relispartition \
+          ORDER BY n.nspname, c.relname",
     )
-    .bind(SCHEMA)
+    .bind(schemas)
     .fetch_all(&mut *conn)
     .await
     .context("Lecture de la liste des tables")?;
 
-    let names: Vec<String> = rows.iter().map(|r| r.get::<String, _>("name")).collect();
-    let known: HashSet<&str> = names.iter().map(String::as_str).collect();
+    let nodes: Vec<QTable> = rows
+        .iter()
+        .map(|r| QTable::new(r.get::<String, _>("schema"), r.get::<String, _>("name")))
+        .collect();
 
-    let edges = sqlx::query(
-        "SELECT child.relname AS child, parent.relname AS parent \
+    let edges_rows = sqlx::query(
+        "SELECT np.nspname AS parent_schema, parent.relname AS parent, \
+                nc.nspname AS child_schema,  child.relname  AS child \
            FROM pg_constraint con \
            JOIN pg_class child  ON child.oid  = con.conrelid \
            JOIN pg_class parent ON parent.oid = con.confrelid \
            JOIN pg_namespace nc ON nc.oid = child.relnamespace \
            JOIN pg_namespace np ON np.oid = parent.relnamespace \
-          WHERE con.contype = 'f' AND nc.nspname = $1 AND np.nspname = $1",
+          WHERE con.contype = 'f' AND nc.nspname = ANY($1) AND np.nspname = ANY($1)",
     )
-    .bind(SCHEMA)
+    .bind(schemas)
     .fetch_all(&mut *conn)
     .await
     .context("Lecture des dépendances de clés étrangères")?;
 
-    // parent → children, plus the in-degree of each child.
-    let mut children: HashMap<String, Vec<String>> = HashMap::new();
-    let mut indegree: HashMap<&str, usize> = names.iter().map(|n| (n.as_str(), 0)).collect();
-    let mut seen: HashSet<(String, String)> = HashSet::new();
-
-    for row in &edges {
-        let child: String = row.get("child");
-        let parent: String = row.get("parent");
-        if child == parent || !known.contains(child.as_str()) || !known.contains(parent.as_str()) {
-            continue;
-        }
-        // Two foreign keys between the same pair of tables are one dependency.
-        if !seen.insert((parent.clone(), child.clone())) {
-            continue;
-        }
-        children.entry(parent).or_default().push(child.clone());
-        if let Some(d) = indegree.get_mut(child.as_str()) {
-            *d += 1;
-        }
-    }
-
-    let mut queue: VecDeque<String> = names
+    let edges: Vec<(QTable, QTable)> = edges_rows
         .iter()
-        .filter(|n| indegree.get(n.as_str()).copied().unwrap_or(0) == 0)
-        .cloned()
+        .map(|r| {
+            (
+                QTable::new(r.get::<String, _>("parent_schema"), r.get::<String, _>("parent")),
+                QTable::new(r.get::<String, _>("child_schema"), r.get::<String, _>("child")),
+            )
+        })
         .collect();
-    let mut ordered: Vec<String> = Vec::with_capacity(names.len());
 
-    while let Some(name) = queue.pop_front() {
-        ordered.push(name.clone());
-        for child in children.get(&name).into_iter().flatten() {
-            if let Some(d) = indegree.get_mut(child.as_str()) {
-                *d -= 1;
-                if *d == 0 {
-                    queue.push_back(child.clone());
-                }
-            }
-        }
-    }
-
-    if ordered.len() < names.len() {
-        let missing: Vec<String> = names
-            .iter()
-            .filter(|n| !ordered.contains(n))
-            .cloned()
-            .collect();
-        tracing::warn!(
-            tables = ?missing,
-            "backup: cycle de clés étrangères — ces tables sont écrites en fin de fichier"
-        );
-        ordered.extend(missing);
-    }
-
-    Ok(ordered)
+    Ok(archive::topo_order(&nodes, &edges))
 }
 
-/// Columns of one table, in physical order, excluding dropped and generated
-/// ones — a generated column cannot be the target of a `COPY … FROM`.
-async fn columns_of(conn: &mut sqlx::PgConnection, table: &str) -> anyhow::Result<Vec<String>> {
+/// Columns of one table, in physical order, excluding dropped and generated ones.
+async fn columns_of(conn: &mut PgConnection, t: &QTable) -> anyhow::Result<Vec<String>> {
     let rows = sqlx::query(
         "SELECT a.attname AS name \
            FROM pg_attribute a \
@@ -255,39 +180,39 @@ async fn columns_of(conn: &mut sqlx::PgConnection, table: &str) -> anyhow::Resul
             AND a.attnum > 0 AND NOT a.attisdropped AND a.attgenerated = '' \
           ORDER BY a.attnum",
     )
-    .bind(SCHEMA)
-    .bind(table)
+    .bind(&t.schema)
+    .bind(&t.table)
     .fetch_all(&mut *conn)
     .await
-    .with_context(|| format!("Lecture des colonnes de {SCHEMA}.{table}"))?;
+    .with_context(|| format!("Lecture des colonnes de {}.{}", t.schema, t.table))?;
 
     Ok(rows.iter().map(|r| r.get::<String, _>("name")).collect())
 }
 
-/// Sequences of the schema with their current position.
-async fn sequence_positions(conn: &mut sqlx::PgConnection) -> anyhow::Result<Vec<(String, i64, bool)>> {
+/// Sequences of `schemas` with their current position.
+async fn sequence_positions(
+    conn: &mut PgConnection,
+    schemas: &[String],
+) -> anyhow::Result<Vec<(String, String, i64, bool)>> {
     let rows = sqlx::query(
-        "SELECT sequencename AS name, last_value \
-           FROM pg_sequences WHERE schemaname = $1 ORDER BY sequencename",
+        "SELECT schemaname AS schema, sequencename AS name, last_value \
+           FROM pg_sequences WHERE schemaname = ANY($1) ORDER BY schemaname, sequencename",
     )
-    .bind(SCHEMA)
+    .bind(schemas)
     .fetch_all(&mut *conn)
     .await
     .context("Lecture des séquences")?;
 
     let mut out = Vec::with_capacity(rows.len());
     for row in &rows {
+        let schema: String = row.get("schema");
         let name: String = row.get("name");
-        // `pg_sequences.last_value` is NULL until the sequence has been used
-        // once. `setval(…, 1, false)` then reproduces "never called", which is
-        // what a fresh table needs — `setval(…, 1, true)` would silently burn
-        // the first identifier.
+        // NULL `last_value` until the sequence is first used: `setval(…, 1,
+        // false)` reproduces "never called" without burning the first id.
         match row.try_get::<Option<i64>, _>("last_value") {
-            Ok(Some(v)) => out.push((name, v, true)),
-            Ok(None) => out.push((name, 1, false)),
-            Err(e) => {
-                tracing::warn!(error = %e, séquence = %name, "backup: position de séquence illisible");
-            }
+            Ok(Some(v)) => out.push((schema, name, v, true)),
+            Ok(None) => out.push((schema, name, 1, false)),
+            Err(e) => tracing::warn!(error = %e, séquence = %name, "backup: position de séquence illisible"),
         }
     }
     Ok(out)
@@ -295,17 +220,10 @@ async fn sequence_positions(conn: &mut sqlx::PgConnection) -> anyhow::Result<Vec
 
 /// Writes one complete dump into `destination` and returns what it contains.
 ///
-/// The file is written under a `.part` name and renamed only after a successful
-/// `fsync`, so a partially written dump is never mistaken for a usable one — by
-/// the retention pass, by the console, or by an operator at 3 a.m.
+/// Only PostgreSQL takes this path; MySQL and SQLite go through the portable
+/// writer (see [`super::portable`]).
 pub async fn write_dump(db: &DbPool, destination: &Path) -> anyhow::Result<DumpOutcome> {
-    // A logical, data-only dump built from `pg_catalog` and the COPY protocol is
-    // irreducibly PostgreSQL-specific (catalogue introspection, `COPY … TO
-    // STDOUT`, `REPEATABLE READ, READ ONLY`). PostgreSQL keeps that fast path and
-    // its `psql`-loadable `.sql` output; MySQL and SQLite go through the portable
-    // NDJSON writer (see [`super::portable`]), so scheduled backups work on every
-    // engine.
-    let db = match db.as_pg() {
+    let pg = match db.as_pg() {
         Some(pool) => pool,
         None => return super::portable::write_dump(db, destination).await,
     };
@@ -323,31 +241,32 @@ pub async fn write_dump(db: &DbPool, destination: &Path) -> anyhow::Result<DumpO
         }
     }
 
+    let schemas = archive::discover_schemas(db).await?;
+    if schemas.is_empty() {
+        bail!("Aucun schéma Kubuno trouvé à sauvegarder");
+    }
+
     let started = Utc::now();
-    let file_name = file_name_for(started);
+    let file_name = archive::file_name_for(started, archive::SQL_GZ_EXT);
     let final_path = destination.join(&file_name);
     let partial_path = destination.join(format!("{file_name}{PARTIAL_SUFFIX}"));
 
-    match write_into(db, destination, &partial_path, started).await {
+    match write_into(pg, destination, &partial_path, &schemas, started).await {
         Ok((tables, rows)) => {
             tokio::fs::rename(&partial_path, &final_path)
                 .await
                 .with_context(|| format!("Publication de {}", final_path.display()))?;
-            let size_bytes = tokio::fs::metadata(&final_path)
-                .await
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let size_bytes = tokio::fs::metadata(&final_path).await.map(|m| m.len()).unwrap_or(0);
             Ok(DumpOutcome {
                 file_name,
                 path: final_path,
                 size_bytes,
+                schemas: schemas.len(),
                 tables,
                 rows,
             })
         }
         Err(e) => {
-            // Best effort: a leftover `.part` is inert (the retention pass does
-            // not recognise it, the console never lists it) but it holds disk.
             if let Err(rm) = tokio::fs::remove_file(&partial_path).await {
                 tracing::warn!(error = %rm, fichier = %partial_path.display(), "backup: fragment non supprimé");
             }
@@ -356,12 +275,11 @@ pub async fn write_dump(db: &DbPool, destination: &Path) -> anyhow::Result<DumpO
     }
 }
 
-/// The body of the dump. Split out so [`write_dump`] can clean up on any error
-/// without a dozen `?`-sites each remembering to do it.
 async fn write_into(
     db: &PgPool,
     destination: &Path,
     partial_path: &Path,
+    schemas: &[String],
     started: DateTime<Utc>,
 ) -> anyhow::Result<(usize, u64)> {
     let file = tokio::fs::File::create(partial_path)
@@ -371,61 +289,52 @@ async fn write_into(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        // Before a single byte is written: the window between `create` and
-        // `set_permissions` is the only moment the file is world-readable.
         if let Err(e) = file.set_permissions(std::fs::Permissions::from_mode(0o600)).await {
             tracing::warn!(error = %e, "backup: droits 0600 non appliqués au fichier");
         }
     }
 
-    let mut out = tokio::io::BufWriter::with_capacity(256 * 1024, file);
+    let buffered = tokio::io::BufWriter::with_capacity(256 * 1024, file);
+    let mut out = GzFileWriter::new(buffered);
 
-    // ── The reading connection ──────────────────────────────────────────────
-    // One connection, one snapshot. `REPEATABLE READ` is what makes the file
-    // internally consistent; `READ ONLY` makes it impossible for this code path
-    // to write anything at all, whatever it is asked to do later.
-    let mut conn = db
-        .acquire()
-        .await
-        .context("Réservation d'une connexion pour la sauvegarde")?;
-
+    // One connection, one snapshot: REPEATABLE READ makes the file internally
+    // consistent, READ ONLY makes this path unable to write anything at all.
+    let mut conn = db.acquire().await.context("Réservation d'une connexion pour la sauvegarde")?;
     sqlx::query("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *conn)
         .await
         .context("Ouverture de la transaction de sauvegarde")?;
 
-    let table_names = ordered_tables(&mut conn).await?;
-    let mut tables: Vec<TableSpec> = Vec::with_capacity(table_names.len());
-    for name in table_names {
-        let columns = columns_of(&mut conn, &name).await?;
+    let ordered = ordered_tables(&mut conn, schemas).await?;
+    let mut tables: Vec<TableSpec> = Vec::with_capacity(ordered.len());
+    for table in ordered {
+        let columns = columns_of(&mut conn, &table).await?;
         if columns.is_empty() {
-            tracing::warn!(table = %name, "backup: table sans colonne exportable, ignorée");
+            tracing::warn!(table = %table.table, "backup: table sans colonne exportable, ignorée");
             continue;
         }
-        tables.push(TableSpec { name, columns });
+        tables.push(TableSpec { table, columns });
     }
-    let sequences = sequence_positions(&mut conn).await?;
+    let sequences = sequence_positions(&mut conn, schemas).await?;
 
-    // ── Header ──────────────────────────────────────────────────────────────
-    // Written for the person reading it during an incident, not for a parser.
+    // ── Header ────────────────────────────────────────────────────────────────
     let header = format!(
         "--\n\
-         -- Kubuno — sauvegarde logique des DONNÉES du schéma « {SCHEMA} »\n\
-         -- Kubuno — logical DATA-ONLY backup of schema \"{SCHEMA}\"\n\
+         -- Kubuno — logical DATA-ONLY backup of every Kubuno schema (PostgreSQL COPY)\n\
+         -- Kubuno — sauvegarde logique des DONNÉES de tous les schémas Kubuno\n\
          --\n\
+         -- Version Kubuno : {}\n\
          -- Produite le / taken at : {}\n\
-         -- Tables : {}\n\
+         -- Schémas : {}\n\
+         -- Tables  : {}\n\
          --\n\
-         -- CONTENU : les lignes des tables du schéma « {SCHEMA} » et la position des\n\
-         --           séquences. Rien d'autre.\n\
-         -- NON INCLUS : les fichiers stockés (téléversements), les schémas des modules\n\
-         --           installés, la structure (DDL) et le fichier de configuration.\n\
+         -- CONTENU : les lignes de chaque table des schémas Kubuno + la position des\n\
+         --           séquences.\n\
+         -- NON INCLUS : les fichiers stockés (téléversements), la structure (DDL) et le\n\
+         --           fichier de configuration.\n\
          --\n\
-         -- RESTAURATION : sur une instance dont les migrations sont déjà appliquées et\n\
-         --           dont le schéma « {SCHEMA} » est vide.\n\
-         --               kubuno db:restore <ce-fichier>\n\
-         --           Les déclencheurs applicatifs sont désactivés le temps du\n\
-         --           chargement puis réactivés (voir ALTER TABLE ci-dessous).\n\
+         -- RESTAURATION À CHAUD : depuis le panneau d'administration (100 %% Rust, sans\n\
+         --           psql). Chargement in-process via le protocole COPY.\n\
          --\n\
          SET statement_timeout = 0;\n\
          SET lock_timeout = 0;\n\
@@ -436,29 +345,24 @@ async fn write_into(
          \n\
          BEGIN;\n\
          \n",
+        env!("CARGO_PKG_VERSION"),
         started.to_rfc3339(),
+        schemas.join(", "),
         tables.len(),
     );
     out.write_all(header.as_bytes()).await?;
 
-    // ── Triggers off ────────────────────────────────────────────────────────
-    out.write_all(b"-- Deferred application triggers (see the module header).\n")
-        .await?;
+    // ── Triggers off ──────────────────────────────────────────────────────────
+    out.write_all(b"-- Deferred application triggers during the load.\n").await?;
     for spec in &tables {
-        let stmt = format!(
-            "ALTER TABLE {}.{} DISABLE TRIGGER USER;\n",
-            quote_ident(SCHEMA),
-            quote_ident(&spec.name)
-        );
+        let stmt = format!("ALTER TABLE {} DISABLE TRIGGER USER;\n", qualified(&spec.table));
         out.write_all(stmt.as_bytes()).await?;
     }
     out.write_all(b"\n").await?;
 
-    // ── Data ────────────────────────────────────────────────────────────────
+    // ── Data ──────────────────────────────────────────────────────────────────
     let mut total_rows: u64 = 0;
     for spec in &tables {
-        // Checked between tables rather than per chunk: cheap, and it still
-        // stops a runaway dump long before the volume is full.
         if let Some(free) = free_bytes(destination) {
             if free < ABORT_FREE_BYTES {
                 bail!(
@@ -469,29 +373,19 @@ async fn write_into(
             }
         }
 
-        let column_list = spec
-            .columns
-            .iter()
-            .map(|c| quote_ident(c))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let qualified = format!("{}.{}", quote_ident(SCHEMA), quote_ident(&spec.name));
+        let column_list = spec.columns.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+        let q = qualified(&spec.table);
 
-        out.write_all(format!("COPY {qualified} ({column_list}) FROM stdin;\n").as_bytes())
-            .await?;
+        out.write_all(format!("COPY {q} ({column_list}) FROM stdin;\n").as_bytes()).await?;
 
-        let statement = format!("COPY {qualified} ({column_list}) TO STDOUT");
-        let mut stream = conn
-            .copy_out_raw(&statement)
-            .await
-            .with_context(|| format!("Export de {qualified}"))?;
+        let statement = format!("COPY {q} ({column_list}) TO STDOUT");
+        let mut stream = conn.copy_out_raw(&statement).await.with_context(|| format!("Export de {q}"))?;
 
         let mut rows: u64 = 0;
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.with_context(|| format!("Lecture du flux de {qualified}"))?;
-            // In `COPY` text format every value's own newline is escaped as
-            // `\n`, so a raw newline is exactly one row terminator. Counting
-            // them is not an estimate.
+            let chunk = chunk.with_context(|| format!("Lecture du flux de {q}"))?;
+            // In COPY text format each value's own newline is escaped, so a raw
+            // newline is exactly one row terminator.
             rows += chunk.iter().filter(|b| **b == b'\n').count() as u64;
             out.write_all(&chunk).await?;
         }
@@ -501,14 +395,13 @@ async fn write_into(
         total_rows += rows;
     }
 
-    // ── Sequences ───────────────────────────────────────────────────────────
+    // ── Sequences ─────────────────────────────────────────────────────────────
     if !sequences.is_empty() {
         out.write_all(b"-- Sequence positions.\n").await?;
-        for (name, last_value, is_called) in &sequences {
-            let qualified = format!("{SCHEMA}.{name}");
+        for (schema, name, last_value, is_called) in &sequences {
             let stmt = format!(
                 "SELECT pg_catalog.setval({}, {}, {});\n",
-                quote_literal(&qualified),
+                quote_literal(&format!("{schema}.{name}")),
                 last_value,
                 if *is_called { "true" } else { "false" }
             );
@@ -517,28 +410,22 @@ async fn write_into(
         out.write_all(b"\n").await?;
     }
 
-    // ── Triggers back on ────────────────────────────────────────────────────
+    // ── Triggers back on ──────────────────────────────────────────────────────
     for spec in &tables {
-        let stmt = format!(
-            "ALTER TABLE {}.{} ENABLE TRIGGER USER;\n",
-            quote_ident(SCHEMA),
-            quote_ident(&spec.name)
-        );
+        let stmt = format!("ALTER TABLE {} ENABLE TRIGGER USER;\n", qualified(&spec.table));
         out.write_all(stmt.as_bytes()).await?;
     }
     out.write_all(b"\nCOMMIT;\n").await?;
 
-    // The read transaction is closed explicitly so the connection returns to the
-    // pool clean rather than being recycled by the pool's own reset.
     if let Err(e) = sqlx::query("COMMIT").execute(&mut *conn).await {
         tracing::warn!(error = %e, "backup: clôture de la transaction de lecture");
     }
     drop(conn);
 
-    out.flush().await.context("Vidage du tampon d'écriture")?;
-    // `fsync` before the rename: without it, a power loss can publish a name
-    // whose content never reached the platter.
-    out.into_inner()
+    let mut buffered = out.finish().await?;
+    buffered.flush().await.context("Vidage du tampon d'écriture")?;
+    buffered
+        .into_inner()
         .sync_all()
         .await
         .context("Synchronisation du fichier de sauvegarde")?;
@@ -546,23 +433,172 @@ async fn write_into(
     Ok((tables.len(), total_rows))
 }
 
-/// Applies the retention policy to `destination`.
+// ── in-process restore (no psql) ─────────────────────────────────────────────
+
+/// Loads a PostgreSQL `COPY` archive (`.sql.gz` or a legacy `.sql`) in process,
+/// replacing the data of every table it covers. Returns the number of `COPY`
+/// blocks loaded.
 ///
-/// Only files this feature produced are candidates ([`is_dump_file`]); anything
-/// else in the directory belongs to the operator and is never touched. Returns
-/// the names actually removed, so the run history can mark the corresponding
-/// rows rather than leaving the console claiming a file that is gone.
+/// Everything runs in one transaction: application triggers are disabled, the
+/// covered tables are emptied in reverse dependency order, each `COPY` block is
+/// replayed with sqlx's copy-in protocol, and the sequences are repositioned. A
+/// failure rolls the whole thing back, so the database is never left half-loaded
+/// and the archive on disk is never touched.
+pub async fn restore(db: &DbPool, archive_path: &Path) -> anyhow::Result<u64> {
+    let pg = db
+        .as_pg()
+        .context("La restauration COPY (.sql) est réservée à PostgreSQL")?;
+
+    // Inflate to a sibling temporary the loader reads line by line; removed on drop.
+    let temp = archive::decompress_to_temp(archive_path).await?;
+
+    let schemas = archive::discover_schemas(db).await?;
+    if schemas.is_empty() {
+        bail!("Aucun schéma Kubuno trouvé pour la restauration");
+    }
+
+    let mut conn = pg.acquire().await.context("Réservation d'une connexion pour la restauration")?;
+    match restore_into(&mut conn, temp.path(), &schemas).await {
+        Ok(n) => {
+            sqlx::query("COMMIT")
+                .execute(&mut *conn)
+                .await
+                .context("Validation de la restauration")?;
+            Ok(n)
+        }
+        Err(e) => {
+            // The source archive is never touched; only the half-applied
+            // transaction is discarded.
+            if let Err(rb) = sqlx::query("ROLLBACK").execute(&mut *conn).await {
+                tracing::error!(error = %rb, "backup: rollback de la restauration impossible");
+            }
+            Err(e)
+        }
+    }
+}
+
+async fn restore_into(
+    conn: &mut PgConnection,
+    plain_path: &Path,
+    schemas: &[String],
+) -> anyhow::Result<u64> {
+    sqlx::query("BEGIN")
+        .execute(&mut *conn)
+        .await
+        .context("Ouverture de la transaction de restauration")?;
+
+    // Every covered table, in dependency order.
+    let ordered = ordered_tables(&mut *conn, schemas).await?;
+    let covered: HashSet<QTable> = ordered.iter().cloned().collect();
+
+    // Disable application triggers for the load (owner privilege), then empty in
+    // reverse dependency order so a foreign key never blocks a delete.
+    for t in &ordered {
+        let stmt = format!("ALTER TABLE {} DISABLE TRIGGER USER", qualified(t));
+        if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(stmt.clone())).execute(&mut *conn).await {
+            tracing::warn!(error = %e, table = %t.table, "backup: désactivation des triggers impossible");
+        }
+    }
+    for t in ordered.iter().rev() {
+        let stmt = format!("DELETE FROM {}", qualified(t));
+        sqlx::query(sqlx::AssertSqlSafe(stmt.clone()))
+            .execute(&mut *conn)
+            .await
+            .with_context(|| format!("Vidage de {}.{}", t.schema, t.table))?;
+    }
+
+    // Replay the file: COPY blocks are streamed through copy-in, setval lines are
+    // executed; the archive's own SET/BEGIN/COMMIT/ALTER are ignored because this
+    // path owns the transaction and the triggers.
+    let file = tokio::fs::File::open(plain_path)
+        .await
+        .with_context(|| format!("Ouverture de {}", plain_path.display()))?;
+    let mut lines = tokio::io::BufReader::with_capacity(256 * 1024, file).lines();
+
+    let mut copy_blocks: u64 = 0;
+    while let Some(line) = lines.next_line().await.context("Lecture de l'archive")? {
+        if let Some(stmt) = copy_statement(&line) {
+            // Guard: refuse a COPY into a table outside the covered set — an
+            // archive must not steer a write anywhere else.
+            if let Some(target) = copy_target(&line) {
+                if !covered.contains(&target) {
+                    bail!("Table hors périmètre dans l'archive : {}.{}", target.schema, target.table);
+                }
+            }
+            let mut sink = conn.copy_in_raw(&stmt).await.context("Ouverture d'un bloc COPY")?;
+            while let Some(data) = lines.next_line().await.context("Lecture d'un bloc COPY")? {
+                if data == "\\." {
+                    break;
+                }
+                let mut buf = data.into_bytes();
+                buf.push(b'\n');
+                sink.send(buf).await.context("Envoi d'une ligne COPY")?;
+            }
+            sink.finish().await.context("Clôture d'un bloc COPY")?;
+            copy_blocks += 1;
+        } else if is_setval_line(&line) {
+            sqlx::query(sqlx::AssertSqlSafe(line.trim_end_matches(';').to_string()))
+                .execute(&mut *conn)
+                .await
+                .context("Repositionnement d'une séquence")?;
+        }
+    }
+
+    // Application triggers back on inside the same transaction.
+    for t in &ordered {
+        let stmt = format!("ALTER TABLE {} ENABLE TRIGGER USER", qualified(t));
+        if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(stmt.clone())).execute(&mut *conn).await {
+            tracing::warn!(error = %e, table = %t.table, "backup: réactivation des triggers impossible");
+        }
+    }
+
+    Ok(copy_blocks)
+}
+
+/// If `line` opens a COPY block (`COPY … FROM stdin;`), the statement to hand to
+/// copy-in (same text, without the trailing `;`).
+fn copy_statement(line: &str) -> Option<String> {
+    let t = line.trim();
+    if t.starts_with("COPY ") && t.to_ascii_lowercase().ends_with("from stdin;") {
+        Some(t.trim_end_matches(';').to_string())
+    } else {
+        None
+    }
+}
+
+/// The `schema.table` a COPY line targets, parsed from `COPY "s"."t" (...)`.
+fn copy_target(line: &str) -> Option<QTable> {
+    let rest = line.trim().strip_prefix("COPY ")?.trim_start();
+    let paren = rest.find('(').unwrap_or(rest.len());
+    let ident = rest[..paren].trim();
+    let (schema, table) = ident.split_once('.')?;
+    Some(QTable::new(unquote(schema), unquote(table)))
+}
+
+/// Strips one layer of double-quotes and undoubles `""`.
+fn unquote(raw: &str) -> String {
+    let r = raw.trim();
+    if r.len() >= 2 && r.starts_with('"') && r.ends_with('"') {
+        r[1..r.len() - 1].replace("\"\"", "\"")
+    } else {
+        r.to_string()
+    }
+}
+
+fn is_setval_line(line: &str) -> bool {
+    line.trim_start().to_ascii_lowercase().starts_with("select pg_catalog.setval")
+}
+
+/// Applies the retention policy to `destination`, keeping the newest `keep`.
+///
+/// Only files this feature produced are candidates ([`is_dump_file`]).
 pub async fn prune(destination: &Path, keep: i64) -> anyhow::Result<Vec<String>> {
     let keep = keep.max(1) as usize;
 
     let mut entries = match tokio::fs::read_dir(destination).await {
         Ok(e) => e,
-        // A destination that does not exist holds nothing to prune. Not an
-        // error: the first run creates it.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => {
-            return Err(e).with_context(|| format!("Lecture de {}", destination.display()))
-        }
+        Err(e) => return Err(e).with_context(|| format!("Lecture de {}", destination.display())),
     };
 
     let mut names: Vec<String> = Vec::new();
@@ -577,9 +613,8 @@ pub async fn prune(destination: &Path, keep: i64) -> anyhow::Result<Vec<String>>
         }
     }
 
-    // The name carries a sortable UTC timestamp, so lexicographic order is
-    // chronological order — no `stat` on every file, and no dependence on an
-    // mtime a copy would have rewritten.
+    // The name carries a sortable UTC stamp, so lexicographic order is
+    // chronological order.
     names.sort();
     if names.len() <= keep {
         return Ok(Vec::new());
@@ -591,11 +626,7 @@ pub async fn prune(destination: &Path, keep: i64) -> anyhow::Result<Vec<String>>
         let path = destination.join(&name);
         match tokio::fs::remove_file(&path).await {
             Ok(()) => removed.push(name),
-            Err(e) => {
-                // Logged, not fatal: a file that could not be removed must not
-                // turn a successful backup into a failed one.
-                tracing::error!(error = %e, fichier = %path.display(), "backup: rotation impossible");
-            }
+            Err(e) => tracing::error!(error = %e, fichier = %path.display(), "backup: rotation impossible"),
         }
     }
     Ok(removed)
@@ -604,43 +635,6 @@ pub async fn prune(destination: &Path, keep: i64) -> anyhow::Result<Vec<String>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
-
-    #[test]
-    fn the_file_name_is_a_sortable_timestamp_and_nothing_else() {
-        let at = Utc
-            .with_ymd_and_hms(2026, 8, 4, 3, 15, 0)
-            .single()
-            .expect("date de test valide");
-        assert_eq!(file_name_for(at), "kubuno-core-20260804T031500Z.sql");
-        assert!(is_dump_file(&file_name_for(at)));
-    }
-
-    /// The rule the retention pass depends on: it deletes files, so it must
-    /// recognise **only** its own.
-    #[test]
-    fn only_our_own_files_are_recognised() {
-        assert!(is_dump_file("kubuno-core-20260804T031500Z.sql"));
-        assert!(!is_dump_file("kubuno-core-20260804T031500Z.sql.part"));
-        assert!(!is_dump_file("kubuno_backup_20260804_031500.sql")); // the CLI's own
-        assert!(!is_dump_file("notes-importantes.sql"));
-        assert!(!is_dump_file("kubuno-core-.sql"));
-        assert!(!is_dump_file("kubuno-core-20260804X031500Z.sql"));
-        assert!(!is_dump_file("kubuno-core-2026080aT031500Z.sql"));
-        assert!(!is_dump_file(".."));
-    }
-
-    #[test]
-    fn chronological_order_is_lexicographic_order() {
-        let mut names = [
-            file_name_for(Utc.with_ymd_and_hms(2026, 8, 4, 3, 0, 0).single().expect("date")),
-            file_name_for(Utc.with_ymd_and_hms(2025, 12, 31, 23, 0, 0).single().expect("date")),
-            file_name_for(Utc.with_ymd_and_hms(2026, 8, 4, 3, 0, 1).single().expect("date")),
-        ];
-        let oldest = names[1].clone();
-        names.sort();
-        assert_eq!(names[0], oldest, "le plus ancien doit être supprimé en premier");
-    }
 
     #[test]
     fn identifiers_and_literals_are_escaped() {
@@ -650,52 +644,13 @@ mod tests {
         assert_eq!(quote_literal("l'apostrophe"), "'l''apostrophe'");
     }
 
-    /// Retention is a deletion loop; the arithmetic that decides what it deletes
-    /// is worth a test of its own.
-    #[tokio::test]
-    async fn retention_keeps_the_newest_and_never_touches_a_stranger() {
-        let dir = std::env::temp_dir().join(format!("kubuno-backup-test-{}", uuid::Uuid::new_v4()));
-        tokio::fs::create_dir_all(&dir).await.expect("répertoire de test");
-
-        let stamps = [
-            (2026, 8, 1, 3, 0, 0),
-            (2026, 8, 2, 3, 0, 0),
-            (2026, 8, 3, 3, 0, 0),
-            (2026, 8, 4, 3, 0, 0),
-        ];
-        for (y, m, d, h, mi, s) in stamps {
-            let name = file_name_for(
-                Utc.with_ymd_and_hms(y, m, d, h, mi, s).single().expect("date"),
-            );
-            tokio::fs::write(dir.join(&name), b"-- test\n").await.expect("écriture");
-        }
-        // A file the operator put there, and a fragment of an interrupted run.
-        tokio::fs::write(dir.join("archive-perso.sql"), b"x").await.expect("écriture");
-        tokio::fs::write(dir.join("kubuno-core-20260805T030000Z.sql.part"), b"x")
-            .await
-            .expect("écriture");
-
-        let removed = prune(&dir, 2).await.expect("rotation");
-        assert_eq!(removed.len(), 2, "deux fichiers doivent partir : {removed:?}");
-        assert!(removed.contains(&"kubuno-core-20260801T030000Z.sql".to_string()));
-        assert!(removed.contains(&"kubuno-core-20260802T030000Z.sql".to_string()));
-
-        assert!(dir.join("kubuno-core-20260804T030000Z.sql").exists());
-        assert!(dir.join("kubuno-core-20260803T030000Z.sql").exists());
-        assert!(dir.join("archive-perso.sql").exists(), "un fichier étranger n'est jamais supprimé");
-        assert!(dir.join("kubuno-core-20260805T030000Z.sql.part").exists());
-
-        // Keeping more than there is removes nothing, and a floor of one is
-        // enforced whatever the caller passes.
-        assert!(prune(&dir, 50).await.expect("rotation").is_empty());
-        assert_eq!(prune(&dir, 0).await.expect("rotation").len(), 1);
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
-    }
-
-    #[tokio::test]
-    async fn pruning_a_missing_directory_is_not_an_error() {
-        let dir = std::env::temp_dir().join(format!("kubuno-absent-{}", uuid::Uuid::new_v4()));
-        assert!(prune(&dir, 3).await.expect("répertoire absent").is_empty());
+    #[test]
+    fn a_copy_line_is_recognised_and_its_target_parsed() {
+        let line = "COPY \"core\".\"users\" (id, email) FROM stdin;";
+        assert_eq!(copy_statement(line).as_deref(), Some("COPY \"core\".\"users\" (id, email) FROM stdin"));
+        let target = copy_target(line).expect("target");
+        assert_eq!(target, QTable::new("core", "users"));
+        assert!(copy_statement("SELECT 1;").is_none());
+        assert!(is_setval_line("SELECT pg_catalog.setval('core.audit_id_seq', 42, true);"));
     }
 }

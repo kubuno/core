@@ -64,8 +64,9 @@ pub use pool::{connect, DbSettings, MigratorSet, SetupError};
 pub use query::DbQueryBuilder;
 pub use schema::{SchemaPrefix, KUBUNO_SCHEMAS};
 pub use schema_admin::{
-    copy_schema, discover_prefixed_schemas, rename_schema_prefix, AdminError, CopyReport,
-    PrefixRename, TableCopy,
+    copy_schema, discover_prefixed_schemas, portable_bind_cell, portable_export_plan,
+    portable_import_plan, portable_read_row, rename_schema_prefix, AdminError, Codec, CopyReport,
+    ExportColumn, ImportColumn, PrefixRename, TableCopy,
 };
 pub use search::{normalize, Field, Query, SearchSql, Weight};
 pub use sql::{lint, Lint, SqlError};

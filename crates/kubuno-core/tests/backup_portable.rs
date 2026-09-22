@@ -127,17 +127,22 @@ async fn round_trip(source: &DbPool, target: &DbPool) {
     let src_settings = count(source, "settings").await;
     let src_roles = count(source, "roles").await;
 
-    let dump_dir = std::env::temp_dir().join(format!("kubuno-dump-{}", uuid::Uuid::new_v4()));
+    let dump_dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("kubuno-dump-{}", uuid::Uuid::new_v4()));
     let outcome = dump::write_dump(source, &dump_dir).await.expect("write dump");
     assert!(outcome.rows > 0, "a dump with rows");
-    assert!(outcome.file_name.ends_with(".ndjson"), "portable extension: {}", outcome.file_name);
+    assert!(outcome.file_name.ends_with(".ndjson.gz"), "portable extension: {}", outcome.file_name);
     assert!(dump::is_dump_file(&outcome.file_name), "recognised by retention");
 
     // A row that must NOT survive the restore, proving the load empties first.
     insert_marker(target, "backup.should.be.deleted").await;
 
+    // The backup covers every schema of the source; when the target does not
+    // hold a module schema the source had (e.g. a cross-engine target with only
+    // `core` attached), that schema's rows are skipped, so `inserted` may be
+    // fewer than `outcome.rows`. What must hold is that the covered data landed.
     let inserted = portable::restore(target, &outcome.path).await.expect("restore");
-    assert_eq!(inserted, outcome.rows, "every dumped row inserted");
+    assert!(inserted > 0, "rows were loaded");
+    assert!(inserted <= outcome.rows, "no more than what was dumped");
 
     assert_eq!(count(target, "settings").await, src_settings, "settings count matches source");
     assert_eq!(count(target, "roles").await, src_roles, "roles count matches source");
@@ -149,8 +154,8 @@ async fn round_trip(source: &DbPool, target: &DbPool) {
 
 #[tokio::test]
 async fn sqlite_same_engine_round_trip() {
-    let dir_a = std::env::temp_dir().join(format!("kubuno-sqa-{}", uuid::Uuid::new_v4()));
-    let dir_b = std::env::temp_dir().join(format!("kubuno-sqb-{}", uuid::Uuid::new_v4()));
+    let dir_a = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("kubuno-sqa-{}", uuid::Uuid::new_v4()));
+    let dir_b = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("kubuno-sqb-{}", uuid::Uuid::new_v4()));
     let a = sqlite_pool(&dir_a).await;
     let b = sqlite_pool(&dir_b).await;
     setup(&a).await;
@@ -167,9 +172,9 @@ async fn mysql_same_engine_round_trip() {
     insert_marker(&db, "backup.test.marker").await;
     let src_settings = count(&db, "settings").await;
 
-    let dump_dir = std::env::temp_dir().join(format!("kubuno-dump-{}", uuid::Uuid::new_v4()));
+    let dump_dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("kubuno-dump-{}", uuid::Uuid::new_v4()));
     let outcome = dump::write_dump(&db, &dump_dir).await.expect("write dump");
-    assert!(outcome.file_name.ends_with(".ndjson"));
+    assert!(outcome.file_name.ends_with(".ndjson.gz"));
 
     // A fresh migrated core, then restore into it.
     setup(&db).await;
@@ -185,7 +190,7 @@ async fn mysql_same_engine_round_trip() {
 #[tokio::test]
 async fn cross_engine_sqlite_dump_restores_on_mysql() {
     let Some(mysql) = maybe_mysql().await else { return };
-    let dir = std::env::temp_dir().join(format!("kubuno-xsq-{}", uuid::Uuid::new_v4()));
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("kubuno-xsq-{}", uuid::Uuid::new_v4()));
     let sqlite = sqlite_pool(&dir).await;
     setup(&sqlite).await;
     setup(&mysql).await;
@@ -196,7 +201,7 @@ async fn cross_engine_sqlite_dump_restores_on_mysql() {
 #[tokio::test]
 async fn cross_engine_mysql_dump_restores_on_sqlite() {
     let Some(mysql) = maybe_mysql().await else { return };
-    let dir = std::env::temp_dir().join(format!("kubuno-xmy-{}", uuid::Uuid::new_v4()));
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("kubuno-xmy-{}", uuid::Uuid::new_v4()));
     let sqlite = sqlite_pool(&dir).await;
     setup(&mysql).await;
     setup(&sqlite).await;

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Archive, CheckCircle2, Clock, DatabaseBackup, PlayCircle, ShieldCheck, XCircle,
+  Archive, CheckCircle2, Clock, DatabaseBackup, HardDriveDownload, PlayCircle,
+  RotateCcw, ShieldCheck, XCircle,
 } from 'lucide-react'
 import {
   Button, Callout, Card, DataTable, EmptyState, Spinner, useToast,
@@ -9,11 +10,13 @@ import {
 } from '@ui'
 import { PRIV } from '../../authz/types'
 import { usePrivileges } from '../../authz/usePrivileges'
+import { prompt } from '../../store/promptStore'
 import { useAdminAction } from '../adminAction'
 import { formatBytes, formatDuration, formatWhen } from '../sections/format'
 import {
-  errorMessage, useBackup, useDeclareRestoreTest, useRunBackup,
-  type BackupOverview, type BackupRun,
+  errorMessage, useBackup, useBackupFiles, useDeclareRestoreTest, useRestoreBackup,
+  useRunBackup,
+  type BackupFile, type BackupOverview, type BackupRun,
 } from './api'
 
 /**
@@ -133,7 +136,12 @@ function Coverage({ data }: { data: BackupOverview }) {
   const { t } = useTranslation()
   return (
     <Callout variant="info" title={t('admin.bk_coverage_title')} icon={<Archive size={16} />} t={t}>
-      <p>{t('admin.bk_coverage_intro', { schema: data.schema })}</p>
+      <p>{t('admin.bk_coverage_intro', { count: data.schemas.length })}</p>
+      {data.schemas.length > 0 && (
+        <p className="mt-1 break-words font-mono text-text-secondary" style={{ fontSize: 'var(--kb-text-micro)' }}>
+          {data.schemas.join(' · ')}
+        </p>
+      )}
       <ul className="mt-1.5 list-disc pl-4 space-y-0.5">
         {data.covers.map(id => (
           <li key={id}>{t(`admin.bk_cov_${id}`)}</li>
@@ -409,6 +417,124 @@ function History({ data, loading }: { data: BackupOverview | undefined; loading:
   )
 }
 
+// ── Backup files & hot restore ───────────────────────────────────────────────
+
+function RestoreFiles({ canRestore }: { canRestore: boolean }) {
+  const { t, i18n } = useTranslation()
+  const toast = useToast()
+  const files = useBackupFiles(canRestore)
+  const restore = useRestoreBackup()
+  const [busy, setBusy] = useState<string | null>(null)
+
+  // Only a super-user reaches this control; the endpoint re-checks anyway.
+  if (!canRestore) return null
+
+  const askAndRestore = async (file: BackupFile) => {
+    // Strong confirmation: retype the exact file name. A restore replaces every
+    // row of every schema, so a single click must never be enough.
+    const typed = await prompt({
+      title:        t('admin.bk_restore_confirm_title'),
+      message:      t('admin.bk_restore_confirm_msg', { name: file.name }),
+      placeholder:  file.name,
+      confirmLabel: t('admin.bk_restore_confirm_btn'),
+      cancelLabel:  t('common.cancel'),
+    })
+    if (typed === null) return
+    if (typed.trim() !== file.name) {
+      toast.error(t('admin.bk_restore_mismatch'))
+      return
+    }
+    setBusy(file.name)
+    restore.mutate(
+      { file_name: file.name, confirm: file.name },
+      {
+        onSuccess: r => toast.success(t('admin.bk_restore_ok', { rows: r.rows, safety: r.safety_file })),
+        onError:   e => toast.error(errorMessage(e, t('admin.bk_restore_failed'))),
+        onSettled: () => setBusy(null),
+      },
+    )
+  }
+
+  const columns: DataTableColumn<BackupFile>[] = [
+    {
+      id: 'name',
+      header: t('admin.bk_files_col_name'),
+      minWidth: 280,
+      sortValue: r => r.name,
+      cell: r => <span className="break-all font-mono" style={{ fontSize: 'var(--kb-text-micro)' }}>{r.name}</span>,
+      primary: true,
+    },
+    {
+      id: 'modified_at',
+      header: t('admin.bk_files_col_when'),
+      minWidth: 150,
+      sortValue: r => r.modified_at ?? '',
+      cell: r => (r.modified_at ? formatWhen(r.modified_at, i18n.language) : '—'),
+    },
+    {
+      id: 'size',
+      header: t('admin.bk_files_col_size'),
+      align: 'right',
+      minWidth: 100,
+      sortValue: r => r.size_bytes,
+      cell: r => formatBytes(r.size_bytes),
+    },
+    {
+      id: 'action',
+      header: '',
+      align: 'right',
+      minWidth: 130,
+      cell: r => (
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<RotateCcw size={14} />}
+          loading={busy === r.name}
+          disabled={restore.isPending}
+          onClick={() => void askAndRestore(r)}
+        >
+          {t('admin.bk_restore_btn')}
+        </Button>
+      ),
+    },
+  ]
+
+  return (
+    <Card
+      className="mt-4"
+      flush
+      icon={<HardDriveDownload size={18} />}
+      title={t('admin.bk_files_title')}
+      subtitle={t('admin.bk_files_sub')}
+    >
+      <div className="px-3 pt-3">
+        <Callout variant="warning" title={t('admin.bk_restore_warn_title')} t={t}>
+          {t('admin.bk_restore_warn_desc')}
+        </Callout>
+      </div>
+      <DataTable
+        rows={files.data?.files ?? []}
+        columns={columns}
+        rowKey={r => r.name}
+        loading={files.isLoading}
+        defaultSort={null}
+        pageSize={0}
+        minTableWidth={720}
+        t={t}
+        emptyState={
+          <EmptyState
+            icon={<HardDriveDownload size={26} />}
+            title={t('admin.bk_files_empty')}
+            description={t('admin.bk_files_empty_desc')}
+            compact
+            t={t}
+          />
+        }
+      />
+    </Card>
+  )
+}
+
 // ── The panel ────────────────────────────────────────────────────────────────
 
 export default function BackupPanel() {
@@ -504,6 +630,7 @@ export default function BackupPanel() {
       </Card>
 
       <History data={data} loading={isLoading} />
+      <RestoreFiles canRestore={data.can_restore} />
     </div>
   )
 }

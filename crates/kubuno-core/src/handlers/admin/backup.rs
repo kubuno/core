@@ -36,7 +36,7 @@ use crate::{
     audit::{redact::target, AdminAudit},
     auth::middleware::AdminUser,
     authz::{keys, AdminCtx},
-    backup::{self, policy, runs},
+    backup::{self, archive, policy, restore, runs},
     errors::AppError,
     state::AppState,
 };
@@ -62,8 +62,13 @@ pub async fn get_backup(
     let policy = policy::load(&state.db).await;
     let stats = runs::stats(&state.db).await?;
     let history = runs::list(&state.db, DEFAULT_HISTORY).await?;
+    let restore_history = restore::list(&state.db, DEFAULT_HISTORY).await.unwrap_or_default();
     let restore_tested_at = policy::last_restore_test(&state.db).await;
     let running = runs::is_running(&state.db).await.unwrap_or(false);
+
+    // The schemas actually covered, discovered the same way the writer does, so
+    // the console names them rather than guessing.
+    let schemas = archive::discover_schemas(&state.db).await.unwrap_or_default();
 
     // The next occurrence as the scheduler itself computes it, not as the
     // console might re-derive it from the hour and the frequency: two readers of
@@ -85,6 +90,7 @@ pub async fn get_backup(
         "running":       running,
         "stats":         stats,
         "history":       history,
+        "restore_history": restore_history,
         "restore_test": {
             "at":       restore_tested_at,
             // Repeated on the wire so no screen can render this as a verified
@@ -95,8 +101,11 @@ pub async fn get_backup(
         // translates them.
         "covers":     backup::COVERED,
         "not_covers": backup::NOT_COVERED,
-        "schema":     backup::dump::SCHEMA,
-        "can_manage": ctx.has(keys::BACKUP_MANAGE),
+        "schemas":    schemas,
+        // Restoring is a super-user operation; the console hides the control for
+        // anyone else even though the endpoint re-checks.
+        "can_manage":  ctx.has(keys::BACKUP_MANAGE),
+        "can_restore": ctx.is_superuser,
     })))
 }
 
@@ -260,5 +269,110 @@ pub async fn declare_restore_test(
         "message":  if clearing { "Déclaration retirée" } else { "Restauration testée enregistrée" },
         "at":       if clearing { Value::Null } else { value },
         "declared": true,
+    })))
+}
+
+/// `GET /admin/backup/files` — the backup files present in the destination.
+///
+/// Only files this feature produced are listed; anything else the operator put
+/// in the directory is invisible and untouched. Read-only, so `BACKUP_READ`.
+pub async fn list_files(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    ctx: AdminCtx,
+) -> Result<Json<Value>, AppError> {
+    ctx.require(keys::BACKUP_READ)?;
+
+    let policy = policy::load(&state.db).await;
+    let destination = std::path::PathBuf::from(&policy.destination);
+    let files = archive::list_backup_files(&destination)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "backup: liste des fichiers impossible");
+            AppError::Internal(e)
+        })?;
+
+    Ok(Json(json!({
+        "destination": policy.destination,
+        "files":       files,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RestoreDto {
+    /// The base name of the backup file to restore, as listed by
+    /// `GET /admin/backup/files`. Never a path — the server refuses anything with
+    /// a separator or a `..`.
+    pub file_name: String,
+    /// A strong confirmation: the operator must retype the file name exactly. A
+    /// restore replaces every row of every schema, so a single misclick must not
+    /// be enough to trigger it.
+    pub confirm: String,
+}
+
+/// `POST /admin/backup/restore` — replace the whole database from a backup, now,
+/// in process (no `psql`).
+///
+/// **Super-user only** and with a strong confirmation. The endpoint takes an
+/// automatic safety backup first, then loads the chosen archive in one
+/// transaction: on failure the database is left exactly as it was and the safety
+/// backup remains. The operation is recorded in `core.backup_restores` and in the
+/// audit trail.
+pub async fn restore_now(
+    State(state): State<AppState>,
+    audit: AdminAudit,
+    ctx: AdminCtx,
+    Json(dto): Json<RestoreDto>,
+) -> Result<Json<Value>, AppError> {
+    // A restore runs no arbitrary code but rewrites every account and secret of
+    // the instance — reserved to a person, never an API token.
+    ctx.require_superuser("restauration de la base de données")?;
+    ctx.require(keys::BACKUP_MANAGE)?;
+
+    let file_name = dto.file_name.trim().to_string();
+    // Strong confirmation: retype the exact file name.
+    if dto.confirm.trim() != file_name {
+        return Err(AppError::Validation(
+            "Confirmation invalide : retapez exactement le nom du fichier de sauvegarde".into(),
+        ));
+    }
+
+    let policy = policy::load(&state.db).await;
+
+    let label = audit
+        .admin
+        .display_name
+        .clone()
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| audit.admin.username.clone());
+
+    // Record the decision before the work: the audit entry is the human act, the
+    // restore row is the operation.
+    audit
+        .record(
+            &state.db,
+            crate::audit::AuditEntry::new("core.backup.restore")
+                .target(target::SETTING, "backup", format!("Restauration depuis {file_name}"))
+                .detail(format!(
+                    "Restauration à chaud demandée depuis « {file_name} » (destination : {})",
+                    policy.destination
+                )),
+        )
+        .await;
+
+    let outcome = restore::restore_from_file(
+        &state.db,
+        &policy.destination,
+        &file_name,
+        Some((audit.admin.id, label)),
+    )
+    .await?;
+
+    Ok(Json(json!({
+        "message":     "Restauration terminée",
+        "id":          outcome.id,
+        "source_file": outcome.source_file,
+        "safety_file": outcome.safety_file,
+        "rows":        outcome.rows,
     })))
 }

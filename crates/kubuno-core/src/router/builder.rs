@@ -206,7 +206,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // (déjà audité). Ici : la lecture, le déclenchement manuel et la
         // déclaration de restauration testée. Segments statiques d'abord.
         .route("/backup",              get(crate::handlers::admin::backup::get_backup))
+        .route("/backup/files",        get(crate::handlers::admin::backup::list_files))
         .route("/backup/run",         post(crate::handlers::admin::backup::run_now))
+        .route("/backup/restore",     post(crate::handlers::admin::backup::restore_now))
         .route("/backup/restore-test",
                post(crate::handlers::admin::backup::declare_restore_test))
         // ── Santé de l'instance ───────────────────────────────────────
