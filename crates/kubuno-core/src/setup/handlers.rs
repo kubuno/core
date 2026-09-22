@@ -263,7 +263,7 @@ async fn themes(State(st): State<Arc<SetupState>>) -> Json<serde_json::Value> {
 const DEFAULT_SQLITE_DIR: &str = "/var/lib/kubuno/db";
 
 #[derive(Deserialize, Clone)]
-struct DbForm {
+pub(crate) struct DbForm {
     /// `"postgres"` (default), `"mysql"`/`"mariadb"` or `"sqlite"`. Absent on the
     /// PostgreSQL-only wizard this branch shipped, so it defaults to PostgreSQL
     /// and the older frontend keeps working unchanged.
@@ -478,6 +478,14 @@ struct DbTestResponse {
 }
 
 async fn test_database(Json(form): Json<DbForm>) -> Response {
+    run_db_test(form).await
+}
+
+/// Engine-aware connectivity probe, shared between the installation wizard and
+/// the admin console's per-module database panel. Validates the form, then tests
+/// the credentials against the chosen engine and reports whether the database
+/// exists / can be created / already carries a Kubuno schema.
+pub(crate) async fn run_db_test(form: DbForm) -> Response {
     if let Err((code, msg)) = form.validate() {
         return bad_code(code, msg, json!({}));
     }

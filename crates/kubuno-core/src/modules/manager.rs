@@ -1,4 +1,4 @@
-use crate::{config::{database_credentials, DbCredentials, Settings}, errors::AppError};
+use crate::{config::{DbCredentials, Settings}, errors::AppError};
 use chrono::Utc;
 use kubuno_db::dialect::Assign;
 use kubuno_db::{params, DbPool};
@@ -220,13 +220,32 @@ pub async fn spawn_module(
         if settings.server.host == "0.0.0.0" { "127.0.0.1" } else { &settings.server.host },
         settings.server.port
     );
-    let db_credentials = match database_credentials(&settings.database) {
-        Ok(c) => c,
+    // Resolve the database for THIS module: an enabled override in
+    // `core.module_databases` points it at another engine/server, otherwise it
+    // inherits the core's own credentials.
+    let resolved = match super::db_config::resolve(
+        &db,
+        &settings.database,
+        &settings.auth.jwt_secret,
+        &manifest.module.id,
+    )
+    .await
+    {
+        Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, module_id = %manifest.module.id, "Credentials DB indisponibles — module non démarré");
             return false;
         }
     };
+    let db_credentials = resolved.credentials;
+    let db_schema_prefix = resolved.schema_prefix;
+    if resolved.overridden {
+        tracing::info!(
+            module_id = %manifest.module.id,
+            engine    = %db_credentials.engine,
+            "Module démarré avec une base de données dédiée (override admin)"
+        );
+    }
     // Secret propre à ce module (dérivé du maître) lorsque la dérivation est
     // active — le module le lit comme n'importe quel secret partagé, il ignore
     // qu'il lui est spécifique. Voir `crate::auth::internal_secret`.
@@ -251,9 +270,31 @@ pub async fn spawn_module(
     }
 
     tokio::spawn(async move {
-        supervise(manifest, module_dir, core_url, secret, db_credentials, db2, cfg_dir, data_dir, stop_rx).await;
+        supervise(manifest, module_dir, core_url, secret, db_credentials, db_schema_prefix, db2, cfg_dir, data_dir, stop_rx).await;
     });
     true
+}
+
+/// Restarts a module already present on disk, applying whatever database it now
+/// resolves to (e.g. after an admin changed its override). Discovery mirrors
+/// [`start_all`]: the marketplace store shadows the system package. Returns
+/// `true` when a supervisor was (re)started for the module.
+pub async fn restart_module(settings: Arc<Settings>, db: DbPool, module_id: &str) -> bool {
+    let dirs = [
+        PathBuf::from(&settings.server.modules_install_dir),
+        PathBuf::from(&settings.server.modules_dir),
+    ];
+    for dir in dirs {
+        for (mod_dir, manifest) in load_all(&dir) {
+            if manifest.module.id == module_id {
+                // `spawn_module` stops any running supervisor for this id before
+                // starting the new one, so this is a genuine restart.
+                return spawn_module(settings, mod_dir, manifest, db).await;
+            }
+        }
+    }
+    tracing::warn!(module_id, "restart_module : module introuvable sur disque");
+    false
 }
 
 /// Boucle de supervision : lance le module, le redémarre s'il plante.
@@ -265,6 +306,7 @@ async fn supervise(
     core_url:           String,
     internal_secret:    String,
     db_credentials:     DbCredentials,
+    db_schema_prefix:   Option<String>,
     db:                 DbPool,
     modules_config_dir: String,
     modules_data_dir:   String,
@@ -334,7 +376,16 @@ async fn supervise(
             .env("KUBUNO_DB_PASSWORD",     &db_credentials.password)
             .env("KUBUNO_DB_NAME",         &db_credentials.database)
             .env("KUBUNO_DB_PATH",         &db_credentials.path)
-            .current_dir(&work_dir)
+            .current_dir(&work_dir);
+
+        // Optional schema prefix, carried only when set (an override with a
+        // WordPress-style prefix). A module that does not read it simply ignores
+        // the variable, so this stays backward-compatible.
+        if let Some(prefix) = &db_schema_prefix {
+            cmd.env("KUBUNO_DB_SCHEMA_PREFIX", prefix);
+        }
+
+        cmd
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());
 

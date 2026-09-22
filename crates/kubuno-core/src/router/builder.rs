@@ -252,6 +252,15 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
                post(crate::handlers::admin::ldap::govern_accounts))
         .route("/modules",        get(list_admin_modules))
         .route("/modules/:id",   get(get_admin_module).patch(toggle_module))
+        // Per-module database override (superadmin only): read/write the engine
+        // and credentials a module runs on, test the connection, revert to the
+        // inherited database.
+        .route("/modules/:id/database",
+               get(crate::handlers::admin::module_databases::get_module_database)
+              .put(crate::handlers::admin::module_databases::put_module_database)
+           .delete(crate::handlers::admin::module_databases::delete_module_database))
+        .route("/modules/:id/database/test",
+               post(crate::handlers::admin::module_databases::test_module_database))
         // ── Marketplace (catalogue distant + installation) ────────
         .route("/marketplace",            get(crate::handlers::admin::marketplace::list_marketplace))
         .route("/marketplace/:id/install", post(crate::handlers::admin::marketplace::install_marketplace))

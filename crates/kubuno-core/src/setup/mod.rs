@@ -14,7 +14,7 @@
 //! it behaves the same under systemd, under Docker and in development.
 
 pub mod config_file;
-mod handlers;
+pub(crate) mod handlers;
 mod token;
 
 pub use token::SetupToken;

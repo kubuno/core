@@ -11,6 +11,21 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Each module can run on its own database engine or server.** From the admin
+  console a superadministrator can point any single module at a different
+  PostgreSQL, MySQL/MariaDB or SQLite target instead of the main one — useful to
+  isolate a heavy module, keep a module's data on a dedicated server, or trial a
+  different engine. The panel offers the same connection fields as the install
+  wizard, a **Test connection** button (engine-aware: it reports the server
+  version, whether the target database exists and whether it can be created), and
+  a **Save & restart** action that stores the override, verifies the credentials
+  can create the module's schema/database, and restarts the module so it
+  reconnects and migrates onto the new target on its own. Leaving a module
+  unconfigured — or clearing its override — makes it inherit the core's own
+  database, exactly as before. The database password is encrypted at rest with
+  the data-encryption key (never returned in a response), and these endpoints are
+  restricted to superadministrators.
+
 - **Several Kubuno instances can share one database server.** A new optional
   `[database] schema_prefix` setting (for example `schema_prefix = "kub_"`,
   overridable with the `KV__DATABASE__SCHEMA_PREFIX` environment variable, and

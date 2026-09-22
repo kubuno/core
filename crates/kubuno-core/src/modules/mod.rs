@@ -1,3 +1,4 @@
+pub mod db_config;
 pub mod manager;
 pub mod manifest;
 pub mod marketplace;
