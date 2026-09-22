@@ -73,6 +73,10 @@
     "labels": "Labels"
   },
   "shell": {
+    "maintenance_global_title": "Maintenance in progress",
+    "maintenance_global_body": "A maintenance operation is running on the instance. Some features may be temporarily unavailable.",
+    "maintenance_module_title": "Maintenance in progress",
+    "maintenance_module_body": "This module is undergoing maintenance and may be temporarily unavailable.",
     "change_photo": "Change photo",
     "greeting": "Hello {{name}}!",
     "manage_account": "Manage your account",

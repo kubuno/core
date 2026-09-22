@@ -13,6 +13,8 @@ import { useIsMobile, useIsLandscape } from '@ui'
 import { useUiStore } from '../store/uiStore'
 import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
 import { Slot } from '../slots/SlotRegistry'
+import { GlobalMaintenanceBanner } from './MaintenanceBanner'
+import { useMaintenanceNotices } from './useMaintenanceNotices'
 import { useIdleLogout } from '../hooks/useIdleLogout'
 import { usePanelStatePersistence } from '../hooks/usePanelStatePersistence'
 import { useAppNavMemory } from '../hooks/useAppNavMemory'
@@ -33,6 +35,10 @@ export default function Shell() {
 
   // Déconnexion automatique après inactivité (réglage admin).
   useIdleLogout()
+
+  // Avis de maintenance : synchronise l'état du bandeau depuis /config (au
+  // chargement et à chaque reconnexion) et les événements WebSocket temps réel.
+  useMaintenanceNotices()
 
   // The document must never scroll while the shell is mounted — the shell IS
   // the viewport, and a scrolled document takes the top bar off-screen with no
@@ -92,6 +98,11 @@ export default function Shell() {
       {/* Header global pleine largeur — masqué quand un sous-module héberge la
           recherche + les actions dans sa propre barre de titre. */}
       {!headerHidden && <AppHeader />}
+
+      {/* Bandeau de maintenance GLOBAL : visible en permanence tant qu'une
+          opération sur toute l'instance est en cours (indépendant du header
+          masqué), disparaît de lui-même à la fin. */}
+      <GlobalMaintenanceBanner />
 
       {/* Corps : fond --body-bg visible entre les zones comme séparateur. La marge
           basse mobile réserve la place de la barre de navigation fixe (sauf en

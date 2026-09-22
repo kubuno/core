@@ -73,6 +73,10 @@
     "labels": "Étiquettes"
   },
   "shell": {
+    "maintenance_global_title": "Maintenance en cours",
+    "maintenance_global_body": "Une opération de maintenance est en cours sur l'instance. Certaines fonctionnalités peuvent être temporairement indisponibles.",
+    "maintenance_module_title": "Maintenance en cours",
+    "maintenance_module_body": "Ce module est en maintenance et peut être temporairement indisponible.",
     "change_photo": "Changer la photo",
     "greeting": "Bonjour {{name}} !",
     "manage_account": "Gérer votre compte",

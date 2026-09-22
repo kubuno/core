@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import { ThemeScopeContext } from '@ui'
 import { ContextMenuProvider } from './ContextMenuProvider'
+import { ModuleMaintenanceBanner } from './MaintenanceBanner'
 import { useToolbarStore, resolveToolbarConfig, moduleAreaPaddingStyle, MODULE_AREA_PADDING } from '../store/toolbarStore'
 import { ModuleSettingsRegistry } from '../slots/SlotRegistry'
 import { useAppearanceStore } from '../store/appearanceStore'
@@ -62,6 +63,12 @@ export default function ModuleArea() {
           <Toolbar />
         </div>
       )}
+
+      {/* Bandeau de maintenance SCOPÉ : visible tant qu'une opération sur la base
+          de CE module est en cours (fixe, sous la barre d'outils, hors défilement). */}
+      <div className="flex-shrink-0">
+        <ModuleMaintenanceBanner moduleId={moduleId} />
+      </div>
 
       <ContextMenuProvider>
         {noPadding
