@@ -51,6 +51,7 @@ pub mod pool;
 pub mod query;
 pub mod returning;
 pub mod schema;
+pub mod schema_admin;
 pub mod search;
 pub mod sql;
 pub mod value;
@@ -62,6 +63,10 @@ pub use json::JsonVec;
 pub use pool::{connect, DbSettings, MigratorSet, SetupError};
 pub use query::DbQueryBuilder;
 pub use schema::{SchemaPrefix, KUBUNO_SCHEMAS};
+pub use schema_admin::{
+    copy_schema, discover_prefixed_schemas, rename_schema_prefix, AdminError, CopyReport,
+    PrefixRename, TableCopy,
+};
 pub use search::{normalize, Field, Query, SearchSql, Weight};
 pub use sql::{lint, Lint, SqlError};
 pub use value::DbValue;
