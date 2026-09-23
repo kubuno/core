@@ -151,7 +151,7 @@ Each app lives in its **own repository** (`kubuno/<module>`) and ships its own `
       <td>Photo gallery: albums, timeline, sharing</td>
     </tr>
     <tr>
-      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/media/main/.github/logo.svg" width="24" height="24" alt=""></td>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/media/main/.github/logo-listen.png" width="24" height="24" alt=""></td>
       <td><b>Media</b></td>
       <td><a href="https://github.com/kubuno/media">kubuno/media</a></td>
       <td>Streaming: Watch (films, series) and Listen (music)</td>
