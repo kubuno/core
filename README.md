@@ -80,31 +80,156 @@ Shared crates are consumed by the **module repositories** via tagged git depende
 
 Each app lives in its **own repository** (`kubuno/<module>`) and ships its own `.kbpkg` package:
 
-| | Module | Repository | Description |
-|---|---|---|---|
-| <img src="https://raw.githubusercontent.com/kubuno/drive/main/.github/logo.png" width="24" height="24" alt=""> | **Drive** | [kubuno/drive](https://github.com/kubuno/drive) | Files: upload, sharing, search, remote mounts |
-| <img src="https://raw.githubusercontent.com/kubuno/office/main/.github/logo.svg" width="24" height="24" alt=""> | **Office** | [kubuno/office](https://github.com/kubuno/office) | Office suite: documents, spreadsheets, presentations, projects, diagrams, data, maths, script, whiteboard |
-| <img src="https://raw.githubusercontent.com/kubuno/calendar/main/.github/logo.png" width="24" height="24" alt=""> | **Calendar** | [kubuno/calendar](https://github.com/kubuno/calendar) | Calendars, events, CalDAV, scheduling |
-| <img src="https://raw.githubusercontent.com/kubuno/mail/main/.github/logo.png" width="24" height="24" alt=""> | **Mail** | [kubuno/mail](https://github.com/kubuno/mail) | Multi-account email client (IMAP/SMTP) |
-| <img src="https://raw.githubusercontent.com/kubuno/chat/main/.github/logo.png" width="24" height="24" alt=""> | **Chat** | [kubuno/chat](https://github.com/kubuno/chat) | Messaging, calls and meetings |
-| <img src="https://raw.githubusercontent.com/kubuno/contacts/main/.github/logo.png" width="24" height="24" alt=""> | **Contacts** | [kubuno/contacts](https://github.com/kubuno/contacts) | Address book, groups, CardDAV |
-| <img src="https://raw.githubusercontent.com/kubuno/tasks/main/.github/logo.png" width="24" height="24" alt=""> | **Tasks** | [kubuno/tasks](https://github.com/kubuno/tasks) | Tasks, sub-tasks, Kanban boards, CalDAV VTODO |
-| <img src="https://raw.githubusercontent.com/kubuno/notes/main/.github/logo.png" width="24" height="24" alt=""> | **Notes** | [kubuno/notes](https://github.com/kubuno/notes) | Markdown notes, checklists, notebooks, backlinks |
-| <img src="https://raw.githubusercontent.com/kubuno/forms/main/.github/logo.png" width="24" height="24" alt=""> | **Forms** | [kubuno/forms](https://github.com/kubuno/forms) | Forms and surveys, responses, analytics |
-| <img src="https://raw.githubusercontent.com/kubuno/photos/main/.github/logo.png" width="24" height="24" alt=""> | **Photos** | [kubuno/photos](https://github.com/kubuno/photos) | Photo gallery: albums, timeline, sharing |
-| <img src="https://raw.githubusercontent.com/kubuno/media/main/.github/logo.svg" width="24" height="24" alt=""> | **Media** | [kubuno/media](https://github.com/kubuno/media) | Streaming: Watch (films, series) and Listen (music) |
-| <img src="https://raw.githubusercontent.com/kubuno/books/main/.github/logo.png" width="24" height="24" alt=""> | **Books** | [kubuno/books](https://github.com/kubuno/books) | Library of books, comics and eBooks |
-| <img src="https://raw.githubusercontent.com/kubuno/paintsharp/main/.github/logo.png" width="24" height="24" alt=""> | **PaintSharp** | [kubuno/paintsharp](https://github.com/kubuno/paintsharp) | Creative suite: raster, vector, 3D, video, animation, PDF, fonts |
-| <img src="https://raw.githubusercontent.com/kubuno/wiki/main/.github/logo.png" width="24" height="24" alt=""> | **Wiki** | [kubuno/wiki](https://github.com/kubuno/wiki) | Personal and shared wikis |
-| <img src="https://raw.githubusercontent.com/kubuno/forum/main/.github/logo.png" width="24" height="24" alt=""> | **Forum** | [kubuno/forum](https://github.com/kubuno/forum) | Discussion boards with moderation |
-| <img src="https://raw.githubusercontent.com/kubuno/app/main/.github/logo.png" width="24" height="24" alt=""> | **App** | [kubuno/app](https://github.com/kubuno/app) | Visual no-code application builder |
-| <img src="https://raw.githubusercontent.com/kubuno/flow/main/.github/logo.png" width="24" height="24" alt=""> | **Flow** | [kubuno/flow](https://github.com/kubuno/flow) | Visual workflow automation |
-| <img src="https://raw.githubusercontent.com/kubuno/code/main/.github/logo.png" width="24" height="24" alt=""> | **Code** | [kubuno/code](https://github.com/kubuno/code) | Collaborative web IDE with Git |
-| <img src="https://raw.githubusercontent.com/kubuno/keestore/main/.github/logo.png" width="24" height="24" alt=""> | **Keestore** | [kubuno/keestore](https://github.com/kubuno/keestore) | Password manager (KeePass 4 `.kdbx`) |
-| <img src="https://raw.githubusercontent.com/kubuno/maps/main/.github/logo.png" width="24" height="24" alt=""> | **Maps** | [kubuno/maps](https://github.com/kubuno/maps) | Self-hosted maps, routes, places |
-| <img src="https://raw.githubusercontent.com/kubuno/assistant/main/.github/logo.png" width="24" height="24" alt=""> | **Assistant** | [kubuno/assistant](https://github.com/kubuno/assistant) | Self-hosted AI assistant (local models) |
-| | **Speech-to-Text** | [kubuno/stt](https://github.com/kubuno/stt) | Self-hosted speech recognition for voice search |
-| | **P2P NAS** | [kubuno/p2pnas](https://github.com/kubuno/p2pnas) | Encrypted, self-healing peer-to-peer storage |
+<table>
+  <thead>
+    <tr>
+      <th width="52"></th>
+      <th align="left">Module</th>
+      <th align="left">Repository</th>
+      <th align="left">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/drive/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Drive</b></td>
+      <td><a href="https://github.com/kubuno/drive">kubuno/drive</a></td>
+      <td>Files: upload, sharing, search, remote mounts</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/office/main/.github/logo.svg" width="24" height="24" alt=""></td>
+      <td><b>Office</b></td>
+      <td><a href="https://github.com/kubuno/office">kubuno/office</a></td>
+      <td>Office suite: documents, spreadsheets, presentations, projects, diagrams, data, maths, script, whiteboard</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/calendar/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Calendar</b></td>
+      <td><a href="https://github.com/kubuno/calendar">kubuno/calendar</a></td>
+      <td>Calendars, events, CalDAV, scheduling</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/mail/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Mail</b></td>
+      <td><a href="https://github.com/kubuno/mail">kubuno/mail</a></td>
+      <td>Multi-account email client (IMAP/SMTP)</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/chat/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Chat</b></td>
+      <td><a href="https://github.com/kubuno/chat">kubuno/chat</a></td>
+      <td>Messaging, calls and meetings</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/contacts/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Contacts</b></td>
+      <td><a href="https://github.com/kubuno/contacts">kubuno/contacts</a></td>
+      <td>Address book, groups, CardDAV</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/tasks/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Tasks</b></td>
+      <td><a href="https://github.com/kubuno/tasks">kubuno/tasks</a></td>
+      <td>Tasks, sub-tasks, Kanban boards, CalDAV VTODO</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/notes/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Notes</b></td>
+      <td><a href="https://github.com/kubuno/notes">kubuno/notes</a></td>
+      <td>Markdown notes, checklists, notebooks, backlinks</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/forms/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Forms</b></td>
+      <td><a href="https://github.com/kubuno/forms">kubuno/forms</a></td>
+      <td>Forms and surveys, responses, analytics</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/photos/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Photos</b></td>
+      <td><a href="https://github.com/kubuno/photos">kubuno/photos</a></td>
+      <td>Photo gallery: albums, timeline, sharing</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/media/main/.github/logo.svg" width="24" height="24" alt=""></td>
+      <td><b>Media</b></td>
+      <td><a href="https://github.com/kubuno/media">kubuno/media</a></td>
+      <td>Streaming: Watch (films, series) and Listen (music)</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/books/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Books</b></td>
+      <td><a href="https://github.com/kubuno/books">kubuno/books</a></td>
+      <td>Library of books, comics and eBooks</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/paintsharp/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>PaintSharp</b></td>
+      <td><a href="https://github.com/kubuno/paintsharp">kubuno/paintsharp</a></td>
+      <td>Creative suite: raster, vector, 3D, video, animation, PDF, fonts</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/wiki/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Wiki</b></td>
+      <td><a href="https://github.com/kubuno/wiki">kubuno/wiki</a></td>
+      <td>Personal and shared wikis</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/forum/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Forum</b></td>
+      <td><a href="https://github.com/kubuno/forum">kubuno/forum</a></td>
+      <td>Discussion boards with moderation</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/app/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>App</b></td>
+      <td><a href="https://github.com/kubuno/app">kubuno/app</a></td>
+      <td>Visual no-code application builder</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/flow/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Flow</b></td>
+      <td><a href="https://github.com/kubuno/flow">kubuno/flow</a></td>
+      <td>Visual workflow automation</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/code/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Code</b></td>
+      <td><a href="https://github.com/kubuno/code">kubuno/code</a></td>
+      <td>Collaborative web IDE with Git</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/keestore/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Keestore</b></td>
+      <td><a href="https://github.com/kubuno/keestore">kubuno/keestore</a></td>
+      <td>Password manager (KeePass 4 <code>.kdbx</code>)</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/maps/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Maps</b></td>
+      <td><a href="https://github.com/kubuno/maps">kubuno/maps</a></td>
+      <td>Self-hosted maps, routes, places</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="https://raw.githubusercontent.com/kubuno/assistant/main/.github/logo.png" width="24" height="24" alt=""></td>
+      <td><b>Assistant</b></td>
+      <td><a href="https://github.com/kubuno/assistant">kubuno/assistant</a></td>
+      <td>Self-hosted AI assistant (local models)</td>
+    </tr>
+    <tr>
+      <td align="center"></td>
+      <td><b>Speech-to-Text</b></td>
+      <td><a href="https://github.com/kubuno/stt">kubuno/stt</a></td>
+      <td>Self-hosted speech recognition for voice search</td>
+    </tr>
+    <tr>
+      <td align="center"></td>
+      <td><b>P2P NAS</b></td>
+      <td><a href="https://github.com/kubuno/p2pnas">kubuno/p2pnas</a></td>
+      <td>Encrypted, self-healing peer-to-peer storage</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Install with Docker
 
