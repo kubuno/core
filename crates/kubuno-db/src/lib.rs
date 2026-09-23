@@ -62,7 +62,7 @@ pub use exec::{DbPool, DbRow, DbTx, FromAnyRow, ScalarAnyRow};
 pub use json::JsonVec;
 pub use pool::{connect, DbSettings, MigratorSet, SetupError};
 pub use query::DbQueryBuilder;
-pub use schema::{SchemaPrefix, KUBUNO_SCHEMAS};
+pub use schema::{is_kubuno_schema, SchemaPrefix, KUBUNO_SCHEMAS, KUBUNO_SECONDARY_SCHEMAS};
 pub use schema_admin::{
     copy_schema, discover_prefixed_schemas, portable_bind_cell, portable_export_plan,
     portable_import_plan, portable_read_row, rename_schema_prefix, AdminError, Codec, CopyReport,

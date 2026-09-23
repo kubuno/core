@@ -58,6 +58,22 @@ pub const KUBUNO_SCHEMAS: &[&str] = &[
     "stt",
 ];
 
+/// The secondary schemas a module owns beyond its primary one, spelled out in
+/// full. Kept as an explicit list rather than a `<root>_*` pattern on purpose:
+/// on a server shared by several instances, a pattern would also claim another
+/// instance's schemas whenever one prefix is a prefix of the other (an instance
+/// with no prefix would read `notes_core`, which belongs to the instance
+/// prefixed `notes_`, as a secondary schema of `notes`).
+pub const KUBUNO_SECONDARY_SCHEMAS: &[&str] =
+    &["office_data", "office_maths", "office_script", "office_wb"];
+
+/// Whether a bare (prefix-stripped) schema name belongs to Kubuno: a primary
+/// schema from [`KUBUNO_SCHEMAS`] or a secondary one from
+/// [`KUBUNO_SECONDARY_SCHEMAS`]. Exact match only.
+pub fn is_kubuno_schema(bare: &str) -> bool {
+    KUBUNO_SCHEMAS.contains(&bare) || KUBUNO_SECONDARY_SCHEMAS.contains(&bare)
+}
+
 /// The maximum length of a prefix. Bounded so `<prefix><schema>` always stays a
 /// legal identifier on every engine (PostgreSQL truncates identifiers at 63
 /// bytes; the longest schema name is well under 31).
@@ -183,7 +199,10 @@ fn is_ident_byte(b: u8) -> bool {
 /// returns that name. The `.` disambiguates `forms.` from `forum.` without a
 /// separate right-boundary check.
 fn matched_schema<'s>(sql: &'s str, bytes: &[u8], i: usize) -> Option<&'s str> {
-    KUBUNO_SCHEMAS.iter().copied().find(|name| {
+    // Secondary schemas are matched too, otherwise a prefixed instance would
+    // keep reading and writing the *unprefixed* `office_data.` shared with every
+    // other instance on the server.
+    KUBUNO_SCHEMAS.iter().chain(KUBUNO_SECONDARY_SCHEMAS).copied().find(|name| {
         let end = i + name.len();
         end < bytes.len()
             && bytes[end] == b'.'
@@ -217,6 +236,24 @@ mod tests {
         assert!(SchemaPrefix::new(Some("kub.")).is_err()); // dot
         assert!(SchemaPrefix::new(Some("kub ")).is_err()); // space
         assert!(SchemaPrefix::new(Some(&"x".repeat(33))).is_err()); // too long
+    }
+
+    #[test]
+    fn secondary_schemas_are_rewritten_too() {
+        let p = SchemaPrefix::new(Some("kub_")).unwrap();
+        assert_eq!(
+            p.rewrite("SELECT 1 FROM office_data.datasets JOIN office.docs d ON TRUE"),
+            "SELECT 1 FROM kub_office_data.datasets JOIN kub_office.docs d ON TRUE"
+        );
+    }
+
+    #[test]
+    fn ownership_is_exact_not_a_pattern() {
+        assert!(is_kubuno_schema("notes"));
+        assert!(is_kubuno_schema("office_data"));
+        // Another instance prefixed `notes_` owns `notes_core`: not ours.
+        assert!(!is_kubuno_schema("notes_core"));
+        assert!(!is_kubuno_schema("office_unknown"));
     }
 
     #[test]

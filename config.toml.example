@@ -255,6 +255,16 @@ local_path = "/var/lib/kubuno/files"
 # s3_secret_key = ""
 
 
+# ── Recherche plein texte ─────────────────────────────────────────
+# Section facultative. Le core l'applique à lui-même et la transmet à chaque
+# module qu'il démarre : une seule valeur pour toute l'instance.
+[search]
+# Nombre maximal de mots distincts retenus par une recherche (les suivants sont
+# ignorés). Chaque mot coûte une comparaison LIKE par colonne cherchée : ce
+# plafond borne la charge qu'une seule requête peut imposer à la base.
+# Défaut 16, borné à 1..256. Surchargeable par KV__SEARCH__MAX_TERMS.
+# max_terms = 16
+
 # ── Journalisation ────────────────────────────────────────────────
 [logging]
 

@@ -2058,7 +2058,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-db"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "chrono",
  "rust-stemmers",

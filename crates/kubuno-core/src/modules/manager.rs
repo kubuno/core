@@ -376,6 +376,9 @@ async fn supervise(
             .env("KUBUNO_DB_PASSWORD",     &db_credentials.password)
             .env("KUBUNO_DB_NAME",         &db_credentials.database)
             .env("KUBUNO_DB_PATH",         &db_credentials.path)
+            // The instance-wide search term cap (`[search] max_terms`), applied
+            // by kubuno-db when the module opens its pool.
+            .env(kubuno_db::search::MAX_TERMS_ENV, kubuno_db::search::max_terms().to_string())
             .current_dir(&work_dir);
 
         // Optional schema prefix, carried only when set (an override with a

@@ -80,6 +80,15 @@ async fn main() -> Result<()> {
     let settings = Settings::load_from(cli.config.as_deref())
         .context("Chargement de la configuration")?;
 
+    // Search term cap, before any pool is opened; the module supervisor then
+    // hands the value in force to every module it starts.
+    if let Some(n) = settings.search.max_terms {
+        let kept = kubuno_db::search::set_max_terms(n);
+        if kept != n {
+            tracing::warn!(requested = n, kept, "search.max_terms hors bornes, valeur ramenée");
+        }
+    }
+
     // Mandataires inverses autorisés à définir X-Forwarded-For / X-Real-IP.
     // À installer AVANT le démarrage du serveur : toute résolution d'adresse
     // client (limitation de débit, anti-DDoS, sessions, journal d'accès) en dépend.

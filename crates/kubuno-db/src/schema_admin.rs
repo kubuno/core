@@ -49,7 +49,7 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use crate::dialect::Backend;
 use crate::exec::{DbPool, DbRow};
 use crate::params;
-use crate::schema::KUBUNO_SCHEMAS;
+use crate::schema::is_kubuno_schema;
 use crate::value::DbValue;
 
 /// Anything that can go wrong in a schema-wide administrative operation.
@@ -67,6 +67,14 @@ pub enum AdminError {
     },
     #[error("préfixe de schéma invalide : {0}")]
     BadPrefix(String),
+    /// A prefix rename would land on a namespace that already exists — possibly
+    /// another instance's on a shared server. Refused before anything moves.
+    #[error("le schéma cible {0} existe déjà : renommage refusé pour ne pas mélanger deux instances")]
+    TargetExists(String),
+    /// A MySQL database holds views, routines or events, which `RENAME TABLE`
+    /// cannot carry and the final `DROP DATABASE` would destroy.
+    #[error("la base {schema} contient {count} vue(s), routine(s) ou évènement(s) qu'un renommage ne peut pas déplacer")]
+    UnmovableObjects { schema: String, count: i64 },
     /// A type-poor source value could not be reconstructed into the destination
     /// column's strict logical type. Returned instead of mis-storing, so the copy
     /// fails safely and the source is left intact.
@@ -145,22 +153,13 @@ pub async fn discover_prefixed_schemas(
     };
 
     // A server namespace belongs to this instance when, after stripping the
-    // active prefix, its bare name is a known Kubuno schema OR a secondary schema
-    // of one — `<root>_<suffix>`, e.g. `office_data`, which a module owns beyond
-    // its primary schema. Matching a fixed list of primary names only (the old
-    // behaviour) silently skipped those, leaving them un-renamed and the modules
-    // that own them broken after a prefix change.
-    let roots: HashSet<&str> = KUBUNO_SCHEMAS.iter().copied().collect();
-    let owns = |bare: &str| roots.contains(bare)
-        || roots.iter().any(|r| bare.len() > r.len() + 1
-            && bare.as_bytes()[r.len()] == b'_'
-            && &bare[..r.len()] == *r);
+    // active prefix, its bare name is exactly a known Kubuno schema, primary or
+    // secondary (`office_data`…). An exact list, not a `<root>_*` pattern: the
+    // pattern let an instance claim another instance's schemas on a shared
+    // server whenever the prefixes overlapped (see `is_kubuno_schema`).
     Ok(existing
         .into_iter()
-        .filter(|n| match n.strip_prefix(prefix) {
-            Some(bare) => !bare.is_empty() && owns(bare),
-            None => false,
-        })
+        .filter(|n| n.strip_prefix(prefix).is_some_and(is_kubuno_schema))
         .collect())
 }
 
@@ -248,40 +247,74 @@ async fn rename_prefix_mysql(
     new: &str,
 ) -> Result<PrefixRename, AdminError> {
     let present = discover_prefixed_schemas(pool, old).await?;
-    // Each entry: (bare, eff_old, eff_new, tables moved so far) — kept so a
-    // mid-way failure can be undone (MySQL DDL does not roll back on its own).
-    let mut done: Vec<(String, String, Vec<String>)> = Vec::new();
+    let plan: Vec<(String, String)> = present
+        .iter()
+        .map(|eff_old| {
+            let bare = eff_old.strip_prefix(old).unwrap_or(eff_old);
+            (eff_old.clone(), format!("{new}{bare}"))
+        })
+        .collect();
 
-    for eff_old in &present {
-        let bare = eff_old.strip_prefix(old).unwrap_or(eff_old).to_string();
-        let eff_new = format!("{new}{bare}");
-        if let Err(e) = move_mysql_database(pool, eff_old, &eff_new).await {
+    // Refuse up front anything the move cannot undo. Nothing has been touched
+    // yet, so a refusal here leaves the server exactly as it was.
+    let existing: HashSet<String> = pool
+        .fetch_all_as::<(String,)>("SELECT schema_name FROM information_schema.schemata", params![])
+        .await?
+        .into_iter()
+        .map(|(n,)| n)
+        .collect();
+    for (eff_old, eff_new) in &plan {
+        // A target that already exists may belong to another instance sharing
+        // the server: moving tables into it would mix two instances, and the
+        // compensation could not tell its tables from ours.
+        if existing.contains(eff_new) {
+            return Err(AdminError::TargetExists(eff_new.clone()));
+        }
+        // Only base tables travel with `RENAME TABLE`; a view, routine or event
+        // would be destroyed by the final `DROP DATABASE` of the old name.
+        let others = mysql_non_table_objects(pool, eff_old).await?;
+        if others > 0 {
+            return Err(AdminError::UnmovableObjects { schema: eff_old.clone(), count: others });
+        }
+    }
+
+    // Each entry: (eff_old, eff_new, tables moved) — exactly the tables this
+    // call moved, so a failure is undone table by table (MySQL DDL does not roll
+    // back on its own) and never by dropping a database that still holds data.
+    let mut done: Vec<(String, String, Vec<String>)> = Vec::new();
+    for (eff_old, eff_new) in plan {
+        let mut moved = Vec::new();
+        if let Err(e) = move_mysql_database(pool, &eff_old, &eff_new, &mut moved).await {
             tracing::error!(from = %eff_old, to = %eff_new, error = %e, "Renommage de base MySQL échoué — compensation");
-            // Undo what already moved, in reverse.
-            for (_bare, eff_new_done, tables) in done.iter().rev() {
-                let eff_old_done = format!("{old}{}", eff_new_done.strip_prefix(new).unwrap_or(eff_new_done));
-                undo_mysql_move(pool, eff_new_done, &eff_old_done, tables).await;
+            undo_mysql_move(pool, &eff_new, &eff_old, &moved).await;
+            for (done_old, done_new, tables) in done.iter().rev() {
+                undo_mysql_move(pool, done_new, done_old, tables).await;
             }
-            // Also undo the partial move of the failing database.
-            let _ = pool
-                .execute(&format!("DROP DATABASE IF EXISTS {}", quote_ident(&eff_new)), params![])
-                .await;
             return Err(e);
         }
-        let moved = mysql_table_names(pool, &eff_new).await.unwrap_or_default();
-        done.push((bare, eff_new, moved));
+        done.push((eff_old, eff_new, moved));
     }
 
     Ok(PrefixRename {
-        renamed: done.into_iter().map(|(b, _, _)| b).collect(),
+        renamed: done
+            .into_iter()
+            .map(|(eff_old, _, _)| eff_old.strip_prefix(old).unwrap_or(&eff_old).to_string())
+            .collect(),
         noop: false,
     })
 }
 
-/// Creates `<eff_new>` and moves every table of `<eff_old>` into it, then drops
-/// the now-empty `<eff_old>`.
-async fn move_mysql_database(pool: &DbPool, eff_old: &str, eff_new: &str) -> Result<(), AdminError> {
-    pool.execute(&format!("CREATE DATABASE IF NOT EXISTS {}", quote_ident(eff_new)), params![])
+/// Creates `<eff_new>`, moves every table of `<eff_old>` into it (recording each
+/// one in `moved` as soon as it has moved), then drops the now-empty `<eff_old>`.
+async fn move_mysql_database(
+    pool: &DbPool,
+    eff_old: &str,
+    eff_new: &str,
+    moved: &mut Vec<String>,
+) -> Result<(), AdminError> {
+    // No `IF NOT EXISTS`: the target was checked absent, and if it appeared
+    // since, failing here is the safe outcome.
+    pool.execute(&format!("CREATE DATABASE {}", quote_ident(eff_new)), params![])
         .await?;
     for table in mysql_table_names(pool, eff_old).await? {
         let sql = format!(
@@ -292,17 +325,21 @@ async fn move_mysql_database(pool: &DbPool, eff_old: &str, eff_new: &str) -> Res
             quote_ident(&table),
         );
         pool.execute(&sql, params![]).await?;
+        moved.push(table);
     }
-    pool.execute(&format!("DROP DATABASE IF EXISTS {}", quote_ident(eff_old)), params![])
-        .await?;
+    drop_mysql_database_if_empty(pool, eff_old).await?;
     Ok(())
 }
 
-/// Best-effort inverse of [`move_mysql_database`] used during compensation.
+/// Best-effort inverse of [`move_mysql_database`] used during compensation:
+/// moves the recorded tables back and drops `<eff_new>` only once it is empty.
 async fn undo_mysql_move(pool: &DbPool, eff_new: &str, eff_old: &str, tables: &[String]) {
-    let _ = pool
+    if let Err(e) = pool
         .execute(&format!("CREATE DATABASE IF NOT EXISTS {}", quote_ident(eff_old)), params![])
-        .await;
+        .await
+    {
+        tracing::error!(db = %eff_old, error = %e, "Compensation MySQL : recréation de la base d'origine impossible");
+    }
     for table in tables {
         let sql = format!(
             "RENAME TABLE {}.{} TO {}.{}",
@@ -311,18 +348,53 @@ async fn undo_mysql_move(pool: &DbPool, eff_new: &str, eff_old: &str, tables: &[
             quote_ident(eff_old),
             quote_ident(table),
         );
-        let _ = pool.execute(&sql, params![]).await;
+        if let Err(e) = pool.execute(&sql, params![]).await {
+            tracing::error!(from = %eff_new, to = %eff_old, table = %table, error = %e, "Compensation MySQL : table non replacée");
+        }
     }
-    let _ = pool
-        .execute(&format!("DROP DATABASE IF EXISTS {}", quote_ident(eff_new)), params![])
-        .await;
+    if let Err(e) = drop_mysql_database_if_empty(pool, eff_new).await {
+        tracing::error!(db = %eff_new, error = %e, "Compensation MySQL : suppression de la base cible impossible");
+    }
+}
+
+/// Drops a database only when it holds no table or view any more. A database
+/// that still has content is kept (and logged) rather than destroyed.
+async fn drop_mysql_database_if_empty(pool: &DbPool, eff_db: &str) -> Result<(), AdminError> {
+    let remaining = pool
+        .fetch_scalar::<i64>(
+            "SELECT CAST(COUNT(*) AS SIGNED) FROM information_schema.tables WHERE table_schema = $1",
+            params![eff_db],
+        )
+        .await?;
+    if remaining > 0 {
+        tracing::warn!(db = %eff_db, remaining, "Base MySQL conservée : elle contient encore des tables");
+        return Ok(());
+    }
+    pool.execute(&format!("DROP DATABASE IF EXISTS {}", quote_ident(eff_db)), params![])
+        .await?;
+    Ok(())
+}
+
+/// Views, routines and events of a database — the objects `RENAME TABLE` does
+/// not carry to another database.
+async fn mysql_non_table_objects(pool: &DbPool, eff_db: &str) -> Result<i64, AdminError> {
+    Ok(pool
+        .fetch_scalar::<i64>(
+            "SELECT CAST((SELECT COUNT(*) FROM information_schema.tables \
+                           WHERE table_schema = $1 AND table_type <> 'BASE TABLE') \
+                       + (SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema = $2) \
+                       + (SELECT COUNT(*) FROM information_schema.events WHERE event_schema = $3) \
+                     AS SIGNED)",
+            params![eff_db, eff_db, eff_db],
+        )
+        .await?)
 }
 
 async fn mysql_table_names(pool: &DbPool, eff_db: &str) -> Result<Vec<String>, AdminError> {
     Ok(pool
         .fetch_all_as::<(String,)>(
             "SELECT table_name FROM information_schema.tables \
-              WHERE table_schema = $1 AND table_type = 'BASE TABLE'",
+              WHERE table_schema = $1 AND table_type = 'BASE TABLE' ORDER BY table_name",
             params![eff_db],
         )
         .await?

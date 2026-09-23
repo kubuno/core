@@ -11,6 +11,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **The number of words a search takes into account can be configured.** A new
+  optional `[search]` section in `config.toml` sets `max_terms` (16 by default,
+  1 to 256), also settable through `KV__SEARCH__MAX_TERMS`. The core applies it
+  to itself and passes it to every module it starts, so one value covers the
+  whole instance. Extra words beyond the limit are simply ignored.
+
 - **A maintenance banner that appears on its own during database operations.**
   While a consequential database operation runs — switching the main database (or
   a module's) to another engine, changing the schema prefix, restoring a backup,
@@ -381,6 +387,33 @@ number at release time, and CI publishes that section as the GitHub Release note
   (RUSTSEC-2023-0071) for which no fix will ever exist. The new line does not
   depend on it at all, and it refuses any SQL string built at run time unless it
   has been audited — the queries here were checked and marked.
+
+- **Changing the schema prefix on MySQL/MariaDB can no longer lose data.** If
+  moving a database failed half way (a table the move cannot carry, a lost
+  connection), the undo step dropped the new database outright — including the
+  tables already moved into it, which were then gone for good. The undo now moves
+  each table back one by one and only removes a database once it is empty. The
+  rename is also refused up front, before anything moves, when a target name
+  already exists (it may belong to another instance on the same server) or when
+  a database holds views, routines or events that the move would destroy.
+
+- **An instance no longer picks up another instance's schemas on a shared
+  server.** Renaming the schema prefix and taking a whole-database backup
+  recognised a module's extra schemas by pattern, so with overlapping prefixes
+  (none and `notes_`, say) one instance could rename or back up another's
+  schemas. They are now matched against an exact list. Relatedly, a prefixed
+  instance now also prefixes Office's extra schemas (`office_data`…) in its
+  queries, instead of sharing the unprefixed ones.
+
+- **A single search can no longer overload the database.** Every word of a
+  full-text search costs a comparison per searched column, and the number of
+  words was unbounded: a request carrying thousands of words forced as many scans
+  and could exceed the engine's parameter limit. Only the first 16 distinct words
+  are now kept (configurable, see `[search] max_terms`).
+
+- **The database password can no longer end up in a log** through the debug
+  output of the database settings: the password — including one written inside
+  a connection URL — is always shown as `<redacted>`.
 
 ## [0.1.12] - 2026-09-18
 

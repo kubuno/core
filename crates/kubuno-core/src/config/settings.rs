@@ -10,6 +10,20 @@ pub struct Settings {
     pub auth:     AuthSettings,
     pub storage:  StorageSettings,
     pub logging:  LoggingSettings,
+    /// Full-text search tuning. Optional section: absent = built-in defaults.
+    #[serde(default)]
+    pub search:   SearchSettings,
+}
+
+/// `[search]` — applied to the core at start-up and carried to every module it
+/// starts (`KUBUNO_DB_SEARCH_MAX_TERMS`), so the whole instance shares it.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SearchSettings {
+    /// The most distinct words a search keeps; later words are ignored. Each
+    /// word costs one `LIKE '%…%'` per searched column, so this bounds the work
+    /// one request can ask of the database. Absent = 16; clamped to `1..=256`.
+    #[serde(default)]
+    pub max_terms: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -488,6 +502,27 @@ mod tests {
             .set_default("logging.max_log_files", 30u32).unwrap()
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn search_section_is_optional() {
+        let s: Settings = minimal_config().try_deserialize().unwrap();
+        assert_eq!(s.search.max_terms, None);
+    }
+
+    #[test]
+    fn search_max_terms_is_read_from_the_config_file() {
+        let path = std::env::temp_dir().join(format!("kubuno-search-{}.toml", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "[search]\nmax_terms = 40\n").unwrap();
+        let s: Settings = Config::builder()
+            .add_source(minimal_config())
+            .add_source(File::from(path.as_path()))
+            .build()
+            .unwrap()
+            .try_deserialize()
+            .unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(s.search.max_terms, Some(40));
     }
 
     #[test]

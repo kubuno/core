@@ -40,7 +40,10 @@ pub enum SetupError {
 ///
 /// A single `config.toml` can describe all three engines; `engine` selects
 /// which fields matter.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// `Debug` is written by hand so the password — the discrete field and the one a
+/// connection URL may carry — never reaches a log through `?settings`.
+#[derive(Clone, Deserialize)]
 pub struct DbSettings {
     /// `"postgres"` (default), `"mysql"`/`"mariadb"`, or `"sqlite"`. This is the
     /// administrator's choice of engine.
@@ -81,6 +84,50 @@ pub struct DbSettings {
     pub connect_timeout: Duration,
     #[serde(default = "default_true")]
     pub run_migrations: bool,
+}
+
+impl std::fmt::Debug for DbSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DbSettings")
+            .field("engine", &self.engine)
+            .field("url", &self.url.as_deref().map(redact_url_password))
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("user", &self.user)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("database", &self.database)
+            .field("path", &self.path)
+            .field("schema_prefix", &self.schema_prefix)
+            .field("max_connections", &self.max_connections)
+            .field("min_connections", &self.min_connections)
+            .field("connect_timeout", &self.connect_timeout)
+            .field("run_migrations", &self.run_migrations)
+            .finish()
+    }
+}
+
+/// `scheme://user:secret@host/db` → `scheme://user:<redacted>@host/db`. A URL
+/// without a password in its authority is returned unchanged.
+fn redact_url_password(url: &str) -> String {
+    let Some(scheme_end) = url.find("://").map(|i| i + 3) else {
+        return url.to_string();
+    };
+    let rest = &url[scheme_end..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    // The userinfo ends at the LAST `@` of the authority: a password may hold one.
+    let Some(at) = authority.rfind('@') else {
+        return url.to_string();
+    };
+    let Some(colon) = authority[..at].find(':') else {
+        return url.to_string();
+    };
+    format!(
+        "{}{}:<redacted>{}",
+        &url[..scheme_end],
+        &authority[..colon],
+        &rest[at..]
+    )
 }
 
 fn default_engine() -> String {
@@ -138,6 +185,7 @@ pub mod duration_secs {
 /// schema is just `schema` and nothing changes.
 pub async fn connect(settings: &DbSettings, schema: &'static str) -> Result<DbPool, SetupError> {
     let prefix = SchemaPrefix::new(settings.schema_prefix.as_deref()).map_err(SetupError::Settings)?;
+    crate::search::apply_env_max_terms();
     let eff = prefix.schema(schema);
     let pool = match settings.backend()? {
         Backend::Postgres => open_pg(settings, &eff, prefix.clone()).await?,
@@ -418,4 +466,31 @@ macro_rules! migrations {
             sqlite: $crate::sqlx::migrate!($sqlite),
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_password_is_redacted() {
+        assert_eq!(
+            redact_url_password("postgres://kubuno:s3cr@t@db.local:5432/kubuno?sslmode=require"),
+            "postgres://kubuno:<redacted>@db.local:5432/kubuno?sslmode=require"
+        );
+        assert_eq!(redact_url_password("mysql://root@localhost/k"), "mysql://root@localhost/k");
+        assert_eq!(redact_url_password("sqlite:///var/lib/k/x.sqlite"), "sqlite:///var/lib/k/x.sqlite");
+    }
+
+    #[test]
+    fn debug_never_prints_the_password() {
+        let s: DbSettings = serde_json::from_value(serde_json::json!({
+            "url": "postgres://u:topsecret@h/d",
+            "password": "topsecret",
+        }))
+        .expect("settings");
+        let dbg = format!("{s:?}");
+        assert!(!dbg.contains("topsecret"), "{dbg}");
+        assert!(dbg.contains("<redacted>"), "{dbg}");
+    }
 }

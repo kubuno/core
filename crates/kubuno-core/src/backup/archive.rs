@@ -27,7 +27,7 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use kubuno_db::{params, Backend, DbPool, KUBUNO_SCHEMAS};
+use kubuno_db::{params, Backend, DbPool};
 use tokio::io::AsyncWriteExt;
 
 /// Common file-name prefix. Historical (`core` was once the only schema); kept
@@ -221,18 +221,13 @@ pub async fn decompress_to_temp(archive: &Path) -> anyhow::Result<DecompressedTe
 
 // ── schema discovery ──────────────────────────────────────────────────────────
 
-/// True when a bare (prefix-stripped) schema name belongs to Kubuno: a known
-/// primary schema, or one of a module's secondary schemas `<root>_<suffix>`
-/// (e.g. `office_data`, `office_maths`). Mirrors the ownership test the schema
-/// admin uses, so a whole-database backup and a prefix rename see the same set.
+/// True when a bare (prefix-stripped) schema name belongs to Kubuno: exactly a
+/// known primary schema or a module's listed secondary schema (`office_data`…).
+/// The same test the schema admin uses, so a whole-database backup and a prefix
+/// rename see the same set — and neither picks up another instance's schemas on
+/// a shared server.
 fn schema_is_owned(bare: &str) -> bool {
-    let roots: &[&str] = KUBUNO_SCHEMAS;
-    roots.contains(&bare)
-        || roots.iter().any(|r| {
-            bare.len() > r.len() + 1
-                && bare.as_bytes().get(r.len()) == Some(&b'_')
-                && &bare[..r.len()] == *r
-        })
+    kubuno_db::schema::is_kubuno_schema(bare)
 }
 
 /// Every Kubuno-owned schema present for this pool, by its **effective**

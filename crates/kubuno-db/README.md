@@ -367,6 +367,13 @@ if let Some(s) = Query::build(&user_query, &fields, 3) {   // $1,$2 already used
 };
 ```
 
+The query is **bounded**: only the first `search::max_terms()` distinct stems
+are kept (16 by default), since each costs a `LIKE '%…%'` per field. The value is
+set per process with `search::set_max_terms` — the core applies its `[search]
+max_terms` and passes it to every module through `KUBUNO_DB_SEARCH_MAX_TERMS`,
+which `connect` reads — or per call with `Query::build_with_max_terms`. Both are
+clamped to `1..=256`.
+
 A term matches when it is a substring of a normalized column, so a stored stem
 `cheval` is found by the query word `chevaux` (both stem to `cheval`), and an
 accent-free query (`resume`) finds an accented word (`résumé`). Every term must

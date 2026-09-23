@@ -41,6 +41,8 @@
 //! inflected and accented queries still match; only fuzzy/edit-distance
 //! matching is out of scope here.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::value::DbValue;
 
 use rust_stemmers::{Algorithm, Stemmer};
@@ -127,8 +129,9 @@ fn deaccent(text: &str) -> String {
 
 /// The `LIKE` pattern for one already-normalized stem: `%stem%`.
 ///
-/// [`normalize`] only ever emits `[a-z0-9]` runs, so a stem can carry no `%`,
-/// `_` or backslash — the pattern needs no `ESCAPE` clause and no metacharacter
+/// [`normalize`] only ever emits runs of alphanumeric characters (ASCII after
+/// folding for Latin text, but a non-Latin letter is kept as is), so a stem can
+/// carry no `%`, `_` or backslash — the pattern needs no `ESCAPE` clause and no metacharacter
 /// stripping. The value is meant to be **bound**, never interpolated.
 pub fn like_pattern(stem: &str) -> String {
     let mut p = String::with_capacity(stem.len() + 2);
@@ -215,6 +218,71 @@ pub struct SearchSql {
     pub terms: Vec<String>,
 }
 
+/// The default number of distinct terms a search keeps; later words are
+/// ignored. Overridden per process by [`set_max_terms`] (the core's
+/// `[search] max_terms`, carried to modules through [`MAX_TERMS_ENV`]) or per
+/// call by [`Query::build_with_max_terms`].
+pub const MAX_TERMS: usize = 16;
+
+/// The highest value [`set_max_terms`] accepts. Past it the cap would stop
+/// protecting anything: each term costs `2 × fields` binds and as many
+/// `LIKE '%…%'` scans.
+pub const MAX_TERMS_CEILING: usize = 256;
+
+static CONFIGURED_MAX_TERMS: AtomicUsize = AtomicUsize::new(MAX_TERMS);
+
+/// Sets the process-wide term cap used by [`Query::build`], clamped to
+/// `1..=MAX_TERMS_CEILING`, and returns the value kept.
+pub fn set_max_terms(n: usize) -> usize {
+    let kept = n.clamp(1, MAX_TERMS_CEILING);
+    CONFIGURED_MAX_TERMS.store(kept, Ordering::Relaxed);
+    kept
+}
+
+/// The environment variable a module reads its term cap from. The core sets it
+/// on every module it starts, from its own `[search] max_terms`, so the whole
+/// instance shares one value without any module-side code.
+pub const MAX_TERMS_ENV: &str = "KUBUNO_DB_SEARCH_MAX_TERMS";
+
+/// Applies [`MAX_TERMS_ENV`] when it is set (called by [`crate::connect`]). A
+/// value that does not parse is ignored with a warning; one out of bounds is
+/// clamped with a warning.
+pub fn apply_env_max_terms() {
+    let Ok(raw) = std::env::var(MAX_TERMS_ENV) else {
+        return;
+    };
+    match raw.trim().parse::<usize>() {
+        Ok(n) => {
+            let kept = set_max_terms(n);
+            if kept != n {
+                tracing::warn!(requested = n, kept, "{MAX_TERMS_ENV} hors bornes, valeur ramenée");
+            }
+        }
+        Err(_) => tracing::warn!(value = %raw, "{MAX_TERMS_ENV} illisible, plafond par défaut conservé"),
+    }
+}
+
+/// The term cap [`Query::build`] currently applies.
+pub fn max_terms() -> usize {
+    CONFIGURED_MAX_TERMS.load(Ordering::Relaxed)
+}
+
+/// The longest query text normalized, in bytes, at the default cap; the rest is
+/// ignored. A higher term cap raises it to 64 bytes per term, so the text never
+/// runs out before the configured number of terms is reached.
+pub const MAX_QUERY_BYTES: usize = 1024;
+
+fn truncate_on_char_boundary(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// A full-text query over one or more weighted normalized columns.
 pub struct Query;
 
@@ -232,11 +300,32 @@ impl Query {
     /// any field may satisfy it (`OR` across fields). The score adds each
     /// field's [`Weight::score`] once per term it contains.
     pub fn build(query: &str, fields: &[Field], start: usize) -> Option<SearchSql> {
+        Self::build_with_max_terms(query, fields, start, max_terms())
+    }
+
+    /// [`Query::build`] with an explicit term cap for this call only (clamped to
+    /// `1..=MAX_TERMS_CEILING`), for a caller that needs a different bound than
+    /// the process-wide one.
+    pub fn build_with_max_terms(
+        query: &str,
+        fields: &[Field],
+        start: usize,
+        max_terms: usize,
+    ) -> Option<SearchSql> {
         assert!(!fields.is_empty(), "search needs at least one field");
+        let max_terms = max_terms.clamp(1, MAX_TERMS_CEILING);
 
         // Distinct stems, order preserved: a repeated word adds nothing.
+        // Bounded both in input and in terms: every term costs a `LIKE '%…%'`
+        // per field, twice (filter and score), so an unbounded query is a cheap
+        // way to make the database scan and to blow past the engine's bind
+        // limit. Extra words past the cap are ignored.
+        let query = truncate_on_char_boundary(query, MAX_QUERY_BYTES.max(max_terms * 64));
         let mut terms: Vec<String> = Vec::new();
         for stem in normalize(query).split(' ') {
+            if terms.len() == max_terms {
+                break;
+            }
             if !stem.is_empty() && !terms.iter().any(|t| t == stem) {
                 terms.push(stem.to_owned());
             }
@@ -293,6 +382,25 @@ mod tests {
     use super::*;
     use crate::sql;
     use crate::Backend;
+
+    #[test]
+    fn a_huge_query_is_capped() {
+        let words: Vec<String> = (0..5000).map(|i| format!("mot{i}")).collect();
+        let fields = [Field::new("a_norm", Weight::A), Field::new("b_norm", Weight::B)];
+        let built = Query::build_with_max_terms(&words.join(" "), &fields, 1, 16).expect("terms");
+        assert_eq!(built.terms.len(), 16);
+        assert_eq!(built.binds.len(), 16 * fields.len() * 2);
+        // A configured cap is honoured, and clamped into its bounds.
+        let few = Query::build_with_max_terms(&words.join(" "), &fields, 1, 3).expect("terms");
+        assert_eq!(few.terms.len(), 3);
+        let huge = Query::build_with_max_terms(&words.join(" "), &fields, 1, usize::MAX).expect("terms");
+        assert_eq!(huge.terms.len(), MAX_TERMS_CEILING);
+        let zero = Query::build_with_max_terms(&words.join(" "), &fields, 1, 0).expect("terms");
+        assert_eq!(zero.terms.len(), 1);
+        // A multi-byte character straddling the byte cap must not panic.
+        let accents = "é".repeat(MAX_QUERY_BYTES);
+        assert!(Query::build(&accents, &fields, 1).is_some());
+    }
 
     #[test]
     fn deaccenting_strips_diacritics_and_ligatures() {
