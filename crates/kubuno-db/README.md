@@ -1,23 +1,28 @@
 # kubuno-db
 
-The database foundation shared by the Kubuno core and every module: one
-compile-time backend — **PostgreSQL**, **MySQL/MariaDB** or **SQLite** — behind
-one set of types, with a dialect layer for everything the three engines spell
-differently.
+The database foundation shared by the Kubuno core and every module: **one binary,
+three engines — PostgreSQL, MySQL/MariaDB or SQLite — chosen at run time**. The
+administrator names the engine in configuration (`database.engine`), at install
+time or later, and the same binary connects to whichever is named. A dialect layer
+covers everything the three engines spell differently.
 
 ```toml
-kubuno-db = { git = "https://github.com/kubuno/core", tag = "db-v0.1.0", package = "kubuno-db", default-features = false }
+kubuno-db = { git = "https://github.com/kubuno/core", tag = "db-v0.9.0", package = "kubuno-db" }
 ```
 
 ---
 
 ## 1. The design, and why
 
-### One backend per binary, selected by a cargo feature
+### One binary, the engine is a run-time value
 
-`kubuno_db::Db` is a type alias — `sqlx::Postgres`, `sqlx::MySql` or
-`sqlx::Sqlite` — picked by the feature the crate was built with. Everything else
-follows from it: `DbPool`, `DbRow`, `DbTransaction`, `DbQuery`.
+All three sqlx drivers are always compiled in. `DbPool` and `DbTx` are **enums**
+over the three concrete sqlx pools and transactions; they replace `PgPool` and
+`Transaction<'_, Postgres>` in signatures and hide the engine behind a small set of
+methods (`db.fetch_one_as`, `db.execute`, `db.begin`). A bound value travels as a
+`DbValue` (built with `params!`) and is encoded against the concrete driver only at
+the moment of execution. There is no per-engine build and no per-engine `.kbpkg`:
+an instance can change engine without reinstalling anything.
 
 The two alternatives were rejected for concrete reasons:
 
@@ -25,25 +30,27 @@ The two alternatives were rejected for concrete reasons:
   have to carry the bounds that make it bindable — `for<'a> Uuid: Encode<'a, DB>`,
   `Uuid: Type<DB>`, and one more pair per type. Those bounds are viral: they
   climb from the query into the service, the handler, and `AppState`, which
-  Axum then has to be generic over too. Kubuno binds a `Uuid` in 5178 places.
+  Axum then has to be generic over too. Kubuno binds a `Uuid` in thousands of places.
 * **`sqlx::Any`.** It carries only Null/Bool/SmallInt/Integer/BigInt/Real/
-  Double/Text/Blob. The three types Kubuno uses most — `Uuid` (5178
-  occurrences), `serde_json::Value` (2353), `DateTime<Utc>` (628) — cannot
-  cross it at all.
+  Double/Text/Blob. The three types Kubuno uses most — `Uuid`,
+  `serde_json::Value` and `DateTime<Utc>` — cannot cross it at all.
 
-With the alias, sqlx infers the database from the executor, so
-`sqlx::query(...).bind(id).fetch_one(&state.db)` keeps compiling unchanged. A
-module's diff is limited to its SQL text and to `PgPool` → `DbPool`.
+### sqlx does not translate SQL
 
-**The price, stated plainly:** the engine is baked into the artefact. A module
-ships one `.kbpkg` per engine, and an instance cannot change engine without
-reinstalling. The build matrix grows from `os × arch` to `os × arch × engine`.
+The SQL text is made correct for the engine by the `dialect` layer (methods on
+`Backend`) before it ever reaches sqlx; sqlx only carries the text and
+encodes/decodes the parameters. `sql::prepare` rewrites `$1` into `?` where the
+engine wants it and rejects text no engine could run faithfully — it is not a
+translator.
 
-### Exactly one backend
+### What else the crate provides
 
-Cargo features are additive, so this is checked rather than assumed: enabling
-two backends is a `compile_error!`, and so is enabling none. A consumer that
-wants anything but PostgreSQL must pass `default-features = false`.
+* `returning` — how to get a row back on MySQL, which has no `RETURNING`;
+* `pool` — connecting, the per-engine session policy, migrations;
+* `events` — `pg_notify` and its outbox fallback on the other engines;
+* `journal` — the portable change journal (monotonic per-domain sequence,
+  tombstones, delta pull) behind the modules' sync APIs;
+* `search` — engine-independent full-text search (stemmed, accent-insensitive).
 
 ---
 
@@ -52,24 +59,15 @@ wants anything but PostgreSQL must pass `default-features = false`.
 ### 2.1 `Cargo.toml`
 
 ```toml
-[features]
-default          = ["backend-postgres"]
-backend-postgres = ["kubuno-db/backend-postgres", "sqlx/postgres"]
-backend-mysql    = ["kubuno-db/backend-mysql",    "sqlx/mysql"]
-backend-sqlite   = ["kubuno-db/backend-sqlite",   "sqlx/sqlite"]
-```
-
-`sqlx/<driver>` **must** be switched here too. Leaving `postgres` in sqlx's
-own feature list would link the PostgreSQL driver into every build, and cargo
-would happily unify it back on.
-
-```toml
-[workspace.dependencies]
+[dependencies]
+# All three drivers are compiled in; the engine is a run-time choice made by
+# kubuno-db. `#[derive(FromRow)]` resolves against the three row types, so the
+# three drivers must be enabled here too.
 sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio", "tls-rustls", "uuid", "chrono", "json", "migrate",
-    "derive", "macros",
+    "bigdecimal", "derive", "macros", "postgres", "mysql", "sqlite",
 ] }
-kubuno-db = { git = "https://github.com/kubuno/core", tag = "db-v0.1.0", package = "kubuno-db", default-features = false }
+kubuno-db = { git = "https://github.com/kubuno/core", tag = "db-v0.9.0", package = "kubuno-db" }
 ```
 
 `derive` and `macros` are in sqlx's *default* features, which
@@ -89,8 +87,7 @@ pub const SCHEMA: &str = "keestore";
 |---|---|
 | `sqlx::PgPool` | `kubuno_db::DbPool` |
 | `sqlx::postgres::PgRow` | `kubuno_db::DbRow` |
-| `sqlx::Transaction<'_, sqlx::Postgres>` | `kubuno_db::DbTransaction<'_>` |
-| `sqlx::postgres::PgConnection` | `kubuno_db::DbConnection` |
+| `sqlx::Transaction<'_, sqlx::Postgres>` | `kubuno_db::DbTx` |
 
 ### 2.4 Queries
 

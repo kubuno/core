@@ -67,6 +67,67 @@ Applique les migrations SQL en attente (celles qui n'ont pas encore été exécu
 .B db:status
 Affiche la connectivité à la base de données, la version PostgreSQL et
 la liste des migrations appliquées avec leur statut.
+.SS Comptes, groupes et unités organisationnelles
+Ces commandes exécutent le code même de la console d'administration (mêmes
+politiques de mot de passe, quotas, gardes et entrées d'audit), au nom de la
+machine : chaque modification est journalisée avec l'origine « système ». Un
+compte est désigné par son adresse, son nom d'utilisateur ou son identifiant ;
+un groupe ou une unité par son nom ou son identifiant.
+.TP
+.B users:list \fR[\fB\-\-search\fR \fITEXTE\fR] [\fB\-\-role\fR \fIRÔLE\fR] [\fB\-\-org\-unit\fR \fIUNITÉ\fR [\fB\-\-descendants\fR]] [\fB\-\-active\fR|\fB\-\-inactive\fR] [\fB\-\-json\fR]
+Liste les comptes.
+.TP
+.B users:show \fICOMPTE\fR [\fB\-\-json\fR]
+Affiche la fiche d'un compte : unité, stockage, langue, groupes, sessions ouvertes, blocage de connexion.
+.TP
+.B users:create \-\-email \fIADRESSE\fR [\fB\-\-name\fR \fINOM\fR] [\fB\-\-username\fR \fINOM\fR] [\fB\-\-role\fR user|admin] [\fB\-\-org\-unit\fR \fIUNITÉ\fR] [\fB\-\-quota\-gib\fR \fIGIO\fR] [\fB\-\-language\fR \fILANGUE\fR] [\fB\-\-password\-stdin\fR|\fB\-\-generate\-password\fR]
+Crée un compte local. Le mot de passe est demandé deux fois à l'invite, lu sur
+l'entrée standard, ou tiré au sort et affiché une seule fois.
+.TP
+.B users:update \fICOMPTE\fR [\fB\-\-name\fR \fINOM\fR] [\fB\-\-role\fR \fIRÔLE\fR] [\fB\-\-quota\-gib\fR \fIGIO\fR] [\fB\-\-org\-unit\fR \fIUNITÉ\fR] [\fB\-\-language\fR \fILANGUE\fR]
+Modifie un compte.
+.TP
+.B users:disable \fICOMPTE\fR, users:enable \fICOMPTE\fR
+Désactive ou réactive un compte ; la réactivation annule une suppression programmée.
+.TP
+.B users:delete \fICOMPTE\fR [\fB\-\-force\fR] [\fB\-\-purge\fR [\fB\-\-confirm\-email\fR \fIADRESSE\fR]]
+Désactive le compte et programme son effacement ; avec
+.BR \-\-purge ,
+efface définitivement un compte déjà désactivé, après avoir recopié son adresse.
+.TP
+.B users:password \fICOMPTE\fR [\fB\-\-password\-stdin\fR|\fB\-\-generate\-password\fR] [\fB\-\-require\-change\fR]
+Définit un nouveau mot de passe et ferme toutes les sessions du compte.
+.TP
+.B users:require\-change \fICOMPTE\fR [\fB\-\-off\fR]
+Impose (ou lève) un changement de mot de passe à la prochaine connexion.
+.TP
+.B users:logout \fICOMPTE\fR
+Ferme toutes les sessions du compte.
+.TP
+.B users:unlock \fICOMPTE\fR
+Efface les échecs de connexion du compte et lève le blocage qui en résulte.
+.TP
+.B groups:list\fR, \fBgroups:show \fIGROUPE\fR [\fB\-\-json\fR]
+Liste les groupes, ou affiche un groupe et ses membres.
+.TP
+.B groups:create \fINOM\fR [\fB\-\-description\fR \fITEXTE\fR] [\fB\-\-default\fR]\fR, \fBgroups:delete \fIGROUPE\fR [\fB\-\-force\fR]
+Crée ou supprime un groupe ; les groupes système ne peuvent pas être supprimés.
+.TP
+.B groups:add\-member \fIGROUPE COMPTE\fR, groups:remove\-member \fIGROUPE COMPTE\fR
+Ajoute un compte à un groupe, ou l'en retire.
+.TP
+.B org\-units:list \fR[\fB\-\-json\fR]
+Affiche l'arbre des unités organisationnelles et leur nombre de comptes.
+.TP
+.B org\-units:create \fINOM\fR [\fB\-\-parent\fR \fIUNITÉ\fR] [\fB\-\-description\fR \fITEXTE\fR]
+Crée une unité (sous la racine par défaut).
+.TP
+.B org\-units:rename \fIUNITÉ NOUVEAU\-NOM\fR, org\-units:move \fIUNITÉ\fR \-\-to \fIPARENT\fR
+Renomme une unité, ou la déplace avec son sous\-arbre.
+.TP
+.B org\-units:delete \fIUNITÉ\fR [\fB\-\-force\fR]
+Supprime une unité ; ses sous\-unités et ses comptes remontent à l'unité parente.
+Les conséquences sont affichées avant la confirmation.
 .SS Serveur
 .TP
 .B status
@@ -111,6 +172,22 @@ Vérifier la connectivité et les migrations :
 .RS
 .nf
 kubuno db:status
+.fi
+.RE
+.PP
+Créer un compte et afficher son mot de passe tiré au sort :
+.PP
+.RS
+.nf
+kubuno users:create \-\-email alex@exemple.org \-\-name "Alex Martin" \-\-generate\-password
+.fi
+.RE
+.PP
+Lister les comptes désactivés d'une unité, au format JSON :
+.PP
+.RS
+.nf
+kubuno users:list \-\-org\-unit Support \-\-inactive \-\-json
 .fi
 .RE
 .SH CONFIGURATION

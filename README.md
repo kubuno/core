@@ -12,41 +12,48 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/Rust-edition_2021-orange.svg)
 ![React](https://img.shields.io/badge/React-19-61dafb.svg)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)
+![Databases](https://img.shields.io/badge/DB-PostgreSQL_%7C_MySQL%2FMariaDB_%7C_SQLite-336791.svg)
 ![Status](https://img.shields.io/badge/status-alpha-yellow.svg)
 
 **The heart of Kubuno — a self-hosted, libre (AGPLv3) cloud platform, a sovereign alternative to Google Workspace and Microsoft 365.**
 
-The *core* is the platform's "operating system": it provides the infrastructure (auth, database, events, storage, reverse proxy, WebSocket, module lifecycle) that **independent modules** (drive, calendar, mail, photos, office, chat…) rely on to run.
+The *core* is the platform's "operating system": it provides the infrastructure (auth, database, events, storage, reverse proxy, WebSocket, module lifecycle, administration console) that **independent modules** (drive, calendar, mail, photos, office, chat…) rely on to run.
 
 </div>
 
 ---
 
-## ✨ Why Kubuno?
+## Screenshots
 
-- 🧩 **Modular architecture** — each module (drive, calendar, mail, office, photos…) is a **separate process** (Rust or Python) that connects to the core at startup. The core proxies its routes, distributes events and manages its lifecycle.
-- 🛒 **Built-in marketplace** — browse the official catalog and install new modules **at runtime** from the admin console: the core downloads the release, unpacks it into its writable module store and starts it hot, no restart and no shell access required.
-- 🏠 **Your data, your rules** — fully self-hosted, no third-party service required.
-- 🔐 **Secure by default** — JWT + HttpOnly refresh tokens with rotation (including a crash-recovery grace for native clients), Argon2id, AES-256-GCM, anti-DDoS hardening with per-IP *and* per-authenticated-user rate budgets, seccomp sandbox for modules.
-- ⚡ **Rust + Axum + PostgreSQL** — a fast, lean backend; PostgreSQL also serves as the event bus (`LISTEN/NOTIFY`) and job queue (`SKIP LOCKED`).
-- 🖥️ **Runtime-loaded frontend** — the React 19 host loads modules **at runtime** via ESM import maps and shared singletons (`@kubuno/sdk`, `@ui`), without ever naming a module statically.
-- 🎨 **Packaged themes (skins)** — themes are importable `.zip` bundles that can restyle the whole platform or targeted modules with CSS variables, stylesheets and (admin-trusted) scripts; several polished themes ship with the core. See [`THEMES.md`](THEMES.md).
-- 🏷️ **Cross-module labels** — user-owned labels that attach to items of *any* module (files, tasks, events…), with rich cross-module previews and sharing to users or groups.
-- 💬 **@mentions everywhere** — the shared `@ui` text primitives (single-line, multiline and rich-text) accept an opt-in *mention* mode; any module can publish a mention provider on the extension registry, so typing `@` suggests people (e.g. contacts) with a bold-matched dropdown and inserts a removable chip — degrading gracefully to plain text when no provider is installed.
-- 🌍 **i18n** — 13 languages, RTL included.
+<!-- SCREENSHOTS -->
 
-## 🏗️ Architecture
+## Why Kubuno?
+
+- **Modular architecture** — each module (drive, calendar, mail, office, photos…) is a **separate process** that connects to the core at startup. The core proxies its routes, distributes events and manages its lifecycle; nothing is hard-wired.
+- **Your data, your rules** — fully self-hosted, no third-party service required, no telemetry.
+- **One binary, three database engines** — the same server runs on **PostgreSQL**, **MySQL/MariaDB** or **SQLite**, the engine being chosen at run time from the connection URL. An instance — or a single module — can be migrated from one engine to another from the administration console, and several instances can share one database server thanks to a configurable schema prefix.
+- **Guided first run** — a fresh instance opens on a setup assistant that asks for the database and the first administrator: there is no default password.
+- **Built-in marketplace** — browse the official catalogue and install modules **at runtime** from the admin console, or offline from the command line (`kubuno modules:install <file>.kbpkg`). Modules ship as self-contained **Kubuno packages (`.kbpkg`)** the core unpacks itself, identically on Linux, Windows and macOS.
+- **Secure by default** — JWT + HttpOnly refresh tokens with rotation, Argon2id, AES-256-GCM with a data key separate from the signing secret, account lockout and a self-hosted sign-in CAPTCHA after repeated failures, a tamper-evident (HMAC-chained) administrative audit trail, anti-DDoS rate budgets per IP and per user, signed module-to-core authentication, and a seccomp sandbox that forbids process execution inside modules.
+- **A complete administration console** — directory (users, groups, organisational units, target audiences, buildings and resources, directory policy), LDAP / Active Directory and OpenID Connect sign-in, per-unit settings with inheritance and locks, security dashboard, alert centre, automation rules, content detectors, printable reports, backups (whole database, compressed, restorable), data migration from other servers, data export, domains, public holidays, themes and native HTTPS (TLS certificates, ACME).
+- **Fast and lean backend** — Rust + Axum; the database also serves as the event bus and the job queue, with no Redis or extra broker.
+- **Runtime-loaded frontend** — the React 19 host loads modules **at runtime** via ESM import maps and shared singletons (`@kubuno/sdk`, `@kubuno/ui`), without ever naming a module statically, so every app shares one consistent shell.
+- **Packaged themes (skins)** — themes are importable `.zip` bundles that restyle the whole platform or targeted modules with CSS variables, stylesheets and (admin-trusted) scripts; several themes ship with the core. See [`THEMES.md`](THEMES.md).
+- **Cross-module labels and @mentions** — user-owned labels attach to items of *any* module (files, tasks, events…) and can be shared; typing `@` in any text field suggests people from the instance directory.
+- **Voice search** — a microphone in the search bar, backed by the self-hosted [speech-to-text](https://github.com/kubuno/stt) service.
+- **i18n** — 13 languages, RTL included.
+
+## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Frontend host (React 19 / Vite)                         │
-│  — shell, auth, registries, import map → @kubuno/sdk,@ui │
+│  — shell, auth, admin console, registries, import map    │
 │  — loads /modules/<id>/entry.js at runtime               │
 ├──────────────────────────────────────────────────────────┤
 │  Core (Rust / Axum)            ← THIS REPO               │
 │  auth · events · storage · proxy · websocket · modules   │
-│  PostgreSQL 16 (schema `core`, LISTEN/NOTIFY, jobs)      │
+│  PostgreSQL · MySQL/MariaDB · SQLite (schema `core`)     │
 ├──────────────────────────────────────────────────────────┤
 │  Modules (separate processes, dedicated repos)           │
 │  drive · calendar · mail · photos · office · chat · …    │
@@ -57,31 +64,49 @@ This repository contains:
 
 | Component | Path | Role |
 |---|---|---|
-| **kubuno-core** | `crates/kubuno-core` | Server application (bin `kubuno-core` + CLI `kubuno`) |
-| **kubuno-storage** | `crates/kubuno-storage` | Storage abstraction (local / S3) — shared |
-| **kubuno-seccomp** | `crates/kubuno-seccomp` | Execution sandbox (seccomp) — shared |
-| **kubuno-mcp** | `crates/kubuno-mcp` | MCP server building blocks — shared |
-| **Frontend host** | `frontend/` | React shell + shared libs `@kubuno/sdk`, `@ui`, `@kubuno/drive` |
-| **Migrations** | `migrations/` | Core PostgreSQL schema |
+| **[kubuno-core](crates/kubuno-core/README.md)** | `crates/kubuno-core` | Server application (bin `kubuno-core`) and administration CLI (`kubuno`) |
+| **[kubuno-db](crates/kubuno-db/README.md)** | `crates/kubuno-db` | Database foundation: one binary over PostgreSQL / MySQL-MariaDB / SQLite — shared |
+| **[kubuno-storage](crates/kubuno-storage/README.md)** | `crates/kubuno-storage` | Storage abstraction (local filesystem; S3 declared, not implemented yet) — shared |
+| **[kubuno-seccomp](crates/kubuno-seccomp/README.md)** | `crates/kubuno-seccomp` | Execution sandbox (seccomp) — shared |
+| **[kubuno-modauth](crates/kubuno-modauth/README.md)** | `crates/kubuno-modauth` | Signed module ↔ core authentication — shared |
+| **[kubuno-mcp](crates/kubuno-mcp/README.md)** | `crates/kubuno-mcp` | MCP server building blocks — used by the core |
+| **Frontend host** | `frontend/` | React shell + shared libraries `@kubuno/sdk`, `@kubuno/ui`, `@kubuno/drive` |
+| **Migrations** | `migrations/` | Core database schema |
 | **Themes** | `themes/` | Skin themes shipped with the platform (see [`THEMES.md`](THEMES.md)) |
 
-Shared crates are consumed by the **module repos** via tagged git dependencies; the shared frontend libraries are published to npm under the **`@kubuno/*`** scope.
+Shared crates are consumed by the **module repositories** via tagged git dependencies; the shared frontend libraries are published to npm under the **`@kubuno/*`** scope.
 
-## 🧩 Modules
+## Modules
 
-Each app lives in its **own repository** (`kubuno/<module>`) and ships its own package:
+Each app lives in its **own repository** (`kubuno/<module>`) and ships its own `.kbpkg` package:
 
-| Module | Repo | Description |
-|---|---|---|
-| Drive | `kubuno/drive` | File storage, sharing, remote mounts |
-| Calendar | `kubuno/calendar` | Calendars, events, CalDAV |
-| Mail | `kubuno/mail` | Email client (IMAP/SMTP) |
-| Photos | `kubuno/photos` | Photo gallery |
-| Office | `kubuno/office` | Office suite (docs, sheets, slides…) |
-| Forum | `kubuno/forum` | Discussion boards (categories, forums, topics, posts) |
-| Chat, Contacts, Notes, Tasks, Maps, Forms, Flow, Code, Media, KeeStore, PaintSharp, Assistant | `kubuno/<id>` | … |
+| | Module | Repository | Description |
+|---|---|---|---|
+| <img src="https://raw.githubusercontent.com/kubuno/drive/main/.github/logo.png" width="24" height="24" alt=""> | **Drive** | [kubuno/drive](https://github.com/kubuno/drive) | Files: upload, sharing, search, remote mounts |
+| <img src="https://raw.githubusercontent.com/kubuno/office/main/.github/logo.svg" width="24" height="24" alt=""> | **Office** | [kubuno/office](https://github.com/kubuno/office) | Office suite: documents, spreadsheets, presentations, projects, diagrams, data, maths, script, whiteboard |
+| <img src="https://raw.githubusercontent.com/kubuno/calendar/main/.github/logo.png" width="24" height="24" alt=""> | **Calendar** | [kubuno/calendar](https://github.com/kubuno/calendar) | Calendars, events, CalDAV, scheduling |
+| <img src="https://raw.githubusercontent.com/kubuno/mail/main/.github/logo.png" width="24" height="24" alt=""> | **Mail** | [kubuno/mail](https://github.com/kubuno/mail) | Multi-account email client (IMAP/SMTP) |
+| <img src="https://raw.githubusercontent.com/kubuno/chat/main/.github/logo.png" width="24" height="24" alt=""> | **Chat** | [kubuno/chat](https://github.com/kubuno/chat) | Messaging, calls and meetings |
+| <img src="https://raw.githubusercontent.com/kubuno/contacts/main/.github/logo.png" width="24" height="24" alt=""> | **Contacts** | [kubuno/contacts](https://github.com/kubuno/contacts) | Address book, groups, CardDAV |
+| <img src="https://raw.githubusercontent.com/kubuno/tasks/main/.github/logo.png" width="24" height="24" alt=""> | **Tasks** | [kubuno/tasks](https://github.com/kubuno/tasks) | Tasks, sub-tasks, Kanban boards, CalDAV VTODO |
+| <img src="https://raw.githubusercontent.com/kubuno/notes/main/.github/logo.png" width="24" height="24" alt=""> | **Notes** | [kubuno/notes](https://github.com/kubuno/notes) | Markdown notes, checklists, notebooks, backlinks |
+| <img src="https://raw.githubusercontent.com/kubuno/forms/main/.github/logo.png" width="24" height="24" alt=""> | **Forms** | [kubuno/forms](https://github.com/kubuno/forms) | Forms and surveys, responses, analytics |
+| <img src="https://raw.githubusercontent.com/kubuno/photos/main/.github/logo.png" width="24" height="24" alt=""> | **Photos** | [kubuno/photos](https://github.com/kubuno/photos) | Photo gallery: albums, timeline, sharing |
+| <img src="https://raw.githubusercontent.com/kubuno/media/main/.github/logo.svg" width="24" height="24" alt=""> | **Media** | [kubuno/media](https://github.com/kubuno/media) | Streaming: Watch (films, series) and Listen (music) |
+| <img src="https://raw.githubusercontent.com/kubuno/books/main/.github/logo.png" width="24" height="24" alt=""> | **Books** | [kubuno/books](https://github.com/kubuno/books) | Library of books, comics and eBooks |
+| <img src="https://raw.githubusercontent.com/kubuno/paintsharp/main/.github/logo.png" width="24" height="24" alt=""> | **PaintSharp** | [kubuno/paintsharp](https://github.com/kubuno/paintsharp) | Creative suite: raster, vector, 3D, video, animation, PDF, fonts |
+| <img src="https://raw.githubusercontent.com/kubuno/wiki/main/.github/logo.png" width="24" height="24" alt=""> | **Wiki** | [kubuno/wiki](https://github.com/kubuno/wiki) | Personal and shared wikis |
+| <img src="https://raw.githubusercontent.com/kubuno/forum/main/.github/logo.png" width="24" height="24" alt=""> | **Forum** | [kubuno/forum](https://github.com/kubuno/forum) | Discussion boards with moderation |
+| <img src="https://raw.githubusercontent.com/kubuno/app/main/.github/logo.png" width="24" height="24" alt=""> | **App** | [kubuno/app](https://github.com/kubuno/app) | Visual no-code application builder |
+| <img src="https://raw.githubusercontent.com/kubuno/flow/main/.github/logo.png" width="24" height="24" alt=""> | **Flow** | [kubuno/flow](https://github.com/kubuno/flow) | Visual workflow automation |
+| <img src="https://raw.githubusercontent.com/kubuno/code/main/.github/logo.png" width="24" height="24" alt=""> | **Code** | [kubuno/code](https://github.com/kubuno/code) | Collaborative web IDE with Git |
+| <img src="https://raw.githubusercontent.com/kubuno/keestore/main/.github/logo.png" width="24" height="24" alt=""> | **Keestore** | [kubuno/keestore](https://github.com/kubuno/keestore) | Password manager (KeePass 4 `.kdbx`) |
+| <img src="https://raw.githubusercontent.com/kubuno/maps/main/.github/logo.png" width="24" height="24" alt=""> | **Maps** | [kubuno/maps](https://github.com/kubuno/maps) | Self-hosted maps, routes, places |
+| <img src="https://raw.githubusercontent.com/kubuno/assistant/main/.github/logo.png" width="24" height="24" alt=""> | **Assistant** | [kubuno/assistant](https://github.com/kubuno/assistant) | Self-hosted AI assistant (local models) |
+| | **Speech-to-Text** | [kubuno/stt](https://github.com/kubuno/stt) | Self-hosted speech recognition for voice search |
+| | **P2P NAS** | [kubuno/p2pnas](https://github.com/kubuno/p2pnas) | Encrypted, self-healing peer-to-peer storage |
 
-## 🐳 Install with Docker
+## Install with Docker
 
 The fastest way to self-host Kubuno (core + all modules) is the all-in-one Docker image, published as `ghcr.io/kubuno/kubuno`:
 
@@ -90,16 +115,16 @@ git clone https://github.com/kubuno/docker && cd docker
 cp .env.docker.example .env     # set POSTGRES_PASSWORD, KUBUNO_JWT_SECRET, KUBUNO_INTERNAL_SECRET
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # → http://localhost:8080
-#   A fresh instance greets you with the setup wizard: it asks for the database
+#   A fresh instance greets you with the setup assistant: it asks for the database
 #   and the first administrator, so YOU choose the password. There is no default.
 ```
 
 Prefer building the image yourself? Run `docker compose up --build`. The full guide,
 configuration, module selection and CI live in **[kubuno/docker](https://github.com/kubuno/docker)**.
 
-## 📥 Native packages (Linux · Windows · macOS)
+## Native packages (Linux · Windows · macOS)
 
-The core also ships as **native packages**, each installing the server, the frontend host, the SQL migrations, the bundled themes, and registering Kubuno as a managed system service:
+The core ships as **native packages**, each installing the server, the frontend host, the database migrations and the bundled themes, and registering Kubuno as a managed system service:
 
 | Platform | Format | Script | Service |
 |---|---|---|---|
@@ -108,11 +133,37 @@ The core also ships as **native packages**, each installing the server, the fron
 | Windows 10/11 / Server | `.exe` (NSIS installer) | `build_windows.sh` | Windows service (WinSW) |
 | macOS (Apple Silicon) | `.pkg` | `build_macos.sh` | launchd |
 
-Tagged releases (`v*`) attach all of them to the corresponding **GitHub Release** via CI (`build.yml` for the `.deb`, `dist.yml` for RPM/Windows/macOS). The only runtime prerequisite is a reachable **PostgreSQL 16** (not embedded). Full details, layouts and per-platform notes: **[`PACKAGING.md`](PACKAGING.md)** — including the generic packaging scheme modules follow so they install into the core on every platform.
+Tagged releases (`v*`) attach all of them to the corresponding **GitHub Release** via CI (`build.yml` for the `.deb`, `dist.yml` for RPM / Windows / macOS). The only runtime prerequisite is a reachable database server — PostgreSQL 16 or MySQL / MariaDB — or none at all with SQLite. Full details and per-platform notes: **[`PACKAGING.md`](PACKAGING.md)**.
 
-## 🛠️ Build & development
+Modules are **not** system services: they install as `.kbpkg` packages into the core, from the Marketplace or with the CLI:
 
-**Requirements:** Rust ≥ 1.82, Node.js ≥ 24, PostgreSQL 16.
+```bash
+sudo kubuno modules:install calendar-<version>-<os>-<arch>.kbpkg
+sudo kubuno modules:list
+```
+
+### Administering from the command line
+
+The `kubuno` command also administers the directory from the server itself — for
+scripts, headless installs, or when no browser is at hand. It runs the very same
+operations as the administration console (same password policies, quotas,
+guards and audit entries, recorded with the "system" origin):
+
+```bash
+sudo kubuno users:create --email alex@example.org --name "Alex Martin" --generate-password
+sudo kubuno users:list --org-unit Support --inactive
+sudo kubuno users:password alex@example.org --generate-password --require-change
+sudo kubuno users:unlock alex@example.org          # forget failed sign-ins
+sudo kubuno groups:add-member Accounting alex@example.org
+sudo kubuno org-units:create Marketing --parent Kubuno
+```
+
+Every command has `--help`; listings accept `--json`. See `man kubuno` for the
+full reference (`users:*`, `groups:*`, `org-units:*`, `db:*`, `auth:recover`…).
+
+## Build & development
+
+**Requirements:** Rust ≥ 1.82, Node.js ≥ 24, and PostgreSQL 16, MySQL/MariaDB or SQLite.
 
 ```bash
 # Backend (core)
@@ -124,25 +175,29 @@ cd frontend && npm ci && npm run build
 # Dev (backend + frontend together)
 make dev
 
-# Debian package for the core
+# Native packages (see PACKAGING.md)
 bash build_deb.sh        # → dist/kubuno-core_*.deb
-
-# Other native packages (see PACKAGING.md)
 bash build_rpm.sh        # → dist/kubuno-core-*.rpm
 bash build_windows.sh    # → dist/kubuno-core-setup-*.exe   (cross-build, NSIS)
 bash build_macos.sh      # → dist/kubuno-core-*.pkg         (on a Mac)
 ```
 
-Configuration: copy [`config.toml.example`](config.toml.example) → `config.toml` (every option is documented inline) or override with `KV_`-prefixed environment variables.
+## Configuration
 
-## 📦 Tech stack
+Copy [`config.toml.example`](config.toml.example) → `config.toml` (every option is documented inline) or override any value with `KV_`-prefixed environment variables (e.g. `KV__DATABASE__SCHEMA_PREFIX`). The database engine follows the connection URL: `postgres://…`, `mysql://…` or `sqlite://…`.
 
-Rust 2021 · Axum 0.7 · Tokio · SQLx 0.8 (PostgreSQL) · jsonwebtoken · argon2 · aes-gcm — React 19 · TypeScript · Vite · Tailwind CSS v4 · Zustand · React Query.
+## Tech stack
 
-## 🤝 Contributing
+Rust 2021 · Axum 0.7 · Tokio · SQLx 0.9 (PostgreSQL · MySQL/MariaDB · SQLite) · jsonwebtoken · argon2 · aes-gcm — React 19 · TypeScript · Vite · Tailwind CSS v4 · Zustand · React Query.
+
+## Security
+
+Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
+
+## Contributing
 
 Contributions are welcome. Please open an issue to discuss any significant change before submitting a pull request.
 
-## 📄 License
+## License
 
 [AGPL-3.0-or-later](LICENSE) © Kubuno contributors.
