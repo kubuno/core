@@ -344,15 +344,27 @@ mod tests {
 
     #[test]
     fn destinations_must_be_absolute_and_sane() {
-        assert!(validate_destination("/var/backups/kubuno").is_ok());
+        assert!(validate_destination(&abs("/var/backups/kubuno")).is_ok());
         assert_eq!(
-            validate_destination("  /srv/sauvegardes  ").ok().as_deref(),
-            Some("/srv/sauvegardes")
+            validate_destination(&format!("  {}  ", abs("/srv/sauvegardes")))
+                .ok()
+                .as_deref(),
+            Some(abs("/srv/sauvegardes").as_str())
         );
         assert!(validate_destination("").is_err());
         assert!(validate_destination("sauvegardes").is_err());
-        assert!(validate_destination("/var/../etc").is_err());
-        assert!(validate_destination(&"/x".repeat(400)).is_err());
+        assert!(validate_destination(&abs("/var/../etc")).is_err());
+        assert!(validate_destination(&abs(&"/x".repeat(400))).is_err());
+    }
+
+    /// An absolute path in the host's own flavour: a leading `/` is only absolute
+    /// on Unix, whereas Windows needs a drive (`C:\var\backups`).
+    fn abs(unix_style: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{}", unix_style.replace('/', "\\"))
+        } else {
+            unix_style.to_string()
+        }
     }
 
     #[test]

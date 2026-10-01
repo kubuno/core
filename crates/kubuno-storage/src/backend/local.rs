@@ -21,13 +21,17 @@ impl LocalStorage {
     }
 
     fn resolve(&self, path: &str) -> StorageResult<PathBuf> {
-        let full = self.base.join(path.trim_start_matches('/'));
-        let normalized = normalize_path(&full);
-
+        // Build the candidate on the canonical base, so both sides of the
+        // `starts_with` check share one spelling. On Windows `canonicalize()`
+        // returns a verbatim `\\?\C:\...` path; comparing it with a candidate
+        // built on the raw base (`C:\...`) rejected every path. The same applies
+        // on Unix when the base itself sits behind a symlink.
         let canonical_base = self
             .base
             .canonicalize()
             .unwrap_or_else(|_| self.base.clone());
+        let full = canonical_base.join(path.trim_start_matches('/'));
+        let normalized = normalize_path(&full);
 
         if !normalized.starts_with(&canonical_base) {
             return Err(StorageError::InvalidPath(format!(

@@ -109,15 +109,21 @@ fn sanitize_component(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    /// The components of a path as strings, so the assertions check the layout
+    /// (which segments, in which order) and not the host's separator.
+    fn parts(p: &Path) -> Vec<String> {
+        p.components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect()
+    }
 
     #[test]
     fn test_user_file_path_root() {
         let uid = Uuid::nil();
         let p = user_file_path(uid, "", "rapport.pdf");
-        assert_eq!(
-            p.to_string_lossy(),
-            format!("{}/files/rapport.pdf", uid)
-        );
+        assert_eq!(parts(&p), [uid.to_string().as_str(), "files", "rapport.pdf"]);
     }
 
     #[test]
@@ -125,8 +131,8 @@ mod tests {
         let uid = Uuid::nil();
         let p = user_file_path(uid, "/Documents/Archives", "old.pdf");
         assert_eq!(
-            p.to_string_lossy(),
-            format!("{}/files/Documents/Archives/old.pdf", uid)
+            parts(&p),
+            [uid.to_string().as_str(), "files", "Documents", "Archives", "old.pdf"]
         );
     }
 
@@ -135,8 +141,8 @@ mod tests {
         let uid = Uuid::nil();
         let p = user_folder_dir(uid, "/Photos/Vacances");
         assert_eq!(
-            p.to_string_lossy(),
-            format!("{}/files/Photos/Vacances", uid)
+            parts(&p),
+            [uid.to_string().as_str(), "files", "Photos", "Vacances"]
         );
     }
 
@@ -146,8 +152,8 @@ mod tests {
         let fid = Uuid::nil();
         let p = user_thumbnail_path(uid, fid);
         assert_eq!(
-            p.to_string_lossy(),
-            format!("{}/thumbnails/{}.jpg", uid, fid)
+            parts(&p),
+            [uid.to_string().as_str(), "thumbnails", format!("{fid}.jpg").as_str()]
         );
     }
 
@@ -155,8 +161,8 @@ mod tests {
     fn test_upload_temp_paths() {
         let sid = Uuid::nil();
         let dir = upload_temp_dir_v2(sid);
-        assert_eq!(dir.to_string_lossy(), format!(".uploads/{}", sid));
+        assert_eq!(parts(&dir), [".uploads", sid.to_string().as_str()]);
         let chunk = chunk_path_v2(sid, 3);
-        assert_eq!(chunk.to_string_lossy(), format!(".uploads/{}/00000003.part", sid));
+        assert_eq!(parts(&chunk), [".uploads", sid.to_string().as_str(), "00000003.part"]);
     }
 }
