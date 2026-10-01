@@ -331,7 +331,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   area", because the storage root was compared with itself in two different
   spellings (`C:\data` against `\?\C:\data`). The same mismatch affected a root
   reached through a symbolic link on Linux and macOS. Paths are now compared in a
-  single spelling.
+  single spelling. Apps that embed the shared `kubuno-storage` crate get the fix
+  by moving to its new 0.1.2 release (tag `storage-v0.1.2`).
 - **The test suite passes on Windows.** Tests that assumed Unix paths (backup and
   data-export destination checks, storage path layout) now build their expected
   values for the host they run on, without loosening what they verify.
