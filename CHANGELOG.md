@@ -11,6 +11,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Open Kubuno Core in Visual Studio.** The repository now ships a ready-made
+  solution (`Kubuno.Core.Web.slnx`) with the server, the shared crates, the host
+  frontend and the `@kubuno/*` packages as projects, plus launch profiles that
+  start the server alone or the server together with Vite. Per-machine files
+  (`obj/`, `.vs/`, user settings, the local SDK feed) stay out of version control.
 - **The number of words a search takes into account can be configured.** A new
   optional `[search]` section in `config.toml` sets `max_terms` (16 by default,
   1 to 256), also settable through `KV__SEARCH__MAX_TERMS`. The core applies it
