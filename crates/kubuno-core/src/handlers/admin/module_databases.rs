@@ -273,7 +273,7 @@ async fn ensure_target(
         }
         Some(Backend::Sqlite) => {
             let dir = if creds.path.trim().is_empty() {
-                "/var/lib/kubuno/db".to_string()
+                crate::config::paths::default_sqlite_dir()
             } else {
                 creds.path.trim().to_string()
             };

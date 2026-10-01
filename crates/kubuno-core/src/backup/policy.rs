@@ -36,7 +36,10 @@ pub const ALL_KEYS: &[&str] = &[
 /// Settings category, so the console can group them.
 pub const CATEGORY: &str = "backup";
 
-const DEFAULT_DESTINATION: &str = "/var/backups/kubuno";
+/// Default destination: the platform backup directory (`/var/backups/kubuno` on Linux).
+fn default_destination() -> String {
+    crate::config::paths::current().backup_dir.to_string_lossy().into_owned()
+}
 const DEFAULT_HOUR_UTC: i64 = 3;
 const DEFAULT_RETENTION: i64 = 7;
 
@@ -103,7 +106,7 @@ impl Default for Policy {
             frequency: Frequency::Daily,
             hour_utc: DEFAULT_HOUR_UTC,
             retention_count: DEFAULT_RETENTION,
-            destination: DEFAULT_DESTINATION.to_string(),
+            destination: default_destination(),
         }
     }
 }
@@ -209,8 +212,8 @@ pub async fn load(db: &DbPool) -> Policy {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_DESTINATION)
-        .to_string();
+        .map(str::to_string)
+        .unwrap_or_else(default_destination);
 
     Policy {
         enabled,

@@ -180,8 +180,11 @@ pub async fn cmd_app_reset(args: &clap::ArgMatches) -> Result<()> {
     // Plus de mot de passe connu : `ensure_default_admin` en tire un au hasard
     // et le dépose dans un fichier lisible du seul service. On dit où, pas quoi.
     ok("Compte admin créé (username: admin).");
-    info("Mot de passe : aléatoire, déposé dans /var/lib/kubuno/initial-admin-password \
-(à moins d'avoir fourni KUBUNO_ADMIN_PASSWORD). À changer à la première connexion.");
+    info(&format!(
+        "Mot de passe : aléatoire, déposé dans {} (à moins d'avoir fourni KUBUNO_ADMIN_PASSWORD). \
+         À changer à la première connexion.",
+        seed::initial_password_file().display()
+    ));
 
     println!();
     ok(&format!("{GREEN}{BOLD}Réinitialisation terminée.{RESET}"));

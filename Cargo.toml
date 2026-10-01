@@ -9,6 +9,7 @@ members  = [
     "crates/kubuno-seccomp",
     "crates/kubuno-modauth",
     "crates/kubuno-db",
+    "crates/kubuno-paths",
 ]
 
 [workspace.package]
@@ -80,6 +81,7 @@ kubuno-mcp         = { path = "crates/kubuno-mcp" }
 kubuno-seccomp     = { path = "crates/kubuno-seccomp" }
 kubuno-modauth     = { path = "crates/kubuno-modauth" }
 kubuno-db          = { path = "crates/kubuno-db" }
+kubuno-paths       = { path = "crates/kubuno-paths" }
 
 # Erreurs
 thiserror = "1"

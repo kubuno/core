@@ -260,7 +260,7 @@ async fn themes(State(st): State<Arc<SetupState>>) -> Json<serde_json::Value> {
 /// What SQLite falls back to when the operator names no directory. Mirrors the
 /// `database.path` default the running instance ships (`config/settings.rs`), so
 /// the file the wizard probes is the file the instance later opens.
-const DEFAULT_SQLITE_DIR: &str = "/var/lib/kubuno/db";
+use crate::config::paths::default_sqlite_dir;
 
 #[derive(Deserialize, Clone)]
 pub(crate) struct DbForm {
@@ -352,7 +352,7 @@ impl DbForm {
     fn sqlite_dir(&self) -> String {
         match self.path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
             Some(p) => p.to_string(),
-            None => DEFAULT_SQLITE_DIR.to_string(),
+            None => default_sqlite_dir(),
         }
     }
 

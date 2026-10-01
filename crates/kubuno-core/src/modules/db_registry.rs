@@ -124,7 +124,8 @@ fn default_port(engine: &str) -> u16 {
 pub fn derive_label(engine: &str, host: &str, port: i32, db_name: &str, db_path: &str) -> String {
     match Backend::parse(engine) {
         Some(Backend::Sqlite) => {
-            let p = if db_path.trim().is_empty() { "/var/lib/kubuno/db" } else { db_path.trim() };
+            let default = crate::config::paths::default_sqlite_dir();
+            let p = if db_path.trim().is_empty() { default.as_str() } else { db_path.trim() };
             format!("sqlite:{p}")
         }
         _ => {

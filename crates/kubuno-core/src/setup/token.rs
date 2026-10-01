@@ -34,32 +34,29 @@ impl SetupToken {
         rand::thread_rng().fill_bytes(&mut bytes);
         let value = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
 
-        if let Some(dir) = path.parent() {
-            let _ = fs::create_dir_all(dir);
-        }
-        fs::write(&path, format!("{value}\n"))
+        // Private from the first byte (0600, or a protected DACL on Windows).
+        kubuno_paths::write_private(&path, format!("{value}\n").as_bytes())
             .with_context(|| format!("Écriture du jeton d'installation dans {}", path.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-        }
         Ok(Self { value, path })
     }
 
-    /// Where the token lives: `KV_SETUP_TOKEN_FILE`, else the service's state
-    /// directory, else beside the binary (development).
+    /// Where the token lives: `KV_SETUP_TOKEN_FILE`, else the instance's state
+    /// directory (`kubuno-paths`), never inferred from whether a directory exists.
+    ///
+    /// A token an earlier version left in one of its old locations is moved
+    /// here, so a restart in the middle of an upgrade keeps the token the
+    /// administrator already copied. If two different tokens exist, the one at
+    /// the new location wins: a token only guards the wizard, it protects no data.
     fn path() -> PathBuf {
-        if let Ok(p) = std::env::var("KV_SETUP_TOKEN_FILE") {
-            if !p.trim().is_empty() {
-                return PathBuf::from(p);
-            }
+        let path = match std::env::var("KV_SETUP_TOKEN_FILE") {
+            Ok(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
+            _ => crate::config::paths::current().setup_token_file(),
+        };
+        let legacy = crate::config::paths::legacy_state_files(kubuno_paths::SETUP_TOKEN);
+        if let Err(e) = kubuno_paths::migrate_secret_file(&path, &legacy) {
+            tracing::warn!(error = %e, "Installation token: an old copy was left where it is");
         }
-        let state = Path::new("/var/lib/kubuno");
-        if state.is_dir() {
-            return state.join("setup-token");
-        }
-        PathBuf::from("setup-token")
+        path
     }
 
     pub fn file(&self) -> &Path {

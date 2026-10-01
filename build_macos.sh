@@ -12,8 +12,11 @@
 #
 # Layout on the target Mac:
 #   /usr/local/kubuno/{bin,frontend,migrations}   program files
-#   /etc/kubuno/config.toml                        configuration (read by the binary)
-#   /usr/local/var/kubuno/{files,logs,themes}      writable data
+#   /Library/Application Support/Kubuno/config.toml  configuration (kubuno-paths system layout)
+#   /Library/Application Support/Kubuno/state         secrets (data.key, setup token, TLS), 0700
+#   /Library/Application Support/Kubuno/data          writable data (files, themes, modules store)
+#   /Library/Logs/Kubuno                              logs
+#   (an existing /etc/kubuno/config.toml from an earlier version is still read)
 #   /Library/LaunchDaemons/com.kubuno.core.plist   service definition
 #   service account: _kubuno
 set -euo pipefail
@@ -80,7 +83,7 @@ mkdir -p \
   "$PKGROOT/usr/local/kubuno/migrations" \
   "$PKGROOT/usr/local/kubuno/themes" \
   "$PKGROOT/usr/local/kubuno/modules" \
-  "$PKGROOT/etc/kubuno" \
+  "$PKGROOT/Library/Application Support/Kubuno" \
   "$PKGROOT/Library/LaunchDaemons"
 # .keep pour que pkgbuild conserve le dossier modules vide
 touch "$PKGROOT/usr/local/kubuno/modules/.keep"
@@ -92,13 +95,13 @@ cp migrations/*.sql    "$PKGROOT/usr/local/kubuno/migrations/"
 cp -R themes/.         "$PKGROOT/usr/local/kubuno/themes/"
 
 # config.toml.example adapté macOS (chemins Apple)
-cat > "$PKGROOT/etc/kubuno/config.toml.example" << 'CFG'
+cat > "$PKGROOT/Library/Application Support/Kubuno/config.toml.example" << 'CFG'
 [server]
 host = "0.0.0.0"
 port = 8080
 frontend_dist = "/usr/local/kubuno/frontend"
 modules_dir = "/usr/local/kubuno/modules"
-themes_dir = "/usr/local/var/kubuno/themes"
+themes_dir = "/Library/Application Support/Kubuno/data/themes"
 # OBLIGATOIRE — openssl rand -hex 32
 internal_secret = "CHANGEZ_MOI"
 secure_cookies = false
@@ -117,12 +120,12 @@ jwt_secret = "CHANGEZ_MOI_AVEC_UNE_CLE_LONGUE_ET_ALEATOIRE"
 
 [storage]
 backend = "local"
-local_path = "/usr/local/var/kubuno/files"
+local_path = "/Library/Application Support/Kubuno/data/files"
 
 [logging]
 level = "info"
 format = "json"
-log_dir = "/usr/local/var/kubuno/logs"
+log_dir = "/Library/Logs/Kubuno"
 file_enabled = true
 CFG
 
@@ -136,16 +139,20 @@ cat > "$PKGROOT/Library/LaunchDaemons/${IDENTIFIER}.plist" << PLIST
     <key>ProgramArguments</key> <array><string>/usr/local/kubuno/bin/kubuno-core</string></array>
     <key>UserName</key>         <string>_kubuno</string>
     <key>GroupName</key>        <string>_kubuno</string>
-    <key>WorkingDirectory</key> <string>/usr/local/var/kubuno</string>
+    <key>WorkingDirectory</key> <string>/Library/Application Support/Kubuno</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>KV__SERVER__FRONTEND_DIST</key>    <string>/usr/local/kubuno/frontend</string>
-        <key>KV__SERVER__MODULES_DATA_DIR</key> <string>/usr/local/var/kubuno/modules</string>
+        <key>KUBUNO_PATHS_MODE</key>            <string>system</string>
     </dict>
     <key>RunAtLoad</key>        <true/>
     <key>KeepAlive</key>        <true/>
-    <key>StandardOutPath</key>  <string>/usr/local/var/kubuno/logs/stdout.log</string>
-    <key>StandardErrorPath</key><string>/usr/local/var/kubuno/logs/stderr.log</string>
+    <key>StandardOutPath</key>  <string>/Library/Logs/Kubuno/stdout.log</string>
+    <key>StandardErrorPath</key><string>/Library/Logs/Kubuno/stderr.log</string>
+    <!-- launchd's default soft limit is 256 descriptors for the core AND its
+         ~24 child modules; match the Linux units (LimitNOFILE=65536). -->
+    <key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>65536</integer></dict>
+    <key>HardResourceLimits</key><dict><key>NumberOfFiles</key><integer>65536</integer></dict>
 </dict>
 </plist>
 PLIST
@@ -193,27 +200,42 @@ if ! dscl . -read /Users/_kubuno >/dev/null 2>&1; then
     done
 fi
 
-# ── Répertoires de données ──────────────────────────────────────────────────
-mkdir -p /usr/local/var/kubuno/files /usr/local/var/kubuno/logs \
-         /usr/local/var/kubuno/themes /usr/local/var/kubuno/modules
-# Sème/rafraîchit les thèmes livrés (themes_dir = /usr/local/var/kubuno/themes).
+# ── Répertoires (layout système de kubuno-paths) ────────────────────────────
+KB="/Library/Application Support/Kubuno"
+KL="/Library/Logs/Kubuno"
+mkdir -p "$KB/state" "$KB/data/files" "$KB/data/themes" "$KB/data/modules" \
+         "$KB/data/modules-store" "$KB/modules" "$KL"
+# Module data written by an earlier version (/usr/local/var layout) follows the
+# new default location, unless that location already exists.
+if [ -d /usr/local/var/kubuno/modules ] && [ -z "$(ls -A "$KB/data/modules" 2>/dev/null)" ]; then
+    rmdir "$KB/data/modules" 2>/dev/null && mv /usr/local/var/kubuno/modules "$KB/data/modules" || true
+fi
+# Sème/rafraîchit les thèmes livrés (themes_dir = $KB/data/themes).
 # Les thèmes importés par l'admin (autres IDs) ne sont jamais sous /usr/local/kubuno
 # et restent donc intacts.
 if [ -d /usr/local/kubuno/themes ]; then
-    cp -R /usr/local/kubuno/themes/. /usr/local/var/kubuno/themes/ 2>/dev/null || true
+    cp -R /usr/local/kubuno/themes/. "$KB/data/themes/" 2>/dev/null || true
 fi
-chown -R _kubuno:_kubuno /usr/local/var/kubuno
-chmod 750 /usr/local/var/kubuno
-# Répertoire des configs par module (CWD des processus modules ; défaut FHS)
-mkdir -p /etc/kubuno/modules
+chown -R _kubuno:_kubuno "$KB/state" "$KB/data" "$KB/modules" "$KL"
+chown root:_kubuno "$KB"
+chmod 750 "$KB" "$KB/data"
+# Secrets (data.key, setup token, TLS): the service account only.
+chmod 700 "$KB/state"
 
 # ── config.toml (sans écrasement) ───────────────────────────────────────────
-if [ ! -f /etc/kubuno/config.toml ]; then
-    cp /etc/kubuno/config.toml.example /etc/kubuno/config.toml
-    echo "→ /etc/kubuno/config.toml créé. Renseignez database, auth.jwt_secret et server.internal_secret."
+# An earlier version's /etc/kubuno/config.toml keeps being read: do not shadow
+# it with a fresh copy of the example (the new file would take precedence).
+if [ -f /etc/kubuno/config.toml ]; then
+    CONFIG=/etc/kubuno/config.toml
+elif [ ! -f "$KB/config.toml" ]; then
+    cp "$KB/config.toml.example" "$KB/config.toml"
+    CONFIG="$KB/config.toml"
+    echo "→ $CONFIG créé. Renseignez database, auth.jwt_secret et server.internal_secret."
+else
+    CONFIG="$KB/config.toml"
 fi
-chmod 640 /etc/kubuno/config.toml
-chown root:_kubuno /etc/kubuno/config.toml
+chmod 640 "$CONFIG"
+chown root:_kubuno "$CONFIG"
 
 # ── Chargement du daemon ────────────────────────────────────────────────────
 chown root:wheel /Library/LaunchDaemons/com.kubuno.core.plist
@@ -222,7 +244,7 @@ launchctl bootstrap system /Library/LaunchDaemons/com.kubuno.core.plist 2>/dev/n
 launchctl load /Library/LaunchDaemons/com.kubuno.core.plist 2>/dev/null || true
 
 echo "Kubuno Core installé. Pré-requis : PostgreSQL 16 accessible."
-echo "Éditez /etc/kubuno/config.toml puis : sudo launchctl kickstart -k system/com.kubuno.core"
+echo "Éditez $CONFIG puis : sudo launchctl kickstart -k system/com.kubuno.core"
 exit 0
 POST
 chmod 755 "$SCRIPTS/preinstall" "$SCRIPTS/postinstall"

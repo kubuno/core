@@ -211,8 +211,11 @@ pub async fn cmd_db_reset(args: &clap::ArgMatches) -> Result<()> {
     // Aucun mot de passe connu : il est engendré et déposé dans un fichier que
     // seul le service peut lire (cf. `seed::ensure_default_admin`).
     ok("Compte admin créé (username: admin).");
-    info("Mot de passe : aléatoire, dans /var/lib/kubuno/initial-admin-password \
-(sauf si KUBUNO_ADMIN_PASSWORD était fourni). À changer à la première connexion.");
+    info(&format!(
+        "Mot de passe : aléatoire, dans {} (sauf si KUBUNO_ADMIN_PASSWORD était fourni). \
+         À changer à la première connexion.",
+        seed::initial_password_file().display()
+    ));
 
     ok("Base de données réinitialisée.");
 

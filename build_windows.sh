@@ -149,6 +149,11 @@ Section "Install"
   FileWrite \$0 '  <description>Kubuno - plateforme cloud self-hosted</description>\$\r\$\n'
   FileWrite \$0 '  <executable>\$INSTDIR\\kubuno-core.exe</executable>\$\r\$\n'
   FileWrite \$0 '  <workingdirectory>\$APPDATA\\Kubuno</workingdirectory>\$\r\$\n'
+  ; The core derives every other location from %ProgramData%\\Kubuno itself
+  ; (kubuno-paths system layout: state\\ for data.key/setup token/TLS, data\\
+  ; for SQLite/exports/modules-store, logs\\) and moves a data.key left by an
+  ; earlier version (here or under C:\\var\\lib\\kubuno) into state\\.
+  FileWrite \$0 '  <env name="KUBUNO_PATHS_MODE" value="system" />\$\r\$\n'
   FileWrite \$0 '  <env name="KV__SERVER__FRONTEND_DIST" value="\$INSTDIR\\frontend" />\$\r\$\n'
   FileWrite \$0 '  <env name="KV__SERVER__MODULES_CONFIG_DIR" value="\$APPDATA\\Kubuno\\modules-config" />\$\r\$\n'
   FileWrite \$0 '  <env name="KV__SERVER__MODULES_DATA_DIR" value="\$APPDATA\\Kubuno\\modules-data" />\$\r\$\n'

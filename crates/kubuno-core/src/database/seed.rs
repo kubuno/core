@@ -43,19 +43,16 @@ pub async fn root_org_unit(db: &DbPool) -> Option<Uuid> {
 }
 
 /// Where the generated first password is left for the operator when they did
-/// not supply one. Readable by the service only (0600), and deleted as soon as
-/// the account changes its password.
-fn initial_password_file() -> std::path::PathBuf {
+/// not supply one: `KUBUNO_INITIAL_PASSWORD_FILE`, else the instance's state
+/// directory (`kubuno-paths`), never inferred from whether a directory exists.
+/// Readable by the service only (0600, or a protected DACL on Windows).
+pub fn initial_password_file() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("KUBUNO_INITIAL_PASSWORD_FILE") {
         if !p.trim().is_empty() {
-            return std::path::PathBuf::from(p);
+            return std::path::PathBuf::from(p.trim());
         }
     }
-    let state = std::path::Path::new("/var/lib/kubuno");
-    if state.is_dir() {
-        return state.join("initial-admin-password");
-    }
-    std::path::PathBuf::from("initial-admin-password")
+    crate::config::paths::current().initial_admin_password_file()
 }
 
 /// A first password nobody can guess.
@@ -173,13 +170,11 @@ pub async fn ensure_default_admin(pool: &DbPool) -> Result<()> {
     // owner. The path is logged, the value is not.
     if is_generated {
         let path = initial_password_file();
-        match std::fs::write(&path, format!("{password}\n")) {
+        // Private from the first byte: the old write-then-chmod left a window
+        // where the password sat in a world-readable file, and did nothing at
+        // all on Windows.
+        match kubuno_paths::write_private(&path, format!("{password}\n").as_bytes()) {
             Ok(()) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-                }
                 tracing::warn!(
                     username = %username,
                     file = %path.display(),

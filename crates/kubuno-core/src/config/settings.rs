@@ -13,6 +13,10 @@ pub struct Settings {
     /// Full-text search tuning. Optional section: absent = built-in defaults.
     #[serde(default)]
     pub search:   SearchSettings,
+    /// Explicit platform directories. Optional section: absent = the platform
+    /// layout of `kubuno-paths` (see [`crate::config::paths`]).
+    #[serde(default)]
+    pub paths:    crate::config::paths::PathsSettings,
 }
 
 /// `[search]` — applied to the core at start-up and carried to every module it
@@ -128,13 +132,13 @@ impl ServerSettings {
     fn validate_internal_secret(&self) -> Result<(), String> {
         let len = self.internal_secret.trim().len();
         if len == 0 {
-            return Err(
+            return Err(format!(
                 "server.internal_secret est vide : les routes /internal/* accepteraient alors \
                  toute requête portant un en-tête X-Internal-Secret vide. Renseignez-le dans \
-                 /etc/kubuno/config.toml (section [server]) ou via KV__SERVER__INTERNAL_SECRET. \
-                 Générez une valeur avec : openssl rand -hex 32"
-                    .into(),
-            );
+                 {} (section [server]) ou via KV__SERVER__INTERNAL_SECRET. \
+                 Générez une valeur avec : openssl rand -hex 32",
+                crate::config::paths::current().config_file().display()
+            ));
         }
         if len < MIN_INTERNAL_SECRET_LEN {
             return Err(format!(
@@ -175,15 +179,37 @@ impl ServerSettings {
 }
 
 fn default_modules_config_dir() -> String {
-    "/etc/kubuno/modules".to_string()
+    path_string(&crate::config::paths::current().modules_config_dir)
 }
 
 fn default_modules_data_dir() -> String {
-    "/var/lib/kubuno/modules".to_string()
+    path_string(&crate::config::paths::current().modules_data_dir)
 }
 
 fn default_modules_install_dir() -> String {
-    "/var/lib/kubuno/modules-store".to_string()
+    path_string(&crate::config::paths::current().modules_store)
+}
+
+fn path_string(p: &std::path::Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+/// Where the packaged modules (read-only, shipped by the installer) live.
+///
+/// Not a `kubuno-paths` directory: it belongs to the installation, not to the
+/// instance. Off Linux it is beside the executables, never `/usr/lib/...`,
+/// which on Windows would be a drive-relative `C:\usr\lib\...` that any local
+/// user can create and fill with a "module" the service would then run.
+fn default_system_modules_dir() -> String {
+    match kubuno_paths::Os::current() {
+        kubuno_paths::Os::Linux => "/usr/lib/kubuno/modules".to_string(),
+        kubuno_paths::Os::MacOs => "/usr/local/kubuno/modules".to_string(),
+        kubuno_paths::Os::Windows => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|d| d.join("modules")))
+            .map(|p| path_string(&p))
+            .unwrap_or_else(|| path_string(&crate::config::paths::current().data_dir.join("modules-system"))),
+    }
 }
 
 /// Configuration HTTPS / TLS native.
@@ -374,14 +400,34 @@ impl Settings {
     /// instance can be run against a configuration of its own without the system
     /// one leaking into it.
     fn build_config(explicit: Option<&str>) -> Result<Config, ConfigError> {
+        // The platform layout first: it names the system configuration file,
+        // and the `[paths]` section of the files (or `KV__PATHS__*`) may then
+        // refine the other directories. `[paths]` cannot move the configuration
+        // file itself: that is `--config` / `KV_CONFIG_FILE` /
+        // `KUBUNO_PATHS_CONFIG_DIR`.
+        let env_paths = kubuno_paths::Paths::resolve(
+            &kubuno_paths::PathEnv::from_process(),
+            &kubuno_paths::Overrides::default(),
+        )
+        .map_err(|e| ConfigError::Message(e.to_string()))?;
+        let system_config = path_string(&env_paths.config_dir.join("config"));
+        let pre = Self::with_sources(Config::builder(), explicit, &system_config).build()?;
+        let paths_section: crate::config::paths::PathsSettings = match pre.get("paths") {
+            Ok(section) => section,
+            Err(ConfigError::NotFound(_)) => Default::default(),
+            Err(e) => return Err(e),
+        };
+        let paths = crate::config::paths::init(&paths_section)
+            .map_err(|e| ConfigError::Message(e.to_string()))?;
+
         let cfg = Config::builder()
             // Defaults
             .set_default("server.host", "0.0.0.0")?
             .set_default("server.port", 8080)?
             .set_default("server.frontend_dist", "./frontend/dist")?
             .set_default("server.internal_secret", "")?
-            .set_default("server.modules_dir", "/usr/lib/kubuno/modules")?
-            .set_default("server.themes_dir", "/var/lib/kubuno/themes")?
+            .set_default("server.modules_dir", default_system_modules_dir())?
+            .set_default("server.themes_dir", path_string(&paths.themes_dir()))?
             .set_default("server.cors_origins", Vec::<String>::new())?
             .set_default("server.secure_cookies", false)?
             .set_default("server.trusted_proxy_cidrs", default_trusted_proxy_cidrs())?
@@ -394,7 +440,7 @@ impl Settings {
             .set_default("server.tls.redirect_http_from_port", 0)?
             .set_default("database.engine", "postgres")?
             // SQLite only: directory holding the `<schema>.sqlite` files.
-            .set_default("database.path", "/var/lib/kubuno/db")?
+            .set_default("database.path", path_string(&paths.sqlite_dir()))?
             .set_default("database.max_connections", 20)?
             .set_default("database.min_connections", 2)?
             .set_default("database.connect_timeout", 10u64)?
@@ -405,34 +451,48 @@ impl Settings {
             .set_default("storage.local_path", "./data/files")?
             .set_default("logging.level", "info")?
             .set_default("logging.format", "pretty")?
-            .set_default("logging.log_dir", "/var/log/kubuno")?
+            .set_default("logging.log_dir", path_string(&paths.log_dir))?
             .set_default("logging.file_enabled", true)?
             .set_default("logging.rotation", "never")?
-            .set_default("logging.max_log_files", 30u32)?
-            // Ordre de priorité croissante :
-            // 1. config.toml (répertoire courant — développement)
-            // 2. /etc/kubuno/config.toml (installation système)
-            //    …ou UNIQUEMENT le fichier demandé explicitement.
-            .add_source(File::with_name(explicit.unwrap_or("config")).required(explicit.is_some()))
-            .add_source(
-                File::with_name(if explicit.is_some() { "/dev/null/none" } else { "/etc/kubuno/config" })
-                    .required(false),
-            )
-            // 3. Variables d'environnement KV__ (Docker / surcharge ponctuelle)
-            //    Exemple : KV__DATABASE__URL=postgres://...
-            //    Les réglages de type liste se donnent séparés par des virgules :
-            //    KV__SERVER__TRUSTED_PROXY_CIDRS=127.0.0.0/8,10.0.0.0/8
-            .add_source(
-                Environment::with_prefix("KV")
-                    .separator("__")
-                    .try_parsing(true)
-                    .list_separator(",")
-                    .with_list_parse_key("server.trusted_proxy_cidrs")
-                    .with_list_parse_key("server.shared_secret_modules"),
-            )
-            .build()?;
+            .set_default("logging.max_log_files", 30u32)?;
+        let cfg = Self::with_sources(cfg, explicit, &system_config).build()?;
 
         Ok(cfg)
+    }
+
+    /// The configuration sources, in increasing priority:
+    /// 1. `config.toml` in the working directory (development), or ONLY the
+    ///    file named explicitly;
+    /// 2. on macOS, the pre-`kubuno-paths` `/etc/kubuno/config.toml` (root-owned
+    ///    there, so it cannot be planted);
+    /// 3. the system file `<config_dir>/config.toml` (`/etc/kubuno`,
+    ///    `%ProgramData%\Kubuno`, `/Library/Application Support/Kubuno`). Never
+    ///    `/etc/kubuno` on Windows, where it would mean a `C:\etc` folder any
+    ///    local user can create;
+    /// 4. the `KV__` environment variables (Docker / one-off overrides), e.g.
+    ///    `KV__DATABASE__URL=postgres://...`; lists are comma-separated:
+    ///    `KV__SERVER__TRUSTED_PROXY_CIDRS=127.0.0.0/8,10.0.0.0/8`.
+    fn with_sources(
+        builder: config::ConfigBuilder<config::builder::DefaultState>,
+        explicit: Option<&str>,
+        system_config: &str,
+    ) -> config::ConfigBuilder<config::builder::DefaultState> {
+        let mut builder = builder
+            .add_source(File::with_name(explicit.unwrap_or("config")).required(explicit.is_some()));
+        if explicit.is_none() {
+            if cfg!(target_os = "macos") {
+                builder = builder.add_source(File::with_name("/etc/kubuno/config").required(false));
+            }
+            builder = builder.add_source(File::with_name(system_config).required(false));
+        }
+        builder.add_source(
+            Environment::with_prefix("KV")
+                .separator("__")
+                .try_parsing(true)
+                .list_separator(",")
+                .with_list_parse_key("server.trusted_proxy_cidrs")
+                .with_list_parse_key("server.shared_secret_modules"),
+        )
     }
 
     /// Merged configuration WITHOUT the checks `load()` applies. A fresh

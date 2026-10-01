@@ -105,6 +105,15 @@ async fn main() -> Result<()> {
         tracing::error!(erreur = %e, "Clé de chiffrement des données illisible");
         return Err(e);
     }
+    let platform = kubuno_core::config::paths::current();
+    tracing::info!(
+        mode = platform.mode.as_str(),
+        config = %platform.config_dir.display(),
+        state = %platform.state_dir.display(),
+        data = %platform.data_dir.display(),
+        "Platform directories"
+    );
+    kubuno_core::config::paths::warn_about_legacy_locations(&settings.server.modules_install_dir);
 
     // Install the audit hash-chain key (derived from the internal secret, never
     // stored in the database) before any audit row can be written.

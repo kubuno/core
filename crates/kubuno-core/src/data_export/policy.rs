@@ -52,7 +52,10 @@ pub const ALL_KEYS: &[&str] = &[
 /// Settings category, so the console can group them.
 pub const CATEGORY: &str = "data_export";
 
-const DEFAULT_DESTINATION: &str = "/var/lib/kubuno/exports";
+/// Default destination: `<data>/exports` (`/var/lib/kubuno/exports` on Linux).
+fn default_destination() -> String {
+    crate::config::paths::current().exports_dir().to_string_lossy().into_owned()
+}
 const DEFAULT_HOLD_HOURS: i64 = 48;
 const DEFAULT_RETENTION_DAYS: i64 = 7;
 const DEFAULT_MAX_FILE_MB: i64 = 2_048;
@@ -100,7 +103,7 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            destination: DEFAULT_DESTINATION.to_string(),
+            destination: default_destination(),
             hold_hours: DEFAULT_HOLD_HOURS,
             retention_days: DEFAULT_RETENTION_DAYS,
             max_file_mb: DEFAULT_MAX_FILE_MB,
@@ -150,8 +153,8 @@ pub async fn load(db: &DbPool) -> Policy {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_DESTINATION)
-        .to_string();
+        .map(str::to_string)
+        .unwrap_or_else(default_destination);
 
     let hold_hours = crate::settings::instance_value(db, KEY_HOLD_HOURS)
         .await

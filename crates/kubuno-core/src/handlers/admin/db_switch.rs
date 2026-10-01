@@ -133,7 +133,8 @@ pub(crate) fn settings_from(creds: &DbCredentials, prefix: &str) -> Result<Datab
     let m = obj.as_object_mut().expect("json object");
     match Backend::parse(&creds.engine) {
         Some(Backend::Sqlite) => {
-            let dir = if creds.path.trim().is_empty() { "/var/lib/kubuno/db" } else { creds.path.trim() };
+            let default = crate::config::paths::default_sqlite_dir();
+            let dir = if creds.path.trim().is_empty() { default.as_str() } else { creds.path.trim() };
             m.insert("path".into(), json!(dir));
         }
         _ => {
@@ -469,7 +470,8 @@ pub(crate) fn persist_core_settings(creds: &DbCredentials, backend: Backend) -> 
     let mut assigns = vec![config_file::Assign::text("database", "engine", &creds.engine)];
     match backend {
         Backend::Sqlite => {
-            let dir = if creds.path.trim().is_empty() { "/var/lib/kubuno/db" } else { creds.path.trim() };
+            let default = crate::config::paths::default_sqlite_dir();
+            let dir = if creds.path.trim().is_empty() { default.as_str() } else { creds.path.trim() };
             assigns.push(config_file::Assign::text("database", "path", dir));
         }
         _ => {

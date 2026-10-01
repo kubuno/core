@@ -11,6 +11,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **`kubuno-paths`, one place for every platform directory.** A new shared
+  crate gives the configuration, state (secrets), data, log, cache, runtime and
+  backup directories, the modules store and the per-module configuration and
+  data directories for Linux (FHS for the service, XDG per user), Windows
+  (`%ProgramData%\Kubuno` for the service, `%LOCALAPPDATA%\Kubuno` per user)
+  and macOS (`/Library/Application Support/Kubuno` and `/Library/Logs/Kubuno`
+  for the service, `~/Library/…` per user). `KUBUNO_PATHS_MODE=system|user`
+  picks the family, and every directory can be overridden by an optional
+  `[paths]` configuration section or by the `KUBUNO_PATHS_*` environment
+  variables. It also writes secret files with private permissions on every OS.
+  Modules adopt it in a later release (tag `paths-v0.1.0`).
+
 - **Font licence texts are shipped.** The Roboto (Apache License 2.0) and DM Mono
   (SIL Open Font License 1.1) fonts bundled with Kubuno now come with their full
   licence texts next to the font files, like the other bundled fonts.
@@ -169,6 +181,16 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Default locations come from the platform instead of the Linux layout.** On
+  Windows and macOS the defaults for the modules store, module configuration and
+  data, logs, themes, SQLite databases, TLS material, backups and exports no
+  longer point at drive-relative `C:\var\lib\…`, `C:\etc\…` or non-existent
+  `/var/lib` paths. Linux defaults are unchanged. The command-line tool now
+  finds the service's configuration on Windows (`%ProgramData%\Kubuno\config.toml`)
+  and macOS, and never reads `C:\etc\kubuno` (which any local user could create).
+  The macOS package installs under `/Library/Application Support/Kubuno` and
+  `/Library/Logs/Kubuno`; an existing `/etc/kubuno/config.toml` keeps being read.
+
 - **Migrating an instance to another engine now preserves identifiers, booleans,
   dates and JSON faithfully.** When the source database stores values ambiguously —
   SQLite keeps a UUID as a blob, a boolean as an integer, and timestamps, dates
@@ -326,6 +348,26 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **The data encryption key is always found in the same place.** `data.key`
+  (and the setup token and initial administrator password) used to go to
+  `/var/lib/kubuno` only if that directory existed, otherwise to the working
+  directory, so on Windows and macOS the first module install moved the key's
+  expected location and the core then started with a new key, or not at all.
+  They now live in the instance's state directory, chosen explicitly. On the
+  first start after the upgrade a key found in any location an earlier version
+  used (including `C:\var\lib\kubuno` and the service's former working
+  directory) is moved there and the old copy renamed to `data.key.migrated`; a
+  new key is never created while an old one exists, and if two different keys
+  are found the core refuses to start and says which files to compare.
+- **Installing a module package built for another system is refused.**
+  `kubuno modules:install` (and the marketplace) now check the package's target
+  operating system and architecture, from its executable, its file name and its
+  manifest, and explain which package to download instead, rather than
+  installing a module that then fails to start.
+- **macOS: the service no longer runs out of file descriptors.** The launchd
+  definition raises the limit to 65536 (launchd's default of 256 was shared by
+  the core and all its modules), as on Linux.
+
 - **Database migrations keep the same checksum on every OS.** The repository now
   pins line endings to LF (`.gitattributes`), so a checkout on Windows no longer
   turns SQL migrations, scripts, manifests or sources into CRLF. A database
@@ -405,6 +447,13 @@ number at release time, and CI publishes that section as the GitHub Release note
   channel.
 
 ### Security
+
+- **Secrets are private on Windows too.** The data encryption key, the setup
+  token, the initial administrator password, the TLS private key and the
+  configuration written by the setup wizard now get an access list limited to
+  SYSTEM, Administrators and the service account on Windows (they inherited
+  read access for every local user under `%ProgramData%`), and are written
+  aside then renamed, private from the first byte, on every OS.
 
 - **Database driver updated past an unfixable advisory.** The previous line
   pulled in an RSA implementation vulnerable to a timing side-channel

@@ -27,7 +27,9 @@ use crate::errors::AppError;
 /// Directory holding the key material, created on demand with `0700`.
 /// Configurable through `[server.tls]`; the default lives under the service's
 /// own state directory, the one place it is guaranteed to be able to write.
-pub const DEFAULT_DIR: &str = "/var/lib/kubuno/tls";
+pub fn default_dir() -> PathBuf {
+    crate::config::paths::current().tls_dir()
+}
 
 /// Resolved locations of the three files this module owns.
 #[derive(Debug, Clone)]
@@ -42,7 +44,7 @@ impl Paths {
     /// operator who already manages certificates with their own tooling (or
     /// certbot) keeps pointing at those files.
     pub fn from_settings(tls: &crate::config::settings::TlsSettings) -> Self {
-        let dir = Path::new(DEFAULT_DIR);
+        let dir = default_dir();
         let or_default = |configured: &str, default: &str| -> PathBuf {
             if configured.trim().is_empty() {
                 dir.join(default)
@@ -58,37 +60,19 @@ impl Paths {
     }
 }
 
-#[cfg(unix)]
 fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
         // The directory itself is closed: listing it should tell a curious local
-        // account nothing either.
-        let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        // account nothing either. On Windows only the core's own directory is
+        // re-permissioned, never a folder an operator pointed `cert_path` at.
+        if cfg!(unix) || parent == default_dir().as_path() {
+            let _ = kubuno_paths::restrict_to_owner(parent);
+        }
     }
-    // `mode` applies at creation; `set_permissions` fixes a file that already
-    // existed with looser bits. Truncating an existing key before rewriting it
-    // is deliberate — no window where half of the old key remains.
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    f.write_all(contents.as_bytes())?;
-    f.sync_all()
-}
-
-#[cfg(not(unix))]
-fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, contents)
+    // Written aside, private from the first byte (0600, or a protected DACL on
+    // Windows), then renamed: no window where half of the old key remains.
+    kubuno_paths::write_private(path, contents.as_bytes())
 }
 
 fn io_err(what: &str, path: &Path, e: std::io::Error) -> AppError {

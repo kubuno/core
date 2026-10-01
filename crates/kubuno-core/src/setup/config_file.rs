@@ -125,15 +125,17 @@ pub fn patch(source: &str, assigns: &[Assign]) -> String {
 }
 
 /// The configuration file the running instance actually reads, and that the
-/// installer therefore has to write: `KV_CONFIG_FILE` when set, then the system
-/// path, then the one beside the binary (development).
+/// installer therefore has to write: `KV_CONFIG_FILE` when set, else the system
+/// file of the platform layout (`kubuno-paths`) when it exists, else a
+/// `config.toml` in the working directory when one exists (development), else
+/// the system file. No location is inferred from whether a directory exists.
 pub fn target_path() -> PathBuf {
     if let Ok(p) = std::env::var("KV_CONFIG_FILE") {
         if !p.trim().is_empty() {
-            return PathBuf::from(p);
+            return PathBuf::from(p.trim());
         }
     }
-    let system = PathBuf::from("/etc/kubuno/config.toml");
+    let system = crate::config::paths::current().config_file();
     if system.exists() {
         return system;
     }
@@ -141,7 +143,7 @@ pub fn target_path() -> PathBuf {
     if local.exists() {
         return local;
     }
-    if Path::new("/etc/kubuno").is_dir() { system } else { local }
+    system
 }
 
 /// Text to patch: the current configuration, else the shipped example (so a
@@ -150,7 +152,11 @@ pub fn source_text(target: &Path) -> String {
     if let Ok(s) = fs::read_to_string(target) {
         return s;
     }
-    for example in ["/etc/kubuno/config.toml.example", "config.toml.example"] {
+    let examples = [
+        crate::config::paths::current().config_example_file(),
+        PathBuf::from("config.toml.example"),
+    ];
+    for example in examples {
         if let Ok(s) = fs::read_to_string(example) {
             return s;
         }
@@ -179,7 +185,12 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
     if path.exists() {
         // A first run that got the database wrong stays recoverable.
-        let _ = fs::copy(path, path.with_extension("toml.bak"));
+        let bak = path.with_extension("toml.bak");
+        if fs::copy(path, &bak).is_ok() {
+            // A copy does not carry the original's DACL on Windows.
+            #[cfg(windows)]
+            let _ = kubuno_paths::restrict_to_owner(&bak);
+        }
     }
     let tmp = dir.join(".config.toml.new");
     {
@@ -188,12 +199,17 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<()> {
         f.write_all(content.as_bytes())?;
         f.sync_all()?;
     }
-    // 0640 — it carries the database password and the JWT secret.
+    // 0640 — it carries the database password and the JWT secret. On Windows,
+    // a protected DACL (SYSTEM, Administrators, the service account): under
+    // %ProgramData% the inherited one lets every local user read it.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&tmp, fs::Permissions::from_mode(0o640))?;
     }
+    #[cfg(windows)]
+    kubuno_paths::restrict_to_owner(&tmp)
+        .with_context(|| format!("Restricting access to {}", tmp.display()))?;
     fs::rename(&tmp, path)
         .with_context(|| format!("Remplacement de {}", path.display()))?;
     Ok(())

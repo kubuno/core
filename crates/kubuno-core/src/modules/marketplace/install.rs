@@ -259,6 +259,18 @@ async fn materialize(settings: &Settings, db: &DbPool, id: &str) -> Result<Mater
     let src_mod = find_module_root(&extract, id).ok_or_else(|| {
         AppError::Internal(anyhow::anyhow!("artefact invalide : module.toml introuvable pour « {id} »"))
     })?;
+    // The catalogue already picks the artefact for this OS/arch; the package
+    // itself is checked anyway, since a mislabelled release would otherwise
+    // only fail when the module is spawned.
+    let toml_src = tokio::fs::read_to_string(src_mod.join("module.toml"))
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("lecture module.toml: {e}")))?;
+    let pkg_manifest: crate::modules::manifest::ModuleManifest = toml::from_str(&toml_src)
+        .map_err(|e| AppError::Validation(format!("module.toml invalide : {e}")))?;
+    if let Err(msg) = super::target::check(None, &src_mod, &toml_src, &pkg_manifest) {
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+        return Err(AppError::Validation(format!("« {id} » : {msg}")));
+    }
     let dest_mod = install_dir.join(id);
     let _ = tokio::fs::remove_dir_all(&dest_mod).await;
     // rename intra-fs (staging et dest sont tous deux sous modules_install_dir).
@@ -572,6 +584,14 @@ pub async fn install_local(settings: &Settings, file: &Path) -> Result<InstallRe
 
     // 5) Verify embedded digests (offline) if present.
     verify_sha256sums(&src_mod).await?;
+
+    // 5b) Refuse a package built for another OS/architecture now, with a clear
+    //     message, rather than letting it fail to spawn later.
+    let original_name = file.file_name().and_then(|s| s.to_str());
+    if let Err(msg) = super::target::check(original_name, &src_mod, &toml_str, &manifest) {
+        let _ = tokio::fs::remove_dir_all(install_dir.join(".staging")).await;
+        return Err(AppError::Validation(format!("« {id} » : {msg}")));
+    }
 
     // 6) Relocate → store/<id> (replacing any existing copy).
     let dest_mod = install_dir.join(&id);

@@ -88,6 +88,7 @@ kubuno-storage.workspace    = true
 kubuno-mcp.workspace        = true
 kubuno-modauth.workspace    = true
 kubuno-db.workspace         = true
+kubuno-paths.workspace      = true
 utoipa.workspace            = true
 
 # POSIX only: `statvfs` and friends. Declared per platform because calling it

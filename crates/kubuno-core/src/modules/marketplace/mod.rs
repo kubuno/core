@@ -25,6 +25,7 @@ mod extract;
 mod install;
 mod manifest;
 mod progress;
+mod target;
 
 pub use catalog::{fetch_catalog, fetch_detail, validate_id, MarketLinks, MarketModule};
 pub use install::{install, install_local, is_store_installed, uninstall, InstallReport};
