@@ -11,6 +11,9 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Font licence texts are shipped.** The Roboto (Apache License 2.0) and DM Mono
+  (SIL Open Font License 1.1) fonts bundled with Kubuno now come with their full
+  licence texts next to the font files, like the other bundled fonts.
 - **Open Kubuno Core in Visual Studio.** The repository now ships a ready-made
   solution (`Kubuno.Core.Web.slnx`) with the server, the shared crates, the host
   frontend and the `@kubuno/*` packages as projects, plus launch profiles that
