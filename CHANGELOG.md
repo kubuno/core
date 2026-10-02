@@ -359,6 +359,48 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Switching the database engine onto MySQL / MariaDB works end to end.** Moving an
+  instance (or one app) from PostgreSQL to MySQL from the administration console was
+  tested on a real MySQL 8.4 server and failed at several points, now fixed:
+  - the target database is created before connecting to it (the switch stopped at
+    "Unknown database 'core'" on an empty server; `kubuno-db`);
+  - the core's MySQL schema now installs on Oracle MySQL 8, not only on MariaDB:
+    `TEXT`/`JSON` literal defaults, unique keys on `TEXT` columns and an index on a
+    `JSON` column are adapted when the migrations run, without touching the files a
+    MariaDB instance already applied (`kubuno-db`);
+  - UUID keys have a default again on MySQL/MariaDB, as on PostgreSQL: signing in,
+    raising an alert or queueing a job no longer fails with an internal error;
+  - open alerts and finished data exports are accepted on MySQL/MariaDB and SQLite:
+    two "status ↔ timestamp" rules had been mistranslated into a check that refused
+    every open alert and every ready export, which also made a switch fail as soon
+    as the source held one;
+  - IP addresses keep their form when copied from PostgreSQL (`192.0.2.1`, not
+    `192.0.2.1/32`), and the MySQL/SQLite event queue is no longer copied (a switch
+    back to PostgreSQL failed on it) (`kubuno-db`);
+  - apps can register again on MySQL and SQLite (the automation-rules and privilege
+    catalogues used PostgreSQL-only SQL), and holiday calendars list, search and
+    seed on MySQL;
+  - events are delivered on MySQL and SQLite: their event queue is created at
+    startup (nothing was ever delivered).
+- **A database switch reports what really happened.** A failed switch records its
+  actual cause in the job and the audit trail instead of "Erreur interne"; a
+  successful one is marked "succeeded" (it stayed "running" forever, also on the
+  adopted database), and late progress updates no longer overwrite the final figures.
+- **After a switch of the main database, apps keep their data.** Apps that share the
+  main database are kept on the database they use until they are switched themselves
+  (they used to restart on an empty schema of the new engine); the old connection URL
+  is removed from the configuration so the restart really adopts the new engine; and
+  a switch is refused up front when `KV__DATABASE__*` environment variables pin the
+  database, since the restart could not honour it.
+- **Switching an app's database is safe to fail.** The switch waits for the app to
+  finish preparing its new database before copying (stopping it mid-way left its
+  schema half-migrated on MySQL), and if anything fails the app is put back on its
+  previous database and restarted.
+- **The database engine follows the connection URL**, as documented: a lone
+  `mysql://…` (or `mariadb://…`, `sqlite://…`) URL now selects that engine instead of
+  being dialled as PostgreSQL. Apps receive the same credentials as the core when a
+  configuration holds both a URL and individual fields.
+
 - **The data encryption key is always found in the same place.** `data.key`
   (and the setup token and initial administrator password) used to go to
   `/var/lib/kubuno` only if that directory existed, otherwise to the working

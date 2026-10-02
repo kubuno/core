@@ -124,6 +124,29 @@ pub fn patch(source: &str, assigns: &[Assign]) -> String {
     out
 }
 
+/// Removes every live `key = …` line inside `[section]`, leaving commented-out
+/// examples (`# key = …`) and everything else in place. Used when a value must
+/// stop applying, e.g. a `[database] url`, which would otherwise outrank the
+/// discrete fields an engine switch writes.
+pub fn remove_key(source: &str, section: &str, key: &str) -> String {
+    let mut current: Option<String> = None;
+    let mut out: Vec<&str> = Vec::new();
+    for line in source.lines() {
+        let t = line.trim();
+        if t.starts_with('[') && t.ends_with(']') && !t.starts_with("[[") {
+            current = Some(t[1..t.len() - 1].trim().to_string());
+        }
+        let live = !t.starts_with('#') && is_assignment_of(line, key);
+        if live && current.as_deref() == Some(section) {
+            continue;
+        }
+        out.push(line);
+    }
+    let mut s = out.join("\n");
+    s.push('\n');
+    s
+}
+
 /// The configuration file the running instance actually reads, and that the
 /// installer therefore has to write: `KV_CONFIG_FILE` when set, else the system
 /// file of the platform layout (`kubuno-paths`) when it exists, else a
@@ -218,6 +241,15 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remove_key_drops_only_the_live_line_of_that_section() {
+        let src = "[server]\nurl = \"keep\"\n\n[database]\n# url = \"example\"\nurl = \"postgres://u:p@h/db\"\nhost = \"h\"\n";
+        let out = remove_key(src, "database", "url");
+        assert_eq!(out, "[server]\nurl = \"keep\"\n\n[database]\n# url = \"example\"\nhost = \"h\"\n");
+        // Nothing to remove: unchanged.
+        assert_eq!(remove_key(&out, "database", "url"), out);
+    }
 
     #[test]
     fn replaces_in_the_right_section_and_keeps_comments() {

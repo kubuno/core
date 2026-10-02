@@ -9,7 +9,7 @@
 //! into dates happens in memory afterwards, where it is pure arithmetic.
 
 use chrono::NaiveDate;
-use kubuno_db::{params, DbPool, DbQueryBuilder};
+use kubuno_db::{params, Backend, DbPool, DbQueryBuilder};
 use serde_json::Value;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -172,15 +172,21 @@ pub async fn list_calendars(
         .filter(|s| !s.is_empty())
         .map(|s| format!("%{}%", s.to_lowercase()));
 
-    // NOTE (multi-DBMS): `jsonb_each_text(c.names)` is PostgreSQL-only and kept
-    // verbatim (flagged in the port report) — iterating a JSON object's values
-    // has no shared spelling across the three engines. `NULLS FIRST` is replaced
+    // Multi-DBMS: iterating a JSON object's values has no shared spelling, so the
+    // translated-names match is written per engine (it was PostgreSQL-only, and
+    // the whole calendar list failed on MySQL/SQLite). `NULLS FIRST` is replaced
     // by `(parent_id IS NOT NULL)` (false sorts first), redundant `::bigint`/
     // `::bool`/`::text` casts are dropped, and `needle` is bound once per use so
     // no placeholder is reused.
+    let names_match = match db.backend() {
+        Backend::Postgres => "EXISTS (SELECT 1 FROM jsonb_each_text(c.names) t WHERE LOWER(t.value) LIKE $6)",
+        // JSON_SEARCH matches string values (not keys) against a LIKE pattern.
+        Backend::MySql => "JSON_SEARCH(LOWER(CAST(c.names AS CHAR)), 'one', $6) IS NOT NULL",
+        Backend::Sqlite => "EXISTS (SELECT 1 FROM json_each(c.names) t WHERE LOWER(t.value) LIKE $6)",
+    };
     let rows = db
         .fetch_all_as::<CalendarSummaryRow>(
-            r#"
+            &format!(r#"
         SELECT c.id, c.code, c.country_code, c.subdivision, c.parent_id, c.name, c.names,
                c.is_builtin, c.enabled, c.coverage_from, c.coverage_to,
                (SELECT COUNT(*) FROM core.holidays h WHERE h.calendar_id = c.id) AS holiday_count,
@@ -199,9 +205,9 @@ pub async fn list_calendars(
                 OR LOWER(c.name) LIKE $5
                 -- Every translated name, so the search speaks the reader's
                 -- language without the console shipping a country list of its own.
-                OR EXISTS (SELECT 1 FROM jsonb_each_text(c.names) t WHERE LOWER(t.value) LIKE $6))
+                OR {names_match})
          ORDER BY (c.parent_id IS NOT NULL), LOWER(c.name)
-        "#,
+        "#),
             params![
                 countries_only,
                 only_enabled,

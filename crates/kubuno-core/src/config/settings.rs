@@ -261,6 +261,30 @@ impl TlsSettings {
 /// `kubuno_db::connect`.
 pub use kubuno_db::DbSettings as DatabaseSettings;
 
+/// "The database engine follows the connection URL": when the URL is what the
+/// pool connects with (no discrete `host`/`user`, see `kubuno_db::connect`), its
+/// scheme decides the engine — `postgres://`/`postgresql://`, `mysql://`/
+/// `mariadb://`, `sqlite://`. `engine` used to keep its `postgres` default, so a
+/// lone `KV__DATABASE__URL=mysql://…` (how a development core is pointed at its
+/// database) was dialled with the PostgreSQL protocol.
+pub fn engine_from_url(db: &mut DatabaseSettings) {
+    if db.host.is_some() || db.user.is_some() {
+        return;
+    }
+    let Some(scheme) = db.url.as_deref().and_then(|u| u.split_once("://")).map(|(s, _)| s) else {
+        return;
+    };
+    let canonical = match kubuno_db::Backend::parse(scheme) {
+        Some(kubuno_db::Backend::Postgres) => "postgres",
+        Some(kubuno_db::Backend::MySql) => "mysql",
+        Some(kubuno_db::Backend::Sqlite) => "sqlite",
+        None => return,
+    };
+    if db.engine != canonical {
+        db.engine = canonical.to_string();
+    }
+}
+
 /// Minimal presence check the installer and `load()` share. kubuno-db validates
 /// the concrete fields per engine when it connects; here we only reject an
 /// obviously empty PostgreSQL/MySQL section early, with a friendly message. On
@@ -294,7 +318,12 @@ pub fn database_credentials(db: &DatabaseSettings) -> anyhow::Result<DbCredentia
         Some(kubuno_db::Backend::MySql) => 3306,
         _ => 5432,
     };
-    if let Some(raw) = &db.url {
+    // Same precedence as `kubuno_db::connect`, which opens the core's own pool:
+    // discrete fields win as soon as `host` or `user` is set. Reading the URL first
+    // here handed the modules another database than the core's whenever both were
+    // present (e.g. a config an engine switch rewrote around a leftover `url`).
+    let discrete = db.host.is_some() || db.user.is_some();
+    if let Some(raw) = db.url.as_ref().filter(|_| !discrete) {
         // A SQLite URL is `sqlite://<path>`; keep the path and skip URL parsing.
         if let Some(path) = raw.strip_prefix("sqlite://") {
             return Ok(DbCredentials {
@@ -506,7 +535,9 @@ impl Settings {
     /// As `load_unvalidated`, against the configuration file named by
     /// `--config` / `KV_CONFIG_FILE` when there is one.
     pub fn load_unvalidated_from(explicit: Option<&str>) -> Result<Self, ConfigError> {
-        Self::build_config(explicit)?.try_deserialize()
+        let mut settings: Self = Self::build_config(explicit)?.try_deserialize()?;
+        engine_from_url(&mut settings.database);
+        Ok(settings)
     }
 
     pub fn load() -> Result<Self, ConfigError> {
@@ -535,6 +566,58 @@ mod tests {
     /// must use a value that passes `validate_internal_secret()`.
     const TEST_INTERNAL_SECRET: &str =
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn db_settings(v: serde_json::Value) -> DatabaseSettings {
+        serde_json::from_value(v).expect("database settings")
+    }
+
+    #[test]
+    fn the_engine_follows_the_url_scheme_when_the_url_is_used() {
+        let mut my = db_settings(serde_json::json!({ "url": "mysql://u:p@127.0.0.1:3306/kubuno_dev" }));
+        assert_eq!(my.engine, "postgres", "serde default before normalisation");
+        engine_from_url(&mut my);
+        assert_eq!(my.engine, "mysql");
+
+        let mut maria = db_settings(serde_json::json!({ "url": "mariadb://u:p@h/db" }));
+        engine_from_url(&mut maria);
+        assert_eq!(maria.engine, "mysql");
+
+        let mut lite = db_settings(serde_json::json!({ "engine": "postgres", "url": "sqlite://C:/data" }));
+        engine_from_url(&mut lite);
+        assert_eq!(lite.engine, "sqlite");
+
+        // Discrete fields are what connects: the URL does not decide.
+        let mut fields = db_settings(serde_json::json!({
+            "engine": "mysql", "url": "postgres://u:p@h/db", "host": "127.0.0.1", "user": "k"
+        }));
+        engine_from_url(&mut fields);
+        assert_eq!(fields.engine, "mysql");
+
+        // An unknown scheme leaves the configured engine alone.
+        let mut odd = db_settings(serde_json::json!({ "engine": "postgres", "url": "odbc://x/y" }));
+        engine_from_url(&mut odd);
+        assert_eq!(odd.engine, "postgres");
+    }
+
+    #[test]
+    fn module_credentials_follow_the_core_pool_precedence() {
+        // Only a URL: the URL.
+        let only_url = db_settings(serde_json::json!({
+            "engine": "postgres", "url": "postgres://pg:secret@db-a:5433/kub"
+        }));
+        let c = database_credentials(&only_url).expect("creds");
+        assert_eq!((c.host.as_str(), c.port, c.user.as_str(), c.database.as_str()), ("db-a", 5433, "pg", "kub"));
+
+        // A leftover URL beside discrete fields: the fields, like kubuno_db::connect.
+        let both = db_settings(serde_json::json!({
+            "engine": "mysql", "url": "postgres://pg:secret@db-a:5433/kub",
+            "host": "127.0.0.1", "port": 3306, "user": "kubuno_dev", "password": "pw", "database": "kubuno_dev"
+        }));
+        let c = database_credentials(&both).expect("creds");
+        assert_eq!(c.engine, "mysql");
+        assert_eq!((c.host.as_str(), c.port, c.user.as_str()), ("127.0.0.1", 3306, "kubuno_dev"));
+        assert_eq!((c.password.as_str(), c.database.as_str()), ("pw", "kubuno_dev"));
+    }
 
     fn minimal_config() -> Config {
         Config::builder()

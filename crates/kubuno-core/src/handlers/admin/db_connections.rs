@@ -142,6 +142,7 @@ pub async fn switch_core_connection(
     }
     let target_backend = Backend::parse(&target.engine)
         .ok_or_else(|| AppError::Validation(format!("Moteur inconnu : {}", target.engine)))?;
+    db_switch::ensure_switchable_config(target_backend)?;
     let target_creds = target.to_credentials(&state.settings.auth.jwt_secret).map_err(AppError::Internal)?;
     let prefix = instance_prefix(&state);
 
@@ -182,14 +183,14 @@ pub async fn switch_core_connection(
             match do_core_copy(&state, &target_settings, &eff, job).await {
                 Ok((tables, rows)) => {
                     if let Err(e) = db_switch::persist_core_settings(&target_creds, target_backend) {
-                        finish_err(&state.db, job, &format!("Copie réussie mais configuration non écrite : {e}")).await;
+                        finish_err(&state.db, job, &format!("Copie réussie mais configuration non écrite : {}", e.detail())).await;
                         return Err(e);
                     }
                     finish_ok(&state.db, job, tables, rows).await;
                     job_value = job_json(&fetch_job(&state.db, job).await?);
                 }
                 Err(e) => {
-                    finish_err(&state.db, job, &e.to_string()).await;
+                    finish_err(&state.db, job, &e.detail()).await;
                     return Err(e);
                 }
             }
@@ -276,7 +277,7 @@ pub async fn sync_core_connection(
             Ok(Json(json!({ "job": job_json(&fetch_job(&state.db, job).await?), "synced": true })))
         }
         Err(e) => {
-            let msg = e.to_string();
+            let msg = e.detail();
             finish_err(&state.db, job, &msg).await;
             record_core_sync(&audit, &state.db, &tgt_label, &src_engine, &tgt_engine, Err(&msg)).await;
             Err(e)
@@ -446,7 +447,7 @@ pub async fn switch_module_connection(
                     job_value = job_json(&fetch_job(&state.db, job).await?);
                 }
                 Err(e) => {
-                    finish_err(&state.db, job, &e.to_string()).await;
+                    finish_err(&state.db, job, &e.detail()).await;
                     return Err(e);
                 }
             }
@@ -577,7 +578,7 @@ pub async fn sync_module_connection(
         }
         Err(e) => {
             let mapped = db_switch::map_admin_err(e);
-            let msg = mapped.to_string();
+            let msg = mapped.detail();
             finish_err(&state.db, job, &msg).await;
             record_module_sync(&audit, &state.db, &id, &tgt_label, &src_engine, &tgt_engine, Err(&msg)).await;
             Err(mapped)

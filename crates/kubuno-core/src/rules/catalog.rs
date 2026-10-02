@@ -32,7 +32,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use kubuno_db::dialect::{Assign, SqlType};
-use kubuno_db::{params, DbPool, DbQueryBuilder, DbTx};
+use kubuno_db::{params, Backend, DbPool, DbQueryBuilder, DbTx};
 
 use crate::errors::AppError;
 
@@ -371,15 +371,17 @@ async fn purge_vanished(
     // and would wrongly spare everything).
     let mut qb = DbQueryBuilder::new(
         backend,
-        "DELETE FROM core.rule_triggers t WHERE t.module_id = ",
+        "DELETE FROM core.rule_triggers WHERE module_id = ",
     );
     qb.push_bind(namespace);
     if !trigger_keys.is_empty() {
-        qb.push(" AND NOT (t.key")
+        qb.push(" AND NOT (\"key\"")
             .push_in(trigger_keys.iter().map(String::as_str))
             .push(")");
     }
-    qb.push(" AND NOT EXISTS (SELECT 1 FROM core.rules r WHERE r.trigger_key = t.\"key\")");
+    // No alias on the DELETE target: SQLite refuses one. The subquery names the
+    // outer table instead, which every engine resolves.
+    qb.push(" AND NOT EXISTS (SELECT 1 FROM core.rules r WHERE r.trigger_key = rule_triggers.\"key\")");
     qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: purge des déclencheurs disparus");
         AppError::Database(e)
@@ -391,7 +393,7 @@ async fn purge_vanished(
     );
     qb.push_bind(namespace);
     if !trigger_keys.is_empty() {
-        qb.push(" AND NOT (key")
+        qb.push(" AND NOT (\"key\"")
             .push_in(trigger_keys.iter().map(String::as_str))
             .push(")");
     }
@@ -401,27 +403,21 @@ async fn purge_vanished(
         AppError::Database(e)
     })?;
 
-    // An action is referenced from a JSONB array rather than by a foreign key,
-    // so the dependency test is a containment check on `core.rules.actions`.
-    // FLAG: PostgreSQL-only. `LATERAL jsonb_array_elements(...)` and the `->>`
-    // JSON operator have no portable form; this dependency probe runs only on
-    // PostgreSQL.
+    // An action is referenced from a JSON array rather than by a foreign key,
+    // so the dependency test is a containment check on `core.rules.actions`
+    // (an array of `{"action": "<key>", …}` objects), written per engine: there
+    // is no portable spelling of "an element of this JSON array has this field".
     let mut qb = DbQueryBuilder::new(
         backend,
-        "DELETE FROM core.rule_actions a WHERE a.module_id = ",
+        "DELETE FROM core.rule_actions WHERE module_id = ",
     );
     qb.push_bind(namespace);
     if !action_keys.is_empty() {
-        qb.push(" AND NOT (a.key")
+        qb.push(" AND NOT (\"key\"")
             .push_in(action_keys.iter().map(String::as_str))
             .push(")");
     }
-    qb.push(
-        " AND NOT EXISTS (\
-                SELECT 1 FROM core.rules r, \
-                     LATERAL jsonb_array_elements(r.actions) AS spec \
-                 WHERE spec->>'action' = a.\"key\")",
-    );
+    qb.push(action_in_use_clause(backend));
     qb.tx_execute(tx).await.map_err(|e| {
         tracing::error!(error = %e, module_id = %namespace, "rules: purge des actions disparues");
         AppError::Database(e)
@@ -433,7 +429,7 @@ async fn purge_vanished(
     );
     qb.push_bind(namespace);
     if !action_keys.is_empty() {
-        qb.push(" AND NOT (key")
+        qb.push(" AND NOT (\"key\"")
             .push_in(action_keys.iter().map(String::as_str))
             .push(")");
     }
@@ -446,6 +442,29 @@ async fn purge_vanished(
     Ok(())
 }
 
+/// ` AND NOT EXISTS (<a rule whose actions name rule_actions."key">)`, per engine.
+fn action_in_use_clause(backend: Backend) -> &'static str {
+    match backend {
+        Backend::Postgres => {
+            " AND NOT EXISTS (\
+                SELECT 1 FROM core.rules r, \
+                     LATERAL jsonb_array_elements(r.actions) AS spec \
+                 WHERE spec->>'action' = rule_actions.\"key\")"
+        }
+        // An array contains a candidate object when one of its elements does.
+        Backend::MySql => {
+            " AND NOT EXISTS (\
+                SELECT 1 FROM core.rules r \
+                 WHERE JSON_CONTAINS(r.actions, JSON_OBJECT('action', rule_actions.\"key\")))"
+        }
+        Backend::Sqlite => {
+            " AND NOT EXISTS (\
+                SELECT 1 FROM core.rules r, json_each(r.actions) AS spec \
+                 WHERE json_extract(spec.value, '$.action') = rule_actions.\"key\")"
+        }
+    }
+}
+
 /// Flags as orphan every non-core entry whose module is no longer installed,
 /// and clears the flag on those whose module came back. Cheap enough to run at
 /// startup and after an uninstall; never deletes a row.
@@ -453,21 +472,26 @@ pub async fn refresh_orphans(db: &DbPool) -> Result<(), AppError> {
     // One statement per catalogue table, each a whole compile-time literal: the
     // table name is part of the query text, so it is written out rather than
     // spliced in at run time. The label beside it is only for the log line.
+    // Portable spelling: no alias on the UPDATE target (SQLite refuses one, so the
+    // subquery names the outer table), and each `NOT EXISTS` parenthesised (MySQL
+    // does not parse `x <> NOT EXISTS (…)`).
     macro_rules! refresh {
-        ($table:literal) => {
+        ($table:literal, $bare:literal) => {
             concat!(
-                "UPDATE ",
+                "UPDATE core.",
                 $table,
-                r#" c
-                  SET is_orphan = NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = c.module_id)
-                WHERE c.module_id <> 'core'
-                  AND c.is_orphan <> NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = c.module_id)"#
+                " SET is_orphan = (NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = ",
+                $bare,
+                ".module_id)) WHERE module_id <> 'core' AND is_orphan <> \
+                 (NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = ",
+                $bare,
+                ".module_id))"
             )
         };
     }
     for (table, sql) in [
-        ("core.rule_triggers", refresh!("core.rule_triggers")),
-        ("core.rule_actions", refresh!("core.rule_actions")),
+        ("core.rule_triggers", refresh!("rule_triggers", "rule_triggers")),
+        ("core.rule_actions", refresh!("rule_actions", "rule_actions")),
     ] {
         if let Err(e) = db.execute(sql, params![]).await {
             tracing::error!(error = %e, table = %table, "rules: réévaluation des orphelins");

@@ -46,6 +46,7 @@ pub mod dialect;
 pub mod events;
 pub mod exec;
 pub mod json;
+mod mysql_compat;
 pub mod journal;
 pub mod pool;
 pub mod query;

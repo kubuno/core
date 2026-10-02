@@ -258,7 +258,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
     // `ON CONFLICT … WHERE` have no single portable spelling, so each engine's
     // upsert form is written out here. Flagged in the port report.
     let cal_conflict = match backend {
-        Backend::MySql => " ON DUPLICATE \"key\" UPDATE \
+        Backend::MySql => " ON DUPLICATE KEY UPDATE \
               country_code = VALUES(country_code), \
               subdivision = VALUES(subdivision), \
               parent_id = VALUES(parent_id), \
@@ -280,7 +280,7 @@ pub async fn load(db: &DbPool, force: bool) -> Result<SeedReport, AppError> {
               coverage_to = excluded.coverage_to",
     };
     let hol_conflict = match backend {
-        Backend::MySql => " ON DUPLICATE \"key\" UPDATE \
+        Backend::MySql => " ON DUPLICATE KEY UPDATE \
               name = CASE WHEN is_overridden THEN name ELSE VALUES(name) END, \
               names = CASE WHEN is_overridden THEN names ELSE VALUES(names) END, \
               category = CASE WHEN is_overridden THEN category ELSE VALUES(category) END, \

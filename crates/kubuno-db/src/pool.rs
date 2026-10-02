@@ -261,8 +261,15 @@ async fn open_mysql(s: &DbSettings, eff_schema: &str, prefix: SchemaPrefix) -> R
     // unqualified DDL in the migrations lands there, and it is the database the
     // qualified `<schema>.table` names resolve to after prefix rewriting. This
     // overrides any database named in the URL/fields — that name is never the
-    // namespace on MySQL. The database must already exist (or the role must hold
-    // CREATE, so `ensure_schema` can make it).
+    // namespace on MySQL.
+    //
+    // A connection whose default database does not exist is refused by the
+    // server (1049 "Unknown database"), so the pool below could never open onto
+    // a fresh namespace and `ensure_schema` would never get the chance to create
+    // it — an engine switch onto an empty MySQL server failed right there. Create
+    // the namespace first, over a one-off connection that keeps the configured
+    // database (or none) as its default.
+    create_mysql_namespace(&opts, eff_schema).await;
     let opts = opts.database(eff_schema);
 
     let pool = MySqlPoolOptions::new()
@@ -293,6 +300,27 @@ async fn open_mysql(s: &DbSettings, eff_schema: &str, prefix: SchemaPrefix) -> R
         .connect_with(opts)
         .await?;
     Ok(DbPool::from_mysql(pool, prefix))
+}
+
+/// `CREATE DATABASE IF NOT EXISTS` for a MySQL/MariaDB namespace, issued before
+/// any pool is opened onto it. Best-effort: when the role may not create
+/// databases (an administrator pre-created it) or the server is unreachable, the
+/// pool's own connection reports the real problem right after.
+async fn create_mysql_namespace(opts: &sqlx::mysql::MySqlConnectOptions, eff_schema: &str) {
+    use sqlx::Connection as _;
+    match sqlx::mysql::MySqlConnection::connect_with(opts).await {
+        Ok(mut conn) => {
+            // `eff_schema` is a validated bare identifier (prefix + known schema).
+            let sql = format!("CREATE DATABASE IF NOT EXISTS `{eff_schema}`");
+            if let Err(e) = conn.execute(sqlx::AssertSqlSafe(sql)).await {
+                tracing::debug!(schema = eff_schema, error = %e, "MySQL namespace not created up front");
+            }
+            let _ = conn.close().await;
+        }
+        Err(e) => {
+            tracing::debug!(schema = eff_schema, error = %e, "MySQL bootstrap connection failed");
+        }
+    }
 }
 
 async fn open_sqlite(s: &DbSettings, eff_schema: &str, prefix: SchemaPrefix) -> Result<DbPool, SetupError> {
@@ -397,6 +425,9 @@ impl MigratorSet {
             }
             PoolKind::My(p) => {
                 apply_prefix_to_migrator(&mut self.mysql, &prefix);
+                if !is_mariadb(p).await {
+                    apply_mysql_compat(&mut self.mysql);
+                }
                 self.mysql.dangerous_set_table_name(table);
                 self.mysql.run(p).await
             }
@@ -407,6 +438,50 @@ impl MigratorSet {
             }
         }
     }
+}
+
+/// Whether the MySQL-protocol server is MariaDB (its `VERSION()` says so). When
+/// the version cannot be read, Oracle MySQL is assumed: the compatibility rewrite
+/// only produces SQL MariaDB accepts too.
+async fn is_mariadb(pool: &sqlx::MySqlPool) -> bool {
+    match sqlx::query_scalar::<_, String>("SELECT VERSION()").fetch_one(pool).await {
+        Ok(v) => v.to_ascii_lowercase().contains("mariadb"),
+        Err(e) => {
+            tracing::debug!(error = %e, "VERSION() unreadable — assuming Oracle MySQL");
+            false
+        }
+    }
+}
+
+/// Rewrites the MySQL-family migrations into what Oracle MySQL accepts (see
+/// [`crate::mysql_compat`]). Every migration keeps its ORIGINAL checksum, so the
+/// `_sqlx_migrations` bookkeeping is the same as on MariaDB and a migration
+/// applied before this shim existed (or before it changed) is never reported as
+/// modified.
+fn apply_mysql_compat(m: &mut sqlx::migrate::Migrator) {
+    use sqlx::migrate::Migration;
+    use sqlx::{AssertSqlSafe, SqlSafeStr};
+    let mut catalog = crate::mysql_compat::Catalog::default();
+    let rewritten: Vec<Migration> = m
+        .iter()
+        .map(|mig| {
+            let sql = if mig.migration_type.is_down_migration() {
+                crate::mysql_compat::rewrite(mig.sql.as_str(), &mut crate::mysql_compat::Catalog::default())
+            } else {
+                crate::mysql_compat::rewrite(mig.sql.as_str(), &mut catalog)
+            };
+            let mut out = Migration::new(
+                mig.version,
+                mig.description.clone(),
+                mig.migration_type,
+                AssertSqlSafe(sql).into_sql_str(),
+                mig.no_tx,
+            );
+            out.checksum = mig.checksum.clone();
+            out
+        })
+        .collect();
+    m.migrations = std::borrow::Cow::Owned(rewritten);
 }
 
 /// Rewrites a migrator's SQL so a prefixed instance's DDL lands in the prefixed

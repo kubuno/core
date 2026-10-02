@@ -151,10 +151,12 @@ pub async fn register_module_privileges(
 pub async fn refresh_orphans(db: &DbPool) -> Result<u64, AppError> {
     let affected = db
         .execute(
-            r#"UPDATE core.privileges p
-              SET is_orphan = NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = p.namespace)
-            WHERE p.namespace <> 'core'
-              AND p.is_orphan <> NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = p.namespace)"#,
+            // Portable: no alias on the UPDATE target (SQLite refuses one) and each
+            // `NOT EXISTS` parenthesised (MySQL does not parse `x <> NOT EXISTS`).
+            r#"UPDATE core.privileges
+              SET is_orphan = (NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = privileges.namespace))
+            WHERE namespace <> 'core'
+              AND is_orphan <> (NOT EXISTS (SELECT 1 FROM core.modules m WHERE m.id = privileges.namespace))"#,
             params![],
         )
         .await

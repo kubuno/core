@@ -86,7 +86,7 @@ async fn create_demo_tables(pool: &DbPool, schema: &str) {
             format!(
                 "CREATE TABLE `{schema}`.`authors` (\
                     id binary(16) PRIMARY KEY, name text, active tinyint(1) NOT NULL, \
-                    rank smallint, score double, tags json, avatar blob, \
+                    `rank` smallint, score double, tags json, avatar blob, \
                     born date, created datetime(6) NOT NULL)"
             ),
             format!(
@@ -128,7 +128,7 @@ async fn seed(pool: &DbPool, schema: &str) -> (uuid::Uuid, uuid::Uuid) {
     ] {
         let sql = format!(
             "INSERT INTO \"{schema}\".\"authors\" \
-                (id, name, active, rank, score, tags, avatar, born, created) \
+                (id, name, active, \"rank\", score, tags, avatar, born, created) \
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)"
         );
         pool.execute(
@@ -331,4 +331,62 @@ async fn copy_mysql_to_sqlite() {
     let _ = JWT; // reserved for parity with the other suites
 
     let _ = admin.execute("DROP DATABASE IF EXISTS `srcmy`", params![]).await;
+}
+
+/// The MySQL/SQLite event outbox is engine plumbing, not data: a source that has
+/// it (any MySQL or SQLite instance) must copy onto a destination that does not
+/// (a PostgreSQL target never creates it) — a switch back used to fail there.
+#[tokio::test]
+async fn copy_leaves_the_event_outbox_behind() {
+    let dir = TempDir::new();
+    let src = sqlite_pool(dir.str(), "srco").await;
+    let dst = sqlite_pool(dir.str(), "dsto").await;
+    create_demo_tables(&src, "srco").await;
+    create_demo_tables(&dst, "dsto").await;
+    kubuno_db::events::ensure_outbox(&src, "srco").await.expect("outbox");
+    kubuno_db::events::notify(&src, "srco", "kubuno_events", "{}").await.expect("an undelivered event");
+    run_copy(&src, "srco", &dst, "dsto").await;
+}
+
+/// A PostgreSQL `inet` copies as the address the application wrote: a host keeps
+/// no `/32` suffix (the `::text` cast used to add one), a network keeps its mask.
+#[tokio::test]
+async fn copy_pg_inet_keeps_the_display_form() {
+    let Some(src) = pg_pool("srcinet").await else {
+        eprintln!("KUBUNO_PG_TEST_URL not set — copy_pg_inet_keeps_the_display_form skipped");
+        return;
+    };
+    pg_drop_schema(&src, "srcinet").await;
+    src.execute(
+        "CREATE TABLE \"srcinet\".\"hosts\" (id integer PRIMARY KEY, ip inet, net inet)",
+        params![],
+    )
+    .await
+    .expect("create");
+    src.execute(
+        "INSERT INTO \"srcinet\".\"hosts\" (id, ip, net) VALUES (1, '192.0.2.1', '10.0.0.0/8'), (2, NULL, '2001:db8::1')",
+        params![],
+    )
+    .await
+    .expect("seed");
+
+    let dir = TempDir::new();
+    let dst = sqlite_pool(dir.str(), "dstinet").await;
+    dst.execute("CREATE TABLE \"dstinet\".\"hosts\" (id INTEGER PRIMARY KEY, ip TEXT, net TEXT)", params![])
+        .await
+        .expect("create dst");
+    copy_schema(&src, "srcinet", &dst, "dstinet", &mut |_, _| {}).await.expect("copy");
+
+    let rows: Vec<(i64, Option<String>, Option<String>)> = dst
+        .fetch_all_as("SELECT id, ip, net FROM \"dstinet\".\"hosts\" ORDER BY id", params![])
+        .await
+        .expect("read back");
+    let _ = src.execute("DROP SCHEMA IF EXISTS \"srcinet\" CASCADE", params![]).await;
+    assert_eq!(
+        rows,
+        vec![
+            (1, Some("192.0.2.1".to_string()), Some("10.0.0.0/8".to_string())),
+            (2, None, Some("2001:db8::1".to_string())),
+        ]
+    );
 }

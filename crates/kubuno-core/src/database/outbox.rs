@@ -82,6 +82,13 @@ pub async fn start_event_source(pool: &DbPool, event_bus: Arc<EventBus>) -> Resu
             }
         }
         Backend::MySql | Backend::Sqlite => {
+            // The table is created here, not by a migration: it is the transport of
+            // these engines only. Without it every publish and every poll failed,
+            // so no event was ever delivered on MySQL/SQLite.
+            if let Err(e) = kubuno_db::events::ensure_outbox(pool, super::SCHEMA).await {
+                tracing::error!(error = %e, "Création de 'core.kubuno_event_outbox' impossible");
+                return Err(e.into());
+            }
             OutboxPoller::new(pool.clone(), event_bus).spawn();
             tracing::info!("Poller d'outbox démarré sur 'core.kubuno_event_outbox'");
         }

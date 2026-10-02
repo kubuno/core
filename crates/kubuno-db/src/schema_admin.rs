@@ -1117,14 +1117,23 @@ fn read_cell(
 
 // ── introspection ────────────────────────────────────────────────────────────
 
+/// Tables that belong to one engine's plumbing rather than to the scope's data,
+/// so a copy, a portable backup and their verification all leave them out:
+/// `_sqlx_migrations` (each engine has its own migration history) and
+/// `kubuno_event_outbox` (the MySQL/SQLite event transport, created at startup
+/// and absent from a PostgreSQL target — copying it broke a switch back to
+/// PostgreSQL).
+const ENGINE_LOCAL_TABLES: [&str; 2] = ["_sqlx_migrations", "kubuno_event_outbox"];
+
 /// Every base table of `schema`, in a portable foreign-key order (parents
 /// before children), each with its copyable columns and their codecs.
 async fn table_specs(pool: &DbPool, schema: &str) -> Result<Vec<TableSpec>, AdminError> {
-    let (names, edges) = match pool.backend() {
+    let (mut names, edges) = match pool.backend() {
         Backend::Postgres => pg_tables_and_edges(pool, schema).await?,
         Backend::MySql => mysql_tables_and_edges(pool, schema).await?,
         Backend::Sqlite => sqlite_tables_and_edges(pool, schema).await?,
     };
+    names.retain(|n| !ENGINE_LOCAL_TABLES.contains(&n.as_str()));
     let ordered = topo_order(&names, &edges);
 
     let mut specs = Vec::with_capacity(ordered.len());
@@ -1364,9 +1373,15 @@ fn pg_col(name: String, data_type: &str, udt: &str) -> Col {
         // or SQLite; `to_jsonb` turns it into a JSON array, the portable shape
         // the schema already uses for lists on the other engines.
         "array" => (Codec::Json, format!("to_jsonb({q})")),
-        // `citext`, `inet`/`cidr`/`macaddr`, and any enum/domain: no generic
-        // decode, but a `::text` cast reads faithfully into a text column.
-        "inet" | "cidr" | "macaddr" | "macaddr8" | "user-defined" => {
+        // An `inet` reads through `abbrev()`, its display form: a host address
+        // stays `192.0.2.1`, a network keeps its mask (`10.0.0.0/8`). The text
+        // cast always spells the mask (`192.0.2.1/32`), which then landed in the
+        // VARCHAR/TEXT column of MySQL/SQLite and no longer compared equal to the
+        // addresses the application writes there.
+        "inet" => (Codec::Text, format!("abbrev({q})")),
+        // `citext`, `cidr`/`macaddr`, and any enum/domain: no generic decode, but
+        // a `::text` cast reads faithfully into a text column.
+        "cidr" | "macaddr" | "macaddr8" | "user-defined" => {
             (Codec::Text, format!("{q}::text"))
         }
         // character varying / text / char / and anything else travels as text.
@@ -1571,9 +1586,12 @@ mod tests {
         let em = pg_col("email".into(), "USER-DEFINED", "citext");
         assert_eq!(em.codec, Codec::Text);
         assert!(em.read_expr.ends_with("::text"));
+        // `inet` keeps its display form (no `/32` on a host address).
         let ip = pg_col("ip".into(), "inet", "inet");
         assert_eq!(ip.codec, Codec::Text);
-        assert!(ip.read_expr.ends_with("::text"));
+        assert_eq!(ip.read_expr, "abbrev(\"ip\")");
+        let net = pg_col("net".into(), "cidr", "cidr");
+        assert!(net.read_expr.ends_with("::text"));
     }
 
     #[test]
