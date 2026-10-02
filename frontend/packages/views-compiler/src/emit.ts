@@ -127,7 +127,7 @@ export function emitViewModule(plan: Plan, options: EmitOptions): EmitResult {
     if ((conv !== 'icon-node' && conv !== 'icon-component') || typeof p.v !== 'string' || p.v === '') return false
     const v = p.v
     if (/^[A-Za-z][A-Za-z0-9]*$/.test(v)) {
-      body.write(`, v: { $icon: ${json(v)}, c: ${icon(v)} }`)
+      body.write(`, v: { $icon: ${json(v)}, get c() { return ${icon(v)} } }`)
       return true
     }
     if (/[./]/.test(v) && !v.startsWith('{')) {
@@ -181,7 +181,9 @@ export function emitViewModule(plan: Plan, options: EmitOptions): EmitResult {
       fields.push(`${key(k)}: ${json(v)}`)
     }
     body.write(fields.join(', '))
-    if (n.m && n.x) body.write(`, c: ${component(n.m, n.x)}`)
+    // A getter, read when the element renders: a view inside an import cycle (the core's own views: `@ui` →
+    // the core's stores → the shell → the view) is evaluated before the components it imports are.
+    if (n.m && n.x) body.write(`, get c() { return ${component(n.m, n.x)} }`)
     const inner = indent + '  '
     if (n.props?.length) {
       body.write(', props: ')

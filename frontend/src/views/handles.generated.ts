@@ -72,6 +72,76 @@ export interface AccordionSection extends ElementHandle {
   disabled: boolean
 }
 
+/** `<Avatar>` — A person's photo, or their initials on a disc while there is none. */
+export interface Avatar extends ElementHandle {
+  /** The person's name: its initials show when there is no photo; it is also the photo's alternative text. */
+  displayName: string
+  /** Letters shown instead of the name's initials. */
+  initials: string
+  /** The photo: an image address (web) or a file relative to the view. */
+  image: string
+  /** Auto: a neutral disc, the initials in the secondary text colour (web). Accent: the accent colour, white initials. */
+  tint: "Auto" | "Accent"
+  /** A circle, or a square with rounded corners. */
+  shape: "Circle" | "Rounded"
+  /** Diameter of the avatar, in pixels. */
+  avatarSize: number
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+}
+
 /** `<Badge>` — A small pill showing a count or a status. */
 export interface Badge extends ElementHandle {
   /** Text of the badge. */
@@ -1160,22 +1230,218 @@ export interface GradientField extends ElementHandle {
   class: string
 }
 
+/** `<Icon>` — An icon of the Kubuno icon set, alone or on a coloured disc. */
+export interface Icon extends ElementHandle {
+  /** The icon: a name of the Kubuno icon set. */
+  name: string
+  /** Size of the icon, in pixels. */
+  size: number
+  /** Draws the icon on a coloured disc twice its size, like the icons of Kubuno message boxes. */
+  disc: "None" | "Neutral" | "Info" | "Warning" | "Danger" | "Success"
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+}
+
 /** `<IconButton>` — A round button showing only an icon. */
 export interface IconButton extends ElementHandle {
   /** The icon: a name of the Kubuno icon set (Check, X, Trash2, Search, Plus, MoreVertical…), or an image file relative to the view. */
   icon: string
   /** A ContextMenu of the view that a click opens below the button (a menu button). */
   dropDownMenu: string
+  /** Diameter of the button, in pixels. */
+  diameter: number
+  /** Size of the icon in the button, in pixels. */
+  glyph: number
+  /** Gives the button a tinted background. */
+  filled: boolean
   /** Size of the icon: Small (16), Medium (20), Large (24), XLarge (32), a number of pixels, or width, height. Leave empty for the control's own size. */
   iconSize: string
   /** How an image that is not square fills the icon's box: Fit shows all of it, Fill covers the box, Stretch fits it to the box exactly, None keeps its own size. */
   iconScaling: "Fit" | "Fill" | "Stretch" | "None"
   /** Colour of the icon, every pixel recoloured (for a one-colour icon). Leave empty for the control's colour: a glyph and an SVG drawn in currentColor follow it and the theme, another image keeps its colours. */
   iconColor: string
-  /** Web only: visual style of the button (the Button variants). */
-  variant: "Primary" | "Secondary" | "Ghost" | "Text" | "Danger" | "TextDanger"
-  /** Web only: size of the button (32, 36 or 44 pixels). */
-  size: "Sm" | "Md" | "Lg"
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+}
+
+/** `<Label>` — A line or paragraph of text, in one of the shared typographic roles. */
+export interface Label extends ElementHandle {
+  /** Text shown. */
+  text: string
+  /** Text style: small, caption, body, heading or title (the same sizes on the web and the desktop). */
+  role: "Micro" | "Meta" | "Body" | "Heading" | "Title"
+  /** Position of the text in the label. On the web the horizontal part applies (Left = start, Right = end of the reading direction). */
+  textAlign: "TopLeft" | "TopCenter" | "TopRight" | "MiddleLeft" | "MiddleCenter" | "MiddleRight" | "BottomLeft" | "BottomCenter" | "BottomRight"
+  /** What a text too long for the label does: ellipsis, clipped, or wrapped onto the next lines. */
+  overflow: "Ellipsis" | "Clip" | "Wrap"
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+}
+
+/** `<LinkLabel>` — A link. Its OnClick decides where to go; on the web, Href also gives it an address (middle click, open in a new tab). */
+export interface LinkLabel extends ElementHandle {
+  /** Text of the link. */
+  text: string
+  /** Text style: small, caption, body, heading or title. */
+  role: "Micro" | "Meta" | "Body" | "Heading" | "Title"
+  /** Web only: the address of the link. A plain click stays in the app (OnClick decides); a middle or modified click opens the address. */
+  href: string
   /** Name that screen readers announce for the control. Leave empty to use its text. */
   accessibleName: string
   /** Description that screen readers announce for the control. */
@@ -2204,6 +2470,7 @@ export interface WorkspaceShell extends ElementHandle {
 export interface ElementHandles {
   Accordion: Accordion
   AccordionSection: AccordionSection
+  Avatar: Avatar
   Badge: Badge
   Breadcrumb: Breadcrumb
   BreadcrumbItem: BreadcrumbItem
@@ -2223,7 +2490,10 @@ export interface ElementHandles {
   EmptyState: EmptyState
   FloatingWindow: FloatingWindow
   GradientField: GradientField
+  Icon: Icon
   IconButton: IconButton
+  Label: Label
+  LinkLabel: LinkLabel
   MenuItem: MenuItem
   NumericField: NumericField
   Option: Option

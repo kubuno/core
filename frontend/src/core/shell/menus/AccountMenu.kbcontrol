@@ -1,0 +1,126 @@
+<!--
+  The account panel (user control AccountMenu, shared contract vskubuno docs/SHELL-CONTROLS.md §2). Its header
+  stays put — the active account's address, its mini avatar once the hero has scrolled away, the close button —
+  while the rest scrolls under it: the avatar and its camera, « Bonjour … ! », « Gérer votre compte », the other
+  accounts (a card that folds: a click switches, a dead session shows « Déconnecté » with Connexion / Supprimer,
+  an account of another instance Ouvrir / Supprimer), then « Ajouter un compte », « Étiquettes »,
+  « Administration » (ShowAdmin) and « Se déconnecter ». 320 wide. Every click raises an event; the host
+  (AccountButton) acts on it and closes its popover.
+-->
+<UserControl x:Props="AccountMenuProps" DesignWidth="320" DesignHeight="560" OnLoad="account_menu_load">
+  <Stack x:Name="head" Dock="Top" Direction="LeftToRight" CrossAlign="Center" Justify="Center" Gap="8" Padding="40, 16, 40, 8" Class="relative">
+    <Avatar Image="{Binding user.avatar}" DisplayName="{Binding user.name}" Initials="{Binding user.initials}" Tint="Accent" AvatarSize="24" Visible="{Binding scrolled}"/>
+    <Label Text="{Binding user.email}" ForeColor="TextSecondary"/>
+    <IconButton x:Name="close_button" Icon="X" Diameter="32" Glyph="18" Class="absolute top-3 right-3" OnClick="close_button_click"/>
+  </Stack>
+
+  <ScrollArea x:Name="body" Dock="Fill">
+    <Panel>
+      <!-- The hero: the active account. -->
+      <Panel Padding="24, 8, 24, 16" Class="relative text-center">
+        <Panel Class="relative inline-block mb-3">
+          <Avatar Image="{Binding user.avatar}" DisplayName="{Binding user.name}" Initials="{Binding user.initials}" Tint="Accent" AvatarSize="96"
+                  Class="mx-auto [outline:3px_solid_#fff] [box-shadow:0_0_0_3px_#1a73e8]"/>
+          <IconButton x:Name="camera_button" Icon="Camera" Diameter="32" Glyph="15" AccessibleName="{Res shell.change_photo}" Enabled="{Binding canChangeAvatar}"
+                      Class="absolute bottom-1 right-0 bg-white shadow-md border border-border hover:bg-surface-1" OnClick="camera_button_click"/>
+        </Panel>
+        <Label Text="{Binding greeting}" ForeColor="TextPrimary" Overflow="Wrap" Class="text-2xl font-normal mb-3"/>
+        <LinkLabel x:Name="manage" Text="{Res shell.manage_account}" Href="{Binding manageHref}"
+                   Class="inline-block px-5 py-1.5 rounded-full text-primary border border-primary/40 hover:bg-primary/5 transition-colors" OnClick="manage_click"/>
+      </Panel>
+
+      <!-- The other accounts of this browser, then the accounts of other instances. -->
+      <Panel Visible="{Binding hasOthers}" Class="mx-2 mb-2 rounded-[20px] overflow-hidden bg-white">
+        <Stack x:Name="toggle" AccessibleRole="PushButton" Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" Gap="0" Padding="16, 12, 16, 12"
+               Class="w-full hover:bg-surface-1 transition-colors" OnClick="toggle_click">
+          <Label Text="{Binding toggleText}" ForeColor="TextPrimary" Overflow="Wrap" Class="font-medium"/>
+          <Stack Direction="LeftToRight" CrossAlign="Center" Gap="8">
+            <Stack Direction="LeftToRight" Gap="0" Visible="{Binding collapsed}" Class="-space-x-1">
+              <Repeater ItemsSource="{Binding previews}" ItemKey="id">
+                <Avatar Image="{Binding avatar}" DisplayName="{Binding name}" Initials="{Binding letter}" AvatarSize="24" Class="border-2 border-white"/>
+              </Repeater>
+              <Label Text="{Binding moreText}" Visible="{Binding hasMore}" Overflow="Wrap"
+                     Class="w-6 h-6 rounded-full bg-surface-3 border-2 border-white flex items-center justify-center text-[10px] text-text-secondary font-medium"/>
+            </Stack>
+            <Icon Name="ChevronUp" Size="16" ForeColor="TextTertiary" Visible="{Binding expanded}"/>
+            <Icon Name="ChevronDown" Size="16" ForeColor="TextTertiary" Visible="{Binding collapsed}"/>
+          </Stack>
+        </Stack>
+
+        <Stack Gap="0" Visible="{Binding expanded}" Class="divide-y divide-border/50">
+          <Repeater ItemsSource="{Binding rows}" ItemKey="key">
+            <Panel>
+              <!-- A live session: one click switches to it. -->
+              <Stack AccessibleRole="PushButton" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12" Visible="{Binding switchable}"
+                     Enabled="{Binding canSwitch}" Class="w-full hover:bg-surface-1 transition-colors disabled:opacity-60" OnClick="account_click">
+                <Avatar Image="{Binding avatar}" DisplayName="{Binding name}" Initials="{Binding initials}" AvatarSize="40"/>
+                <Stack Gap="0" Stack.Fill="true" Class="min-w-0 text-left">
+                  <Label Text="{Binding name}" ForeColor="TextPrimary" Class="font-medium"/>
+                  <Label Text="{Binding email}" Role="Meta" ForeColor="TextTertiary"/>
+                </Stack>
+                <Label Text="{Binding unreadText}" Visible="{Binding hasUnread}" Overflow="Wrap"
+                       Class="min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center shrink-0"/>
+              </Stack>
+
+              <!-- A dead session: « Déconnecté », Connexion / Supprimer. -->
+              <Panel Padding="16, 12, 16, 12" Visible="{Binding disconnected}">
+                <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12">
+                  <Avatar Image="{Binding avatar}" DisplayName="{Binding name}" Initials="{Binding initials}" AvatarSize="40"/>
+                  <Stack Gap="0" Stack.Fill="true" Class="min-w-0 text-left">
+                    <Label Text="{Binding name}" ForeColor="TextPrimary" Class="font-medium"/>
+                    <Label Text="{Binding email}" Role="Meta" ForeColor="TextTertiary"/>
+                  </Stack>
+                  <Label Text="{Binding disconnectedText}" Overflow="Wrap" ForeColor="TextSecondary" Class="text-[11px] bg-surface-2 px-2 py-0.5 rounded-md shrink-0"/>
+                </Stack>
+                <Stack Direction="LeftToRight" Margin="0, 10, 0, 0" Padding="52, 0, 0, 0">
+                  <Button Text="{Binding reconnectText}" Size="Sm" OnClick="reconnect_click"/>
+                  <Button Text="{Binding removeText}" Variant="Secondary" Size="Sm" OnClick="remove_click"/>
+                </Stack>
+              </Panel>
+
+              <!-- An account of another Kubuno instance: opened in a new tab. -->
+              <Panel Padding="16, 12, 16, 12" Visible="{Binding remote}">
+                <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Margin="0, 0, 0, 10">
+                  <Avatar Image="{Binding avatar}" DisplayName="{Binding name}" Initials="{Binding initials}" AvatarSize="40"/>
+                  <Stack Gap="0" Stack.Fill="true" Class="min-w-0">
+                    <Label Text="{Binding name}" ForeColor="TextPrimary" Class="font-medium"/>
+                    <Label Text="{Binding email}" Role="Meta" ForeColor="TextTertiary"/>
+                  </Stack>
+                  <Label Text="{Binding server}" Overflow="Wrap" ForeColor="TextTertiary" Class="text-[11px] bg-surface-2 px-2 py-0.5 rounded-full border border-border/60 shrink-0"/>
+                </Stack>
+                <Stack Direction="LeftToRight" Padding="52, 0, 0, 0">
+                  <Button Text="{Binding openText}" Size="Sm" Icon="ExternalLink" IconSize="13" OnClick="open_remote_click"/>
+                  <Button Text="{Binding removeText}" Variant="Secondary" Size="Sm" OnClick="remove_click"/>
+                </Stack>
+              </Panel>
+            </Panel>
+          </Repeater>
+        </Stack>
+      </Panel>
+
+      <!-- The actions. -->
+      <Panel Class="mx-2 mb-2 rounded-[20px] overflow-hidden bg-white divide-y divide-border/50">
+        <Stack x:Name="add_account" AccessibleRole="PushButton" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12"
+               ForeColor="TextPrimary" Class="w-full hover:bg-surface-1 transition-colors" OnClick="add_account_click">
+          <Icon Name="UserPlus" Size="16" Disc="Neutral" ForeColor="TextSecondary"/>
+          <Label Text="{Res shell.add_account}" Overflow="Wrap"/>
+        </Stack>
+        <Stack x:Name="labels" Href="{Binding labelsHref}" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12"
+               ForeColor="TextPrimary" Class="hover:bg-surface-1 transition-colors" OnClick="labels_click">
+          <Icon Name="Tag" Size="16" Disc="Neutral" ForeColor="TextSecondary"/>
+          <Label Text="{Binding labelsText}" Overflow="Wrap"/>
+        </Stack>
+        <Stack x:Name="admin" Href="{Binding adminHref}" Visible="{Binding showAdmin}" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12"
+               ForeColor="TextPrimary" Class="hover:bg-surface-1 transition-colors" OnClick="admin_click">
+          <Icon Name="Shield" Size="16" Disc="Neutral" ForeColor="TextSecondary"/>
+          <Label Text="{Res user.admin}" Overflow="Wrap"/>
+        </Stack>
+        <Stack x:Name="sign_out" AccessibleRole="PushButton" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12"
+               ForeColor="TextPrimary" Class="w-full hover:bg-surface-1 transition-colors" OnClick="sign_out_click">
+          <Icon Name="LogOut" Size="16" Disc="Neutral" ForeColor="TextSecondary"/>
+          <Label Text="{Binding signOutText}" Overflow="Wrap"/>
+        </Stack>
+      </Panel>
+    </Panel>
+  </ScrollArea>
+</UserControl>

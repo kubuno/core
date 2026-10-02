@@ -60,6 +60,9 @@ import { FloatingWindow as BaseFloatingWindow } from './FloatingWindow'
 import { ResizeHandle as BaseResizeHandle } from './ResizeHandle'
 import BaseConfirmDialog from './ConfirmDialog'
 import BaseConflictDialog from './ConflictDialog'
+import { Label as BaseLabel, LinkLabel as BaseLinkLabel } from './Label'
+import { Avatar as BaseAvatar } from './Avatar'
+import { IconGlyph as BaseIconGlyph, IconButton as BaseIconButton } from './IconGlyph'
 
 // Every visual primitive/complex component is themeable: a theme can replace its
 // markup and behaviour, and otherwise it renders its default ("Base")
@@ -118,6 +121,16 @@ export const FloatingWindow = t('ui.FloatingWindow', BaseFloatingWindow)
 export const ResizeHandle = t('ui.ResizeHandle', BaseResizeHandle)
 export const ConfirmDialog = t('ui.ConfirmDialog', BaseConfirmDialog)
 export const ConflictDialog = t('ui.ConflictDialog', BaseConflictDialog)
+// Text, link, avatar and icon primitives of the `.kbview` element set (vskubuno WEB-VIEWS.md, WV-5a).
+export const Label = t('ui.Label', BaseLabel)
+export const LinkLabel = t('ui.LinkLabel', BaseLinkLabel)
+export const Avatar = t('ui.Avatar', BaseAvatar)
+export const IconGlyph = t('ui.IconGlyph', BaseIconGlyph)
+export const IconButton = t('ui.IconButton', BaseIconButton)
+export { initialsOf } from './Avatar'
+export type { AvatarProps } from './Avatar'
+export type { LabelProps, LinkLabelProps, TextRole, TextAlign, TextOverflow } from './Label'
+export type { IconGlyphProps, IconButtonProps, IconDisc } from './IconGlyph'
 
 // ── Raw exports: hooks, utilities, types (not components) ──
 export { CaretDown } from './CaretDown'

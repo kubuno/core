@@ -5,6 +5,9 @@ import { fileURLToPath, URL } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { importMapPlugin } from './build/importmap-plugin'
+// The .kbview / .kbcontrol compiler (vskubuno docs/WEB-VIEWS.md, WV-2): the core's own views and user controls
+// (registries and folders: kubuno.views.json).
+import { kbview } from './packages/views-compiler/dist/index.js'
 
 const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8'),
@@ -74,7 +77,7 @@ const SHARED_CHUNK = (name: string | undefined) =>
   name === 'kubuno-shared' || name === 'drive-shared' || name === 'kubuno-views' || (name?.startsWith('vendor-') ?? false)
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), importMapPlugin()],
+  plugins: [kbview(), react(), tailwindcss(), importMapPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(VERSION.display),
     __APP_BUILD__:   JSON.stringify(VERSION.build),

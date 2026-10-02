@@ -1,4 +1,4 @@
-<!-- Golden view: the elements of the real host registry plus the project's Stack. -->
+<!-- Golden view: the elements of the real host registry (Stack is the runtime's own layout element). -->
 <Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Direction="TopDown" Gap="16" OnLoad="page_load">
   <Card Title="{Res notes_pref_title}" Icon="Settings">
     <Stack Gap="8">

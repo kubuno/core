@@ -8,6 +8,28 @@ under the published version number.
 
 ### Added
 
+- **`Label`, `LinkLabel`, `Avatar`, `IconGlyph` and `IconButton` components.** A line of text in one of the
+  shared typographic roles (Micro, Meta, Body, Heading, Title); a link whose plain click stays in the app;
+  a person's photo or initials on a disc; an icon alone or on a coloured disc; a round icon-only button
+  (diameter, glyph size, tinted fill). They are also the `.kbview` elements `Label`, `LinkLabel`, `Avatar`,
+  `Icon` and `IconButton` in the element registry, which now also lists the runtime's layout elements
+  (`Stack`, `Panel`, `UserControl`, `ScrollArea`, `Repeater`).
+
+### Changed
+
+- **The `.kbview` element `IconButton` now renders the round `IconButton`** with the desktop's `Diameter`,
+  `Glyph` and `Filled` properties, instead of a text-less `Button` with web-only `Variant` and `Size`.
+
+- **`kbview-registry.web.json`, the element registry for `.kbview` web views.** The package now
+  ships the description of the components that a `.kbview` view can use (Button, CheckBox,
+  TextField, Dropdown, Tabs, Card, DataTable, ContextMenu, the workspace's DockArea and
+  WorkspaceShell…): element names, properties with kinds, defaults and French descriptions,
+  events, accepted children, and how each maps onto the React component's props. It has the
+  same format as the desktop registry, so the Visual Studio designer and the views language
+  server read both the same way. The components themselves are unchanged.
+
+- **`Collapse`, a block that unrolls and rolls up.** `<Collapse open={…}>` animates its height when opening and closing instead of appearing at once; the content is mounted on first opening and kept inert while closed. Styling comes from the host's `.kb-collapse` rule, so it follows the platform's motion settings, including reduced motion.
+
 - **A label field, `LabelField`.** Chips for the labels an element carries and a
   list to add or drop one, for putting the instance's labels on something from
   inside its own form rather than from a context menu. Presentational: it is

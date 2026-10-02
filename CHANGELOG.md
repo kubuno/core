@@ -9,6 +9,19 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Changed
+
+- **The header's app launcher and account panel are now declarative views** (`.kbcontrol` user controls,
+  shared in name and shape with the desktop app), and they look and behave as before. Both always open above
+  the page, anchored to their button: a narrow or scrolling container can no longer cut them, they flip above
+  the button when there is more room there and stay inside the screen. In right-to-left languages the account
+  panel now opens under the avatar instead of at the far edge of the screen, and closing it (Escape, a click
+  outside) gives the keyboard focus back to the avatar button. Confirming an edit of your favourite apps now
+  keeps the favourites of apps this browser does not show (a module not installed here) instead of dropping them.
+- **The core web screens can be written as `.kbview` views.** The core build compiles `.kbview` and
+  `.kbcontrol` files (type-checked with the rest of the code), with the layout and text elements they need:
+  stacks, docked panels, scroll areas, repeated rows, labels, links, avatars, icons and round icon buttons.
+
 ### Added
 
 - **MySQL and MariaDB each get the migrations they accept.** The two servers that

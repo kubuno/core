@@ -1,0 +1,327 @@
+/**
+ * Container elements: `Card`, `Tabs`/`TabItem`, `Accordion`/`AccordionSection`,
+ * `Breadcrumb`/`BreadcrumbItem`, `Stepper`/`Step`, `FloatingWindow`, `Popover` (AnchoredPopover).
+ * The array-fed `@ui` components (`tabs[]`, `items[]`, `steps[]`) are fed from child elements by
+ * their `childrenToProp` adapter, so the markup is the desktop's (VIEWS-SPEC §8).
+ */
+import type { ComponentProps } from 'react'
+import type { Card } from '../Card'
+import type { Tabs, TabDef } from '../Tabs'
+import type { Accordion, AccordionItemDef } from '../Accordion'
+import type { BreadcrumbBase, Crumb } from '../Breadcrumb'
+import type { Stepper, StepDef } from '../Stepper'
+import type { FloatingWindow } from '../FloatingWindow'
+import type { AnchoredPopover } from '../AnchoredPopover'
+import type { ElementMeta } from './types.ts'
+import { ICON_PROPERTIES } from './levels.ts'
+
+const CONTAINER_CHAIN = ['ContainerBase', 'ScrollableControl', 'Control', 'Component'] as const
+
+export const CardMeta = {
+  name: 'Card',
+  doc: 'A card with an optional title that holds one child.',
+  docFr: 'Carte avec un titre facultatif, qui contient un élément enfant.',
+  family: 'core',
+  baseChain: ['Card', ...CONTAINER_CHAIN],
+  children: 'SingleWidget',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Title', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Title shown in the card header. Leave empty to hide the header.',
+      docFr: "Titre affiché dans l'en-tête de la carte. Laisser vide pour masquer l'en-tête.",
+      to: { prop: 'title' } },
+    { name: 'Subtitle', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Secondary text shown under the title.', docFr: 'Texte secondaire affiché sous le titre.',
+      to: { prop: 'subtitle' } },
+    { name: 'Dense', kind: 'Bool', default: 'false', category: 'Layout',
+      doc: 'Uses tighter spacing and a smaller title.', docFr: 'Utilise des espacements réduits et un titre plus petit.',
+      to: { prop: 'dense' } },
+    { name: 'Flush', kind: 'Bool', default: 'false', category: 'Layout',
+      doc: 'Removes the body padding, so a table or list reaches the card edges.',
+      docFr: 'Supprime les marges intérieures, pour qu\'un tableau ou une liste touche les bords de la carte.',
+      to: { prop: 'flush' } },
+    { name: 'Icon', kind: 'String', default: '', category: 'Icon', editor: 'icon', webOnly: true,
+      doc: 'Web only: icon shown before the title.', docFr: 'Web uniquement : icône affichée avant le titre.',
+      to: { prop: 'icon', convert: 'icon-node' } },
+    // Property elements (`<Card.Actions>…</Card.Actions>`): content slots, not attributes.
+    { name: 'Actions', kind: 'String', default: '', category: 'Appearance', serialization: 'Content', browsable: false, webOnly: true,
+      doc: 'Web only: controls of the header row, written as a <Card.Actions> property element.',
+      docFr: "Web uniquement : contrôles de la ligne d'en-tête, écrits dans un élément de propriété <Card.Actions>.",
+      to: { prop: 'actions' } },
+    { name: 'Footer', kind: 'String', default: '', category: 'Appearance', serialization: 'Content', browsable: false, webOnly: true,
+      doc: 'Web only: bottom band of the card, written as a <Card.Footer> property element.',
+      docFr: 'Web uniquement : bande inférieure de la carte, écrite dans un élément de propriété <Card.Footer>.',
+      to: { prop: 'footer' } },
+  ],
+  events: [],
+  designDefaults: { attributes: { Title: 'Carte' }, size: [320, 200] },
+  web: { module: '@ui', export: 'Card', domRoot: 'wrapper', content: 'children', slots: { Actions: 'actions', Footer: 'footer' } },
+} as const satisfies ElementMeta<ComponentProps<typeof Card>>
+
+export const TabsMeta = {
+  name: 'Tabs',
+  doc: 'A set of pages shown one at a time, with tabs. Add the pages as TabItem children.',
+  docFr: 'Ensemble de pages affichées une à la fois, avec des onglets. Ajoutez les pages comme éléments TabItem enfants.',
+  family: 'containers',
+  baseChain: ['Tabs', ...CONTAINER_CHAIN],
+  children: 'List',
+  allowedChildren: ['TabItem'],
+  layoutKind: 'Tabs',
+  defaultEvent: 'OnSelectionChanged',
+  properties: [
+    { name: 'SelectedIndex', kind: 'F32', default: '0', category: 'Data',
+      doc: 'Index of the selected tab, starting at 0.', docFr: "Index de l'onglet sélectionné, à partir de 0.",
+      to: { prop: 'value', convert: 'index-to-key', change: 'OnSelectionChanged' } },
+    { name: 'Variant', kind: { Enum: ['Underline', 'Pills', 'Stretched'] }, default: 'Underline', category: 'Appearance', webOnly: true,
+      doc: 'Web only: look of the tab strip.', docFr: 'Web uniquement : aspect de la barre d\'onglets.',
+      to: { prop: 'variant', values: { Underline: 'underline', Pills: 'pills', Stretched: 'stretched' } } },
+    { name: 'Size', kind: { Enum: ['Sm', 'Md'] }, default: 'Md', category: 'Appearance', webOnly: true,
+      doc: 'Web only: size of the tabs.', docFr: 'Web uniquement : taille des onglets.',
+      to: { prop: 'size', values: { Sm: 'sm', Md: 'md' } } },
+  ],
+  events: [
+    { name: 'OnSelectionChanged', category: 'Behavior', args: 'ValueChangedEventArgs',
+      doc: 'Occurs when another tab is selected.', docFr: 'Se produit quand un autre onglet est sélectionné.',
+      from: { prop: 'onChange', args: 'key-to-index' } },
+  ],
+  designDefaults: { size: [320, 200] },
+  web: { module: '@ui', export: 'Tabs', domRoot: 'wrapper', childrenToProp: { prop: 'tabs', item: 'TabItem', content: 'selected-after', key: 'id' } },
+} as const satisfies ElementMeta<ComponentProps<typeof Tabs>>
+
+export const TabItemMeta = {
+  name: 'TabItem',
+  doc: 'A page of a Tabs control.',
+  docFr: "Page d'un contrôle Tabs.",
+  family: 'containers',
+  baseChain: ['TabItem', 'Component'],
+  children: 'SingleWidget',
+  defaultEvent: null,
+  properties: [
+    { name: 'Header', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text of the tab.', docFr: "Texte de l'onglet.", to: { prop: 'label' } },
+    { name: 'Icon', kind: 'String', default: '', category: 'Icon', editor: 'icon', webOnly: true,
+      doc: 'Web only: icon shown before the text of the tab.', docFr: "Web uniquement : icône affichée avant le texte de l'onglet.",
+      to: { prop: 'icon', convert: 'icon-component' } },
+  ],
+  events: [],
+  web: { module: null, export: null, domRoot: 'none', itemOf: ['Tabs'] },
+} as const satisfies ElementMeta<TabDef>
+
+export const AccordionMeta = {
+  name: 'Accordion',
+  doc: 'A list of sections that can be expanded or collapsed. Add the sections as AccordionSection children.',
+  docFr: 'Liste de sections qui peuvent être développées ou réduites. Ajoutez les sections comme éléments AccordionSection enfants.',
+  family: 'containers',
+  baseChain: ['Accordion', ...CONTAINER_CHAIN],
+  children: 'List',
+  allowedChildren: ['AccordionSection'],
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Size', kind: { Enum: ['Sm', 'Md'] }, default: 'Md', category: 'Appearance',
+      doc: 'Spacing of the section headers and contents.', docFr: 'Espacement des en-têtes et du contenu des sections.',
+      to: { prop: 'size', values: { Sm: 'sm', Md: 'md' } } },
+  ],
+  events: [],
+  designDefaults: { size: [320, 200] },
+  web: { module: '@ui', export: 'Accordion', domRoot: 'wrapper', childrenToProp: { prop: 'items', item: 'AccordionSection', content: { field: 'content' }, key: 'id' } },
+} as const satisfies ElementMeta<ComponentProps<typeof Accordion>>
+
+export const AccordionSectionMeta = {
+  name: 'AccordionSection',
+  doc: 'A section of an Accordion that can be expanded or collapsed.',
+  docFr: "Section d'un accordéon, qui peut être développée ou réduite.",
+  family: 'containers',
+  baseChain: ['AccordionSection', 'Component'],
+  children: 'SingleWidget',
+  defaultEvent: 'OnToggled',
+  properties: [
+    { name: 'Header', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Title of the section.', docFr: 'Titre de la section.', to: { prop: 'title' } },
+    // The parent's `open[]` holds the keys of the open sections: the adapter derives it.
+    { name: 'Open', kind: 'Bool', default: 'false', category: 'Behavior',
+      doc: 'Whether the section is expanded.', docFr: 'Indique si la section est développée.',
+      to: { runtime: 'item-state', change: 'OnToggled' } },
+    { name: 'Disabled', kind: 'Bool', default: 'false', category: 'Behavior',
+      doc: 'Shows the section greyed out and keeps it collapsed.', docFr: 'Affiche la section grisée et la garde réduite.',
+      to: { prop: 'disabled' } },
+  ],
+  events: [
+    { name: 'OnToggled', category: 'Behavior', args: 'ValueChangedEventArgs',
+      doc: 'Occurs when the section is expanded or collapsed.', docFr: 'Se produit quand la section est développée ou réduite.',
+      from: { runtime: 'parent-adapter', args: 'open-keys' } },
+  ],
+  web: { module: null, export: null, domRoot: 'none', itemOf: ['Accordion'] },
+} as const satisfies ElementMeta<AccordionItemDef>
+
+export const BreadcrumbMeta = {
+  name: 'Breadcrumb',
+  doc: 'A navigation trail. Add the segments as BreadcrumbItem children.',
+  docFr: "Fil d'Ariane de navigation. Ajoutez les segments comme éléments BreadcrumbItem enfants.",
+  family: 'containers',
+  baseChain: ['Breadcrumb', 'Control', 'Component'],
+  children: 'List',
+  allowedChildren: ['BreadcrumbItem'],
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Size', kind: { Enum: ['Sm', 'Lg'] }, default: 'Sm', category: 'Appearance', webOnly: true,
+      doc: "Web only: scale of the trail; Lg makes it the page's heading.",
+      docFr: "Web uniquement : taille du fil ; Lg en fait le titre de la page.",
+      to: { prop: 'size', values: { Sm: 'sm', Lg: 'lg' } } },
+  ],
+  events: [],
+  inheritedMap: { AccessibleName: { prop: 'ariaLabel' } },
+  designDefaults: { size: [320, 32] },
+  web: { module: '@ui', export: 'Breadcrumb', domRoot: 'wrapper', childrenToProp: { prop: 'items', item: 'BreadcrumbItem', content: 'none' } },
+} as const satisfies ElementMeta<ComponentProps<typeof BreadcrumbBase>>
+
+export const BreadcrumbItemMeta = {
+  name: 'BreadcrumbItem',
+  doc: 'A segment of a Breadcrumb trail.',
+  docFr: "Segment d'un fil d'Ariane.",
+  family: 'containers',
+  baseChain: ['BreadcrumbItem', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Text', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text of the segment.', docFr: 'Texte du segment.', to: { prop: 'label' } },
+    { name: 'Href', kind: 'String', default: '', category: 'Behavior', webOnly: true,
+      doc: 'Web only: address the segment links to (it can then be opened in a new tab).',
+      docFr: "Web uniquement : adresse vers laquelle pointe le segment (il peut alors s'ouvrir dans un nouvel onglet).",
+      to: { prop: 'href' } },
+    { name: 'Icon', kind: 'String', default: '', category: 'Icon', editor: 'icon', webOnly: true,
+      doc: 'Web only: icon shown before the text.', docFr: 'Web uniquement : icône affichée avant le texte.',
+      to: { prop: 'icon', convert: 'icon-node' } },
+  ],
+  events: [
+    { name: 'OnClick', category: 'Action', args: 'ItemEventArgs',
+      doc: 'Occurs when the segment is clicked.', docFr: 'Se produit quand le segment est cliqué.',
+      from: { prop: 'onClick', args: 'item' } },
+  ],
+  web: { module: null, export: null, domRoot: 'none', itemOf: ['Breadcrumb'] },
+} as const satisfies ElementMeta<Crumb>
+
+export const StepperMeta = {
+  name: 'Stepper',
+  doc: 'The progress of a multi-step process. Add the steps as Step children.',
+  docFr: "Progression d'un processus en plusieurs étapes. Ajoutez les étapes comme éléments Step enfants.",
+  family: 'containers',
+  baseChain: ['Stepper', 'Control', 'Component'],
+  children: 'List',
+  allowedChildren: ['Step'],
+  defaultEvent: 'OnStepSelected',
+  properties: [
+    { name: 'CurrentIndex', kind: 'F32', default: '0', category: 'Data',
+      doc: 'Index of the current step, starting at 0.', docFr: "Index de l'étape en cours, à partir de 0.",
+      to: { prop: 'current' } },
+    { name: 'Orientation', kind: { Enum: ['Horizontal', 'Vertical'] }, default: 'Horizontal', category: 'Layout',
+      doc: 'Whether the steps are laid out horizontally or vertically.',
+      docFr: 'Indique si les étapes sont disposées horizontalement ou verticalement.',
+      to: { prop: 'orientation', values: { Horizontal: 'horizontal', Vertical: 'vertical' } } },
+    { name: 'AllowForward', kind: 'Bool', default: 'false', category: 'Behavior',
+      doc: 'Lets the user click a step after the current one.', docFr: "Permet de cliquer sur une étape située après l'étape en cours.",
+      to: { prop: 'allowForward' } },
+  ],
+  events: [
+    { name: 'OnStepSelected', category: 'Behavior', args: 'ValueChangedEventArgs',
+      doc: 'Occurs when the user clicks a step.', docFr: "Se produit quand l'utilisateur clique sur une étape.",
+      from: { prop: 'onStepChange', args: 'id-index' } },
+  ],
+  designDefaults: { size: [480, 64] },
+  web: { module: '@ui', export: 'Stepper', domRoot: 'wrapper', childrenToProp: { prop: 'steps', item: 'Step', content: 'none', key: 'id' } },
+} as const satisfies ElementMeta<ComponentProps<typeof Stepper>>
+
+export const StepMeta = {
+  name: 'Step',
+  doc: 'A step of a Stepper.',
+  docFr: "Étape d'un Stepper.",
+  family: 'containers',
+  baseChain: ['Step', 'Component'],
+  children: 'None',
+  defaultEvent: null,
+  properties: [
+    { name: 'Label', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text of the step.', docFr: "Texte de l'étape.", to: { prop: 'label' } },
+    { name: 'Description', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Secondary text shown under the label.', docFr: 'Texte secondaire affiché sous le libellé.',
+      to: { prop: 'description' } },
+    { name: 'Status', kind: { Enum: ['Pending', 'Current', 'Complete', 'Error', 'Disabled'] }, default: 'Pending', category: 'Appearance',
+      doc: 'State of the step. Leave empty to derive it from the current step.',
+      docFr: "État de l'étape. Laisser vide pour le déduire de l'étape en cours.",
+      to: { prop: 'status', values: { Pending: 'pending', Current: 'current', Complete: 'complete', Error: 'error', Disabled: 'disabled' } } },
+    { name: 'Optional', kind: 'Bool', default: 'false', category: 'Behavior',
+      doc: 'Marks the step as optional.', docFr: "Marque l'étape comme facultative.", to: { prop: 'optional' } },
+  ],
+  events: [],
+  web: { module: null, export: null, domRoot: 'none', itemOf: ['Stepper'] },
+} as const satisfies ElementMeta<StepDef>
+
+export const FloatingWindowMeta = {
+  name: 'FloatingWindow',
+  doc: 'A window drawn inside the view, with the Kubuno title band and a close button; modal, it veils the rest of the window.',
+  docFr: 'Fenêtre dessinée dans la vue, avec la barre de titre Kubuno et un bouton Fermer ; modale, elle voile le reste de la fenêtre.',
+  family: 'containers',
+  baseChain: ['FloatingWindow', ...CONTAINER_CHAIN],
+  children: 'SingleWidget',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Title', kind: 'String', default: '', category: 'Appearance', bindable: true, localizable: true,
+      doc: "Text of the window's title band.", docFr: 'Texte de la barre de titre de la fenêtre.',
+      to: { prop: 'title' } },
+    { name: 'Icon', kind: 'String', default: '', category: 'Icon', editor: 'icon',
+      doc: 'Icon shown before the title: a name of the Kubuno icon set, or an image file (SVG, PNG…) relative to the view.',
+      docFr: "Icône affichée avant le titre : un nom du jeu d'icônes Kubuno, ou un fichier image (SVG, PNG…) relatif à la vue.",
+      to: { prop: 'icon', convert: 'icon-node' } },
+    { name: 'IsOpen', kind: 'Bool', default: 'true', category: 'Behavior', bindable: true,
+      doc: 'Whether the window shows. Bind it to open and close the window from code; the close button sets it to false.',
+      docFr: 'Indique si la fenêtre est affichée. Liez-la pour ouvrir et fermer la fenêtre depuis le code ; le bouton Fermer la passe à false.',
+      to: { runtime: 'visible', change: 'OnClose' } },
+    { name: 'Modal', kind: 'Bool', default: 'false', category: 'Behavior',
+      doc: 'Veils the rest of the window while it is open, like a dialog.',
+      docFr: "Voile le reste de la fenêtre tant qu'elle est ouverte, comme un dialogue.",
+      to: { prop: 'backdrop' } },
+    ...ICON_PROPERTIES,
+    { name: 'Resizable', kind: 'Bool', default: 'false', category: 'Behavior', webOnly: true,
+      doc: 'Web only: lets the user resize the window by its edges.',
+      docFr: "Web uniquement : permet à l'utilisateur de redimensionner la fenêtre par ses bords.",
+      to: { prop: 'resizable' } },
+  ],
+  events: [
+    { name: 'OnClose', category: 'Action', args: 'EventArgs',
+      doc: 'Occurs when the close button of the window is clicked.', docFr: 'Se produit quand on clique sur le bouton Fermer de la fenêtre.',
+      from: { prop: 'onClose', args: 'none' } },
+  ],
+  inheritedMap: { Width: { prop: 'defaultWidth' }, Height: { prop: 'defaultHeight' } },
+  designDefaults: { attributes: { Title: 'Fenêtre' }, size: [560, 360] },
+  web: { module: '@ui', export: 'FloatingWindow', domRoot: 'portal', content: 'children' },
+} as const satisfies ElementMeta<ComponentProps<typeof FloatingWindow>>
+
+export const PopoverMeta = {
+  name: 'Popover',
+  doc: 'A floating panel shown next to a control (its Target) while IsOpen is true; a click outside it or Escape closes it. It is painted above the rest of the view wherever it is declared.',
+  docFr: "Panneau flottant affiché à côté d'un contrôle (sa cible) tant qu'IsOpen vaut true ; un clic à l'extérieur ou Échap le ferme. Il se dessine au-dessus du reste de la vue, où qu'il soit déclaré.",
+  family: 'containers',
+  baseChain: ['Popover', ...CONTAINER_CHAIN],
+  children: 'SingleWidget',
+  defaultEvent: 'OnClosed',
+  properties: [
+    { name: 'Target', kind: 'String', default: '', category: 'Behavior', editor: 'reference:Control',
+      doc: 'The x:Name of the control it opens next to.', docFr: "x:Name du contrôle à côté duquel il s'ouvre.",
+      to: { prop: 'anchorRef', convert: 'element-ref' } },
+    { name: 'IsOpen', kind: 'Bool', default: 'false', category: 'Behavior', bindable: true,
+      doc: 'Whether it is shown. Bind it two-way to know when the user closes it.',
+      docFr: "Indique s'il est affiché. Liez-le dans les deux sens pour savoir quand l'utilisateur le ferme.",
+      to: { prop: 'open', change: 'OnClosed' } },
+    { name: 'Alignment', kind: { Enum: ['Start', 'Center', 'End'] }, default: 'Start', category: 'Layout',
+      doc: 'Which edges of the panel and the target line up. On the web Center is not available yet (Start is used).',
+      docFr: "Bords du panneau et de la cible qui s'alignent. Sur le web, Center n'est pas encore disponible (Start est utilisé).",
+      to: { prop: 'align', values: { Start: 'left', Center: 'left', End: 'right' } } },
+  ],
+  events: [
+    { name: 'OnClosed', category: 'Behavior', args: 'EventArgs',
+      doc: 'Occurs when the panel closes.', docFr: 'Se produit quand le panneau se ferme.',
+      from: { prop: 'onClose', args: 'none' } },
+  ],
+  designDefaults: { size: [240, 160] },
+  web: { module: '@ui', export: 'AnchoredPopover', domRoot: 'portal', content: 'children' },
+} as const satisfies ElementMeta<ComponentProps<typeof AnchoredPopover>>

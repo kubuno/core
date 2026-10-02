@@ -363,7 +363,7 @@
             "dom": "ref",
             "el": "Stack",
             "id": "0.0",
-            "m": "/test/golden/fake-layout",
+            "m": "@kubuno/views",
             "props": [
               {
                 "at": [
@@ -881,7 +881,7 @@
       }
     ],
     "id": "",
-    "m": "/test/golden/fake-layout",
+    "m": "@kubuno/views",
     "props": [
       {
         "at": [
@@ -893,7 +893,7 @@
         "to": {
           "prop": "direction"
         },
-        "v": "column"
+        "v": "TopDown"
       },
       {
         "at": [

@@ -6,10 +6,9 @@ import { StrictMode, createElement, type ComponentType } from 'react'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import * as UI from '@ui'
-import { KbView, registerElements, setResourceResolver, type ViewPlan } from '@kubuno/views'
+import { KbView, Panel, Repeater, ScrollArea, Stack, UserControl, registerElements, setResourceResolver, type ViewPlan } from '@kubuno/views'
 
 import { loadNodeCompiler, projectRegistryJson } from '../../src/project.js'
-import * as Layout from './fake-layout'
 import FormComponent, { Form } from './Form'
 
 const here = process.env.KBVIEW_CONFORMANCE_DIR!
@@ -28,7 +27,8 @@ beforeAll(async () => {
   expect(out.ok, JSON.stringify(out.diagnostics)).toBe(true)
   interpreted = JSON.parse(JSON.stringify(out.plan)) as ViewPlan
   registerElements('@ui', UI as unknown as Record<string, unknown>)
-  registerElements('/fake-layout', Layout as unknown as Record<string, unknown>)
+  // The runtime's own elements (Stack, Repeater…), as the host registers them (viewsHost).
+  registerElements('@kubuno/views', { Panel, Repeater, ScrollArea, Stack, UserControl })
   setResourceResolver((key) => `[${key}]`)
 })
 
@@ -82,7 +82,7 @@ describe('conformance: compiled and interpreted plans render the same DOM (Stric
     const cell = (Form as unknown as Record<symbol, Cell>)[CELL]
     const compiled = cell.plan
     // The compiled plan really is the compiled one (accessors, imported components).
-    expect(typeof compiled.root.c).toBe('function')
+    expect(compiled.root.c).toBe(Stack)
     const compiledSteps = await scenario()
     cell.plan = interpreted
     let interpretedSteps: string[]

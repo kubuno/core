@@ -60,7 +60,7 @@
             "dom": "ref",
             "el": "Stack",
             "id": "5.0",
-            "m": "/test/golden/fake-layout",
+            "m": "@kubuno/views",
             "x": "Stack"
           },
           {
@@ -71,7 +71,7 @@
             "dom": "ref",
             "el": "Stack",
             "id": "5.1",
-            "m": "/test/golden/fake-layout",
+            "m": "@kubuno/views",
             "x": "Stack"
           }
         ],
@@ -87,7 +87,7 @@
     "dom": "ref",
     "el": "Stack",
     "id": "",
-    "m": "/test/golden/fake-layout",
+    "m": "@kubuno/views",
     "x": "Stack"
   }
 }

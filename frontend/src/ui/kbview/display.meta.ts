@@ -1,0 +1,200 @@
+/**
+ * Display elements: `Badge`, `Spinner`, `ProgressBar`, `Separator`, `Callout`, `EmptyState`.
+ * Names, kinds, defaults and documentation follow the desktop registry (VIEWS-SPEC §2, §9).
+ */
+import type { ComponentProps } from 'react'
+import type { Badge } from '../Badge'
+import type { Spinner } from '../Spinner'
+import type { ProgressBar } from '../ProgressBar'
+import type { Separator } from '../Separator'
+import type { Callout } from '../Callout'
+import type { EmptyState } from '../EmptyState'
+import type { ElementMeta } from './types.ts'
+import { ICON_PROPERTIES } from './levels.ts'
+
+export const BadgeMeta = {
+  name: 'Badge',
+  doc: 'A small pill showing a count or a status.',
+  docFr: 'Petite pastille affichant un nombre ou un état.',
+  family: 'display',
+  baseChain: ['Badge', 'LabelBase', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Text', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text of the badge.', docFr: 'Texte de la pastille.', to: { prop: 'children' } },
+    { name: 'Variant', kind: { Enum: ['Default', 'Primary', 'Success', 'Warning', 'Danger', 'Neutral'] }, default: 'Default', category: 'Appearance',
+      doc: 'Colour of the badge.', docFr: 'Couleur de la pastille.',
+      to: { prop: 'variant', values: { Default: 'default', Primary: 'primary', Success: 'success', Warning: 'warning', Danger: 'danger', Neutral: 'neutral' } } },
+    { name: 'Size', kind: { Enum: ['Sm', 'Md'] }, default: 'Md', category: 'Appearance',
+      doc: 'Size of the badge.', docFr: 'Taille de la pastille.', to: { prop: 'size', values: { Sm: 'sm', Md: 'md' } } },
+    { name: 'Dot', kind: 'Bool', default: 'false', category: 'Appearance',
+      doc: 'Shows a coloured status dot before the text.', docFr: "Affiche une pastille d'état colorée avant le texte.",
+      to: { prop: 'dot' } },
+  ],
+  events: [],
+  designDefaults: { attributes: { Text: 'Badge' }, size: [100, 24] },
+  web: { module: '@ui', export: 'Badge', domRoot: 'wrapper' },
+} as const satisfies ElementMeta<ComponentProps<typeof Badge>>
+
+export const SpinnerMeta = {
+  name: 'Spinner',
+  doc: 'An animated loading indicator.',
+  docFr: 'Indicateur de chargement animé.',
+  family: 'display',
+  baseChain: ['Spinner', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Size', kind: { Enum: ['Xs', 'Sm', 'Md', 'Lg'] }, default: 'Md', category: 'Appearance',
+      doc: 'Size of the indicator.', docFr: "Taille de l'indicateur.",
+      to: { prop: 'size', values: { Xs: 'xs', Sm: 'sm', Md: 'md', Lg: 'lg' } } },
+  ],
+  events: [],
+  // The spinner's accessible text is its `label` prop (announced, visually hidden).
+  inheritedMap: { AccessibleName: { prop: 'label' } },
+  designDefaults: { size: [24, 24] },
+  web: { module: '@ui', export: 'Spinner', domRoot: 'wrapper' },
+} as const satisfies ElementMeta<ComponentProps<typeof Spinner>>
+
+export const ProgressBarMeta = {
+  name: 'ProgressBar',
+  doc: 'A progress bar.',
+  docFr: 'Barre de progression.',
+  family: 'display',
+  baseChain: ['ProgressBar', 'RangeBase', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Maximum', kind: 'F32', default: '100', category: 'Data', aliases: ['Max'],
+      doc: 'Value at which the bar is full.', docFr: 'Valeur pour laquelle la barre est pleine.', to: { prop: 'max' } },
+    { name: 'Value', kind: 'F32', default: '0', category: 'Data',
+      doc: 'Current progress, between Minimum and Maximum.', docFr: 'Progression actuelle, entre Min et Max.',
+      to: { prop: 'value' } },
+    { name: 'Indeterminate', kind: 'Bool', default: 'false', category: 'Behavior',
+      doc: 'Shows an animation instead of a value, when the progress is unknown.',
+      docFr: 'Affiche une animation au lieu d\'une valeur, quand la progression est inconnue.',
+      to: { prop: 'indeterminate' } },
+    { name: 'Label', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text shown above the bar. Leave empty for none.', docFr: 'Texte affiché au-dessus de la barre. Laisser vide pour aucun texte.',
+      to: { prop: 'label' } },
+    { name: 'ShowValue', kind: 'Bool', default: 'false', category: 'Appearance',
+      doc: 'Shows the percentage above the bar.', docFr: 'Affiche le pourcentage au-dessus de la barre.',
+      to: { prop: 'showValue' } },
+    { name: 'Variant', kind: { Enum: ['Auto', 'Primary', 'Success', 'Warning', 'Danger'] }, default: 'Auto', category: 'Appearance',
+      doc: 'Colour of the bar. Auto turns amber, then red, as it fills up.',
+      docFr: "Couleur de la barre. Auto passe à l'orange puis au rouge à mesure qu'elle se remplit.",
+      to: { prop: 'variant', values: { Auto: 'auto', Primary: 'primary', Success: 'success', Warning: 'warning', Danger: 'danger' } } },
+    { name: 'Size', kind: { Enum: ['Sm', 'Md'] }, default: 'Md', category: 'Appearance',
+      doc: 'Thickness of the bar.', docFr: 'Épaisseur de la barre.', to: { prop: 'size', values: { Sm: 'sm', Md: 'md' } } },
+  ],
+  events: [],
+  designDefaults: { size: [200, 24] },
+  web: { module: '@ui', export: 'ProgressBar', domRoot: 'wrapper' },
+} as const satisfies ElementMeta<ComponentProps<typeof ProgressBar>>
+
+export const SeparatorMeta = {
+  name: 'Separator',
+  doc: 'A thin separating line.',
+  docFr: 'Fine ligne de séparation.',
+  family: 'display',
+  baseChain: ['Separator', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Orientation', kind: { Enum: ['Horizontal', 'Vertical'] }, default: 'Horizontal', category: 'Layout',
+      doc: 'Whether the line is horizontal or vertical.', docFr: 'Indique si la ligne est horizontale ou verticale.',
+      to: { prop: 'orientation', values: { Horizontal: 'horizontal', Vertical: 'vertical' } } },
+  ],
+  events: [],
+  designDefaults: { size: [200, 8] },
+  web: { module: '@ui', export: 'Separator', domRoot: 'wrapper' },
+} as const satisfies ElementMeta<ComponentProps<typeof Separator>>
+
+export const CalloutMeta = {
+  name: 'Callout',
+  doc: 'A message banner: information, success, warning or error.',
+  docFr: 'Bandeau de message : information, succès, avertissement ou erreur.',
+  family: 'display',
+  baseChain: ['Callout', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Body', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Message text.', docFr: 'Texte du message.', to: { prop: 'children' } },
+    { name: 'Title', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Bold title shown above the message. Leave empty for none.',
+      docFr: 'Titre en gras affiché au-dessus du message. Laisser vide pour aucun titre.',
+      to: { prop: 'title' } },
+    { name: 'Variant', kind: { Enum: ['Info', 'Success', 'Warning', 'Danger'] }, default: 'Info', category: 'Appearance',
+      doc: 'Kind of message, which sets the colour and the icon.', docFr: "Type de message, qui détermine la couleur et l'icône.",
+      to: { prop: 'variant', values: { Info: 'info', Success: 'success', Warning: 'warning', Danger: 'danger' } } },
+    { name: 'Dismissible', kind: 'Bool', default: 'false', category: 'Behavior',
+      doc: 'Shows a button to close the banner.', docFr: 'Affiche un bouton pour fermer le bandeau.',
+      to: { prop: 'dismissible' } },
+    { name: 'ShowIcon', kind: 'Bool', default: 'true', category: 'Appearance',
+      doc: 'Shows the icon of the message kind.', docFr: "Affiche l'icône du type de message.",
+      to: { prop: 'icon', convert: 'null-when-false' } },
+    { name: 'ActionLabel', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text of an action button in the banner. Leave empty for none.',
+      docFr: "Texte d'un bouton d'action dans le bandeau. Laisser vide pour aucun bouton.",
+      to: { prop: 'action', field: 'label' } },
+  ],
+  events: [
+    { name: 'OnAction', category: 'Action', args: 'EventArgs',
+      doc: 'Occurs when the action button is clicked.', docFr: "Se produit quand le bouton d'action est cliqué.",
+      from: { prop: 'action', field: 'onClick', args: 'none' } },
+    { name: 'OnDismiss', category: 'Action', args: 'EventArgs',
+      doc: 'Occurs when the banner is closed.', docFr: 'Se produit quand le bandeau est fermé.',
+      from: { prop: 'onDismiss', args: 'none' } },
+  ],
+  designDefaults: { attributes: { Body: 'Message' }, size: [320, 56] },
+  web: { module: '@ui', export: 'Callout', domRoot: 'wrapper' },
+} as const satisfies ElementMeta<ComponentProps<typeof Callout>>
+
+export const EmptyStateMeta = {
+  name: 'EmptyState',
+  doc: 'A placeholder shown when an area has nothing to display.',
+  docFr: "Écran affiché quand une zone n'a rien à montrer.",
+  family: 'display',
+  baseChain: ['EmptyState', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Icon', kind: 'String', default: '', category: 'Icon', editor: 'icon',
+      doc: 'Icon shown at the top: a name of the Kubuno icon set, or an image file relative to the view.',
+      docFr: "Icône affichée en haut : un nom du jeu d'icônes Kubuno, ou un fichier image relatif à la vue.",
+      to: { prop: 'icon', convert: 'icon-node' } },
+    { name: 'Title', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Title of the message.', docFr: 'Titre du message.', to: { prop: 'title' } },
+    { name: 'Description', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Secondary text shown under the title.', docFr: 'Texte secondaire affiché sous le titre.',
+      to: { prop: 'description' } },
+    { name: 'Variant', kind: { Enum: ['FirstUse', 'NoResults', 'Error', 'Unavailable'] }, default: 'FirstUse', category: 'Appearance',
+      doc: 'Why the area is empty: first use, no results, error or unavailable.',
+      docFr: 'Raison pour laquelle la zone est vide : première utilisation, aucun résultat, erreur ou indisponible.',
+      to: { prop: 'variant', values: { FirstUse: 'first-use', NoResults: 'no-results', Error: 'error', Unavailable: 'unavailable' } } },
+    { name: 'Compact', kind: 'Bool', default: 'false', category: 'Layout',
+      doc: 'Uses less vertical space, for a small area.', docFr: 'Occupe moins de hauteur, pour une petite zone.',
+      to: { prop: 'compact' } },
+    { name: 'ActionLabel', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text of the main action button. Leave empty for none.',
+      docFr: "Texte du bouton d'action principal. Laisser vide pour aucun bouton.",
+      to: { prop: 'action', field: 'label' } },
+    { name: 'SecondaryActionLabel', kind: 'String', default: '', category: 'Appearance',
+      doc: 'Text of the secondary action button. Leave empty for none.',
+      docFr: "Texte du bouton d'action secondaire. Laisser vide pour aucun bouton.",
+      to: { prop: 'secondaryAction', field: 'label' } },
+    ...ICON_PROPERTIES,
+  ],
+  events: [
+    { name: 'OnAction', category: 'Action', args: 'EventArgs',
+      doc: 'Occurs when the main action button is clicked.', docFr: "Se produit quand le bouton d'action principal est cliqué.",
+      from: { prop: 'action', field: 'onClick', args: 'none' } },
+    { name: 'OnSecondaryAction', category: 'Action', args: 'EventArgs',
+      doc: 'Occurs when the secondary action button is clicked.', docFr: "Se produit quand le bouton d'action secondaire est cliqué.",
+      from: { prop: 'secondaryAction', field: 'onClick', args: 'none' } },
+  ],
+  designDefaults: { attributes: { Icon: 'Inbox', Title: 'Rien à afficher' }, size: [320, 200] },
+  web: { module: '@ui', export: 'EmptyState', domRoot: 'wrapper' },
+} as const satisfies ElementMeta<ComponentProps<typeof EmptyState>>

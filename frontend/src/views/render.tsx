@@ -209,9 +209,11 @@ interface Menu {
 }
 
 /** Calls a handler (never in design mode); async errors are reported, not thrown. */
-function dispatch(i: Internals, node: PlanNode, e: PlanEvent, raw: readonly unknown[], ctx: ArgsContext = {}): void {
+function dispatch(i: Internals, node: PlanNode, e: PlanEvent, raw: readonly unknown[], ctx: ArgsContext = {}, scope?: Scope): void {
   if (i.design) return
   const { e: args, native } = makeArgs(e.from.args, raw, ctx)
+  // Inside a Repeater's template: the row the element belongs to (`e.row`, `e.rowIndex`).
+  if (scope && scope.row !== undefined) Object.assign(args, { row: scope.row, rowIndex: scope.index ?? -1 })
   const sender = handleFor(i, node.id)
   const vm = i.vm as unknown as Record<string, unknown>
   let result: unknown
@@ -365,10 +367,10 @@ function build(
   // Events.
   for (const e of node.events ?? []) {
     const f = e.from
-    if (f.prop) addCallback(props, f.prop, f.field, (...raw) => dispatch(i, node, e, raw, { keys, ...ctx }))
+    if (f.prop) addCallback(props, f.prop, f.field, (...raw) => dispatch(i, node, e, raw, { keys, ...ctx }, scope))
     else if (f.dom) {
       out.needsDom = true
-      out.domEvents.push([f.dom === 'mousehover' ? 'mouseover' : f.dom === 'resize' ? 'kb-resize' : f.dom, (ev) => dispatch(i, node, e, [ev], { keys, ...ctx })])
+      out.domEvents.push([f.dom === 'mousehover' ? 'mouseover' : f.dom === 'resize' ? 'kb-resize' : f.dom, (ev) => dispatch(i, node, e, [ev], { keys, ...ctx }, scope)])
     }
   }
 
@@ -609,6 +611,9 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
   }
   const i = ref.current
   i.design = !!design
+  // New props from the host: the elements reading them (through `this.props` or a getter) must look again,
+  // after `use()` (the notification is deferred to the commit, like any change made during a render).
+  const propsChanged = i.state !== 'new' && (i.vm as { props: object }).props !== props
   ;(i.vm as { props: object }).props = props
   if (!i.read) {
     i.read = (id, name) => {
@@ -627,6 +632,7 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
   } finally {
     i.deferred = false
   }
+  if (propsChanged) i.pending = true
   useLayoutEffect(() => {
     if (i.pending) {
       i.pending = false

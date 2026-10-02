@@ -6,6 +6,10 @@
 /** Base of every event args. `native` is the DOM / React event when there is one. */
 export interface EventArgs {
   readonly native?: Event | { nativeEvent?: Event }
+  /** Raised by an element of a `Repeater`'s template: the item of its row. */
+  readonly row?: unknown
+  /** …and that row's position in `ItemsSource`. */
+  readonly rowIndex?: number
 }
 
 export type MouseButton = 'Left' | 'Right' | 'Middle' | 'None'

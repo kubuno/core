@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useIsMobile, useIsLandscape } from '@ui'
 import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
 import { useWaffleApps } from './useWaffleApps'
-import WaffleMenu from './WaffleMenu'
+import WaffleButton from './menus/WaffleButton'
 
 /**
  * Floating action button (mobile only). On desktop the app launcher (waffle
@@ -62,7 +62,7 @@ export default function MobileFab() {
         className={`lg:hidden fixed right-4 ${open ? 'z-[9999]' : 'z-[44]'}`}
         style={{ bottom: landscape && !immersive ? 'calc(16px + env(safe-area-inset-bottom))' : 'calc(72px + env(safe-area-inset-bottom))' }}
       >
-        <WaffleMenu allApps={allWaffleApps} fab onOpenChange={setOpen} />
+        <WaffleButton allApps={allWaffleApps} fab onOpenChange={setOpen} />
       </div>
     </>
   )

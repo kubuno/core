@@ -6,6 +6,14 @@ under the published version number.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A compiled view finds its components even inside an import cycle.** A view of an application whose own
+  code imports back into it (the core's shell views) could be evaluated before the components it uses; it
+  now looks them up when it renders.
+- **A list or object property of a custom control can be bound.** A property that the registry describes as a
+  list or an object was type-checked as a string, so `Apps="{Binding apps}"` failed `kbview-tsc`.
+
 ### Added
 
 - **First version: the build-time tooling of `.kbview` web views.** The package compiles the declarative

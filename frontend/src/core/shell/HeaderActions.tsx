@@ -1,13 +1,11 @@
 import { formatRelative } from '../../core/intl/datetime'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   Bell, HelpCircle, Info, BookOpen, Calendar, PhoneMissed, PlugZap, type LucideIcon,
 } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import * as Avatar from '@radix-ui/react-avatar'
 import { useTranslation } from 'react-i18next'
-import { useAuthStore } from '../store/authStore'
 import { useModulesStore } from '../store/modulesStore'
 import { useNotificationStore } from '../store/notificationStore'
 import { useAlertFeed } from './useAlertFeed'
@@ -15,9 +13,9 @@ import { useModuleLoadAlerts } from './useModuleLoadAlerts'
 import { useModuleNotifications } from './useModuleNotifications'
 import { Slot, SlotRegistry } from '../slots/SlotRegistry'
 import { useWaffleApps } from './useWaffleApps'
-import UserPanel from './UserPanel'
 import AddAccountModal from '../components/AddAccountModal'
-import WaffleMenu from './WaffleMenu'
+import WaffleButton from './menus/WaffleButton'
+import AccountButton from './menus/AccountButton'
 import SettingsMenu from './SettingsMenu'
 
 // Glyph a producer may ask for by name. `Bell` is the alert centre's.
@@ -29,7 +27,6 @@ const NOTIF_ICONS: Record<string, LucideIcon> = { Bell, Calendar, PhoneMissed, P
 // (mode `compact`) après avoir masqué l'AppHeader — gain de hauteur verticale.
 export default function HeaderActions({ compact = false, dark = false, minimal = false }: { compact?: boolean; dark?: boolean; minimal?: boolean }) {
   const { t } = useTranslation()
-  const { user } = useAuthStore()
   const { activeModules } = useModulesStore()
   const activeIds = new Set(activeModules.map(m => m.module_id))
   const SettingsButtonOverride = SlotRegistry.getActiveOverride<{ compact?: boolean; dark?: boolean }>('topbar-settings', activeIds)
@@ -48,15 +45,9 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
   const navigate = useNavigate()
   const pathname = useLocation().pathname
   const isHome = pathname === '/'
-  const [panelOpen, setPanelOpen]           = useState(false)
   const [addAccountOpen, setAddAccountOpen] = useState(false)
   // Re-connecting a « Déconnecté » account row: its email + slot, handed to the modal.
   const [addAccountPrefill, setAddAccountPrefill] = useState<{ email: string; slot: number } | undefined>()
-  const avatarBtnRef = useRef<HTMLButtonElement>(null)
-
-  const initials = user?.display_name
-    ? user.display_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
-    : user?.username?.slice(0, 2).toUpperCase() ?? '?'
 
   const allWaffleApps = useWaffleApps()
 
@@ -183,28 +174,18 @@ export default function HeaderActions({ compact = false, dark = false, minimal =
       </DropdownMenu.Root>
       </>)}
 
-      {/* Grille d'apps : masquée sur mobile — la barre de navigation du bas
-          (« Modules ») remplit ce rôle et la page /modules liste tout. */}
+      {/* App launcher: hidden on mobile — the bottom navigation (« Modules ») plays
+          that role and the /modules page lists everything. The launcher and the
+          account panel are user controls (WaffleMenu / AccountMenu .kbcontrol),
+          carried by these buttons' popovers above the page. */}
       <div className="hidden lg:block">
-        <WaffleMenu allApps={allWaffleApps} compact={compact} dark={dark} />
+        <WaffleButton allApps={allWaffleApps} compact={compact} dark={dark} />
       </div>
 
-      {/* Avatar — ouvre le UserPanel. Même gabarit que les autres icônes (cercle
-          36px partout) → aligné verticalement et de la même dimension que les
-          cercles gris de survol. */}
-      <button ref={avatarBtnRef} onClick={() => setPanelOpen(v => !v)}
-        className="w-9 h-9 ml-0.5 flex items-center justify-center flex-shrink-0 rounded-full outline-none focus:outline-none">
-        <Avatar.Root className="w-9 h-9 rounded-full overflow-hidden bg-primary flex items-center justify-center">
-          {user?.avatar_url ? (
-            <Avatar.Image src={user.avatar_url} alt={user.display_name ?? user.username} className="w-full h-full object-cover" />
-          ) : null}
-          <Avatar.Fallback className="text-white font-medium text-sm">{initials}</Avatar.Fallback>
-        </Avatar.Root>
-      </button>
+      {/* Avatar — opens the account panel. Same template as the other icons (36px
+          circles everywhere). */}
+      <AccountButton onAddAccount={prefill => { setAddAccountPrefill(prefill); setAddAccountOpen(true) }} />
 
-      <UserPanel open={panelOpen} onClose={() => setPanelOpen(false)}
-        onAddAccount={prefill => { setAddAccountPrefill(prefill); setAddAccountOpen(true) }}
-        anchorRef={avatarBtnRef} />
       <AddAccountModal open={addAccountOpen}
         onClose={() => { setAddAccountOpen(false); setAddAccountPrefill(undefined) }}
         prefillEmail={addAccountPrefill?.email} slot={addAccountPrefill?.slot} />

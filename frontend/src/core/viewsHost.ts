@@ -10,12 +10,14 @@ import i18n from 'i18next'
 
 import * as ui from '@ui'
 import { DockArea, WorkspaceShell } from './shell/workspace'
-import { invalidateResources, registerElements, setIconResolver, setResourceResolver } from '@kubuno/views'
+import { Panel, Repeater, ScrollArea, Stack, UserControl, invalidateResources, registerElements, setIconResolver, setResourceResolver } from '@kubuno/views'
 
 import { findIcon } from './utils/iconMap'
 
 registerElements('@ui', ui as unknown as Record<string, unknown>)
 registerElements('@kubuno/sdk', { DockArea, WorkspaceShell })
+// The elements the runtime renders itself (layout containers, Repeater), for interpreted plans.
+registerElements('@kubuno/views', { Panel, Repeater, ScrollArea, Stack, UserControl })
 setIconResolver((name) => findIcon(name) ?? undefined)
 setResourceResolver((key, set) => i18n.t(set ? `${set}:${key}` : key))
 i18n.on('languageChanged', () => invalidateResources())

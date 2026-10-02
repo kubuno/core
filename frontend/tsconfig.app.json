@@ -22,9 +22,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+    // Generated `.kbview` / `.kbcontrol` declarations (`ViewBase`), written by the views compiler.
+    "rootDirs": [".", ".kubuno/views"]
   },
-  "include": ["src"],
+  "include": ["src", ".kubuno/views"],
   "comment_exclude": "shims de build-only (ré-exports de paquets à `export =`) : compilés par rolldown, hors typecheck",
   "exclude": ["src/sdk/shared"]
 }

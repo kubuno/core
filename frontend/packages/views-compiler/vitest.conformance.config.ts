@@ -17,7 +17,9 @@ const root = join(here, 'test', 'conformance')
 export default defineConfig({
   root,
   cacheDir: join(tmpdir(), 'kbview-conformance-vitest'),
-  plugins: [kbview(), react()],
+  // `@ui` reaches the core's stores, which reach the shell (`@kubuno/sdk` exports its header): the shell's own
+  // user controls get compiled too, with the core project's registry of custom controls.
+  plugins: [kbview({ registries: [join(frontend, 'src', 'core', 'shell', 'menus', 'kbview-controls.json')] }), react()],
   resolve: {
     alias: {
       '@kubuno/views': join(frontend, 'src', 'views', 'index.ts'),
