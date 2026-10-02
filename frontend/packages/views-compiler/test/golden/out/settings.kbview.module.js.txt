@@ -3,10 +3,10 @@ import { Stack as __c0 } from "./fake-layout"
 import { Card as __c1, Toggle as __c3, Input as __c4, Dropdown as __c5, Checkbox as __c6, Button as __c7, Callout as __c9, Tabs as __c10, Badge as __c11, OutlinedField as __c13, MenuDropdown as __c14 } from "@ui"
 import { Settings as __c2, Save as __c8, Trash2 as __c12, Copy as __c15 } from "lucide-react"
 export const plan = { abi: 1, file: "test/golden/settings.kbview", handlers: ["cancel_click","copy_click","fix_click","font_changed","page_load","paste_click","save_click"], kind: "view", names: {"autosave":"0.0.0","menu":"4","save":"0.1.0"}, root: { at: [2,2], content: "children", dom: "ref", el: "Stack", id: "", m: "/test/golden/fake-layout", x: "Stack", c: __c0, props: [
-    { n: "Direction", to: {"prop":"direction"}, kind: "Enum", at: [2,8], v: "column" },
-    { n: "Gap", to: {"prop":"gap"}, kind: "F32", at: [2,28], v: 16 }
+    { n: "Direction", to: {"prop":"direction"}, kind: "Enum", at: [2,78], v: "column" },
+    { n: "Gap", to: {"prop":"gap"}, kind: "F32", at: [2,98], v: 16 }
   ], events: [
-    { n: "OnLoad", h: "page_load", from: {"args":"none","runtime":"view-load"}, args_type: "EventArgs", at: [2,37], f: (vm, s, e) => vm.page_load(s, e) }
+    { n: "OnLoad", h: "page_load", from: {"args":"none","runtime":"view-load"}, args_type: "EventArgs", at: [2,107], f: (vm, s, e) => vm.page_load(s, e) }
   ], children: [
     { at: [3,4], content: "children", dom: "wrapper", el: "Card", id: "0", m: "@ui", x: "Card", c: __c1, props: [
         { n: "Title", to: {"prop":"title"}, kind: "String", at: [3,9], res: {"key":"notes_pref_title"} },

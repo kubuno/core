@@ -1,5 +1,5 @@
 <!-- Golden view: the elements of the real host registry plus the project's Stack. -->
-<Stack Direction="TopDown" Gap="16" OnLoad="page_load">
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Direction="TopDown" Gap="16" OnLoad="page_load">
   <Card Title="{Res notes_pref_title}" Icon="Settings">
     <Stack Gap="8">
       <Switch x:Name="autosave" On="{Binding prefs.autosave, Mode=TwoWay}" Label="{Res notes_pref_autosave}"/>

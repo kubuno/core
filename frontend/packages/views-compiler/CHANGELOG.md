@@ -19,3 +19,10 @@ under the published version number.
     against the code-behind and reports the problems at the attribute in the `.kbview`;
   - a browser entry (`@kubuno/views-compiler/browser`) for the Visual Studio design surface.
   A view can only use the host's elements and its own module's controls: anything else is an error.
+
+### Changed
+
+- **Views may declare their XML namespaces** (`xmlns="https://kubuno.com/views"`, `xmlns:x="https://kubuno.com/views/x"`,
+  `xmlns:d="https://kubuno.com/views/design"` on the root element, vskubuno `docs/VIEWS-SPEC.md` §3): the compiler
+  ignores them as markup (never a property), so a view compiles the same with or without them. The test views now
+  declare them, except `errors.kbview`, kept without to cover the undeclared form.

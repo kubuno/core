@@ -870,7 +870,7 @@
         "args_type": "EventArgs",
         "at": [
           2,
-          37
+          107
         ],
         "from": {
           "args": "none",
@@ -886,7 +886,7 @@
       {
         "at": [
           2,
-          8
+          78
         ],
         "kind": "Enum",
         "n": "Direction",
@@ -898,7 +898,7 @@
       {
         "at": [
           2,
-          28
+          98
         ],
         "kind": "F32",
         "n": "Gap",

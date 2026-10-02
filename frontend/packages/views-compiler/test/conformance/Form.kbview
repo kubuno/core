@@ -1,5 +1,5 @@
 <!-- Conformance view: the real @ui components, every kind of property target, two-way bindings, events. -->
-<Stack Gap="12" OnLoad="loaded">
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12" OnLoad="loaded">
   <Button x:Name="inc" Text="{Binding label}" Variant="Secondary" Loading="{Binding busy}" OnClick="inc_click"/>
   <Badge Text="{Binding count, StringFormat='{0} clics'}" Variant="Primary"/>
   <TextField x:Name="nameField" Text="{Binding name, Mode=TwoWay}" Placeholder="Nom" OnTextChanged="name_changed"/>

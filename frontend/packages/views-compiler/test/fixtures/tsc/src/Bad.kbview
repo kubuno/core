@@ -1,4 +1,4 @@
-<Stack OnLoad="loaded">
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" OnLoad="loaded">
   <Button Text="{Binding titel}" OnClick="save_click"/>
   <Button Text="x" Enabled="{Binding name}"/>
   <CheckBox Checked="{Binding total, Mode=TwoWay}"/>

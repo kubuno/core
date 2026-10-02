@@ -1,4 +1,4 @@
-<Stack OnLoad="loaded">
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" OnLoad="loaded">
   <Button x:Name="save" Text="{Binding title}" OnClick="save_click" Enabled="{Binding canSave}"/>
   <CheckBox Checked="{Binding prefs.spell, Mode=TwoWay}" Text="Spell"/>
   <Badge Text="{Binding count, StringFormat=N0}"/>
