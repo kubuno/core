@@ -9,6 +9,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Security
+
+- **A module's private routes are no longer reachable from a browser.** The core's proxy rejected client requests
+  to a module's `/internal/*` routes, but not to its `/ipc/*` routes, and it compared the raw path. Since the proxy
+  presents the module's internal secret, any visitor, even signed out, could reach a module's IPC handlers (for
+  example to read or delete another user's files). Client requests to `/internal/*` and `/ipc/*` are now refused on
+  the HTTP and WebSocket proxies, after normalising the path (percent-encoding, `//`, `/./`, `\`, `..`).
+  Module-to-module IPC keeps going through the core's IPC relay.
+
 ### Changed
 
 - **The header's app launcher and account panel are now declarative views** (`.kbcontrol` user controls,

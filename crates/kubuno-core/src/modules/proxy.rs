@@ -90,21 +90,15 @@ pub async fn proxy_to_module(
         h.remove(kubuno_modauth::TOKEN_HEADER);
     }
 
-    // ── Les routes internes d'un module ne sont pas publiques ────────────────
-    // Plus bas, le proxy REMPLACE le header X-Internal-Secret par le secret du
-    // module cible : n'importe quelle requête arrive donc au module avec un
-    // secret valide. Un module qui publie `patterns = [{ path = "/*" }]` (la
-    // plupart) verrait ainsi ses routes /internal/* — celles qui agissent au nom
-    // de l'instance, sans compte — atteignables par tout utilisateur connecté,
-    // le garde interne du module ne pouvant pas faire la différence.
-    //
-    // Le core est le seul endroit où cette distinction existe encore : ici, un
-    // appel légitime module→module s'est authentifié juste au-dessus (`caller`),
-    // un navigateur non. Les appels du core vers un module ne passent pas par ce
-    // proxy (ils visent `base_url` directement) et ne sont donc pas concernés.
-    // `stripped` porte aussi la query string : on ne compare que le chemin.
-    let stripped_path = stripped.split('?').next().unwrap_or(&stripped);
-    if caller.is_none() && (stripped_path == "/internal" || stripped_path.starts_with("/internal/")) {
+    // ── A module's internal and IPC routes are not public ──────────────────
+    // Further down, the proxy REPLACES X-Internal-Secret with the target module's
+    // secret, so every request reaches the module with a valid secret. Its
+    // `/internal/*` and `/ipc/*` routes (which act for the instance or another
+    // module, without an account) would then be reachable by any client. Only an
+    // authenticated module→module caller (`caller`) may use them; module IPC
+    // normally goes through `ipc_relay`. The path is normalised first so that
+    // `/./ipc`, `//ipc` or `%2Fipc` cannot slip through.
+    if caller.is_none() && is_private_module_path(&stripped) {
         tracing::warn!(
             module = %module_id,
             "Accès refusé à une route interne de module depuis une requête client"
@@ -517,13 +511,9 @@ pub async fn proxy_ws_to_module(
         .unwrap_or(&path_and_query)
         .to_owned();
 
-    // Même règle que sur le proxy HTTP : les routes internes d'un module ne sont
-    // pas atteignables depuis un client, puisque le proxy présente plus bas le
-    // secret interne du module cible. Aucune authentification module→module
-    // n'existe sur ce chemin (une WebSocket n'en porte pas), donc le refus est
-    // inconditionnel ici.
-    let stripped_path = stripped.split('?').next().unwrap_or(&stripped);
-    if stripped_path == "/internal" || stripped_path.starts_with("/internal/") {
+    // Same rule as the HTTP proxy, unconditional here: a WebSocket carries no
+    // module→module authentication.
+    if is_private_module_path(&stripped) {
         tracing::warn!(
             module = %module_id,
             "Accès refusé à une route interne de module depuis une WebSocket cliente"
@@ -839,8 +829,71 @@ fn privatise_cache_control(value: &HeaderValue) -> HeaderValue {
         .unwrap_or_else(|_| HeaderValue::from_static("private, no-cache"))
 }
 
+/// True when a client-supplied module path targets the module's private surface
+/// (`/internal/*` or `/ipc/*`). The path is normalised the way an HTTP router
+/// might: query dropped, percent-decoding applied (repeatedly, against double
+/// encoding), backslashes read as slashes, empty and `.` segments ignored. A `..`
+/// segment is treated as private: no legitimate client path needs one.
+fn is_private_module_path(path_and_query: &str) -> bool {
+    let path = path_and_query.split(['?', '#']).next().unwrap_or_default();
+    let mut decoded = path.to_owned();
+    for _ in 0..3 {
+        let next = percent_decode(&decoded);
+        if next == decoded {
+            break;
+        }
+        decoded = next;
+    }
+    let normalised = decoded.replace('\\', "/");
+    if normalised.split('/').any(|s| s == "..") {
+        return true;
+    }
+    match normalised.split('/').find(|s| !s.is_empty() && *s != ".") {
+        None => false,
+        Some(first) => {
+            let first = first.to_ascii_lowercase();
+            first == "internal" || first == "ipc"
+        }
+    }
+}
+
+/// Minimal percent-decoding; invalid escapes are kept as they are.
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = |b: u8| (b as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn private_module_paths_are_detected_after_normalisation() {
+        use super::is_private_module_path as p;
+        for path in [
+            "/internal", "/internal/x", "/ipc", "/ipc/files/1", "//ipc/x", "/./ipc/x",
+            "/%69pc/x", "/%2569pc/x", "/IPC/x", "/\\ipc/x", "/a/../ipc/x", "/ipc?x=1",
+            "/%2Finternal/x",
+        ] {
+            assert!(p(path), "{path} must be private");
+        }
+        for path in ["/", "/files/1", "/files/ipc", "/internalize", "/files?q=/ipc/x", "/ipcs"] {
+            assert!(!p(path), "{path} must be public");
+        }
+    }
+
     use super::privatise_cache_control;
     use axum::http::HeaderValue;
 
