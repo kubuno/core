@@ -6,6 +6,21 @@ under the published version number.
 
 ## [Unreleased]
 
+### Added
+
+- **Signed URLs for requests the browser makes by itself:** `useSignedUrl()`, `signedUrl()`,
+  `signedUrls()`, `downloadSignedUrl()`, `openSignedUrl()` and `signedSocketUrl()`, with the
+  `TicketPurpose` and `SignedUrlOptions` types. They turn an authenticated `/api/v1/...` URL
+  into one carrying a short-lived signed ticket, for `<img>`, `<video>`/`<audio>`, downloads,
+  `EventSource` and `WebSocket`. Requests are batched and cached; URLs that need no ticket are
+  returned unchanged. Requires a core that issues tickets (`POST /api/v1/auth/tickets`).
+
+### Security
+
+- The host no longer writes the access token into a cookie readable by page scripts. Module
+  code that relied on that cookie for `<img>`/`<video>`/download URLs must use the helpers
+  above.
+
 ## [0.1.10] - 2026-09-07
 
 ### Fixed

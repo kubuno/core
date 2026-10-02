@@ -3,20 +3,19 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 
-function readAndClearCookie(name: string): string | null {
-  const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='))
-  if (!match) return null
-  const value = match.slice(name.length + 1)
-  // Clear the cookie immediately
-  document.cookie = `${name}=; Path=/auth/oauth/callback; SameSite=Strict; Max-Age=0`
-  return value || null
-}
-
+/**
+ * Landing page of an SSO sign-in. The server's callback has already opened the
+ * session and set the HttpOnly refresh cookie; the app's bootstrap
+ * (`initialize()`, a same-origin refresh) turns it into an access token held in
+ * memory. Nothing is read from a cookie here: the access token never travels in
+ * a script-readable cookie.
+ */
 export default function OAuthCallback() {
   const { t } = useTranslation()
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const setToken = useAuthStore((s) => s.setToken)
+  const isInitialized = useAuthStore((s) => s.isInitialized)
+  const user = useAuthStore((s) => s.user)
 
   useEffect(() => {
     const error = params.get('error')
@@ -24,16 +23,9 @@ export default function OAuthCallback() {
       navigate('/login?error=' + encodeURIComponent(error))
       return
     }
-
-    // Token is delivered via a short-lived cookie (not URL) to avoid history/log exposure
-    const token = readAndClearCookie('oauth_token')
-    if (token) {
-      setToken(token)
-      navigate('/')
-    } else {
-      navigate('/login')
-    }
-  }, [params, navigate, setToken])
+    if (!isInitialized) return
+    navigate(user ? '/' : '/login')
+  }, [params, navigate, isInitialized, user])
 
   return (
     <div className="min-h-screen flex items-center justify-center">

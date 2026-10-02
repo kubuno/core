@@ -1,6 +1,7 @@
 use crate::{
     auth::jwt::JwtService,
     auth::middleware::InternalRequest,
+    auth::tickets,
     auth::token_scope::{self, TokenGrant},
     errors::AppError,
     models::user::User,
@@ -45,7 +46,8 @@ pub async fn proxy_to_module(
         .unwrap_or(path_and_query)
         .to_owned();
 
-    let target_url = format!("{base_url}{stripped}");
+    // A signed ticket (`?kt=`) is the core's business: the module never sees it.
+    let target_url = format!("{base_url}{}", tickets::strip_from_path_and_query(&stripped));
 
     // ── Authentification interne module→module ───────────────────────────────
     // Un module (ex: Flow) peut appeler un autre module au nom d'un utilisateur,
@@ -149,20 +151,50 @@ pub async fn proxy_to_module(
         }
     }
 
-    // Extraire et valider le token (JWT ou API token) pour injecter les headers utilisateur
-    // Fallback: lire le cookie access_token si pas d'Authorization header (ex: <img src>, <a href>)
-    let bearer = req.headers()
+    // Resolve the caller for the identity headers. In order:
+    //  1. `Authorization: Bearer` — a session JWT or a personal API token;
+    //  2. a signed ticket `?kt=` — what a browser presents where it cannot set a
+    //     header (`<img>`, `<video>` and its Range requests, a download
+    //     navigation, `EventSource`). Bound to THIS module, path and method: a
+    //     ticket minted for drive is refused here when the path is photos';
+    //  3. the deprecated `access_token` cookie, only while
+    //     `auth.legacy_access_cookie` is on, with a deprecation warning.
+    let header_bearer = req.headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|s| s.to_owned())
-        .or_else(|| extract_cookie_token(req.headers()));
+        .map(|s| s.to_owned());
+    let mut ticket_used = false;
 
     if internal_user_id.is_none() {
-    if let Some(token) = bearer {
-        let (resolved_user, grant) = resolve_caller(state, &token).await;
+    let ticket = if header_bearer.is_none() {
+        tickets::from_query(req.uri().query()).map(str::to_owned)
+    } else {
+        None
+    };
+    let resolved: Option<(User, Option<TokenGrant>)> = if let Some(t) = ticket {
+        let full_path = format!("/api/v1{}", req.uri().path());
+        let (user, _claims) =
+            tickets::authenticate(state, &t, module_id, &full_path, req.method().as_str()).await?;
+        ticket_used = true;
+        Some((user, None))
+    } else {
+        let bearer = header_bearer.or_else(|| {
+            let t = tickets::legacy_cookie_token(state, req.headers())?;
+            tickets::log_legacy_cookie_use(module_id, req.uri().path());
+            Some(t.to_owned())
+        });
+        match bearer {
+            Some(token) => {
+                let (resolved_user, grant) = resolve_caller(state, &token).await;
+                resolved_user.map(|u| (u, grant))
+            }
+            None => None,
+        }
+    };
 
-        if let Some(user) = resolved_user {
+    {
+        if let Some((user, grant)) = resolved {
             // The role a module sees. For a session it is the account's own; for
             // an API token it is derived from the token's scopes, because
             // forwarding the owner's role verbatim is what made a personal token
@@ -182,6 +214,12 @@ pub async fn proxy_to_module(
                 headers.insert(HeaderName::from_static("x-kubuno-user-email"), v);
             }
             annotate_origin(headers, grant.as_ref());
+            if ticket_used {
+                headers.insert(
+                    HeaderName::from_static("x-kubuno-auth-origin"),
+                    HeaderValue::from_static("ticket"),
+                );
+            }
 
             // Attendance. Counted HERE and nowhere else: this is the one line of
             // the whole system where an account and an application are known at
@@ -287,9 +325,26 @@ pub async fn proxy_to_module(
     let mut builder = Response::builder().status(status);
     for (name, value) in resp.headers() {
         let n = name.as_str();
-        if !matches!(n, "connection" | "transfer-encoding" | "keep-alive" | "te" | "upgrade") {
-            builder = builder.header(name, value);
+        // The Referrer-Policy is the core's to decide (set below for a ticketed
+        // request, else by the global security layer), never a module's.
+        if matches!(n, "connection" | "transfer-encoding" | "keep-alive" | "te" | "upgrade" | "referrer-policy") {
+            continue;
         }
+        // A ticketed URL is a per-user capability: no shared cache (reverse
+        // proxy, CDN) may keep its response under that URL.
+        if ticket_used && n == "cache-control" {
+            builder = builder.header(name, privatise_cache_control(value));
+            continue;
+        }
+        builder = builder.header(name, value);
+    }
+    if ticket_used {
+        if !resp.headers().contains_key("cache-control") {
+            builder = builder.header("cache-control", "private, no-cache");
+        }
+        // The ticket sits in the URL: never let it travel on as a Referer
+        // (e.g. a PDF or HTML document opened in a tab, linking elsewhere).
+        builder = builder.header("referrer-policy", "no-referrer");
     }
 
     // Stream the module response instead of buffering it fully: required for
@@ -481,31 +536,68 @@ pub async fn proxy_ws_to_module(
     let ws_base = base_url
         .replacen("https://", "wss://", 1)
         .replacen("http://", "ws://", 1);
-    let target_ws_url = format!("{ws_base}{stripped}");
+    // The ticket never reaches the module.
+    let target_ws_url = format!("{ws_base}{}", tickets::strip_from_path_and_query(&stripped));
 
-    // Resolve user: try Authorization header, then cookie, then ?token= query param
-    // (browsers can't set custom headers for WebSocket, so query param is the standard fallback)
-    let bearer = req.headers()
+    // Resolve the user. Browsers cannot set headers on a WebSocket handshake, so
+    // after the Authorization header (native clients) comes a signed ticket
+    // (`?kt=`, bound to this module and path), then the deprecated cookie (only
+    // while `auth.legacy_access_cookie` is on), then `?token=<access token>`,
+    // still used by the native clients.
+    let header_bearer = req.headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|s| s.to_owned())
-        .or_else(|| extract_cookie_token(req.headers()))
-        .or_else(|| {
-            req.uri().query()
-                .and_then(|q| url::form_urlencoded::parse(q.as_bytes())
-                    .find(|(k, _)| k == "token")
-                    .map(|(_, v)| v.into_owned()))
-        });
+        .map(|s| s.to_owned());
+    let ticket = if header_bearer.is_none() {
+        tickets::from_query(req.uri().query()).map(str::to_owned)
+    } else {
+        None
+    };
+    let ticket_user = match ticket {
+        Some(t) => {
+            let full_path = format!("/api/v1{}", req.uri().path());
+            match tickets::authenticate(&state, &t, &module_id, &full_path, "GET").await {
+                Ok((user, _)) => Some(user),
+                Err(e) => return e.into_response(),
+            }
+        }
+        None => None,
+    };
+    let bearer = if ticket_user.is_some() {
+        None
+    } else {
+        header_bearer
+            .or_else(|| {
+                let t = tickets::legacy_cookie_token(&state, req.headers())?;
+                tickets::log_legacy_cookie_use(&module_id, req.uri().path());
+                Some(t.to_owned())
+            })
+            .or_else(|| {
+                req.uri().query()
+                    .and_then(|q| url::form_urlencoded::parse(q.as_bytes())
+                        .find(|(k, _)| k == "token")
+                        .map(|(_, v)| v.into_owned()))
+            })
+    };
 
     // Per-module secret: authenticates the hop AND keys the identity token below.
     let module_secret = state.settings.server.module_secret(&module_id);
 
     let mut user_headers: Vec<(String, String)> = Vec::new();
-    if let Some(token) = bearer {
-        let (resolved_user, grant) = resolve_caller(&state, &token).await;
-
-        if let Some(user) = resolved_user {
+    let resolved = match (ticket_user, bearer) {
+        (Some(user), _) => Some((user, None, "ticket")),
+        (None, Some(token)) => {
+            let (resolved_user, grant) = resolve_caller(&state, &token).await;
+            resolved_user.map(|u| {
+                let origin = if grant.is_some() { "api_token" } else { "session" };
+                (u, grant, origin)
+            })
+        }
+        (None, None) => None,
+    };
+    if let Some((user, grant, origin)) = resolved {
+        {
             let role = match grant.as_ref() {
                 Some(g) => token_scope::module_role_for(g, &user.role),
                 None => user.role.clone(),
@@ -525,10 +617,7 @@ pub async fn proxy_ws_to_module(
                 kubuno_modauth::TOKEN_HEADER.to_owned(),
                 kubuno_modauth::sign(module_secret.as_bytes(), &mu, &module_id),
             ));
-            user_headers.push((
-                "x-kubuno-auth-origin".to_owned(),
-                if grant.is_some() { "api_token" } else { "session" }.to_owned(),
-            ));
+            user_headers.push(("x-kubuno-auth-origin".to_owned(), origin.to_owned()));
             if let Some(g) = grant.as_ref().filter(|g| !g.is_legacy) {
                 user_headers.push(("x-kubuno-token-scopes".to_owned(), g.scopes.join(",")));
             }
@@ -726,12 +815,47 @@ fn annotate_origin(headers: &mut axum::http::HeaderMap, grant: Option<&TokenGran
     }
 }
 
-fn extract_cookie_token(headers: &axum::http::HeaderMap) -> Option<String> {
-    let cookie_header = headers.get("cookie")?.to_str().ok()?;
-    cookie_header.split(';').find_map(|part| {
-        let part = part.trim();
-        part.strip_prefix("access_token=")
-            .filter(|v| !v.is_empty())
-            .map(|v| v.to_owned())
-    })
+/// `Cache-Control` for a response to a ticketed request: `public` and
+/// `s-maxage` (shared-cache directives) are dropped and `private` is added, the
+/// browser-side directives (`max-age`, `immutable`…) are kept so thumbnails stay
+/// cacheable in the tab.
+fn privatise_cache_control(value: &HeaderValue) -> HeaderValue {
+    let Ok(raw) = value.to_str() else {
+        return HeaderValue::from_static("private, no-cache");
+    };
+    let mut kept: Vec<&str> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|d| {
+            let lower = d.to_ascii_lowercase();
+            !d.is_empty() && lower != "public" && !lower.starts_with("s-maxage") && lower != "private"
+        })
+        .collect();
+    let has_no_store = kept.iter().any(|d| d.eq_ignore_ascii_case("no-store"));
+    if !has_no_store {
+        kept.insert(0, "private");
+    }
+    HeaderValue::from_str(&kept.join(", "))
+        .unwrap_or_else(|_| HeaderValue::from_static("private, no-cache"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::privatise_cache_control;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn ticketed_responses_never_go_to_shared_caches() {
+        let cases = [
+            ("public, max-age=3600", "private, max-age=3600"),
+            ("public, s-maxage=600, max-age=60, immutable", "private, max-age=60, immutable"),
+            ("private, max-age=60", "private, max-age=60"),
+            ("no-store", "no-store"),
+            ("max-age=86400", "private, max-age=86400"),
+        ];
+        for (input, expected) in cases {
+            let got = privatise_cache_control(&HeaderValue::from_static(input));
+            assert_eq!(got.to_str().expect("ascii"), expected, "{input}");
+        }
+    }
 }

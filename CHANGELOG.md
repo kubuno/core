@@ -535,6 +535,25 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **The web client no longer keeps your access token in a cookie that page scripts can read.** Images,
+  videos, previews, downloads, live event streams and real-time connections now authenticate with
+  short-lived signed tickets instead (`POST /api/v1/auth/tickets`, carried as `?kt=` in the URL). Each
+  ticket is bound to your account, your session, one app, one exact address and one method: a ticket for
+  a Drive file is refused by Photos, by another address and by another method. Ordinary tickets live a
+  few minutes; media streams get a few hours so playback and seeking keep working; downloads can be
+  single-use. Signing out (or revoking a session) invalidates every ticket of that session within
+  seconds. Responses fetched with a ticket are marked private so no shared cache keeps them, never leak
+  the ticket through the `Referer` header, and tickets and socket tokens are masked in the access log.
+  Apps need no server-side change: the core validates tickets and forwards the same signed identity as
+  before. Design and details: `AUTH.md`.
+- **Compatibility for apps not yet updated (one release):** with `auth.legacy_access_cookie = true`
+  (the default), the core itself sets an `access_token` cookie that is `HttpOnly` (invisible to scripts)
+  and still accepts it, logging a deprecation warning that names each app still relying on it. Set it
+  to `false` once all apps are updated; it will be removed in the next release. New settings:
+  `auth.ticket_ttl_secs` and `auth.ticket_stream_ttl_secs`.
+- Access tokens now name the session they belong to, so that tickets die with it.
+- **Single sign-on no longer hands the access token to the page in a script-readable cookie**
+  (`oauth_token`): the landing page obtains it from the HttpOnly session cookie instead.
 - **Secrets are private on Windows too.** The data encryption key, the setup
   token, the initial administrator password, the TLS private key and the
   configuration written by the setup wizard now get an access list limited to

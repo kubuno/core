@@ -12,6 +12,7 @@
  */
 import { filesApi, systemApi, SYSTEM_ROOT_ID, type Folder, type FileItem, type RemoteEntry } from './api'
 import { getFileIcon } from './filesShared'
+import { downloadSignedUrl } from '@kubuno/sdk'
 
 // ── Capacités ────────────────────────────────────────────────────────────────
 
@@ -206,7 +207,8 @@ export function localSource(opts: LocalSourceOpts = {}): StorageSource {
     },
     async setFolderColor(id, color) { await filesApi.setFolderColor(id, color) },
     download(item) {
-      if (item.type === 'file') window.open(filesApi.downloadUrl(item.id), '_blank')
+      // A navigation cannot send the Authorization header: one-time signed ticket.
+      if (item.type === 'file') downloadSignedUrl(filesApi.downloadUrl(item.id)).catch(console.error)
       else filesApi.compressDownload([], [item.id], item.name + '.zip')
     },
     thumbnail(file) {
@@ -361,7 +363,7 @@ export function systemSource(): StorageSource {
       const r = await systemApi.uploadFile(file, parentId ?? SYSTEM_ROOT_ID, onProgress, overwrite)
       return r?.file?.id ? { id: r.file.id } : null
     },
-    download(item) { if (item.type === 'file') window.open(systemApi.downloadUrl(item.id), '_blank') },
+    download(item) { if (item.type === 'file') downloadSignedUrl(systemApi.downloadUrl(item.id)).catch(console.error) },
     thumbnail() { return { kind: 'none' } },
     content(file) { return { kind: 'url', url: systemApi.downloadUrl(file.id) } },
     readBlob(ref) { return systemApi.downloadBlob(ref.id) },

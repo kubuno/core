@@ -13,5 +13,6 @@ pub mod oauth;
 pub mod rate_limit;
 pub mod rbac;
 pub mod reauth;
+pub mod tickets;
 pub mod token_scope;
 pub mod totp;

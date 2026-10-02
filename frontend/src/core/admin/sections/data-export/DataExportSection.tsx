@@ -51,6 +51,7 @@ import { formatBytes, formatDuration, formatWhen } from '../format'
 import { DATA_EXPORT_EXECUTE, DATA_EXPORT_READ } from './privileges'
 import ExportRequestDialog from './ExportRequestDialog'
 import ExportSubjectsCard from './ExportSubjectsCard'
+import { signedUrl } from '../../../api/signedUrl'
 import {
   errorMessage, downloadUrl, useCancelExport, useDataExport, useDeleteExport,
   type DataExportOverview, type ExportRun,
@@ -480,7 +481,10 @@ function History({ data, canExecute, onOpen, onCancel, onDelete }: {
       // A full-page navigation, not an XHR: the browser streams the archive to
       // disk with its own progress and its own resume, and nothing of it ever
       // sits in this tab's memory.
-      onClick: r => { window.location.href = downloadUrl(r.id) },
+      // It cannot send the Authorization header, so the URL carries a signed
+      // ticket bound to this export (reusable for its few minutes: the browser
+      // may retry).
+      onClick: r => { void signedUrl(downloadUrl(r.id), { purpose: 'download' }).then(u => { window.location.href = u }) },
     },
     {
       id: 'subjects',

@@ -1,4 +1,4 @@
-use crate::{auth::jwt::JwtService, errors::AppError, state::AppState};
+use crate::{errors::AppError, state::AppState};
 use axum::{
     extract::{
         Query,
@@ -13,7 +13,12 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct WsQuery {
-    pub token: String,
+    /// Socket ticket (`POST /api/v1/auth/tickets`, purpose `socket`) — web.
+    #[serde(default)]
+    pub kt: Option<String>,
+    /// Access token — native clients.
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 pub async fn ws_handler(
@@ -21,12 +26,13 @@ pub async fn ws_handler(
     Query(query): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, AppError> {
-    let jwt = JwtService::new(
-        state.settings.auth.jwt_secret.clone(),
-        state.settings.auth.access_token_ttl,
-    );
-    let claims = jwt.validate_access_token(&query.token)?;
-    let user_id = claims.sub;
+    let user_id = crate::auth::tickets::socket_user(
+        &state,
+        query.kt.as_deref(),
+        query.token.as_deref(),
+        "/ws",
+    )
+    .await?;
 
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, state, user_id)))
 }

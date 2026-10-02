@@ -117,7 +117,11 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         // authentifié ; le limiteur de débit s'applique quand même).
         .route("/reauth",                   post(crate::handlers::auth::reauth))
         .route("/reauth/challenge",          get(crate::handlers::auth::reauth_challenge))
-        .layer(middleware::from_fn(rate_limit_auth));
+        .layer(middleware::from_fn(rate_limit_auth))
+        // Signed download / stream tickets. Added AFTER the layer on purpose:
+        // the sign-in limiter (10/min) would starve a page of thumbnails, and
+        // this route needs a valid session bearer anyway (global limits apply).
+        .route("/tickets",                   post(crate::handlers::auth::issue_tickets));
 
     // ── Administration ───────────────────────────────────────────────────────
     // Every administrative route lives in ONE sub-router carrying ONE layer
@@ -741,7 +745,10 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
             HeaderName::from_static("x-frame-options"),
             HeaderValue::from_static("DENY"),
         ))
-        .layer(SetResponseHeaderLayer::overriding(
+        // `if_not_present`: a response may ask for a STRICTER policy — the module
+        // proxy sets `no-referrer` on anything fetched with a signed ticket, whose
+        // URL must never travel on as a Referer (see `crate::auth::tickets`).
+        .layer(SetResponseHeaderLayer::if_not_present(
             HeaderName::from_static("referrer-policy"),
             HeaderValue::from_static("strict-origin-when-cross-origin"),
         ))

@@ -149,9 +149,11 @@ fn init_stdout_only(filter_str: &str, format: &LogFormat) -> LogGuards {
 /// Les lignes sont émises sur le target "access_log" pour être routées vers access.log.
 pub async fn apache_log_middleware(req: Request<Body>, next: Next) -> Response {
     let method    = req.method().to_string();
-    let uri       = req.uri().to_string();
+    // Credentials carried in a query string (signed tickets, socket tokens)
+    // must never reach a log file.
+    let uri       = redact_query_credentials(&req.uri().to_string());
     let version   = format!("{:?}", req.version());
-    let referer   = header_str(&req, "referer");
+    let referer   = redact_query_credentials(&header_str(&req, "referer"));
     let ua        = header_str(&req, "user-agent");
     let remote_ip = forwarded_ip(&req);
 
@@ -197,6 +199,24 @@ pub fn format_apache_line(
     )
 }
 
+/// Replaces the value of every credential-bearing query parameter (`kt`,
+/// `token`, `access_token`) with `REDACTED`.
+pub fn redact_query_credentials(uri: &str) -> String {
+    let Some((head, query)) = uri.split_once('?') else {
+        return uri.to_owned();
+    };
+    let redacted: Vec<String> = query
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((k, _)) if matches!(k, "kt" | "token" | "access_token") => {
+                format!("{k}=REDACTED")
+            }
+            _ => pair.to_owned(),
+        })
+        .collect();
+    format!("{head}?{}", redacted.join("&"))
+}
+
 fn header_str(req: &Request<Body>, name: &str) -> String {
     req.headers()
         .get(name)
@@ -216,6 +236,17 @@ fn forwarded_ip(req: &Request<Body>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn query_credentials_are_redacted() {
+        assert_eq!(
+            redact_query_credentials("/api/v1/drive/x/download?inline=1&kt=kt1.a.b"),
+            "/api/v1/drive/x/download?inline=1&kt=REDACTED"
+        );
+        assert_eq!(redact_query_credentials("/ws?token=eyJ"), "/ws?token=REDACTED");
+        assert_eq!(redact_query_credentials("/a?kts=1"), "/a?kts=1");
+        assert_eq!(redact_query_credentials("/a"), "/a");
+    }
 
     #[test]
     fn test_format_apache_line_standard() {

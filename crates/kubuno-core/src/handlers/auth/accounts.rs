@@ -194,7 +194,7 @@ pub async fn switch_account(
         .await?;
 
     let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);
-    let access_token = jwt.generate_access_token(&user)?;
+    let access_token = jwt.generate_access_token_for_session(&user, Some(session_id))?;
 
     // The active-session cookie now carries the slot's token. Max-Age follows
     // the session's real remaining lifetime, not a fresh TTL.
@@ -205,9 +205,15 @@ pub async fn switch_account(
     );
 
     tracing::info!(user_id = %user.id, slot = dto.slot, "Bascule de compte");
-    Ok((
+    let legacy = crate::auth::tickets::legacy_cookie(&state, &access_token, ttls.access_ttl.as_secs());
+    let mut response = (
         [(header::SET_COOKIE, cookie)],
         Json(LoginResponse { access_token, user, slot: Some(dto.slot) }),
     )
-        .into_response())
+        .into_response();
+    // Deprecated compatibility cookie (HttpOnly), see `crate::auth::tickets`.
+    if let Some(value) = legacy.and_then(|c| header::HeaderValue::from_str(&c).ok()) {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    Ok(response)
 }

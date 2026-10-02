@@ -257,7 +257,10 @@ pub async fn oauth_callback(
         state.settings.auth.jwt_secret.clone(),
         state.settings.auth.access_token_ttl,
     );
-    let access_token = jwt.generate_access_token(&user)?;
+    // The session row id is minted here so the access token can name it:
+    // download/stream tickets minted from it then die with the session.
+    let session_id = kubuno_db::new_id();
+    let access_token = jwt.generate_access_token_for_session(&user, Some(session_id))?;
     let (refresh_raw, refresh_hash) = JwtService::generate_refresh_token();
 
     // Same trusted-proxy aware resolution as the password sign-in path.
@@ -311,15 +314,16 @@ pub async fn oauth_callback(
     };
     let insert_sql = format!(
         r#"INSERT INTO core.refresh_tokens
-           (user_id, token_hash, device_name, device_type, ip_address, user_agent, expires_at,
+           (id, user_id, token_hash, device_name, device_type, ip_address, user_agent, expires_at,
             device_id, country, auth_strength)
-           VALUES ($1, $2, $3, 'web', $4{inet}, $5, $6, $7, $8, $9)"#
+           VALUES ($1, $2, $3, $4, 'web', $5{inet}, $6, $7, $8, $9, $10)"#
     );
     state
         .db
         .execute(
             &insert_sql,
             params![
+                session_id,
                 user.id,
                 &refresh_hash,
                 &device_name,
@@ -358,16 +362,26 @@ pub async fn oauth_callback(
         "refresh_token={refresh_raw}; HttpOnly{secure}; Path=/api/v1/auth; SameSite=Strict; Max-Age={}",
         state.settings.auth.refresh_token_ttl.as_secs()
     );
-    // JWT passed via a 60 s ephemeral cookie rather than a query param, to avoid
-    // exposure in browser history and server logs.
-    let token_cookie = format!(
-        "oauth_token={access_token}; Path=/auth/oauth/callback; SameSite=Strict; Max-Age=60{secure}"
-    );
+    // The access token is NOT handed over in a cookie (a script-readable one was
+    // used before): the landing page's bootstrap refreshes from the HttpOnly
+    // refresh cookie set here, a same-origin request that does carry it. Any
+    // `oauth_token` cookie left by an older version is erased.
+    let clear_token_cookie = "oauth_token=; Path=/auth/oauth/callback; SameSite=Strict; Max-Age=0";
 
     let mut resp_headers = axum::http::HeaderMap::new();
     resp_headers.append(header::SET_COOKIE, clear_pkce.parse().unwrap());
     resp_headers.append(header::SET_COOKIE, refresh_cookie.parse().unwrap());
-    resp_headers.append(header::SET_COOKIE, token_cookie.parse().unwrap());
+    resp_headers.append(header::SET_COOKIE, header::HeaderValue::from_static(clear_token_cookie));
+    // Deprecated compatibility cookie (HttpOnly), see `crate::auth::tickets`.
+    if let Some(value) = crate::auth::tickets::legacy_cookie(
+        &state,
+        &access_token,
+        state.settings.auth.access_token_ttl.as_secs(),
+    )
+    .and_then(|c| header::HeaderValue::from_str(&c).ok())
+    {
+        resp_headers.append(header::SET_COOKIE, value);
+    }
 
     // The minted correlation cookie rides along, otherwise the next SSO sign-in
     // from this browser falls back to the fingerprint and splits the inventory.

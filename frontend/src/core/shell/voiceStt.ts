@@ -3,7 +3,7 @@
 // Mic PCM is captured by an AudioWorklet, downcast to 16-bit and streamed over a
 // WebSocket to /api/v1/stt/stream. The backend pushes partial transcripts back
 // live, so the search field updates while the user speaks. Fully self-hosted.
-import { useAuthStore } from '../store/authStore'
+import { signedSocketUrl } from '../api/signedUrl'
 
 export type VoiceErrorCode = 'not-allowed' | 'audio-capture' | 'connect' | 'generic'
 
@@ -58,12 +58,20 @@ export async function startVoiceSession(lang: string, cb: VoiceCallbacks): Promi
   worklet.connect(mute)
   mute.connect(ctx.destination)
 
-  // 3) WebSocket to the backend (token via query — browsers can't set WS headers).
-  const token = useAuthStore.getState().accessToken ?? ''
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const url = `${proto}://${window.location.host}/api/v1/stt/stream`
-    + `?lang=${encodeURIComponent(lang)}&rate=${Math.round(ctx.sampleRate)}`
-    + (token ? `&token=${encodeURIComponent(token)}` : '')
+  // 3) WebSocket to the backend. Browsers can't set WS headers: the handshake
+  //    presents a one-minute socket ticket bound to this path (never the
+  //    access token itself).
+  let url: string
+  try {
+    url = await signedSocketUrl(
+      `/api/v1/stt/stream?lang=${encodeURIComponent(lang)}&rate=${Math.round(ctx.sampleRate)}`,
+    )
+  } catch (e) {
+    stream.getTracks().forEach(t => t.stop())
+    void ctx.close().catch(() => { /* */ })
+    cb.onError?.('connect')
+    throw e
+  }
   const ws = new WebSocket(url)
   ws.binaryType = 'arraybuffer'
 

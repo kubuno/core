@@ -1,6 +1,7 @@
 import axios, { type AxiosError } from 'axios'
 import { requestReauth } from '../store/reauthStore'
 import { invalidatePublicConfig } from './publicConfig'
+import { clearSignedUrlCache } from './signedUrl'
 
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -145,15 +146,25 @@ export function registerTokenHandlers(
   _clearToken = clear
 }
 
-export function writeTokenCookie(t: string | null) {
-  if (t) {
-    const secure = window.location.protocol === 'https:' ? '; Secure' : ''
-    document.cookie = `access_token=${t}; path=/; SameSite=Strict; max-age=900${secure}`
-  } else {
-    document.cookie = 'access_token=; path=/; SameSite=Strict; max-age=0'
-  }
+/**
+ * Called whenever the access token changes hands (sign-in, refresh, switch,
+ * sign-out).
+ *
+ * The access token is NEVER written to a cookie any more: a script-readable
+ * cookie handed the whole API to any XSS. Requests the browser makes without
+ * the `Authorization` header (`<img>`, `<video>`, downloads, sockets) use
+ * signed tickets instead (`./signedUrl`). This only erases the cookie older
+ * versions of this client wrote, and forgets the tickets cached for the
+ * previous account.
+ */
+export function onAccessTokenChanged(): void {
+  document.cookie = 'access_token=; path=/; SameSite=Strict; max-age=0'
+  clearSignedUrlCache()
 }
 
 function getAccessToken() { return _getToken() }
-function setAccessToken(t: string) { _setToken(t); writeTokenCookie(t) }
-function clearAccessToken() { _clearToken(); writeTokenCookie(null) }
+
+/** Whether a session access token is held (false on anonymous public pages). */
+export function hasAccessToken(): boolean { return !!_getToken() }
+function setAccessToken(t: string) { _setToken(t) }
+function clearAccessToken() { _clearToken(); onAccessTokenChanged() }

@@ -13,6 +13,7 @@
  * so a module sees the SAME types from `@kubuno/sdk`.
  */
 import { api } from '../api/client'
+import { signedUrl } from '../api/signedUrl'
 import { ExtensionRegistry } from './ExtensionRegistry'
 import { setMentionProviderSource } from '@ui'
 import type { MentionProvider } from '@ui'
@@ -43,7 +44,23 @@ export function getMentionProviders(): MentionProvider[] {
  * `providers` discovers whatever modules registered here.
  */
 export function installDefaultMentionSource(): void {
-  setMentionProviderSource(getMentionProviders)
+  setMentionProviderSource(() => getMentionProviders().map(withSignedAvatars))
+}
+
+/**
+ * A provider whose candidates' `avatarUrl` is ready for an `<img>`: a module's
+ * avatar route (contacts…) is authenticated and an image cannot send the
+ * Authorization header, so it gets a signed ticket. The `@ui` list stays free of
+ * any host dependency; public URLs (core avatars, external) pass through.
+ */
+function withSignedAvatars(provider: MentionProvider): MentionProvider {
+  const wrapped = Object.create(provider) as MentionProvider
+  wrapped.search = (query, opts) => provider.search(query, opts).then(items => Promise.all(
+    items.map(async item => item.avatarUrl
+      ? { ...item, avatarUrl: await signedUrl(item.avatarUrl).catch(() => item.avatarUrl) }
+      : item),
+  ))
+  return wrapped
 }
 
 /**

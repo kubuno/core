@@ -50,7 +50,6 @@ pub(super) async fn issue_full_tokens(
         state.settings.auth.jwt_secret.clone(),
         ttls.access_ttl,
     );
-    let access_token = jwt.generate_access_token(&user)?;
     let (refresh_raw, refresh_hash) = JwtService::generate_refresh_token();
 
     // Resolved by the ClientIp extractor: forwarding headers are honoured only
@@ -66,6 +65,9 @@ pub(super) async fn issue_full_tokens(
     let expires_at = Utc::now() + ttls.refresh_ttl;
     // New login = root of a fresh rotation family.
     let family_id = uuid::Uuid::new_v4();
+    // The access token names its session, so the download/stream tickets
+    // minted from it die with the session (see `crate::auth::tickets`).
+    let access_token = jwt.generate_access_token_for_session(&user, Some(family_id))?;
     let is_native = matches!(client_type, Some("native") | Some("desktop"));
     let stored_client_type = client_type.unwrap_or("web");
 
@@ -211,12 +213,20 @@ pub(super) async fn issue_full_tokens(
         ttls.refresh_ttl.as_secs()
     );
 
+    let legacy_access_cookie =
+        crate::auth::tickets::legacy_cookie(state, &access_token, ttls.access_ttl.as_secs());
     let mut response = (
         StatusCode::OK,
         [(header::SET_COOKIE, cookie)],
         Json(LoginResponse { access_token, user, slot: Some(slot) }),
     )
         .into_response();
+    // Deprecated compatibility cookie (HttpOnly), see `crate::auth::tickets`.
+    if let Some(value) =
+        legacy_access_cookie.and_then(|c| header::HeaderValue::from_str(&c).ok())
+    {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
     // APPEND, not a second tuple entry: the header-array IntoResponse inserts
     // by name, so a duplicated SET_COOKIE key would keep only the last one.
     if let Ok(value) = header::HeaderValue::from_str(&slot_cookie) {

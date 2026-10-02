@@ -10,7 +10,7 @@ use crate::{
 };
 use axum::{
     extract::State,
-    http::HeaderMap,
+    http::{header, HeaderMap},
     response::{IntoResponse, Response},
     Json,
 };
@@ -191,7 +191,7 @@ async fn try_rotation_grace(
     tracing::info!(user_id = %rt.user_id, family_id = %family, "Rotation grace served (virgin successor replaced)");
 
     let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);
-    let access_token = jwt.generate_access_token(&user)?;
+    let access_token = jwt.generate_access_token_for_session(&user, Some(family))?;
     Ok(Some(
         Json(NativeTokenResponse {
             access_token,
@@ -352,7 +352,7 @@ pub async fn refresh(
     }
 
     let jwt = JwtService::new(state.settings.auth.jwt_secret.clone(), ttls.access_ttl);
-    let access_token = jwt.generate_access_token(&user)?;
+    let access_token = jwt.generate_access_token_for_session(&user, Some(rt.family_id.unwrap_or(rt.id)))?;
 
     // Native client: ROTATION. We revoke the old refresh and issue a new one in
     // the same family, transmitted in JSON.
@@ -434,5 +434,14 @@ pub async fn refresh(
         }
     }
 
-    Ok(Json(json!({ "access_token": access_token })).into_response())
+    let mut response = Json(json!({ "access_token": access_token })).into_response();
+    // Deprecated compatibility cookie (HttpOnly), see `crate::auth::tickets`.
+    if let Some(c) =
+        crate::auth::tickets::legacy_cookie(&state, &access_token, ttls.access_ttl.as_secs())
+    {
+        if let Ok(v) = header::HeaderValue::from_str(&c) {
+            response.headers_mut().append(header::SET_COOKIE, v);
+        }
+    }
+    Ok(response)
 }

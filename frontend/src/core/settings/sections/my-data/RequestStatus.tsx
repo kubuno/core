@@ -3,6 +3,7 @@ import { Download, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { Badge, Button, Callout, EmptyState, ProgressBar } from '@ui'
 import { formatBytes, formatDay } from '../../../admin/sections/format'
 import { downloadUrl, type MyExportOverview, type MyExportRun } from './api'
+import { signedUrl } from '../../../api/signedUrl'
 
 /**
  * Step 3 — following the request, and fetching the archive.
@@ -127,7 +128,9 @@ export default function RequestStatus({ data, locale, onRestart }: RequestStatus
               // A full-page navigation, not an XHR: the browser streams the
               // archive to disk with its own progress, and nothing of it ever
               // sits in this tab's memory.
-              onClick={() => { window.location.href = downloadUrl(latest.id) }}
+              // It cannot send the Authorization header, so the URL carries a
+              // signed ticket (reusable for its few minutes: the browser may retry).
+              onClick={() => { void signedUrl(downloadUrl(latest.id), { purpose: 'download' }).then(u => { window.location.href = u }) }}
             >
               {t('settings.mde_download', { defaultValue: 'Télécharger' })}
             </Button>

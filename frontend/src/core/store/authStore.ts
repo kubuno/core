@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { api, registerTokenHandlers, writeTokenCookie } from '../api/client'
+import { api, registerTokenHandlers, onAccessTokenChanged } from '../api/client'
 import { authApi } from '../api/auth'
 import { useNotificationStore } from './notificationStore'
 import type { User } from '../types'
@@ -105,11 +105,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
   // Enregistrer les callbacks pour l'API client (pas de cycle d'import)
   registerTokenHandlers(
     () => get().accessToken,
-    (t) => { set({ accessToken: t }); writeTokenCookie(t) },
+    (t) => { set({ accessToken: t }) },
     () => {
       // Session expirée via l'intercepteur Axios → notifier les autres onglets
       set({ accessToken: null, user: null, privileges: null, features: null })
-      writeTokenCookie(null)
+      onAccessTokenChanged()
       useNotificationStore.getState().setActiveUser(null)
       authChannel?.postMessage({ type: 'logout' })
     }
@@ -120,7 +120,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     authChannel.onmessage = (event: MessageEvent<{ type: string }>) => {
       if (event.data?.type === 'logout') {
         set({ user: null, accessToken: null, privileges: null, features: null })
-        writeTokenCookie(null)
+        onAccessTokenChanged()
       }
       // Un AUTRE onglet a basculé de compte : le cookie actif ne correspond
       // plus à l'identité affichée ici → rechargement immédiat sur la racine
@@ -175,7 +175,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         // A new session belongs to a new subject: whatever was resolved for the
         // previous one must not survive into it.
         set({ user: (data as { access_token: string; user: User }).user, accessToken: (data as { access_token: string; user: User }).access_token, privileges: null, features: null })
-        writeTokenCookie((data as { access_token: string; user: User }).access_token)
+        onAccessTokenChanged()
         useNotificationStore.getState().setActiveUser((data as { access_token: string; user: User }).user.id)
         return { requiresTotp: false }
       } finally {
@@ -193,7 +193,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           : { code, totp_session: totpSession }
         const { data } = await authApi.totpVerify(payload)
         set({ user: data.user, accessToken: data.access_token, totpSession: null, privileges: null, features: null })
-        writeTokenCookie(data.access_token)
+        onAccessTokenChanged()
         useNotificationStore.getState().setActiveUser(data.user.id)
       } finally {
         set({ isLoading: false })
@@ -207,7 +207,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         // Ignorer les erreurs réseau au logout
       }
       set({ user: null, accessToken: null, privileges: null, features: null })
-      writeTokenCookie(null)
+      onAccessTokenChanged()
       useNotificationStore.getState().setActiveUser(null)
       // Déconnecter tous les autres onglets du même navigateur
       authChannel?.postMessage({ type: 'logout' })
@@ -233,7 +233,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         // Ignorer les erreurs réseau au logout
       }
       set({ user: null, accessToken: null, privileges: null, features: null })
-      writeTokenCookie(null)
+      onAccessTokenChanged()
       useNotificationStore.getState().setActiveUser(null)
       authChannel?.postMessage({ type: 'logout' })
     },
@@ -241,7 +241,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     refreshToken: async () => {
       const { data } = await authApi.refresh()
       set({ accessToken: data.access_token })
-      writeTokenCookie(data.access_token)
+      onAccessTokenChanged()
     },
 
     updateUser: (updates) =>
@@ -261,7 +261,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         useNotificationStore.getState().setActiveUser(data.user.id)
       } catch {
         set({ user: null, accessToken: null, privileges: null, features: null })
-        writeTokenCookie(null)
+        onAccessTokenChanged()
       } finally {
         set({ isLoading: false, isInitialized: true })
       }

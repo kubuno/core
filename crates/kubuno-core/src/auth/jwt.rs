@@ -24,6 +24,12 @@ pub struct AccessClaims {
     pub exp:   i64,
     pub iat:   i64,
     pub jti:   Uuid,
+    /// The browser/device session (refresh-token family) this access token was
+    /// minted for. Absent on tokens issued before the claim existed. Download and
+    /// stream tickets copy it, so that signing out revokes them at once (see
+    /// `crate::auth::tickets`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sid:   Option<Uuid>,
 }
 
 pub struct JwtService {
@@ -37,6 +43,17 @@ impl JwtService {
     }
 
     pub fn generate_access_token(&self, user: &User) -> Result<String, AppError> {
+        self.generate_access_token_for_session(user, None)
+    }
+
+    /// Access token bound to a session: `sid` is the refresh-token family, or
+    /// the session row id when the row has no family. Prefer this over
+    /// [`Self::generate_access_token`] wherever the session is known.
+    pub fn generate_access_token_for_session(
+        &self,
+        user: &User,
+        sid: Option<Uuid>,
+    ) -> Result<String, AppError> {
         let now = Utc::now().timestamp();
         let exp = now + self.access_token_ttl.as_secs() as i64;
         let claims = AccessClaims {
@@ -46,6 +63,7 @@ impl JwtService {
             exp,
             iat:   now,
             jti:   Uuid::new_v4(),
+            sid,
         };
         encode(
             &Header::default(),

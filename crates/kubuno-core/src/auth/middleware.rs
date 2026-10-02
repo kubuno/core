@@ -4,6 +4,7 @@ use crate::{
     audit::ActorOrigin,
     auth::internal_secret::InternalCaller,
     auth::jwt::JwtService,
+    auth::tickets,
     auth::token_scope::{self, TokenGrant},
     errors::AppError,
     models::user::User,
@@ -84,12 +85,42 @@ impl FromRequestParts<AppState> for AuthUser {
             return Ok(existing.clone());
         }
 
-        // The header first; the cookie only when there is none — see
-        // [`extract_cookie_token`], which exists so a browser-performed download
-        // of an archive reaches its owner instead of a `401`.
-        let token = extract_bearer(&parts.headers)
-            .or_else(|| extract_cookie_token(&parts.headers))
-            .ok_or(AppError::Unauthorized)?;
+        // The header first. Without one, a signed ticket (`?kt=`) bound to this
+        // exact path — that is how a browser-performed download of an archive
+        // reaches its owner (see `crate::auth::tickets`). The deprecated
+        // `access_token` cookie comes last, and only while the compatibility
+        // switch is on.
+        let header_token = extract_bearer(&parts.headers);
+        if header_token.is_none() {
+            let original = parts
+                .extensions
+                .get::<axum::extract::OriginalUri>()
+                .map(|o| o.0.clone())
+                .unwrap_or_else(|| parts.uri.clone());
+            if let Some(ticket) = tickets::from_query(original.query()) {
+                let (user, _claims) = tickets::authenticate(
+                    state,
+                    ticket,
+                    "core",
+                    original.path(),
+                    parts.method.as_str(),
+                )
+                .await?;
+                parts.extensions.insert(AuthSource::session());
+                let auth = AuthUser(user);
+                parts.extensions.insert(auth.clone());
+                return Ok(auth);
+            }
+        }
+        let token = match header_token {
+            Some(t) => t,
+            None => {
+                let t = tickets::legacy_cookie_token(state, &parts.headers)
+                    .ok_or(AppError::Unauthorized)?;
+                tickets::log_legacy_cookie_use("core", parts.uri.path());
+                t
+            }
+        };
 
         // Essai 1 : JWT access token
         let jwt = JwtService::new(
@@ -292,33 +323,3 @@ fn extract_bearer(headers: &HeaderMap) -> Option<&str> {
         .and_then(|v| v.strip_prefix("Bearer "))
 }
 
-/// The access token carried by the `access_token` cookie, if any.
-///
-/// ## Why a cookie is accepted at all, and why only as a fallback
-///
-/// One class of request cannot carry a header: a **file download the browser
-/// performs itself**. Handing a multi-gigabyte archive over `fetch` would buffer
-/// it in the tab's memory before the browser ever offered to save it, so those
-/// downloads are full-page navigations — and a navigation sends cookies, never
-/// an `Authorization` header. Without this, `GET …/export/:id/download` answers
-/// `401` to the very person the file belongs to.
-///
-/// The cookie is the same one [`crate::modules::proxy`] has always accepted for
-/// exactly this reason, written by the client with `SameSite=Strict` and the
-/// lifetime of the access token (15 minutes). `Strict` is what makes it safe to
-/// read here: a request originating from another site never carries it, so this
-/// does not turn a state-changing route into a CSRF target.
-///
-/// It is tried **after** the header, so a call that presents one is never
-/// silently authenticated as somebody else's stale cookie.
-fn extract_cookie_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get("cookie")
-        .and_then(|v| v.to_str().ok())?
-        .split(';')
-        .find_map(|part| {
-            part.trim()
-                .strip_prefix("access_token=")
-                .filter(|v| !v.is_empty())
-        })
-}

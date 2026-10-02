@@ -479,6 +479,14 @@ pub async fn logout(
         }
     }
 
+    // Whatever was revoked, the access cookie (deprecated, see
+    // `crate::auth::tickets`) goes too — the server-set and the legacy
+    // script-written variants.
+    // Removing one parked account (`slot`) leaves the active one signed in.
+    if req.slot.is_none() {
+        cookies_to_clear.extend(crate::auth::tickets::clear_legacy_cookies().map(str::to_owned));
+    }
+
     let mut response =
         (StatusCode::OK, Json(json!({ "message": "Déconnecté" }))).into_response();
     for cookie in cookies_to_clear {

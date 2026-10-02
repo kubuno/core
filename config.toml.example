@@ -222,6 +222,21 @@ access_token_ttl = 900
 # Durée de vie du refresh token, en jours. 30 = un mois.
 refresh_token_ttl = 30
 
+# ─ Signed download / stream tickets (see AUTH.md) ─────────────────
+# Requests the browser makes without an Authorization header (<img>, <video>,
+# downloads, EventSource, WebSocket) carry a short-lived signed ticket (?kt=…).
+# Lifetime of a ticket for an image, a preview or a download, in seconds
+# (30..900).
+# ticket_ttl_secs = 300
+# Lifetime of a ticket for a media / event stream, in seconds (60..86400).
+# Still revoked at once when the session signs out.
+# ticket_stream_ttl_secs = 14400
+# DEPRECATED, kept for one release: also set an HttpOnly `access_token` cookie
+# and accept it, so module frontends built before signed tickets keep working.
+# Every use is logged as a deprecation warning naming the module. Set to false
+# once every installed module is up to date.
+# legacy_access_cookie = true
+
 # ─ OAuth Google (optionnel) ───────────────────────────────────────
 # Créez vos identifiants sur https://console.cloud.google.com
 # oauth_google_id     = ""

@@ -53,6 +53,28 @@ export function register() {
 }
 ```
 
+### Authenticated URLs the browser loads by itself
+
+An `<img>`, a `<video>`, a download link, an `EventSource` or a `WebSocket` cannot send the
+`Authorization` header, and the host no longer keeps the access token in a cookie. Such URLs
+carry a short-lived **signed ticket** instead, minted by the core for one session, one app,
+one exact path and one method (see the core's `AUTH.md`):
+
+```ts
+import { useSignedUrl, signedUrl, downloadSignedUrl, openSignedUrl, signedSocketUrl } from '@kubuno/sdk'
+
+const src = useSignedUrl(`/api/v1/drive/${id}/thumbnail`)          // undefined while loading
+<video src={useSignedUrl(url, { purpose: 'stream' })} />            // Range requests, hours
+img.src = await signedUrl(storedUrl)                                // new Image(), canvas
+await downloadSignedUrl(`/api/v1/drive/${id}/download`, name)       // one-time ticket
+const es = new EventSource(await signedUrl(url, { purpose: 'stream' }))
+const ws = new WebSocket(await signedSocketUrl('/api/v1/chat/ws'))  // fresh on each reconnect
+```
+
+Never store a signed URL (in a document, a setting…): store the bare URL and sign it when it
+is loaded. Other origins, `blob:`/`data:` URLs and public core routes are returned unchanged.
+These helpers need a core with `POST /api/v1/auth/tickets`.
+
 > **Runtime note:** mark `@kubuno/sdk` as `external` in your module build. The host
 > resolves it to its singleton instances through the import map; bundling a copy would
 > break shared state (stores, registries). This package exists for build-time types only

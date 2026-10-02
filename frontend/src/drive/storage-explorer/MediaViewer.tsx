@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react'
+import { signedUrl, useSignedUrl } from '@kubuno/sdk'
 import type { FileItem } from '../api'
 import type { ThumbSpec } from '../storageSource'
 
@@ -20,6 +21,12 @@ export function MediaViewer({ files, start, contentOf, onClose }: {
   const isText = m.startsWith('text/') || m === 'application/json' || /\.(txt|md|csv|log|json|xml|yaml|yml)$/i.test(file.name)
   const canNav = m.startsWith('image/') && files.length > 1
   const go = (d: number) => setIdx(i => (i + d + files.length) % files.length)
+  // <img>/<video>/<audio>/<iframe> cannot send the Authorization header: the
+  // URL carries a signed ticket (a long-lived `stream` one for media and PDFs,
+  // whose players issue Range requests for as long as the viewer is open).
+  // Blob URLs pass through unchanged.
+  const streamed = m.startsWith('video/') || m.startsWith('audio/') || m === 'application/pdf'
+  const src = useSignedUrl(url, { purpose: streamed ? 'stream' : 'view' })
 
   useEffect(() => {
     let alive = true; let obj: string | null = null
@@ -33,7 +40,7 @@ export function MediaViewer({ files, start, contentOf, onClose }: {
         if (spec.kind === 'blob' && spec.load) blob = await spec.load()
         if (blob) { obj = URL.createObjectURL(blob); if (alive) setUrl(obj) }
         if (txtKind) {
-          const t = blob ? await blob.text() : (spec.url ? await (await fetch(spec.url)).text() : '')
+          const t = blob ? await blob.text() : (spec.url ? await (await fetch(await signedUrl(spec.url))).text() : '')
           if (alive) setText(t)
         }
       } catch { if (alive) setErr(true) }
@@ -71,16 +78,16 @@ export function MediaViewer({ files, start, contentOf, onClose }: {
           <p className="text-white/80 text-sm">Aperçu indisponible.</p>
         ) : isText ? (
           <pre className="max-w-4xl w-full max-h-full overflow-auto bg-white text-text-primary text-sm rounded-lg p-4 whitespace-pre-wrap">{text ?? '…'}</pre>
-        ) : !url ? (
+        ) : !src ? (
           <Loader2 size={28} className="animate-spin text-white/80" />
         ) : m.startsWith('image/') ? (
-          <img src={url} alt={file.name} className="max-w-full max-h-full object-contain" />
+          <img src={src} alt={file.name} className="max-w-full max-h-full object-contain" />
         ) : m.startsWith('video/') ? (
-          <video src={url} controls autoPlay className="max-w-full max-h-full" />
+          <video src={src} controls autoPlay className="max-w-full max-h-full" />
         ) : m.startsWith('audio/') ? (
-          <audio src={url} controls autoPlay className="w-[min(600px,90vw)]" />
+          <audio src={src} controls autoPlay className="w-[min(600px,90vw)]" />
         ) : m === 'application/pdf' ? (
-          <iframe src={url} title={file.name} className="w-full h-full bg-white rounded-lg" />
+          <iframe src={src} title={file.name} className="w-full h-full bg-white rounded-lg" />
         ) : (
           <p className="text-white/80 text-sm">Aperçu non disponible — téléchargez le fichier.</p>
         )}

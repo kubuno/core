@@ -37,6 +37,13 @@ export { default as i18n } from '../core/i18n'
 // ── Accès core étendu : singletons/contextes/composants partagés requis par les
 //    bundles de modules (sinon une copie bundlée = instance désynchronisée). ──
 export { api } from '../core/api/client'
+// Signed download / stream tickets: the ONLY way to authenticate a request the
+// browser makes without the Authorization header (<img>, <video>, downloads,
+// EventSource, WebSocket). See core/api/signedUrl.ts.
+export {
+  signedUrl, signedUrls, useSignedUrl, signedSocketUrl, downloadSignedUrl, openSignedUrl,
+} from '../core/api/signedUrl'
+export type { TicketPurpose, SignedUrlOptions } from '../core/api/signedUrl'
 // SPA navigation from OUTSIDE React (menu items built as data, stores, workers):
 // routes through the router when the shell is mounted, History API otherwise.
 export { navigate } from '../core/navigation'

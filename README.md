@@ -34,7 +34,7 @@ The *core* is the platform's "operating system": it provides the infrastructure 
 - **One binary, three database engines** — the same server runs on **PostgreSQL**, **MySQL/MariaDB** or **SQLite**, the engine being chosen at run time from the connection URL. An instance — or a single module — can be migrated from one engine to another from the administration console, and several instances can share one database server thanks to a configurable schema prefix.
 - **Guided first run** — a fresh instance opens on a setup assistant that asks for the database and the first administrator: there is no default password.
 - **Built-in marketplace** — browse the official catalogue and install modules **at runtime** from the admin console, or offline from the command line (`kubuno modules:install <file>.kbpkg`). Modules ship as self-contained **Kubuno packages (`.kbpkg`)** the core unpacks itself, identically on Linux, Windows and macOS.
-- **Secure by default** — JWT + HttpOnly refresh tokens with rotation, Argon2id, AES-256-GCM with a data key separate from the signing secret, account lockout and a self-hosted sign-in CAPTCHA after repeated failures, a tamper-evident (HMAC-chained) administrative audit trail, anti-DDoS rate budgets per IP and per user, signed module-to-core authentication, and a seccomp sandbox that forbids process execution inside modules.
+- **Secure by default** — JWT + HttpOnly refresh tokens with rotation, no access token in any script-readable cookie (images, media, downloads and sockets use short-lived signed tickets bound to one session, app and address — see [`AUTH.md`](AUTH.md)), Argon2id, AES-256-GCM with a data key separate from the signing secret, account lockout and a self-hosted sign-in CAPTCHA after repeated failures, a tamper-evident (HMAC-chained) administrative audit trail, anti-DDoS rate budgets per IP and per user, signed module-to-core authentication, and a seccomp sandbox that forbids process execution inside modules.
 - **A complete administration console** — directory (users, groups, organisational units, target audiences, buildings and resources, directory policy), LDAP / Active Directory and OpenID Connect sign-in, per-unit settings with inheritance and locks, security dashboard, alert centre, automation rules, content detectors, printable reports, backups (whole database, compressed, restorable), data migration from other servers, data export, domains, public holidays, themes and native HTTPS (TLS certificates, ACME).
 - **Fast and lean backend** — Rust + Axum; the database also serves as the event bus and the job queue, with no Redis or extra broker.
 - **Runtime-loaded frontend** — the React 19 host loads modules **at runtime** via ESM import maps and shared singletons (`@kubuno/sdk`, `@kubuno/ui`), without ever naming a module statically, so every app shares one consistent shell.
@@ -318,6 +318,9 @@ Rust 2021 · Axum 0.7 · Tokio · SQLx 0.9 (PostgreSQL · MySQL/MariaDB · SQLit
 ## Security
 
 Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
+
+How the browser authenticates requests it makes on its own (images, media, downloads, event
+streams, WebSockets) is described in [`AUTH.md`](AUTH.md).
 
 ## Contributing
 

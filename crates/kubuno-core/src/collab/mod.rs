@@ -39,7 +39,7 @@ use yrs::{
 use kubuno_db::dialect::Assign;
 use kubuno_db::{new_id, params, DbPool, DbQueryBuilder};
 
-use crate::{auth::jwt::JwtService, errors::AppError, state::AppState};
+use crate::{errors::AppError, state::AppState};
 
 /// Au-delà de ce nombre d'updates en journal, on consolide (GC) la room.
 const CONSOLIDATE_THRESHOLD: i64 = 30;
@@ -325,21 +325,28 @@ fn hub() -> &'static CollabHub {
 
 #[derive(Deserialize)]
 pub struct CollabQuery {
-    pub token: String,
+    /// Socket ticket bound to this room's path — web.
+    #[serde(default)]
+    pub kt: Option<String>,
+    /// Access token — native clients.
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 pub async fn collab_handler(
     State(state): State<AppState>,
     Path(room): Path<String>,
     Query(query): Query<CollabQuery>,
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, AppError> {
-    let jwt = JwtService::new(
-        state.settings.auth.jwt_secret.clone(),
-        state.settings.auth.access_token_ttl,
-    );
-    let claims = jwt.validate_access_token(&query.token)?;
-    let user_id = claims.sub;
+    let user_id = crate::auth::tickets::socket_user(
+        &state,
+        query.kt.as_deref(),
+        query.token.as_deref(),
+        uri.path(),
+    )
+    .await?;
 
     // ACL générique : le module propriétaire de la room peut refuser l'accès.
     if !authorize_room(&state, &room, user_id).await {

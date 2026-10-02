@@ -384,6 +384,23 @@ pub struct AuthSettings {
     pub oauth_google_secret: Option<String>,
     pub oauth_github_id:     Option<String>,
     pub oauth_github_secret: Option<String>,
+    /// Lifetime, in seconds, of a signed ticket for an image, a preview or a
+    /// download (`crate::auth::tickets`). Clamped to 30..=900.
+    #[serde(default = "default_ticket_ttl")]
+    pub ticket_ttl_secs:        u64,
+    /// Lifetime, in seconds, of a signed ticket for a media stream or an
+    /// event stream (Range requests keep re-using it during playback). Still
+    /// revoked at once by signing out. Clamped to 60..=86400.
+    #[serde(default = "default_ticket_stream_ttl")]
+    pub ticket_stream_ttl_secs: u64,
+    /// DEPRECATED compatibility switch, kept for one release. When `true`, the
+    /// core sets an `access_token` cookie (HttpOnly, `Path=/api/v1`) on sign-in,
+    /// refresh and account switch, and still accepts it on requests without an
+    /// `Authorization` header, so module frontends built before signed tickets
+    /// keep loading their images and downloads. Each use is logged as a
+    /// deprecation warning naming the module. Will be removed next release.
+    #[serde(default = "default_legacy_access_cookie")]
+    pub legacy_access_cookie:   bool,
     // OIDC providers (Keycloak, GitLab…) are configured at runtime from the admin
     // console and stored in `core.oauth_providers`, not in static config.
 }
@@ -912,6 +929,18 @@ mod tests {
 }
 
 // Serde helpers pour Duration
+fn default_ticket_ttl() -> u64 {
+    300
+}
+
+fn default_ticket_stream_ttl() -> u64 {
+    4 * 3600
+}
+
+fn default_legacy_access_cookie() -> bool {
+    true
+}
+
 mod duration_secs {
     use serde::{Deserialize, Deserializer};
     use std::time::Duration;

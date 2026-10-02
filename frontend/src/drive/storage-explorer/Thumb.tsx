@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useImageCacheStore } from '@kubuno/sdk'
+import { useImageCacheStore, useSignedUrl } from '@kubuno/sdk'
 import type { FileItem } from '../api'
 import type { ThumbSpec } from '../storageSource'
 import { getFileIcon } from '../filesShared'
@@ -17,9 +17,13 @@ export function Thumb({ spec, file, className }: { spec: ThumbSpec; file: FileIt
   }, [spec, err])
 
   const thumbVer = useImageCacheStore(s => s.global + (s.versions[file.id] ?? 0))
+  // The thumbnail route is authenticated and an <img> cannot send the
+  // Authorization header: the URL carries a signed ticket instead.
+  const rawSrc = spec.kind === 'url' && spec.url ? (thumbVer ? `${spec.url}?v=${thumbVer}` : spec.url) : null
+  const signedSrc = useSignedUrl(rawSrc)
   if (spec.kind === 'url' && spec.url && !err) {
-    const src = thumbVer ? `${spec.url}?v=${thumbVer}` : spec.url
-    return <img src={src} alt={file.name} className={className} loading="lazy" onError={() => setErr(true)} />
+    if (!signedSrc) return <span className="scale-75">{getFileIcon(file.mime_type, file.name)}</span>
+    return <img src={signedSrc} alt={file.name} className={className} loading="lazy" onError={() => setErr(true)} />
   }
   if (spec.kind === 'blob' && blobUrl && !err) {
     return <img src={blobUrl} alt={file.name} className={className} onError={() => setErr(true)} />
