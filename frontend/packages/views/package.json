@@ -1,0 +1,35 @@
+{
+  "name": "@kubuno/views",
+  "version": "0.1.0",
+  "description": "Kubuno .kbview views runtime (@kubuno/views) — the code-behind model (View, @bind, element handles, event args), the renderer of compiled views and the runtime elements (Repeater, Timer, Query, Mutation, MessageBox, Dialog). Provided by the host at runtime via the import map; this package ships the type surface.",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/views",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubuno/core.git",
+    "directory": "frontend/packages/views"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "index.js",
+    "types",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@tanstack/react-query": "^5.0.0"
+  }
+}

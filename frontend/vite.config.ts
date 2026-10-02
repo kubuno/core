@@ -71,7 +71,7 @@ const VERSION = versionStrings()
 // Trade-off: the inline import map changes hash → the core re-reads
 // `importmap.sha256` on (re)start, which every frontend deployment does anyway.
 const SHARED_CHUNK = (name: string | undefined) =>
-  name === 'kubuno-shared' || name === 'drive-shared' || (name?.startsWith('vendor-') ?? false)
+  name === 'kubuno-shared' || name === 'drive-shared' || name === 'kubuno-views' || (name?.startsWith('vendor-') ?? false)
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), importMapPlugin()],
@@ -84,6 +84,8 @@ export default defineConfig({
       '@ui': fileURLToPath(new URL('./src/ui', import.meta.url)),
       '@kubuno/sdk': fileURLToPath(new URL('./src/sdk/index.ts', import.meta.url)),
       '@kubuno/drive': fileURLToPath(new URL('./src/drive/index.ts', import.meta.url)),
+      // The .kbview runtime (vskubuno docs/WEB-VIEWS.md, WV-3): one instance, served to modules by the import map.
+      '@kubuno/views': fileURLToPath(new URL('./src/views/index.ts', import.meta.url)),
     },
   },
   build: {
@@ -97,6 +99,9 @@ export default defineConfig({
         // Service plateforme fichiers (@kubuno/drive) — chunk stable, NON-eager
         // (le main entry ne l'importe pas → chargé à la demande).
         'drive-shared': fileURLToPath(new URL('./src/drive/shared-entry.ts', import.meta.url)),
+        // Runtime of .kbview views (@kubuno/views): its own stable chunk, so a module's views and the host's share
+        // one binding engine and one live-view registry.
+        'kubuno-views': fileURLToPath(new URL('./src/views/index.ts', import.meta.url)),
         // Facades ESM stables par paquet singleton : garantissent un chunk dédié
         // à URL fixe (rolldown fusionne sinon les petits paquets). L'import map
         // pointe les bare specifiers vers ces fichiers ; ils ré-exportent
@@ -123,6 +128,8 @@ export default defineConfig({
           // Capture vocale : chargée à la demande (import dynamique) → la garder
           // hors du chunk eager kubuno-shared. AVANT la règle /src/core/.
           if (/\/src\/core\/shell\/voiceStt/.test(id)) return undefined
+          // The views runtime keeps its own chunk (@kubuno/views in the import map). BEFORE the sdk/ui rules.
+          if (/\/src\/views\//.test(id)) return 'kubuno-views'
           if (/\/src\/sdk\//.test(id)) return 'kubuno-shared'
           if (/\/src\/ui\//.test(id)) return 'kubuno-shared'
           // core/components peut tirer du lourd (PdfViewerModal→pdfjs) : ne pas

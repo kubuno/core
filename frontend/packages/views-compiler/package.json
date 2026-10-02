@@ -1,0 +1,58 @@
+{
+  "name": "@kubuno/views-compiler",
+  "version": "0.1.0",
+  "description": "Build-time tooling of Kubuno .kbview web views: the WebAssembly build of the shared .kbview grammar and web compiler, the Vite plugin (plan, precompiled accessors, source maps, generated ViewBase declarations, HMR) and kbview-tsc (tsc with errors mapped back to the .kbview).",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/views-compiler",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubuno/core.git",
+    "directory": "frontend/packages/views-compiler"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "bin",
+    "wasm/kubuno-views-web.wasm",
+    "wasm/BUILD-INFO.json",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "bin": {
+    "kbview-tsc": "./bin/kbview-tsc.js"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./wasm": "./wasm/kubuno-views-web.wasm",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.8",
+    "vite": ">=7"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  }
+}

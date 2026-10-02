@@ -42,7 +42,8 @@ export function useModuleLoadAlerts(): void {
     for (const f of [...failures].reverse()) {
       pushKeyed(`moduleload:${f.moduleId}`, {
         title: t('modules.load_failed.title', { module: f.moduleId }),
-        body: t(`modules.load_failed.reason.${f.reason}`, { detail: f.detail }),
+        // `defaultValue`: a reason newer than the translations (views-mismatch) still says what happened.
+        body: t(`modules.load_failed.reason.${f.reason}`, { detail: f.detail, defaultValue: f.detail }),
         moduleId: 'core',
         icon: 'PlugZap',
         link: adminUrl({ tab: 'modules' }),

@@ -1,0 +1,274 @@
+/**
+ * The code-behind model (VIEWS-SPEC §9.1): `View` (base of every generated `ViewBase`), the `@bind`
+ * accessor decorator, the generated base factory `createViewBase`, element handles, and the live-view
+ * registry behind HMR (plan swap for a `.kbview` edit, prototype swap for a code-behind edit).
+ */
+import type { ComponentType } from 'react'
+
+import { resolveResource } from './resolve'
+import { VIEWS_ABI, type ViewPlan } from './plan'
+import type { Scope } from './binding'
+
+/** The runtime state of one mounted view instance. */
+export interface Internals {
+  readonly vm: View<object>
+  readonly cell: Cell
+  readonly scope: Scope
+  version: number
+  readonly listeners: Set<() => void>
+  readonly subscribe: (listener: () => void) => () => void
+  /** `@bind` storage (kept on the instance, not in the class's private slots, so a prototype swap keeps it). */
+  readonly values: Map<string, unknown>
+  /** Values set through element handles: element id → property → value. */
+  readonly overrides: Map<string, Map<string, unknown>>
+  /** Root DOM node of each rendered element, by element id. */
+  readonly dom: Map<string, HTMLElement>
+  readonly handles: Map<string, ElementHandle>
+  state: 'new' | 'mounted' | 'unmounted'
+  /** Inside `use()`: notifications are deferred to the commit. */
+  deferred: boolean
+  pending: boolean
+  /** Design mode (the designer): no handler ever runs. */
+  design: boolean
+  /** Current size class (`Compact`, `Medium`, `Expanded`). */
+  sizeClass: string
+  /** Reads an element's current property value (set by the renderer). */
+  read?: (id: string, property: string) => unknown
+}
+
+/** One view file's live state: its current plan, its mounted instances, its latest code-behind class. */
+export interface Cell {
+  plan: ViewPlan
+  readonly instances: Set<Internals>
+  base?: ViewClass
+  latest?: ViewClass
+}
+
+/** The handle of an element named by `x:Name` (VIEWS-SPEC §9.1): camelCase properties, read/write. */
+export interface ElementHandle {
+  /** The element id (`0.1.2`). */
+  readonly id: string
+  /** The element's root DOM node, once rendered. */
+  readonly element: HTMLElement | null
+  focus(): void
+  click(): void
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ViewClass = (abstract new () => View<any>) & { [CELL]?: Cell }
+
+export const KB: unique symbol = Symbol.for('kubuno.views.internals')
+export const CELL: unique symbol = Symbol.for('kubuno.views.cell')
+
+const live = new Set<Internals>()
+const dev = (): boolean => (import.meta as { env?: { DEV?: boolean } }).env?.DEV !== false
+
+/** Notifies the elements of a view that its state changed. */
+export function notify(i: Internals): void {
+  if (i.deferred) {
+    i.pending = true
+    return
+  }
+  i.version++
+  for (const l of [...i.listeners]) l()
+}
+
+/** Re-renders every live view (language change, theme change). */
+export function invalidateViews(): void {
+  for (const i of live) notify(i)
+}
+
+/** @internal */
+export function setLive(i: Internals, on: boolean): void {
+  if (on) live.add(i)
+  else live.delete(i)
+}
+
+const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** The handle of element `id` of a view. */
+export function handleFor(i: Internals, id: string): ElementHandle {
+  let h = i.handles.get(id)
+  if (h) return h
+  const target = {} as ElementHandle
+  h = new Proxy(target, {
+    get(_, prop) {
+      if (prop === 'id') return id
+      if (prop === 'element') return i.dom.get(id) ?? null
+      if (prop === 'focus') return () => i.dom.get(id)?.focus()
+      if (prop === 'click') return () => i.dom.get(id)?.click()
+      if (typeof prop !== 'string') return undefined
+      const name = cap(prop)
+      const o = i.overrides.get(id)
+      if (o?.has(name)) return o.get(name)
+      return i.read?.(id, name)
+    },
+    set(_, prop, value) {
+      if (typeof prop !== 'string') return false
+      let o = i.overrides.get(id)
+      if (!o) i.overrides.set(id, (o = new Map()))
+      o.set(cap(prop), value)
+      notify(i)
+      return true
+    },
+  })
+  i.handles.set(id, h)
+  return h
+}
+
+/** Defines (again, after a plan swap) one getter per `x:Name` on a view instance. */
+function defineHandles(vm: View<object>): void {
+  const i = vm[KB]
+  for (const [name, id] of Object.entries(i.cell.plan.names)) {
+    Object.defineProperty(vm, name, { configurable: true, enumerable: false, get: () => handleFor(i, id) })
+  }
+}
+
+/**
+ * Base of every view's code-behind (through its generated `ViewBase`). `P` is the root's `x:Props`.
+ */
+export abstract class View<P extends object = object> {
+  /** @internal */
+  declare readonly [KB]: Internals
+  /** The props the view was rendered with. */
+  props: Readonly<P> = {} as P
+  /** Paths not found on the instance resolve here (VIEWS-SPEC §6.1). */
+  dataContext: unknown = undefined
+
+  constructor() {
+    const cell = (new.target as ViewClass)[CELL]
+    if (!cell) throw new Error('[views] a view class must extend the ViewBase generated from its .kbview')
+    const listeners = new Set<() => void>()
+    const i: Internals = {
+      vm: this,
+      cell,
+      scope: { vm: this as unknown as Scope['vm'] },
+      version: 0,
+      listeners,
+      subscribe: (l) => {
+        listeners.add(l)
+        return () => listeners.delete(l)
+      },
+      values: new Map(),
+      overrides: new Map(),
+      dom: new Map(),
+      handles: new Map(),
+      state: 'new',
+      deferred: false,
+      pending: false,
+      design: false,
+      sizeClass: 'Expanded',
+    }
+    Object.defineProperty(this, KB, { value: i })
+    defineHandles(this)
+  }
+
+  /** Runs on every render of the view; the only place React hooks are allowed. */
+  use(): void {}
+
+  /** A string of the view's resources (`{Res}`) in the current language. */
+  t(key: string, set?: string): string {
+    return resolveResource(key, set)
+  }
+
+  /** Marks the view as changed (after mutating a `@bind` object in place). */
+  invalidate(): void {
+    notify(this[KB])
+  }
+
+  /** The view as a React component (`export default MyView.component()`). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static component<T extends View<any>>(this: abstract new () => T): ComponentType<T['props']> {
+    const cls = this as unknown as ViewClass
+    const cell = cls[CELL]
+    if (!cell) throw new Error('[views] component() must be called on a class extending a generated ViewBase')
+    // A code-behind edit re-evaluates its module: move the live instances of the previous version of
+    // this class onto the new prototype (fields and @bind values are kept).
+    const prev = cell.latest
+    if (prev && prev !== cls && prev.name === cls.name) {
+      for (const i of cell.instances) {
+        if (Object.getPrototypeOf(i.vm) === prev.prototype) {
+          Object.setPrototypeOf(i.vm, cls.prototype)
+          notify(i)
+        }
+      }
+    }
+    cell.latest = cls
+    return componentFor(cell, cls) as ComponentType<T['props']>
+  }
+}
+
+let componentFactory: ((cell: Cell, cls: ViewClass) => ComponentType<object>) | null = null
+
+/** @internal — set by the renderer (keeps this module free of React rendering code). */
+export function setComponentFactory(f: (cell: Cell, cls: ViewClass) => ComponentType<object>): void {
+  componentFactory = f
+}
+
+function componentFor(cell: Cell, cls: ViewClass): ComponentType<object> {
+  if (!componentFactory) throw new Error('[views] renderer not loaded')
+  return componentFactory(cell, cls)
+}
+
+type Accessor<This, V> = { get(this: This): V; set(this: This, value: V): void }
+
+/**
+ * `@bind accessor name = value` — a bindable field: assigning it re-renders the elements bound to it
+ * (VIEWS-SPEC §9.1). Mutating an object in place is not seen: assign a new object, or call `invalidate()`.
+ */
+export function bind<This extends View<object>, V>(
+  target: Accessor<This, V>,
+  context: ClassAccessorDecoratorContext<This, V>,
+): ClassAccessorDecoratorResult<This, V> {
+  const name = String(context.name)
+  return {
+    get(this: This): V {
+      const i = this[KB]
+      return i.values.has(name) ? (i.values.get(name) as V) : target.get.call(this)
+    },
+    set(this: This, value: V): void {
+      const i = this[KB]
+      if (i.values.has(name) && Object.is(i.values.get(name), value)) return
+      i.values.set(name, value)
+      if (i.state === 'unmounted') {
+        if (dev()) console.warn(`[views] ${this.constructor.name}.${name} written after the view was unmounted: ignored`)
+        return
+      }
+      notify(i)
+    },
+    init(this: This, value: V): V {
+      this[KB].values.set(name, value)
+      return value
+    },
+  }
+}
+
+const hotCells: Map<string, Cell> = ((globalThis as { __kbViewCells?: Map<string, Cell> }).__kbViewCells ??= new Map())
+
+/**
+ * The generated base of a view's code-behind (`export const ViewBase = createViewBase(plan, key)`). With a
+ * `hotKey` (dev server: the module URL), a re-evaluated view module swaps its new plan into the live views
+ * and returns the same class.
+ */
+export function createViewBase(plan: ViewPlan, hotKey?: string | false): ViewClass {
+  if (plan.abi !== VIEWS_ABI) {
+    throw new Error(`[views] ${plan.file} was compiled for views ABI ${plan.abi}; this host runs ABI ${VIEWS_ABI} (rebuild the module with a matching @kubuno/views-compiler)`)
+  }
+  const key = hotKey ? hotKey.split('?')[0] : undefined
+  const existing = key ? hotCells.get(key) : undefined
+  if (existing?.base) {
+    existing.plan = plan
+    for (const i of existing.instances) {
+      defineHandles(i.vm)
+      notify(i)
+    }
+    return existing.base
+  }
+  const cell: Cell = { plan, instances: new Set() }
+  abstract class ViewBase extends View {
+    static readonly [CELL] = cell
+  }
+  cell.base = ViewBase as unknown as ViewClass
+  if (key) hotCells.set(key, cell)
+  return cell.base
+}

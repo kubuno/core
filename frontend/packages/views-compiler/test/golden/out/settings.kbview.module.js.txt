@@ -1,0 +1,113 @@
+import { createViewBase as __kb_view } from "@kubuno/views"
+import { Stack as __c0 } from "./fake-layout"
+import { Card as __c1, Toggle as __c3, Input as __c4, Dropdown as __c5, Checkbox as __c6, Button as __c7, Callout as __c9, Tabs as __c10, Badge as __c11, OutlinedField as __c13, MenuDropdown as __c14 } from "@ui"
+import { Settings as __c2, Save as __c8, Trash2 as __c12, Copy as __c15 } from "lucide-react"
+export const plan = { abi: 1, file: "test/golden/settings.kbview", handlers: ["cancel_click","copy_click","fix_click","font_changed","page_load","paste_click","save_click"], kind: "view", names: {"autosave":"0.0.0","menu":"4","save":"0.1.0"}, root: { at: [2,2], content: "children", dom: "ref", el: "Stack", id: "", m: "/test/golden/fake-layout", x: "Stack", c: __c0, props: [
+    { n: "Direction", to: {"prop":"direction"}, kind: "Enum", at: [2,8], v: "column" },
+    { n: "Gap", to: {"prop":"gap"}, kind: "F32", at: [2,28], v: 16 }
+  ], events: [
+    { n: "OnLoad", h: "page_load", from: {"args":"none","runtime":"view-load"}, args_type: "EventArgs", at: [2,37], f: (vm, s, e) => vm.page_load(s, e) }
+  ], children: [
+    { at: [3,4], content: "children", dom: "wrapper", el: "Card", id: "0", m: "@ui", x: "Card", c: __c1, props: [
+        { n: "Title", to: {"prop":"title"}, kind: "String", at: [3,9], res: {"key":"notes_pref_title"} },
+        { n: "Icon", to: {"convert":"icon-node","prop":"icon"}, kind: "String", at: [3,40], v: { $icon: "Settings", c: __c2 } }
+      ], children: [
+        { at: [4,6], content: "children", dom: "ref", el: "Stack", id: "0.0", m: "/test/golden/fake-layout", x: "Stack", c: __c0, props: [
+            { n: "Gap", to: {"prop":"gap"}, kind: "F32", at: [4,12], v: 8 }
+          ], children: [
+            { at: [5,8], dom: "wrapper", el: "Switch", id: "0.0.0", m: "@ui", name: "autosave", x: "Toggle", c: __c3, props: [
+                { n: "On", to: {"change":"OnCheckedChanged","change_from":{"args":"target-checked","prop":"onChange"},"prop":"checked"}, kind: "Bool", at: [5,33], b: { at: [5,46], mode: "TwoWay", path: "prefs.autosave", g: (o) => o.prefs?.autosave, s: (o, v) => { o.prefs.autosave = v } } },
+                { n: "Label", to: {"prop":"label"}, kind: "String", at: [5,76], res: {"key":"notes_pref_autosave"} }
+              ] },
+            { at: [6,8], dom: "wrapper", el: "TextField", id: "0.0.1", m: "@ui", x: "Input", c: __c4, props: [
+                { n: "Text", to: {"change":"OnTextChanged","change_from":{"args":"target-value","prop":"onChange"},"prop":"value"}, kind: "String", at: [6,18], b: { at: [6,33], mode: "TwoWay", path: "prefs.signature", trigger: "LostFocus", g: (o) => o.prefs?.signature, s: (o, v) => { o.prefs.signature = v } } },
+                { n: "Placeholder", to: {"prop":"placeholder"}, kind: "String", at: [6,95], v: "Signature" },
+                { n: "MaxLength", to: {"prop":"maxLength"}, kind: "F32", at: [6,119], v: 80 }
+              ] },
+            { at: [7,8], dom: "wrapper", el: "Dropdown", id: "0.0.2", m: "@ui", x: "Dropdown", c: __c5, props: [
+                { n: "SelectedValue", to: {"change":"OnSelectedValueChanged","change_from":{"args":"value","prop":"onChange"},"prop":"value"}, kind: "String", at: [7,17], b: { at: [7,41], mode: "TwoWay", path: "prefs.font", g: (o) => o.prefs?.font, s: (o, v) => { o.prefs.font = v } } }
+              ], events: [
+                { n: "OnSelectedValueChanged", h: "font_changed", from: {"args":"value","prop":"onChange"}, args_type: "ValueChangedEventArgs", at: [7,67], f: (vm, s, e) => vm.font_changed(s, e) }
+              ], items: { content: "none", prop: "options", shape: "array", list: [
+                { at: [8,10], dom: "none", el: "Option", id: "0.0.2.0", props: [
+                    { n: "Value", to: {"prop":"value"}, kind: "String", at: [8,17], v: "sans" },
+                    { n: "Label", to: {"prop":"label"}, kind: "String", at: [8,30], v: "Sans serif" }
+                  ] },
+                { at: [9,10], dom: "none", el: "Option", id: "0.0.2.1", props: [
+                    { n: "Value", to: {"prop":"value"}, kind: "String", at: [9,17], v: "serif" },
+                    { n: "Label", to: {"prop":"label"}, kind: "String", at: [9,31], v: "Serif" }
+                  ] }
+              ] } },
+            { at: [11,8], dom: "wrapper", el: "CheckBox", id: "0.0.3", m: "@ui", x: "Checkbox", c: __c6, props: [
+                { n: "Checked", to: {"change":"OnCheckedChanged","change_from":{"args":"value","prop":"onChange"},"prop":"checked"}, kind: "Bool", at: [11,17], b: { at: [11,35], mode: "TwoWay", path: "prefs.spellcheck", g: (o) => o.prefs?.spellcheck, s: (o, v) => { o.prefs.spellcheck = v } } },
+                { n: "Text", to: {"prop":"label"}, kind: "String", at: [11,67], v: "Spell check" },
+                { n: "Enabled", to: {"convert":"invert","prop":"disabled"}, kind: "Bool", at: [11,86], b: { at: [11,104], mode: "OneWay", path: "canEdit", g: (o) => o.canEdit, s: (o, v) => { o.canEdit = v } } },
+                { n: "ToolTip", to: {"runtime":"tooltip"}, kind: "String", at: [11,114], v: "Checks as you type" }
+              ] }
+          ] }
+      ], slots: { actions: [
+        { at: [14,8], dom: "ref", el: "Button", id: "0.1.0", m: "@ui", name: "save", x: "Button", c: __c7, props: [
+            { n: "Text", to: {"prop":"children"}, kind: "String", at: [14,29], v: "Enregistrer" },
+            { n: "Icon", to: {"convert":"icon-node","prop":"icon"}, kind: "String", at: [14,48], v: { $icon: "Save", c: __c8 } },
+            { n: "Loading", to: {"prop":"loading"}, kind: "Bool", at: [14,60], b: { at: [14,78], mode: "OneWay", path: "busy", g: (o) => o.busy, s: (o, v) => { o.busy = v } } }
+          ], events: [
+            { n: "OnClick", h: "save_click", from: {"args":"mouse","prop":"onClick"}, args_type: "MouseEventArgs", at: [14,85], f: (vm, s, e) => vm.save_click(s, e) }
+          ] },
+        { at: [15,8], dom: "ref", el: "Button", id: "0.1.1", m: "@ui", x: "Button", c: __c7, props: [
+            { n: "Text", to: {"prop":"children"}, kind: "String", at: [15,15], res: {"key":"common_cancel"} },
+            { n: "Variant", to: {"prop":"variant"}, kind: "Enum", at: [15,42], v: "ghost" },
+            { n: "Size", to: {"prop":"size"}, kind: "Enum", at: [15,58], v: "sm" },
+            { n: "Visible", to: {"runtime":"visible"}, kind: "Bool", at: [15,91], b: { at: [15,109], mode: "OneWay", path: "dirty", g: (o) => o.dirty, s: (o, v) => { o.dirty = v } } }
+          ], events: [
+            { n: "OnClick", h: "cancel_click", from: {"args":"mouse","prop":"onClick"}, args_type: "MouseEventArgs", at: [15,68], f: (vm, s, e) => vm.cancel_click(s, e) }
+          ] }
+      ], } },
+    { at: [18,4], dom: "wrapper", el: "Callout", id: "1", m: "@ui", x: "Callout", c: __c9, props: [
+        { n: "Variant", to: {"prop":"variant"}, kind: "Enum", at: [18,12], v: "warning" },
+        { n: "Title", to: {"prop":"title"}, kind: "String", at: [18,30], v: "Attention" },
+        { n: "Body", to: {"prop":"children"}, kind: "String", at: [18,48], b: { at: [18,63], format: "({0})", mode: "OneWay", path: "warning", g: (o) => o.warning, s: (o, v) => { o.warning = v } } },
+        { n: "ActionLabel", to: {"field":"label","prop":"action"}, kind: "String", at: [18,95], v: "Fix" }
+      ], events: [
+        { n: "OnAction", h: "fix_click", from: {"args":"none","field":"onClick","prop":"action"}, args_type: "EventArgs", at: [18,113], f: (vm, s, e) => vm.fix_click(s, e) }
+      ] },
+    { at: [19,4], dom: "wrapper", el: "Tabs", id: "2", m: "@ui", x: "Tabs", c: __c10, props: [
+        { n: "SelectedIndex", to: {"change":"OnSelectionChanged","change_from":{"args":"key-to-index","prop":"onChange"},"convert":"index-to-key","prop":"value"}, kind: "F32", at: [19,9], b: { at: [19,33], mode: "TwoWay", path: "tab", g: (o) => o.tab, s: (o, v) => { o.tab = v } } }
+      ], items: { content: "selected-after", key: "id", prop: "tabs", shape: "array", list: [
+        { at: [20,6], dom: "none", el: "TabItem", id: "2.0", props: [
+            { n: "Header", to: {"prop":"label"}, kind: "String", at: [20,14], v: "General" }
+          ], children: [
+            { at: [20,32], dom: "wrapper", el: "Badge", id: "2.0.0", m: "@ui", x: "Badge", c: __c11, props: [
+                { n: "Text", to: {"prop":"children"}, kind: "String", at: [20,38], v: "1" }
+              ] }
+          ] },
+        { at: [21,6], dom: "none", el: "TabItem", id: "2.1", props: [
+            { n: "Header", to: {"prop":"label"}, kind: "String", at: [21,14], v: "Advanced" },
+            { n: "Icon", to: {"convert":"icon-component","prop":"icon"}, kind: "String", at: [21,32], v: { $icon: "trash", c: __c12 } }
+          ] }
+      ] } },
+    { at: [23,4], dom: "wrapper", el: "TextField", fixed: {"primaryColor":"var(--color-primary)"}, id: "3", m: "@ui", x: "OutlinedField", c: __c13, props: [
+        { n: "Variant", to: {"runtime":"component-variant"}, kind: "Enum", at: [23,14], v: "Outlined" },
+        { n: "Label", to: {"prop":"label"}, kind: "String", at: [23,33], v: "E-mail" },
+        { n: "Text", to: {"change":"OnTextChanged","change_from":{"args":"value","prop":"onChange"},"prop":"value"}, kind: "String", at: [23,48], b: { at: [23,63], mode: "TwoWay", path: "email", g: (o) => o.email, s: (o, v) => { o.email = v } } }
+      ] }
+  ] }, tray: [
+  { at: [24,4], dom: "portal", el: "ContextMenu", id: "4", m: "@ui", name: "menu", x: "MenuDropdown", c: __c14, items: { content: "none", nested: "items", prop: "items", shape: "array", list: [
+      { at: [25,6], dom: "none", el: "MenuItem", id: "4.0", props: [
+          { n: "Text", to: {"prop":"label"}, kind: "String", at: [25,15], v: "Copy" },
+          { n: "Icon", to: {"convert":"icon-node","prop":"icon"}, kind: "String", at: [25,27], v: { $icon: "Copy", c: __c15 } }
+        ], events: [
+          { n: "OnClick", h: "copy_click", from: {"args":"none","prop":"onClick"}, args_type: "MouseEventArgs", at: [25,39], f: (vm, s, e) => vm.copy_click(s, e) }
+        ] },
+      { at: [26,6], dom: "none", el: "MenuItem", id: "4.1", props: [
+          { n: "Text", to: {"prop":"label"}, kind: "String", at: [26,15], v: "More" }
+        ], children: [
+          { at: [27,8], dom: "none", el: "MenuItem", id: "4.1.0", props: [
+              { n: "Text", to: {"prop":"label"}, kind: "String", at: [27,17], v: "Paste" }
+            ], events: [
+              { n: "OnClick", h: "paste_click", from: {"args":"none","prop":"onClick"}, args_type: "MouseEventArgs", at: [27,30], f: (vm, s, e) => vm.paste_click(s, e) }
+            ] }
+        ] }
+    ] } }
+] }
+export const ViewBase = __kb_view(plan)
+

@@ -29,6 +29,8 @@ const SPECIFIER_TO_CHUNK: Record<string, string> = {
   '@kubuno/sdk':            'kubuno-shared',
   '@kubuno/drive':          'drive-shared',
   '@ui':                    'kubuno-shared',
+  // Runtime of .kbview views (vskubuno docs/WEB-VIEWS.md, WV-3): one binding engine for the host and every module.
+  '@kubuno/views':          'kubuno-views',
   '@radix-ui/react-dropdown-menu': 'vendor-radix-menu',
 }
 

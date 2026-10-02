@@ -1,0 +1,25 @@
+<!-- Conformance view: the real @ui components, every kind of property target, two-way bindings, events. -->
+<Stack Gap="12" OnLoad="loaded">
+  <Button x:Name="inc" Text="{Binding label}" Variant="Secondary" Loading="{Binding busy}" OnClick="inc_click"/>
+  <Badge Text="{Binding count, StringFormat='{0} clics'}" Variant="Primary"/>
+  <TextField x:Name="nameField" Text="{Binding name, Mode=TwoWay}" Placeholder="Nom" OnTextChanged="name_changed"/>
+  <TextField Text="{Binding upper}" ReadOnly="true" AccessibleName="Majuscules"/>
+  <CheckBox Checked="{Binding agree, Mode=TwoWay}" Text="J'accepte" Enabled="{Binding canAgree}"/>
+  <Switch On="{Binding agree}" Label="Miroir"/>
+  <Callout Variant="Warning" Title="Attention" Body="{Binding warning}" ActionLabel="Corriger" OnAction="fix_click" Visible="{Binding hasWarning}"/>
+  <Card Title="{Res card_title}">
+    <Badge Text="dans la carte"/>
+    <Card.Actions>
+      <Button x:Name="reset" Text="Réinitialiser" Variant="Ghost" OnClick="reset_click"/>
+    </Card.Actions>
+  </Card>
+  <Tabs SelectedIndex="{Binding tab, Mode=TwoWay}">
+    <TabItem Header="Un"><Badge Text="premier onglet"/></TabItem>
+    <TabItem Header="Deux"><Badge Text="second onglet"/></TabItem>
+  </Tabs>
+  <Stack Direction="LeftToRight" Gap="4">
+    <Repeater ItemsSource="{Binding items}" ItemKey="id">
+      <Badge Text="{Binding title}" Variant="Neutral"/>
+    </Repeater>
+  </Stack>
+</Stack>

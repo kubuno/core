@@ -1,0 +1,35 @@
+# The WebAssembly build of the web `.kbview` compiler (vskubuno docs/WEB-VIEWS.md, WV-2).
+#
+# The compiler itself is the `kubuno-views-web` crate of the desktop repository (next to the shared grammar,
+# `kubuno-views-syntax`): it is consumed here as a TAGGED git dependency, like every shared crate
+# (CLAUDE.md §3, "published" mode). This crate only adds a tiny C ABI (JSON in, JSON out) so the `.wasm`
+# loads in Node and in the browser with no glue generator (no wasm-bindgen).
+#
+# The built `kubuno-views-web.wasm` is committed next to this file and shipped in the npm package: module
+# builds (offline `.kbpkg` builds included) never need a Rust toolchain. Rebuild with
+# `npm run build:wasm` (packages/views-compiler) — see scripts/build-wasm.mjs for the local-checkout override.
+[package]
+name    = "kubuno-views-compiler-wasm"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path       = "src/lib.rs"
+
+[dependencies]
+kubuno-views-web = { git = "https://github.com/kubuno/desktop", tag = "views-web-v0.1.0" }
+serde            = { version = "1", features = ["derive"] }
+serde_json       = "1"
+
+[profile.release]
+opt-level     = "s"
+lto           = true
+codegen-units = 1
+panic         = "abort"
+strip         = true
+
+# Its own workspace: not a member of the core's Rust workspace (it only builds for wasm32).
+[workspace]

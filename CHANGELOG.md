@@ -11,6 +11,17 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Screens can now be written as `.kbview` views (foundations).** The web interface gains the
+  runtime of the declarative view format already used by the Kubuno desktop: a view describes a
+  screen in XML (buttons, fields, cards, tabs, lists…), a TypeScript class next to it holds its
+  data and handlers, and the screen updates by itself when that data changes. The host serves this
+  runtime (`@kubuno/views`) to every app through its import map, so the host and all apps share one
+  instance. Two new npm packages come with it: `@kubuno/views` (what apps build against) and
+  `@kubuno/views-compiler` (the Vite plugin and `kbview-tsc`, which check every binding and handler
+  against the code and point errors at the line of the view). An app built for a different version
+  of the view format is refused at load time with a clear notice instead of failing on screen. No
+  existing screen changes yet.
+
 - **`kubuno-paths`, one place for every platform directory.** A new shared
   crate gives the configuration, state (secrets), data, log, cache, runtime and
   backup directories, the modules store and the per-module configuration and

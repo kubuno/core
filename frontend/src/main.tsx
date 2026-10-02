@@ -48,6 +48,8 @@ import './core/i18n/nav'
 import './core/widgets/coreWidgets'
 import { installDefaultMentionSource, installDirectoryMentions } from './core/registry/MentionRegistry'
 import { applyUserLanguage, syncInstanceLanguage } from './core/i18n'
+// The .kbview runtime's host side (components, icons, {Res} through i18next).
+import './core/viewsHost'
 import App from './App'
 import './index.css'
 

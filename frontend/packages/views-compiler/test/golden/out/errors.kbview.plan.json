@@ -1,0 +1,93 @@
+{
+  "abi": 1,
+  "file": "test/golden/errors.kbview",
+  "handlers": [],
+  "kind": "view",
+  "names": {
+    "ok": "2"
+  },
+  "root": {
+    "at": [
+      1,
+      2
+    ],
+    "children": [
+      {
+        "at": [
+          3,
+          4
+        ],
+        "dom": "ref",
+        "el": "Button",
+        "id": "1",
+        "m": "@ui",
+        "x": "Button"
+      },
+      {
+        "at": [
+          4,
+          4
+        ],
+        "dom": "ref",
+        "el": "Button",
+        "id": "2",
+        "m": "@ui",
+        "name": "ok",
+        "x": "Button"
+      },
+      {
+        "at": [
+          5,
+          4
+        ],
+        "dom": "ref",
+        "el": "Button",
+        "id": "3",
+        "m": "@ui",
+        "x": "Button"
+      },
+      {
+        "at": [
+          7,
+          4
+        ],
+        "children": [
+          {
+            "at": [
+              7,
+              10
+            ],
+            "dom": "ref",
+            "el": "Stack",
+            "id": "5.0",
+            "m": "/test/golden/fake-layout",
+            "x": "Stack"
+          },
+          {
+            "at": [
+              7,
+              18
+            ],
+            "dom": "ref",
+            "el": "Stack",
+            "id": "5.1",
+            "m": "/test/golden/fake-layout",
+            "x": "Stack"
+          }
+        ],
+        "content": "children",
+        "dom": "wrapper",
+        "el": "Card",
+        "id": "5",
+        "m": "@ui",
+        "x": "Card"
+      }
+    ],
+    "content": "children",
+    "dom": "ref",
+    "el": "Stack",
+    "id": "",
+    "m": "/test/golden/fake-layout",
+    "x": "Stack"
+  }
+}

@@ -1,4 +1,5 @@
 import { SDK_VERSION } from '@kubuno/sdk'
+import { VIEWS_ABI } from '@kubuno/views'
 import type { ActiveModule } from '../types'
 import { useThemeStore } from '../store/themeStore'
 import { useModuleLoadStore } from './moduleLoadStore'
@@ -66,6 +67,18 @@ async function loadOne(m: ActiveModule): Promise<boolean> {
         moduleId: m.module_id,
         reason: 'sdk-mismatch',
         detail: `SDK v${v} ≠ host v${SDK_VERSION}`,
+      })
+      return false
+    }
+    // Same handshake for the .kbview runtime: a module whose views were compiled for another plan ABI
+    // (`viewsAbi`, exported next to `sdkVersion` by modules that use views) cannot be rendered by this host.
+    const abi = typeof mod.viewsAbi === 'number' ? mod.viewsAbi : undefined
+    if (abi !== undefined && abi !== VIEWS_ABI) {
+      console.warn(`[modules] ${m.module_id} : views ABI ${abi} ≠ host ${VIEWS_ABI} — ignoré`)
+      useModuleLoadStore.getState().recordFailure({
+        moduleId: m.module_id,
+        reason: 'views-mismatch',
+        detail: `views ABI ${abi} ≠ host ${VIEWS_ABI}`,
       })
       return false
     }

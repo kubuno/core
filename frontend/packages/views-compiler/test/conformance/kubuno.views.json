@@ -1,0 +1,6 @@
+{
+  "target": "web",
+  "hostRegistry": "../../../ui/kbview-registry.web.json",
+  "registries": ["controls.json"],
+  "sources": ["."]
+}

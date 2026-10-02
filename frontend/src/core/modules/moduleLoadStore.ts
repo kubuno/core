@@ -10,8 +10,10 @@ import { create } from 'zustand'
  *                 built against a newer SDK surface than the host serves, but
  *                 also any error thrown while the module's top level evaluates.
  * `no-register`   the bundle loaded but exposes no `register()` entry point.
+ * `views-mismatch` the bundle's `.kbview` views were compiled for another plan ABI
+ *                 (`viewsAbi`) than the host's `@kubuno/views` runtime reads.
  */
-export type ModuleLoadFailureReason = 'sdk-mismatch' | 'import-error' | 'no-register'
+export type ModuleLoadFailureReason = 'sdk-mismatch' | 'import-error' | 'no-register' | 'views-mismatch'
 
 export interface ModuleLoadFailure {
   moduleId: string

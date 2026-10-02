@@ -1,0 +1,4 @@
+<Stack Gap="8" OnLoad="loaded">
+  <Button x:Name="incButton" Text="{Binding label}" OnClick="inc_click"/>
+  <Badge Text="{Binding count}"/>
+</Stack>

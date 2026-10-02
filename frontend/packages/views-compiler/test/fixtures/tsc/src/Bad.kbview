@@ -1,0 +1,6 @@
+<Stack OnLoad="loaded">
+  <Button Text="{Binding titel}" OnClick="save_click"/>
+  <Button Text="x" Enabled="{Binding name}"/>
+  <CheckBox Checked="{Binding total, Mode=TwoWay}"/>
+  <Badge Text="{Binding prefs.missing}"/>
+</Stack>

@@ -1,0 +1,1049 @@
+{
+  "abi": 1,
+  "file": "test/golden/settings.kbview",
+  "handlers": [
+    "cancel_click",
+    "copy_click",
+    "fix_click",
+    "font_changed",
+    "page_load",
+    "paste_click",
+    "save_click"
+  ],
+  "kind": "view",
+  "names": {
+    "autosave": "0.0.0",
+    "menu": "4",
+    "save": "0.1.0"
+  },
+  "root": {
+    "at": [
+      2,
+      2
+    ],
+    "children": [
+      {
+        "at": [
+          3,
+          4
+        ],
+        "children": [
+          {
+            "at": [
+              4,
+              6
+            ],
+            "children": [
+              {
+                "at": [
+                  5,
+                  8
+                ],
+                "dom": "wrapper",
+                "el": "Switch",
+                "id": "0.0.0",
+                "m": "@ui",
+                "name": "autosave",
+                "props": [
+                  {
+                    "at": [
+                      5,
+                      33
+                    ],
+                    "b": {
+                      "at": [
+                        5,
+                        46
+                      ],
+                      "mode": "TwoWay",
+                      "path": "prefs.autosave"
+                    },
+                    "kind": "Bool",
+                    "n": "On",
+                    "to": {
+                      "change": "OnCheckedChanged",
+                      "change_from": {
+                        "args": "target-checked",
+                        "prop": "onChange"
+                      },
+                      "prop": "checked"
+                    }
+                  },
+                  {
+                    "at": [
+                      5,
+                      76
+                    ],
+                    "kind": "String",
+                    "n": "Label",
+                    "res": {
+                      "key": "notes_pref_autosave"
+                    },
+                    "to": {
+                      "prop": "label"
+                    }
+                  }
+                ],
+                "x": "Toggle"
+              },
+              {
+                "at": [
+                  6,
+                  8
+                ],
+                "dom": "wrapper",
+                "el": "TextField",
+                "id": "0.0.1",
+                "m": "@ui",
+                "props": [
+                  {
+                    "at": [
+                      6,
+                      18
+                    ],
+                    "b": {
+                      "at": [
+                        6,
+                        33
+                      ],
+                      "mode": "TwoWay",
+                      "path": "prefs.signature",
+                      "trigger": "LostFocus"
+                    },
+                    "kind": "String",
+                    "n": "Text",
+                    "to": {
+                      "change": "OnTextChanged",
+                      "change_from": {
+                        "args": "target-value",
+                        "prop": "onChange"
+                      },
+                      "prop": "value"
+                    }
+                  },
+                  {
+                    "at": [
+                      6,
+                      95
+                    ],
+                    "kind": "String",
+                    "n": "Placeholder",
+                    "to": {
+                      "prop": "placeholder"
+                    },
+                    "v": "Signature"
+                  },
+                  {
+                    "at": [
+                      6,
+                      119
+                    ],
+                    "kind": "F32",
+                    "n": "MaxLength",
+                    "to": {
+                      "prop": "maxLength"
+                    },
+                    "v": 80
+                  }
+                ],
+                "x": "Input"
+              },
+              {
+                "at": [
+                  7,
+                  8
+                ],
+                "dom": "wrapper",
+                "el": "Dropdown",
+                "events": [
+                  {
+                    "args_type": "ValueChangedEventArgs",
+                    "at": [
+                      7,
+                      67
+                    ],
+                    "from": {
+                      "args": "value",
+                      "prop": "onChange"
+                    },
+                    "h": "font_changed",
+                    "n": "OnSelectedValueChanged"
+                  }
+                ],
+                "id": "0.0.2",
+                "items": {
+                  "content": "none",
+                  "list": [
+                    {
+                      "at": [
+                        8,
+                        10
+                      ],
+                      "dom": "none",
+                      "el": "Option",
+                      "id": "0.0.2.0",
+                      "props": [
+                        {
+                          "at": [
+                            8,
+                            17
+                          ],
+                          "kind": "String",
+                          "n": "Value",
+                          "to": {
+                            "prop": "value"
+                          },
+                          "v": "sans"
+                        },
+                        {
+                          "at": [
+                            8,
+                            30
+                          ],
+                          "kind": "String",
+                          "n": "Label",
+                          "to": {
+                            "prop": "label"
+                          },
+                          "v": "Sans serif"
+                        }
+                      ]
+                    },
+                    {
+                      "at": [
+                        9,
+                        10
+                      ],
+                      "dom": "none",
+                      "el": "Option",
+                      "id": "0.0.2.1",
+                      "props": [
+                        {
+                          "at": [
+                            9,
+                            17
+                          ],
+                          "kind": "String",
+                          "n": "Value",
+                          "to": {
+                            "prop": "value"
+                          },
+                          "v": "serif"
+                        },
+                        {
+                          "at": [
+                            9,
+                            31
+                          ],
+                          "kind": "String",
+                          "n": "Label",
+                          "to": {
+                            "prop": "label"
+                          },
+                          "v": "Serif"
+                        }
+                      ]
+                    }
+                  ],
+                  "prop": "options",
+                  "shape": "array"
+                },
+                "m": "@ui",
+                "props": [
+                  {
+                    "at": [
+                      7,
+                      17
+                    ],
+                    "b": {
+                      "at": [
+                        7,
+                        41
+                      ],
+                      "mode": "TwoWay",
+                      "path": "prefs.font"
+                    },
+                    "kind": "String",
+                    "n": "SelectedValue",
+                    "to": {
+                      "change": "OnSelectedValueChanged",
+                      "change_from": {
+                        "args": "value",
+                        "prop": "onChange"
+                      },
+                      "prop": "value"
+                    }
+                  }
+                ],
+                "x": "Dropdown"
+              },
+              {
+                "at": [
+                  11,
+                  8
+                ],
+                "dom": "wrapper",
+                "el": "CheckBox",
+                "id": "0.0.3",
+                "m": "@ui",
+                "props": [
+                  {
+                    "at": [
+                      11,
+                      17
+                    ],
+                    "b": {
+                      "at": [
+                        11,
+                        35
+                      ],
+                      "mode": "TwoWay",
+                      "path": "prefs.spellcheck"
+                    },
+                    "kind": "Bool",
+                    "n": "Checked",
+                    "to": {
+                      "change": "OnCheckedChanged",
+                      "change_from": {
+                        "args": "value",
+                        "prop": "onChange"
+                      },
+                      "prop": "checked"
+                    }
+                  },
+                  {
+                    "at": [
+                      11,
+                      67
+                    ],
+                    "kind": "String",
+                    "n": "Text",
+                    "to": {
+                      "prop": "label"
+                    },
+                    "v": "Spell check"
+                  },
+                  {
+                    "at": [
+                      11,
+                      86
+                    ],
+                    "b": {
+                      "at": [
+                        11,
+                        104
+                      ],
+                      "mode": "OneWay",
+                      "path": "canEdit"
+                    },
+                    "kind": "Bool",
+                    "n": "Enabled",
+                    "to": {
+                      "convert": "invert",
+                      "prop": "disabled"
+                    }
+                  },
+                  {
+                    "at": [
+                      11,
+                      114
+                    ],
+                    "kind": "String",
+                    "n": "ToolTip",
+                    "to": {
+                      "runtime": "tooltip"
+                    },
+                    "v": "Checks as you type"
+                  }
+                ],
+                "x": "Checkbox"
+              }
+            ],
+            "content": "children",
+            "dom": "ref",
+            "el": "Stack",
+            "id": "0.0",
+            "m": "/test/golden/fake-layout",
+            "props": [
+              {
+                "at": [
+                  4,
+                  12
+                ],
+                "kind": "F32",
+                "n": "Gap",
+                "to": {
+                  "prop": "gap"
+                },
+                "v": 8
+              }
+            ],
+            "x": "Stack"
+          }
+        ],
+        "content": "children",
+        "dom": "wrapper",
+        "el": "Card",
+        "id": "0",
+        "m": "@ui",
+        "props": [
+          {
+            "at": [
+              3,
+              9
+            ],
+            "kind": "String",
+            "n": "Title",
+            "res": {
+              "key": "notes_pref_title"
+            },
+            "to": {
+              "prop": "title"
+            }
+          },
+          {
+            "at": [
+              3,
+              40
+            ],
+            "kind": "String",
+            "n": "Icon",
+            "to": {
+              "convert": "icon-node",
+              "prop": "icon"
+            },
+            "v": "Settings"
+          }
+        ],
+        "slots": {
+          "actions": [
+            {
+              "at": [
+                14,
+                8
+              ],
+              "dom": "ref",
+              "el": "Button",
+              "events": [
+                {
+                  "args_type": "MouseEventArgs",
+                  "at": [
+                    14,
+                    85
+                  ],
+                  "from": {
+                    "args": "mouse",
+                    "prop": "onClick"
+                  },
+                  "h": "save_click",
+                  "n": "OnClick"
+                }
+              ],
+              "id": "0.1.0",
+              "m": "@ui",
+              "name": "save",
+              "props": [
+                {
+                  "at": [
+                    14,
+                    29
+                  ],
+                  "kind": "String",
+                  "n": "Text",
+                  "to": {
+                    "prop": "children"
+                  },
+                  "v": "Enregistrer"
+                },
+                {
+                  "at": [
+                    14,
+                    48
+                  ],
+                  "kind": "String",
+                  "n": "Icon",
+                  "to": {
+                    "convert": "icon-node",
+                    "prop": "icon"
+                  },
+                  "v": "Save"
+                },
+                {
+                  "at": [
+                    14,
+                    60
+                  ],
+                  "b": {
+                    "at": [
+                      14,
+                      78
+                    ],
+                    "mode": "OneWay",
+                    "path": "busy"
+                  },
+                  "kind": "Bool",
+                  "n": "Loading",
+                  "to": {
+                    "prop": "loading"
+                  }
+                }
+              ],
+              "x": "Button"
+            },
+            {
+              "at": [
+                15,
+                8
+              ],
+              "dom": "ref",
+              "el": "Button",
+              "events": [
+                {
+                  "args_type": "MouseEventArgs",
+                  "at": [
+                    15,
+                    68
+                  ],
+                  "from": {
+                    "args": "mouse",
+                    "prop": "onClick"
+                  },
+                  "h": "cancel_click",
+                  "n": "OnClick"
+                }
+              ],
+              "id": "0.1.1",
+              "m": "@ui",
+              "props": [
+                {
+                  "at": [
+                    15,
+                    15
+                  ],
+                  "kind": "String",
+                  "n": "Text",
+                  "res": {
+                    "key": "common_cancel"
+                  },
+                  "to": {
+                    "prop": "children"
+                  }
+                },
+                {
+                  "at": [
+                    15,
+                    42
+                  ],
+                  "kind": "Enum",
+                  "n": "Variant",
+                  "to": {
+                    "prop": "variant"
+                  },
+                  "v": "ghost"
+                },
+                {
+                  "at": [
+                    15,
+                    58
+                  ],
+                  "kind": "Enum",
+                  "n": "Size",
+                  "to": {
+                    "prop": "size"
+                  },
+                  "v": "sm"
+                },
+                {
+                  "at": [
+                    15,
+                    91
+                  ],
+                  "b": {
+                    "at": [
+                      15,
+                      109
+                    ],
+                    "mode": "OneWay",
+                    "path": "dirty"
+                  },
+                  "kind": "Bool",
+                  "n": "Visible",
+                  "to": {
+                    "runtime": "visible"
+                  }
+                }
+              ],
+              "x": "Button"
+            }
+          ]
+        },
+        "x": "Card"
+      },
+      {
+        "at": [
+          18,
+          4
+        ],
+        "dom": "wrapper",
+        "el": "Callout",
+        "events": [
+          {
+            "args_type": "EventArgs",
+            "at": [
+              18,
+              113
+            ],
+            "from": {
+              "args": "none",
+              "field": "onClick",
+              "prop": "action"
+            },
+            "h": "fix_click",
+            "n": "OnAction"
+          }
+        ],
+        "id": "1",
+        "m": "@ui",
+        "props": [
+          {
+            "at": [
+              18,
+              12
+            ],
+            "kind": "Enum",
+            "n": "Variant",
+            "to": {
+              "prop": "variant"
+            },
+            "v": "warning"
+          },
+          {
+            "at": [
+              18,
+              30
+            ],
+            "kind": "String",
+            "n": "Title",
+            "to": {
+              "prop": "title"
+            },
+            "v": "Attention"
+          },
+          {
+            "at": [
+              18,
+              48
+            ],
+            "b": {
+              "at": [
+                18,
+                63
+              ],
+              "format": "({0})",
+              "mode": "OneWay",
+              "path": "warning"
+            },
+            "kind": "String",
+            "n": "Body",
+            "to": {
+              "prop": "children"
+            }
+          },
+          {
+            "at": [
+              18,
+              95
+            ],
+            "kind": "String",
+            "n": "ActionLabel",
+            "to": {
+              "field": "label",
+              "prop": "action"
+            },
+            "v": "Fix"
+          }
+        ],
+        "x": "Callout"
+      },
+      {
+        "at": [
+          19,
+          4
+        ],
+        "dom": "wrapper",
+        "el": "Tabs",
+        "id": "2",
+        "items": {
+          "content": "selected-after",
+          "key": "id",
+          "list": [
+            {
+              "at": [
+                20,
+                6
+              ],
+              "children": [
+                {
+                  "at": [
+                    20,
+                    32
+                  ],
+                  "dom": "wrapper",
+                  "el": "Badge",
+                  "id": "2.0.0",
+                  "m": "@ui",
+                  "props": [
+                    {
+                      "at": [
+                        20,
+                        38
+                      ],
+                      "kind": "String",
+                      "n": "Text",
+                      "to": {
+                        "prop": "children"
+                      },
+                      "v": "1"
+                    }
+                  ],
+                  "x": "Badge"
+                }
+              ],
+              "dom": "none",
+              "el": "TabItem",
+              "id": "2.0",
+              "props": [
+                {
+                  "at": [
+                    20,
+                    14
+                  ],
+                  "kind": "String",
+                  "n": "Header",
+                  "to": {
+                    "prop": "label"
+                  },
+                  "v": "General"
+                }
+              ]
+            },
+            {
+              "at": [
+                21,
+                6
+              ],
+              "dom": "none",
+              "el": "TabItem",
+              "id": "2.1",
+              "props": [
+                {
+                  "at": [
+                    21,
+                    14
+                  ],
+                  "kind": "String",
+                  "n": "Header",
+                  "to": {
+                    "prop": "label"
+                  },
+                  "v": "Advanced"
+                },
+                {
+                  "at": [
+                    21,
+                    32
+                  ],
+                  "kind": "String",
+                  "n": "Icon",
+                  "to": {
+                    "convert": "icon-component",
+                    "prop": "icon"
+                  },
+                  "v": "trash"
+                }
+              ]
+            }
+          ],
+          "prop": "tabs",
+          "shape": "array"
+        },
+        "m": "@ui",
+        "props": [
+          {
+            "at": [
+              19,
+              9
+            ],
+            "b": {
+              "at": [
+                19,
+                33
+              ],
+              "mode": "TwoWay",
+              "path": "tab"
+            },
+            "kind": "F32",
+            "n": "SelectedIndex",
+            "to": {
+              "change": "OnSelectionChanged",
+              "change_from": {
+                "args": "key-to-index",
+                "prop": "onChange"
+              },
+              "convert": "index-to-key",
+              "prop": "value"
+            }
+          }
+        ],
+        "x": "Tabs"
+      },
+      {
+        "at": [
+          23,
+          4
+        ],
+        "dom": "wrapper",
+        "el": "TextField",
+        "fixed": {
+          "primaryColor": "var(--color-primary)"
+        },
+        "id": "3",
+        "m": "@ui",
+        "props": [
+          {
+            "at": [
+              23,
+              14
+            ],
+            "kind": "Enum",
+            "n": "Variant",
+            "to": {
+              "runtime": "component-variant"
+            },
+            "v": "Outlined"
+          },
+          {
+            "at": [
+              23,
+              33
+            ],
+            "kind": "String",
+            "n": "Label",
+            "to": {
+              "prop": "label"
+            },
+            "v": "E-mail"
+          },
+          {
+            "at": [
+              23,
+              48
+            ],
+            "b": {
+              "at": [
+                23,
+                63
+              ],
+              "mode": "TwoWay",
+              "path": "email"
+            },
+            "kind": "String",
+            "n": "Text",
+            "to": {
+              "change": "OnTextChanged",
+              "change_from": {
+                "args": "value",
+                "prop": "onChange"
+              },
+              "prop": "value"
+            }
+          }
+        ],
+        "x": "OutlinedField"
+      }
+    ],
+    "content": "children",
+    "dom": "ref",
+    "el": "Stack",
+    "events": [
+      {
+        "args_type": "EventArgs",
+        "at": [
+          2,
+          37
+        ],
+        "from": {
+          "args": "none",
+          "runtime": "view-load"
+        },
+        "h": "page_load",
+        "n": "OnLoad"
+      }
+    ],
+    "id": "",
+    "m": "/test/golden/fake-layout",
+    "props": [
+      {
+        "at": [
+          2,
+          8
+        ],
+        "kind": "Enum",
+        "n": "Direction",
+        "to": {
+          "prop": "direction"
+        },
+        "v": "column"
+      },
+      {
+        "at": [
+          2,
+          28
+        ],
+        "kind": "F32",
+        "n": "Gap",
+        "to": {
+          "prop": "gap"
+        },
+        "v": 16
+      }
+    ],
+    "x": "Stack"
+  },
+  "tray": [
+    {
+      "at": [
+        24,
+        4
+      ],
+      "dom": "portal",
+      "el": "ContextMenu",
+      "id": "4",
+      "items": {
+        "content": "none",
+        "list": [
+          {
+            "at": [
+              25,
+              6
+            ],
+            "dom": "none",
+            "el": "MenuItem",
+            "events": [
+              {
+                "args_type": "MouseEventArgs",
+                "at": [
+                  25,
+                  39
+                ],
+                "from": {
+                  "args": "none",
+                  "prop": "onClick"
+                },
+                "h": "copy_click",
+                "n": "OnClick"
+              }
+            ],
+            "id": "4.0",
+            "props": [
+              {
+                "at": [
+                  25,
+                  15
+                ],
+                "kind": "String",
+                "n": "Text",
+                "to": {
+                  "prop": "label"
+                },
+                "v": "Copy"
+              },
+              {
+                "at": [
+                  25,
+                  27
+                ],
+                "kind": "String",
+                "n": "Icon",
+                "to": {
+                  "convert": "icon-node",
+                  "prop": "icon"
+                },
+                "v": "Copy"
+              }
+            ]
+          },
+          {
+            "at": [
+              26,
+              6
+            ],
+            "children": [
+              {
+                "at": [
+                  27,
+                  8
+                ],
+                "dom": "none",
+                "el": "MenuItem",
+                "events": [
+                  {
+                    "args_type": "MouseEventArgs",
+                    "at": [
+                      27,
+                      30
+                    ],
+                    "from": {
+                      "args": "none",
+                      "prop": "onClick"
+                    },
+                    "h": "paste_click",
+                    "n": "OnClick"
+                  }
+                ],
+                "id": "4.1.0",
+                "props": [
+                  {
+                    "at": [
+                      27,
+                      17
+                    ],
+                    "kind": "String",
+                    "n": "Text",
+                    "to": {
+                      "prop": "label"
+                    },
+                    "v": "Paste"
+                  }
+                ]
+              }
+            ],
+            "dom": "none",
+            "el": "MenuItem",
+            "id": "4.1",
+            "props": [
+              {
+                "at": [
+                  26,
+                  15
+                ],
+                "kind": "String",
+                "n": "Text",
+                "to": {
+                  "prop": "label"
+                },
+                "v": "More"
+              }
+            ]
+          }
+        ],
+        "nested": "items",
+        "prop": "items",
+        "shape": "array"
+      },
+      "m": "@ui",
+      "name": "menu",
+      "x": "MenuDropdown"
+    }
+  ]
+}

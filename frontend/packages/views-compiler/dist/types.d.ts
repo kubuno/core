@@ -1,0 +1,158 @@
+/**
+ * Types of the web `.kbview` compiler's results — the JSON produced by `kubuno-views-web` (Rust, WASM).
+ * Field names follow the Rust structs (snake_case where serde keeps them). The plan itself is described
+ * normatively in `vskubuno/docs/WEB-VIEWS.md` §13 ("WV-2 as built"); the runtime (`@kubuno/views`) has
+ * its own, authoritative, plan types.
+ */
+/** What to compile. */
+export interface CompileOptions {
+    /** The view file, relative to the project root, `/`-separated (`src/NotesSettingsPage.kbview`). */
+    file: string;
+    /** The code-behind as imported from the view's folder (`./NotesSettingsPage`); `null` = none. */
+    code_behind?: string | null;
+    /** The class the code-behind exports (default: the file stem). */
+    class_name?: string | null;
+    /** Keep design-time values (`d:` attributes, `DesignWidth`/`DesignHeight`) in the plan. */
+    design?: boolean;
+}
+export type Severity = 'error' | 'warning' | 'info';
+/** A problem of a view, 1-based line / UTF-16 column. */
+export interface Diagnostic {
+    severity: Severity;
+    code: string;
+    message: string;
+    line: number;
+    column: number;
+    end_line: number;
+    end_column: number;
+}
+/** `[line, column]`, 1-based, UTF-16 columns. */
+export type At = [number, number];
+export interface PlanBinding {
+    path: string;
+    mode: 'OneWay' | 'TwoWay' | 'OneTime' | 'OneWayToSource';
+    trigger?: 'LostFocus' | 'Explicit';
+    conv?: string;
+    param?: string;
+    fallback?: string;
+    format?: string;
+    null?: string;
+    culture?: string;
+    depth?: number;
+    at: At;
+}
+export interface PlanProp {
+    n: string;
+    to: {
+        prop?: string;
+        field?: string;
+        runtime?: string;
+        convert?: string;
+        values?: Record<string, unknown>;
+        change?: string;
+    };
+    v?: unknown;
+    b?: PlanBinding;
+    res?: {
+        key: string;
+        set?: string;
+    };
+    kind: 'Bool' | 'F32' | 'String' | 'Enum';
+    at: At;
+}
+export interface PlanEvent {
+    n: string;
+    h: string;
+    from: {
+        prop?: string;
+        field?: string;
+        dom?: string;
+        runtime?: string;
+        args: string;
+    };
+    args_type: string;
+    at: At;
+}
+export interface PlanNode {
+    id: string;
+    el: string;
+    name?: string;
+    at: At;
+    m?: string;
+    x?: string;
+    dom?: string;
+    kind?: 'user_control';
+    fixed?: Record<string, unknown>;
+    props?: PlanProp[];
+    events?: PlanEvent[];
+    children?: PlanNode[];
+    content?: string;
+    slots?: Record<string, PlanNode[]>;
+    items?: {
+        prop: string;
+        shape: string;
+        content?: unknown;
+        key?: string;
+        nested?: string;
+        list: PlanNode[];
+    };
+    template?: boolean;
+    sc?: Record<string, PlanProp[]>;
+    design?: PlanProp[];
+}
+export interface Plan {
+    abi: number;
+    file: string;
+    kind: 'view' | 'control';
+    root: PlanNode;
+    tray?: PlanNode[];
+    names: Record<string, string>;
+    handlers: string[];
+    design_size?: [number, number];
+}
+/** One mapped span of a check file (generated line/columns → `.kbview` range). */
+export interface CheckSpan {
+    line: number;
+    start: number;
+    end: number;
+    src: At;
+    src_end: At;
+    exact: boolean;
+    what: string;
+}
+export interface NameInfo {
+    name: string;
+    element: string;
+    id: string;
+    handle: string;
+    at: At;
+}
+export interface HandlerUse {
+    name: string;
+    event: string;
+    element: string;
+    sender: string;
+    args: string;
+    at: At;
+    end: At;
+}
+/** Everything one compile produces. */
+export interface CompileOutput {
+    ok: boolean;
+    diagnostics: Diagnostic[];
+    plan: Plan | null;
+    dts: string;
+    check: string;
+    check_map: CheckSpan[];
+    names: NameInfo[];
+    handlers: HandlerUse[];
+    class_name: string;
+    abi: number;
+    compiler: string;
+}
+/** A user control of the project: `<MessageRow/>` for `MessageRow.kbcontrol`. */
+export interface UserControlRef {
+    name: string;
+    /** Project-root-relative module (`/src/MessageRow`), rendered by its default export. */
+    module: string;
+}

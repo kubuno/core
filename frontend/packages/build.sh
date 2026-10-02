@@ -4,6 +4,8 @@
 #   @kubuno/ui    — real ESM library (dist/index.js) + types
 #   @kubuno/sdk   — type surface (sdk/ + core/ .d.ts) + runtime stub
 #   @kubuno/drive — type surface (drive/ .d.ts) + runtime stub
+#   @kubuno/views — type surface (views/ .d.ts) + runtime stub (the .kbview runtime)
+#   @kubuno/views-compiler — real Node library (Vite plugin, kbview-tsc) + the committed .wasm
 #
 # At runtime these specifiers are provided by the host via its import map; module
 # bundles mark them `external`. The packages exist so modules can build & typecheck
@@ -26,6 +28,11 @@ cp -r "$FE"/dist-types/sdk/*  "$PKG/sdk/types/sdk/"
 cp -r "$FE"/dist-types/core/* "$PKG/sdk/types/core/"
 # @kubuno/drive : drive/ only
 rm -rf "$PKG/drive/types"; mkdir -p "$PKG/drive/types/drive"; cp -r "$FE"/dist-types/drive/* "$PKG/drive/types/drive/"
+# @kubuno/views : views/ only (the .kbview runtime; self-contained, imports react only)
+rm -rf "$PKG/views/types"; mkdir -p "$PKG/views/types";     cp -r "$FE"/dist-types/views/* "$PKG/views/types/"
+
+echo "==> 2b   Building @kubuno/views-compiler (TypeScript; the committed .wasm is rebuilt by npm run build:wasm)"
+node_modules/.bin/tsc -b packages/views-compiler
 
 echo "==> 3/3  Building @kubuno/ui ESM bundle"
 # ⚠️ The `cd` is load-bearing, not stylistic. Vite resolves `outDir` against the
