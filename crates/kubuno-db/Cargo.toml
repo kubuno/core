@@ -34,10 +34,16 @@ tokio      = { version = "1", features = ["sync", "time"] }
 # `unicode-normalization` strips diacritics via NFD without any DB extension.
 rust-stemmers         = "1.2"
 unicode-normalization = "0.1"
-# Line-level rewrite of the MySQL-family migrations for Oracle MySQL (see
-# `mysql_compat`). Pure Rust, already in the workspace graph.
-regex = "1"
 
 [dev-dependencies]
+# The Oracle MySQL variant generator (examples/mysql_oracle_variants).
+regex    = "1"
 tokio    = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tempfile = "3"
+
+# Drafts `migrations/mysql-oracle/` flavour variants; `test = true` keeps its
+# rewrite unit tests in `cargo test`.
+[[example]]
+name = "mysql_oracle_variants"
+path = "examples/mysql_oracle_variants/main.rs"
+test = true

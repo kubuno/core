@@ -111,10 +111,11 @@ to `?` where the engine wants it. Same for `query_as` and `query_scalar`.
 let pool = kubuno_db::connect(&settings.database, SCHEMA).await?;   // also creates the schema
 
 if settings.database.run_migrations {
-    let m = kubuno_db::migrations!(
+    kubuno_db::migrations!(
         "./migrations/postgres", "./migrations/mysql", "./migrations/sqlite",
-    );
-    kubuno_db::pool::scope_migrator(m, SCHEMA).run(&pool).await?;
+    )
+    .run(&pool, SCHEMA)
+    .await?;
 }
 
 kubuno_db::events::ensure_outbox(&pool, SCHEMA).await?;   // no-op on PostgreSQL
@@ -122,7 +123,7 @@ kubuno_db::events::ensure_outbox(&pool, SCHEMA).await?;   // no-op on PostgreSQL
 
 Replace the module's `DatabaseSettings` with `kubuno_db::DbSettings` (field for
 field what the modules already deserialise, plus `path` for SQLite). The
-separate `search_path` migration pool goes away: `scope_migrator` puts
+separate `search_path` migration pool goes away: `run` puts
 `_sqlx_migrations` in `<schema>._sqlx_migrations`, which is where PostgreSQL
 already had it.
 
@@ -154,6 +155,74 @@ SQLite.
 > (`uuid-ossp`, `pg_trgm`, `unaccent`, `citext`). There is no equivalent on the
 > other engines: `CITEXT` becomes a case-insensitive collation on MySQL and
 > `COLLATE NOCASE` on SQLite, and trigram search has no replacement at all.
+
+### 2.6.1 MySQL and MariaDB: one set, flavour variants where they differ
+
+The MySQL protocol is spoken by two servers — **Oracle MySQL** and **MariaDB** —
+whose DDL is not quite the same. Kubuno supports both (tested on MySQL 8.4 and
+MariaDB 12.3 LTS). The rule:
+
+1. **Write one `migrations/mysql` file that runs on both.** This is almost always
+   possible; the dialect differences that bite in practice are listed below.
+2. **Where it is not possible, add a flavour variant**: a file with **the same
+   name** (same version, same `.up`/`.down` suffix) in
+   `migrations/mysql-mariadb/` (used on MariaDB only) or
+   `migrations/mysql-oracle/` (used on Oracle MySQL only). The other flavour
+   keeps running the `mysql` file. A variant can exist for both flavours when
+   the `mysql` file fails on both but must stay as released (see 4).
+3. **Name the variant directories in the macro**, after the three engine
+   directories, in this order, each optional:
+
+   ```rust
+   kubuno_db::migrations!(
+       "./migrations/postgres", "./migrations/mysql", "./migrations/sqlite",
+       mariadb = "./migrations/mysql-mariadb",
+       oracle_mysql = "./migrations/mysql-oracle",
+   )
+   .run(&pool, SCHEMA)
+   .await?;
+   ```
+
+   and keep a unit test calling `MigratorSet::check()` on the same set: it fails
+   when a variant has no `mysql` namesake (a variant only replaces a file, it
+   never adds a version) or when one file has two variants.
+4. **How a variant is recorded.** At start-up `run` reads `SELECT VERSION()`
+   (`…-MariaDB` → MariaDB, anything else → Oracle MySQL; an unreadable version is
+   an error, never a guess) and substitutes that flavour's variants. A variant
+   is recorded in `_sqlx_migrations` under its **base file's** version,
+   description and **checksum** — never its own. Consequences:
+   * the bookkeeping is identical on both flavours, so a database moved from
+     MariaDB to MySQL (or back) keeps validating;
+   * adding a variant for an already released migration never invalidates an
+     install that applied the base successfully;
+   * a variant must therefore be a faithful **translation** of its base (the
+     same schema change), never a different change;
+   * released files stay immutable, base and variants alike: the base checksum
+     still guards every install against an edited base, and an edited variant
+     is a silent divergence between installs — fix forward with a new version.
+5. **When a released `mysql` file turns out to fail on a flavour**, do not edit
+   it: add the variant for that flavour. Installs that applied the base keep
+   their checksum; installs where it failed (sqlx leaves the version marked
+   failed) delete that `_sqlx_migrations` row once and restart, and the
+   variant runs.
+
+Differences met so far (MySQL 8.4 vs MariaDB 12.3):
+
+| Construct | MariaDB | Oracle MySQL | Portable form / variant |
+|---|---|---|---|
+| Literal default on `TEXT`/`BLOB`/`JSON` (`DEFAULT 'x'`) | accepted | error 1101 | `DEFAULT ('x')` (expression) works on both |
+| `ALTER COLUMN c SET DEFAULT ('…')` on a `JSON`/`TEXT` column | accepted | error 1101 | `MODIFY COLUMN c JSON NOT NULL DEFAULT ('…')` works on both |
+| `UNIQUE` key on a `TEXT` column without a prefix | accepted (hash key) | error 1170 | a `VARCHAR(n)` column; or an Oracle variant with `(SHA2(c, 256))` |
+| Plain index on `TEXT` without a prefix | accepted | error 1170 | give a prefix length: `c(191)` |
+| Index on a `JSON` column | accepted (`LONGTEXT`) | error 3152 | none: drop it in an Oracle variant |
+| `STORED` generated column over a column whose FK is `ON DELETE SET NULL`/`CASCADE` | error 1901 | error 1215 | `VIRTUAL` + an index on it works on both |
+| Functional key part `((expr))` | not supported | accepted | a generated column + index |
+
+`cargo run -p kubuno-db --example mysql_oracle_variants -- <migrations root>`
+lists the `mysql` files that hit the first four rows; with `--write` it drafts
+their Oracle variants into `mysql-oracle/` (never overwriting one). The draft
+must be reviewed and the module's migrations applied to a real MySQL **and** a
+real MariaDB before it is committed — nothing is rewritten at run time.
 
 ### 2.7 SQL to rewrite
 
@@ -512,6 +581,11 @@ SQLX_OFFLINE=true cargo test -p kubuno-db
 KUBUNO_QB_MYSQL_URL=mysql://root@127.0.0.1:3399/throwaway \
   SQLX_OFFLINE=true cargo test -p kubuno-db
 ```
+
+The flavour-variant tests (`tests/mysql_variants.rs`) and the namespace test
+(`tests/mysql_namespace.rs`) read `KUBUNO_MYSQL_TEST_URL` (an Oracle MySQL
+server) and `KUBUNO_MARIADB_TEST_URL` (a MariaDB server), each skipped when
+unset. Run both before changing anything that touches MySQL migrations.
 
 CI runs `cargo clippy -p kubuno-db --all-targets -- -D warnings` with all three
 drivers linked; keep it green.

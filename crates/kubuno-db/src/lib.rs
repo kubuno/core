@@ -46,7 +46,6 @@ pub mod dialect;
 pub mod events;
 pub mod exec;
 pub mod json;
-mod mysql_compat;
 pub mod journal;
 pub mod pool;
 pub mod query;
@@ -61,7 +60,7 @@ pub use dialect::Backend;
 pub use journal::{changes_since, next_seq, next_seq_on_pool, record_tombstone, touch, Change};
 pub use exec::{DbPool, DbRow, DbTx, FromAnyRow, ScalarAnyRow};
 pub use json::JsonVec;
-pub use pool::{connect, DbSettings, MigratorSet, SetupError};
+pub use pool::{connect, DbSettings, MigratorSet, MySqlFlavor, MySqlVariants, SetupError};
 pub use query::DbQueryBuilder;
 pub use schema::{is_kubuno_schema, SchemaPrefix, KUBUNO_SCHEMAS, KUBUNO_SECONDARY_SCHEMAS};
 pub use schema_admin::{

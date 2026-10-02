@@ -11,6 +11,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **MySQL and MariaDB each get the migrations they accept.** The two servers that
+  speak the MySQL protocol do not accept exactly the same DDL. Kubuno keeps one
+  set of MySQL migrations for both and, where they differ, a variant of a file
+  for one server only (`migrations/mysql-oracle/` or `migrations/mysql-mariadb/`),
+  chosen at start-up from the server's version. A variant is recorded under the
+  original file's checksum, so the migration history is identical on both
+  servers and adding a variant never invalidates a database that already applied
+  the original. The core's own schema uses it for Oracle MySQL 8, and apps opt in
+  through the shared `kubuno-db` crate's 0.10.0 release (tag `db-v0.10.0`), which
+  also carries this release's other `kubuno-db` fixes. Checked on MySQL 8.4 and
+  MariaDB 12.3 against the core's and every app's MySQL migrations.
+
 - **Screens can now be written as `.kbview` views (foundations).** The web interface gains the
   runtime of the declarative view format already used by the Kubuno desktop: a view describes a
   screen in XML (buttons, fields, cards, tabs, lists…), a TypeScript class next to it holds its
@@ -365,9 +377,10 @@ number at release time, and CI publishes that section as the GitHub Release note
   - the target database is created before connecting to it (the switch stopped at
     "Unknown database 'core'" on an empty server; `kubuno-db`);
   - the core's MySQL schema now installs on Oracle MySQL 8, not only on MariaDB:
-    `TEXT`/`JSON` literal defaults, unique keys on `TEXT` columns and an index on a
-    `JSON` column are adapted when the migrations run, without touching the files a
-    MariaDB instance already applied (`kubuno-db`);
+    the few statements MySQL 8 refuses (`TEXT`/`JSON` literal defaults, a unique
+    key on a `TEXT` column, an index on a `JSON` column) run from an Oracle MySQL
+    variant of their migration, while MariaDB keeps running the files it already
+    applied;
   - UUID keys have a default again on MySQL/MariaDB, as on PostgreSQL: signing in,
     raising an alert or queueing a job no longer fails with an internal error;
   - open alerts and finished data exports are accepted on MySQL/MariaDB and SQLite:

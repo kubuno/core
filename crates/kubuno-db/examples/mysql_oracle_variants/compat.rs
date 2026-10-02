@@ -1,25 +1,23 @@
-//! Running the MySQL/MariaDB migrations on Oracle MySQL.
+//! Translating MariaDB-flavoured MySQL migrations for Oracle MySQL.
 //!
 //! Kubuno's `migrations/mysql` files are written for the MySQL family, but a few
 //! constructs MariaDB accepts are refused by Oracle MySQL 8:
 //!
 //! * a literal default on a `TEXT`/`BLOB`/`JSON` column (`kind TEXT NOT NULL
 //!   DEFAULT 'text'`) — error 1101. MySQL ≥ 8.0.13 takes the same default as an
-//!   expression: `DEFAULT ('text')`, which MariaDB also understands.
+//!   expression: `DEFAULT ('text')`.
 //! * a `TEXT`/`BLOB` column in a key without a prefix length — error 1170
-//!   (MariaDB hashes long unique keys on its own). A `UNIQUE`/`PRIMARY` key part
-//!   becomes the functional part `(SHA2(col, 256))`, which keeps the exact
-//!   uniqueness the column had; a plain index gets a prefix length instead.
+//!   (MariaDB hashes long unique keys on its own). A `UNIQUE` key part becomes
+//!   the functional part `(SHA2(col, 256))`, which keeps the exact uniqueness the
+//!   column had; a plain index gets a prefix length instead.
 //! * an index on a `JSON` column (a `LONGTEXT` alias on MariaDB) — error 3152.
 //!   MySQL cannot index JSON directly, so such an index is skipped: it only ever
 //!   served as a lookup accelerator.
 //!
-//! [`rewrite`] turns one migration's SQL into the MySQL form. It is applied at
-//! run time and only when the server is not MariaDB, so the files on disk — and
-//! a MariaDB instance that already applied them — are untouched. The migrator
-//! keeps recording the ORIGINAL file checksum (see `MigratorSet::run`), so the
-//! bookkeeping is identical on both servers and a later change to this shim can
-//! never make an applied migration look modified.
+//! [`rewrite`] turns one migration's SQL into the MySQL form. It is NOT applied
+//! at run time: the generator in `main.rs` writes its output as reviewable
+//! `migrations/mysql-oracle/` flavour variants (see `kubuno_db::MySqlVariants`),
+//! which are then committed and tested on a real server like any migration.
 //!
 //! The rewrite is line-oriented, matching how Kubuno writes its MySQL DDL: one
 //! column, key or `CREATE INDEX` per line. Anything it does not recognise is left

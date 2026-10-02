@@ -395,19 +395,160 @@ pub async fn ensure_schema(pool: &DbPool, eff_schema: &str) -> Result<(), sqlx::
     Ok(())
 }
 
-/// The three migration directories of a module, one per engine, resolved at
-/// compile time. Build it with [`crate::migrations!`] and run the one that
-/// matches the pool.
+/// The migration directories of a module, resolved at compile time. Build it
+/// with [`crate::migrations!`] and [`run`](Self::run) the set that matches the
+/// pool.
+///
+/// The MySQL protocol is spoken by two servers that do not accept exactly the
+/// same DDL: Oracle MySQL and MariaDB. `mysql` is the one set both run; where a
+/// migration cannot be written for both, a **flavour variant** — a file with the
+/// same name in `migrations/mysql-mariadb/` or `migrations/mysql-oracle/` —
+/// replaces it on that flavour only (see [`MySqlVariants`]).
 pub struct MigratorSet {
     pub postgres: sqlx::migrate::Migrator,
     pub mysql: sqlx::migrate::Migrator,
     pub sqlite: sqlx::migrate::Migrator,
+    /// Per-flavour replacements of `mysql` files. Empty for most modules.
+    pub mysql_variants: MySqlVariants,
+}
+
+/// Which server answers on the MySQL protocol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MySqlFlavor {
+    /// MariaDB (any version): `VERSION()` contains `MariaDB`.
+    MariaDb,
+    /// Oracle MySQL (and anything else speaking the protocol).
+    Oracle,
+}
+
+impl MySqlFlavor {
+    /// Classifies a `SELECT VERSION()` string (`8.4.6`, `12.3.3-MariaDB`,
+    /// `5.5.5-10.11.8-MariaDB-log`, …).
+    pub fn from_version(version: &str) -> Self {
+        if version.to_ascii_lowercase().contains("mariadb") {
+            Self::MariaDb
+        } else {
+            Self::Oracle
+        }
+    }
+
+    /// Asks the server. An error is returned rather than guessed: running the
+    /// other flavour's variant would fail half-way through a migration.
+    pub async fn detect(pool: &sqlx::MySqlPool) -> Result<Self, sqlx::Error> {
+        let v: String = sqlx::query_scalar("SELECT VERSION()").fetch_one(pool).await?;
+        Ok(Self::from_version(&v))
+    }
+
+    /// The variant directory name, next to `migrations/mysql`.
+    pub fn variant_dir(self) -> &'static str {
+        match self {
+            Self::MariaDb => MARIADB_VARIANT_DIR,
+            Self::Oracle => ORACLE_VARIANT_DIR,
+        }
+    }
+}
+
+/// `migrations/mysql-mariadb/`: files used instead of their `mysql` namesake on MariaDB.
+pub const MARIADB_VARIANT_DIR: &str = "mysql-mariadb";
+/// `migrations/mysql-oracle/`: files used instead of their `mysql` namesake on Oracle MySQL.
+pub const ORACLE_VARIANT_DIR: &str = "mysql-oracle";
+
+/// Flavour variants of a module's `mysql` migrations.
+///
+/// The rule:
+///
+/// * Write **one** `mysql` migration that runs on both MariaDB and Oracle MySQL
+///   whenever the two dialects allow it (they almost always do).
+/// * When they do not, keep the `mysql` file for the flavour it works on and add
+///   a file with **the same name** (same version, same `.up`/`.down` suffix)
+///   under `mysql-mariadb/` or `mysql-oracle/`. It replaces the `mysql` file on
+///   that flavour only; the other flavour keeps running the `mysql` file.
+/// * A variant must **translate** its base, never do something else: it is
+///   recorded in `_sqlx_migrations` under the **base file's** version,
+///   description and checksum. The bookkeeping is therefore identical on both
+///   flavours — a database dumped from MariaDB into MySQL (or back) keeps
+///   validating, and adding or fixing a variant later never makes an install
+///   that already applied the base look modified.
+/// * A variant without a base file of the same version and kind is an error at
+///   run time (and in [`MigratorSet::check`]), as are two variants of one file.
+/// * Released files stay immutable, base and variants alike, exactly as before:
+///   the checksum of the base still guards an install against an edited base.
+#[derive(Debug, Default)]
+pub struct MySqlVariants {
+    /// Files from `migrations/mysql-mariadb/`.
+    pub mariadb: Option<sqlx::migrate::Migrator>,
+    /// Files from `migrations/mysql-oracle/`.
+    pub oracle: Option<sqlx::migrate::Migrator>,
+}
+
+impl MySqlVariants {
+    fn for_flavor_mut(&mut self, flavor: MySqlFlavor) -> Option<&mut sqlx::migrate::Migrator> {
+        match flavor {
+            MySqlFlavor::MariaDb => self.mariadb.as_mut(),
+            MySqlFlavor::Oracle => self.oracle.as_mut(),
+        }
+    }
+
+    fn for_flavor(&self, flavor: MySqlFlavor) -> Option<&sqlx::migrate::Migrator> {
+        match flavor {
+            MySqlFlavor::MariaDb => self.mariadb.as_ref(),
+            MySqlFlavor::Oracle => self.oracle.as_ref(),
+        }
+    }
 }
 
 impl MigratorSet {
+    /// Loads the same layout [`crate::migrations!`] embeds, from disk at run
+    /// time: `<root>/{postgres,mysql,sqlite}` and, when present,
+    /// `<root>/mysql-mariadb` and `<root>/mysql-oracle`. Meant for tests and
+    /// tooling (a module embeds its migrations with the macro).
+    pub async fn from_dir(root: impl AsRef<std::path::Path>) -> Result<Self, sqlx::migrate::MigrateError> {
+        use sqlx::migrate::Migrator;
+        let root = root.as_ref();
+        async fn opt(dir: std::path::PathBuf) -> Result<Option<Migrator>, sqlx::migrate::MigrateError> {
+            if dir.is_dir() {
+                Ok(Some(Migrator::new(dir).await?))
+            } else {
+                Ok(None)
+            }
+        }
+        Ok(Self {
+            postgres: Migrator::new(root.join("postgres")).await?,
+            mysql: Migrator::new(root.join("mysql")).await?,
+            sqlite: Migrator::new(root.join("sqlite")).await?,
+            mysql_variants: MySqlVariants {
+                mariadb: opt(root.join(MARIADB_VARIANT_DIR)).await?,
+                oracle: opt(root.join(ORACLE_VARIANT_DIR)).await?,
+            },
+        })
+    }
+
+    /// Verifies that every flavour variant replaces an existing `mysql` file.
+    /// Call it from a module's unit test to catch a misnamed variant at build
+    /// time rather than at the first start on that flavour.
+    pub fn check(&self) -> Result<(), sqlx::migrate::MigrateError> {
+        for flavor in [MySqlFlavor::MariaDb, MySqlFlavor::Oracle] {
+            self.mysql_migrations(flavor)?;
+        }
+        Ok(())
+    }
+
+    /// The MySQL-family migrations exactly as they run on `flavor`: the `mysql`
+    /// set with that flavour's variants substituted, each keeping its base's
+    /// version, description and checksum.
+    pub fn mysql_migrations(
+        &self,
+        flavor: MySqlFlavor,
+    ) -> Result<Vec<sqlx::migrate::Migration>, sqlx::migrate::MigrateError> {
+        let variants = self.mysql_variants.for_flavor(flavor).map(|m| &m.migrations[..]);
+        substitute_variants(&self.mysql.migrations, variants.unwrap_or(&[]), flavor)
+    }
+
     /// Runs the migrations for the pool's engine, keeping `_sqlx_migrations`
     /// inside the module's own namespace (the same table PostgreSQL already
     /// used through its search_path — so an applied migration is not re-run).
+    /// On the MySQL protocol the server's flavour is detected first and its
+    /// variants substituted.
     pub async fn run(
         mut self,
         pool: &DbPool,
@@ -424,10 +565,24 @@ impl MigratorSet {
                 self.postgres.run(p).await
             }
             PoolKind::My(p) => {
+                let flavor = MySqlFlavor::detect(p).await.map_err(sqlx::migrate::MigrateError::Execute)?;
+                // Prefix first, on the base and on the variants alike, so a
+                // prefixed instance records the checksum of its prefixed BASE
+                // whatever the flavour.
                 apply_prefix_to_migrator(&mut self.mysql, &prefix);
-                if !is_mariadb(p).await {
-                    apply_mysql_compat(&mut self.mysql);
+                if let Some(v) = self.mysql_variants.for_flavor_mut(flavor) {
+                    apply_prefix_to_migrator(v, &prefix);
                 }
+                let resolved = self.mysql_migrations(flavor)?;
+                let substituted = resolved
+                    .iter()
+                    .zip(self.mysql.migrations.iter())
+                    .filter(|(r, b)| r.sql.as_str() != b.sql.as_str())
+                    .count();
+                if substituted > 0 {
+                    tracing::info!(schema, ?flavor, substituted, "MySQL flavour variants in use");
+                }
+                self.mysql.migrations = std::borrow::Cow::Owned(resolved);
                 self.mysql.dangerous_set_table_name(table);
                 self.mysql.run(p).await
             }
@@ -440,48 +595,55 @@ impl MigratorSet {
     }
 }
 
-/// Whether the MySQL-protocol server is MariaDB (its `VERSION()` says so). When
-/// the version cannot be read, Oracle MySQL is assumed: the compatibility rewrite
-/// only produces SQL MariaDB accepts too.
-async fn is_mariadb(pool: &sqlx::MySqlPool) -> bool {
-    match sqlx::query_scalar::<_, String>("SELECT VERSION()").fetch_one(pool).await {
-        Ok(v) => v.to_ascii_lowercase().contains("mariadb"),
-        Err(e) => {
-            tracing::debug!(error = %e, "VERSION() unreadable — assuming Oracle MySQL");
-            false
+/// Puts each variant in place of its base (same version, same migration type),
+/// keeping the base's version, description and checksum. See [`MySqlVariants`].
+fn substitute_variants(
+    base: &[sqlx::migrate::Migration],
+    variants: &[sqlx::migrate::Migration],
+    flavor: MySqlFlavor,
+) -> Result<Vec<sqlx::migrate::Migration>, sqlx::migrate::MigrateError> {
+    use sqlx::migrate::{MigrateError, Migration};
+    let mut out: Vec<Migration> = base.to_vec();
+    let mut used = std::collections::HashSet::new();
+    for v in variants {
+        let key = (v.version, v.migration_type.is_down_migration(), v.migration_type.is_up_migration());
+        if !used.insert(key) {
+            return Err(MigrateError::Source(
+                format!(
+                    "{}: two variants of migration {} ({})",
+                    flavor.variant_dir(),
+                    v.version,
+                    v.migration_type.label()
+                )
+                .into(),
+            ));
         }
+        let Some(slot) = out
+            .iter_mut()
+            .find(|b| b.version == v.version && b.migration_type == v.migration_type)
+        else {
+            return Err(MigrateError::Source(
+                format!(
+                    "{}: migration {} ({}) has no namesake in migrations/mysql — a variant only \
+                     replaces an existing file, it never adds a version",
+                    flavor.variant_dir(),
+                    v.version,
+                    v.migration_type.label()
+                )
+                .into(),
+            ));
+        };
+        let mut m = Migration::new(
+            slot.version,
+            slot.description.clone(),
+            slot.migration_type,
+            v.sql.clone(),
+            v.no_tx,
+        );
+        m.checksum = slot.checksum.clone();
+        *slot = m;
     }
-}
-
-/// Rewrites the MySQL-family migrations into what Oracle MySQL accepts (see
-/// [`crate::mysql_compat`]). Every migration keeps its ORIGINAL checksum, so the
-/// `_sqlx_migrations` bookkeeping is the same as on MariaDB and a migration
-/// applied before this shim existed (or before it changed) is never reported as
-/// modified.
-fn apply_mysql_compat(m: &mut sqlx::migrate::Migrator) {
-    use sqlx::migrate::Migration;
-    use sqlx::{AssertSqlSafe, SqlSafeStr};
-    let mut catalog = crate::mysql_compat::Catalog::default();
-    let rewritten: Vec<Migration> = m
-        .iter()
-        .map(|mig| {
-            let sql = if mig.migration_type.is_down_migration() {
-                crate::mysql_compat::rewrite(mig.sql.as_str(), &mut crate::mysql_compat::Catalog::default())
-            } else {
-                crate::mysql_compat::rewrite(mig.sql.as_str(), &mut catalog)
-            };
-            let mut out = Migration::new(
-                mig.version,
-                mig.description.clone(),
-                mig.migration_type,
-                AssertSqlSafe(sql).into_sql_str(),
-                mig.no_tx,
-            );
-            out.checksum = mig.checksum.clone();
-            out
-        })
-        .collect();
-    m.migrations = std::borrow::Cow::Owned(rewritten);
+    Ok(out)
 }
 
 /// Rewrites a migrator's SQL so a prefixed instance's DDL lands in the prefixed
@@ -521,7 +683,7 @@ fn apply_prefix_to_migrator(m: &mut sqlx::migrate::Migrator, prefix: &SchemaPref
     m.migrations = std::borrow::Cow::Owned(rewritten);
 }
 
-/// Builds a [`MigratorSet`] from the three per-engine migration directories.
+/// Builds a [`MigratorSet`] from the per-engine migration directories.
 ///
 /// ```ignore
 /// kubuno_db::migrations!(
@@ -532,14 +694,48 @@ fn apply_prefix_to_migrator(m: &mut sqlx::migrate::Migrator, prefix: &SchemaPref
 /// .run(&pool, "keestore")
 /// .await?;
 /// ```
+///
+/// A module with MySQL flavour variants (see [`pool::MySqlVariants`](crate::pool::MySqlVariants))
+/// names their directories after the three, in this order, each optional:
+///
+/// ```ignore
+/// kubuno_db::migrations!(
+///     "./migrations/postgres",
+///     "./migrations/mysql",
+///     "./migrations/sqlite",
+///     mariadb = "./migrations/mysql-mariadb",
+///     oracle_mysql = "./migrations/mysql-oracle",
+/// )
+/// ```
 #[macro_export]
 macro_rules! migrations {
-    ($postgres:literal, $mysql:literal, $sqlite:literal $(,)?) => {
+    (
+        $postgres:literal, $mysql:literal, $sqlite:literal
+        $(, mariadb = $mariadb:literal)?
+        $(, oracle_mysql = $oracle:literal)?
+        $(,)?
+    ) => {
         $crate::pool::MigratorSet {
             postgres: $crate::sqlx::migrate!($postgres),
             mysql: $crate::sqlx::migrate!($mysql),
             sqlite: $crate::sqlx::migrate!($sqlite),
+            mysql_variants: $crate::pool::MySqlVariants {
+                mariadb: $crate::__kubuno_opt_migrator!($($mariadb)?),
+                oracle: $crate::__kubuno_opt_migrator!($($oracle)?),
+            },
         }
+    };
+}
+
+/// `Some(migrate!(dir))` when a directory is named, `None` otherwise.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __kubuno_opt_migrator {
+    () => {
+        ::core::option::Option::None
+    };
+    ($dir:literal) => {
+        ::core::option::Option::Some($crate::sqlx::migrate!($dir))
     };
 }
 
@@ -567,5 +763,73 @@ mod tests {
         let dbg = format!("{s:?}");
         assert!(!dbg.contains("topsecret"), "{dbg}");
         assert!(dbg.contains("<redacted>"), "{dbg}");
+    }
+
+    fn mig(version: i64, kind: sqlx::migrate::MigrationType, sql: &'static str) -> sqlx::migrate::Migration {
+        use sqlx::SqlSafeStr;
+        sqlx::migrate::Migration::new(
+            version,
+            format!("m{version}").into(),
+            kind,
+            sqlx::AssertSqlSafe(sql).into_sql_str(),
+            false,
+        )
+    }
+
+    #[test]
+    fn flavor_follows_the_version_string() {
+        assert_eq!(MySqlFlavor::from_version("8.4.6"), MySqlFlavor::Oracle);
+        assert_eq!(MySqlFlavor::from_version("12.3.3-MariaDB"), MySqlFlavor::MariaDb);
+        assert_eq!(MySqlFlavor::from_version("5.5.5-10.11.8-MariaDB-log"), MySqlFlavor::MariaDb);
+        assert_eq!(MySqlFlavor::Oracle.variant_dir(), "mysql-oracle");
+        assert_eq!(MySqlFlavor::MariaDb.variant_dir(), "mysql-mariadb");
+    }
+
+    #[test]
+    fn a_variant_replaces_its_base_sql_and_keeps_the_base_identity() {
+        use sqlx::migrate::MigrationType::{ReversibleDown as Down, ReversibleUp as Up};
+        let base = vec![mig(1, Up, "A"), mig(1, Down, "a"), mig(2, Up, "B STORED"), mig(2, Down, "b")];
+        let variants = vec![mig(2, Up, "B VIRTUAL")];
+        let out = substitute_variants(&base, &variants, MySqlFlavor::Oracle).expect("substitute");
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[2].sql.as_str(), "B VIRTUAL");
+        // Recorded exactly like the base: same version, description, checksum.
+        assert_eq!(out[2].version, 2);
+        assert_eq!(out[2].description, base[2].description);
+        assert_eq!(out[2].checksum, base[2].checksum);
+        assert_ne!(out[2].checksum, variants[0].checksum);
+        // Everything else untouched.
+        for i in [0, 1, 3] {
+            assert_eq!(out[i].sql.as_str(), base[i].sql.as_str());
+            assert_eq!(out[i].checksum, base[i].checksum);
+        }
+    }
+
+    #[test]
+    fn an_orphan_or_duplicate_variant_is_refused() {
+        use sqlx::migrate::MigrationType::{ReversibleDown as Down, ReversibleUp as Up};
+        let base = vec![mig(1, Up, "A"), mig(1, Down, "a")];
+        // No version 3 in the base set.
+        let err = substitute_variants(&base, &[mig(3, Up, "C")], MySqlFlavor::MariaDb).unwrap_err();
+        assert!(err.to_string().contains("no namesake"), "{err}");
+        // Same version, other kind (a down variant for an up-only base is fine
+        // only when the base has that down file).
+        let up_only = vec![mig(1, sqlx::migrate::MigrationType::Simple, "A")];
+        assert!(substitute_variants(&up_only, &[mig(1, Up, "A2")], MySqlFlavor::Oracle).is_err());
+        // Two variants of one file.
+        let err = substitute_variants(&base, &[mig(1, Up, "x"), mig(1, Up, "y")], MySqlFlavor::Oracle)
+            .unwrap_err();
+        assert!(err.to_string().contains("two variants"), "{err}");
+    }
+
+    #[test]
+    fn no_variant_leaves_the_base_byte_identical() {
+        use sqlx::migrate::MigrationType::Simple;
+        let base = vec![mig(1, Simple, "A"), mig(2, Simple, "B")];
+        let out = substitute_variants(&base, &[], MySqlFlavor::MariaDb).expect("substitute");
+        for (o, b) in out.iter().zip(&base) {
+            assert_eq!(o.sql.as_str(), b.sql.as_str());
+            assert_eq!(o.checksum, b.checksum);
+        }
     }
 }
