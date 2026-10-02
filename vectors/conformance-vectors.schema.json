@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kubuno/core/blob/main/vectors/conformance-vectors.schema.json",
+  "title": "Kubuno conformance vector suite (format 1)",
+  "description": "One suite of conformance vectors: inputs and the outputs every implementation of a shared algorithm must produce. See vskubuno docs/SHARED-CORES.md, section 'SC-0 as built'.",
+  "type": "object",
+  "required": ["format", "suite", "version", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": {
+      "description": "File format major version. Runners refuse a format they do not know.",
+      "const": 1
+    },
+    "suite": {
+      "description": "Stable dotted identifier: <domain>.<area>[.<sub>] (e.g. forms.operators, sync.outbox.backoff).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "version": {
+      "description": "SemVer of the suite. MAJOR: an expected output changed or a case was removed. MINOR: cases added. PATCH: notes and descriptions only.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "description": { "type": "string" },
+    "reference": {
+      "description": "The reference implementation the expected outputs come from (crate and function).",
+      "type": "string"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["id", "input", "expected"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Unique within the suite; slash-separated groups are allowed (equals/case-insensitive).",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$"
+        },
+        "input": { "description": "Any JSON value; its shape is defined by the suite." },
+        "expected": { "description": "Any JSON value. Unordered results are emitted sorted by the producer." },
+        "note": { "type": "string" },
+        "skip": {
+          "description": "Known, documented divergences: platform -> reason. The runner of that platform reports the case as skipped.",
+          "type": "object",
+          "propertyNames": { "enum": ["rust", "ts", "kotlin", "swift"] },
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

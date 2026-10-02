@@ -24,6 +24,14 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Conformance vectors for algorithms shared across web, desktop and mobile** (for developers). A shared
+  algorithm now ships JSON vector suites (inputs and the outputs every implementation must produce, format 1,
+  `vectors/conformance-vectors.schema.json`), run by a Rust runner (`kubuno-vectors` crate, used as a
+  dev-dependency) and a TypeScript runner (`@kubuno/vectors` npm package, for vitest or `node:test`, with a
+  `kubuno-vectors vendor`/`check` command for pinned copies). The first suites describe the offline sync client:
+  the retry delay of a pending change (`vectors/sync/outbox-backoff.json`, which never gives up) and the class of
+  an HTTP answer (`vectors/sync/http-classify.json`). CI runs them on Linux, Windows and macOS.
+
 - **MySQL and MariaDB each get the migrations they accept.** The two servers that
   speak the MySQL protocol do not accept exactly the same DDL. Kubuno keeps one
   set of MySQL migrations for both and, where they differ, a variant of a file

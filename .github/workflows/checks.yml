@@ -31,6 +31,29 @@ jobs:
       - name: tests unitaires
         run: cargo test --lib
 
+  # Conformance vectors (SC-0): the Rust and TypeScript runners and the core
+  # repository's own suites, on the three desktop OSes (line endings, paths).
+  vectors:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: Swatinem/rust-cache@v2
+      - name: kubuno-vectors (clippy, tests)
+        run: |
+          cargo clippy -p kubuno-vectors --all-targets -- -D warnings
+          cargo test -p kubuno-vectors
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: "@kubuno/vectors (node:test)"
+        working-directory: frontend/packages/vectors
+        run: npm test
+
   audit:
     runs-on: ubuntu-latest
     steps:

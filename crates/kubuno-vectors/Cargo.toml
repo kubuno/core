@@ -1,0 +1,16 @@
+[package]
+name        = "kubuno-vectors"
+version     = "0.1.0"
+edition     = "2021"
+description = "Conformance-vector runner for Kubuno shared cores: loads JSON vector suites, verifies vendored copies, compares outputs (dev-dependency)"
+license     = "AGPL-3.0"
+repository  = "https://github.com/kubuno/core"
+
+# Explicit (non-workspace) dependency versions on purpose: this crate is pulled
+# standalone by module repositories (as a dev-dependency, via a git tag), so it
+# must resolve identically no matter which workspace consumes it.
+[dependencies]
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2       = "0.10"
+hex        = "0.4"

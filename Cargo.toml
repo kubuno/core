@@ -10,6 +10,7 @@ members  = [
     "crates/kubuno-modauth",
     "crates/kubuno-db",
     "crates/kubuno-paths",
+    "crates/kubuno-vectors",
 ]
 
 [workspace.package]

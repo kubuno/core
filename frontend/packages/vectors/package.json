@@ -1,0 +1,37 @@
+{
+  "name": "@kubuno/vectors",
+  "version": "0.1.0",
+  "description": "Conformance-vector runner for Kubuno shared cores: loads JSON vector suites, runs them with vitest or node:test, verifies vendored copies. Test-time only, no dependencies.",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/vectors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubuno/core.git",
+    "directory": "frontend/packages/vectors"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "bin",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "bin": {
+    "kubuno-vectors": "bin/kubuno-vectors.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
