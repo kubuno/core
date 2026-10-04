@@ -135,6 +135,14 @@ impl McpToolProvider for CoreToolProvider {
         };
 
         let url = format!("{}{}", base_url.trim_end_matches('/'), route);
+        // Same signed identity as the module proxy mints: a module that verifies
+        // X-Kubuno-Auth (and no longer trusts the plain headers) serves this call too.
+        let module_secret = self.state.settings.server.module_secret(&module_id);
+        let signed_identity = kubuno_modauth::sign(
+            module_secret.as_bytes(),
+            &kubuno_modauth::ModuleUser { id: user.id, role: role.clone(), email: user.email.clone() },
+            &module_id,
+        );
         let client = reqwest::Client::new();
         let req = match method.as_str() {
             "GET" => client.get(&url).query(&arguments),
@@ -143,8 +151,9 @@ impl McpToolProvider for CoreToolProvider {
         .header("x-kubuno-user-id", user.id.to_string())
         .header("x-kubuno-user-role", role.clone())
         .header("x-kubuno-user-email", user.email.clone())
-        // Secret interne du module ciblé (il le compare à sa propre valeur).
-        .header("x-internal-secret", self.state.settings.server.module_secret(&module_id));
+        .header(kubuno_modauth::TOKEN_HEADER, signed_identity)
+        // The target module's internal secret (it compares it with its own value).
+        .header("x-internal-secret", module_secret);
 
         match req.send().await {
             Ok(resp) => {

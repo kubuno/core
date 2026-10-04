@@ -96,6 +96,31 @@ pub fn origin_from_headers(headers: &axum::http::HeaderMap) -> String {
     format!("{scheme}://{host}")
 }
 
+/// Base URL of a link that carries a secret (a password-reset token), or `None` when
+/// none can be trusted.
+///
+/// Only configuration is trusted: `mail.public_url` when the operator set one, else the
+/// request's origin **only if** it is one of the configured `server.cors_origins`. The
+/// `Host` / `X-Forwarded-Host` headers are chosen by whoever sends the request, so an
+/// origin built from them alone would let an anonymous caller have the instance mail a
+/// victim a valid reset token pointing at the caller's own host.
+pub fn trusted_link_base(
+    cfg: &MailConfig,
+    headers: &axum::http::HeaderMap,
+    configured_origins: &[String],
+) -> Option<String> {
+    if !cfg.public_url.trim().is_empty() {
+        return Some(cfg.public_url.trim().trim_end_matches('/').to_string());
+    }
+    let origin = origin_from_headers(headers);
+    let normalise = |s: &str| s.trim().trim_end_matches('/').to_ascii_lowercase();
+    let wanted = normalise(&origin);
+    configured_origins
+        .iter()
+        .find(|o| !o.trim().is_empty() && normalise(o) == wanted)
+        .map(|o| o.trim().trim_end_matches('/').to_string())
+}
+
 /// How long a password-reset link stays usable. Mirrors the window
 /// `handlers::auth::password_reset` writes into `core.verification_tokens`.
 pub const RESET_TOKEN_HOURS: i64 = 2;
@@ -297,6 +322,42 @@ mod tests {
         assert_eq!(origin_from_headers(&headers(&[("host", "localhost:8080")])), "http://localhost:8080");
         assert_eq!(origin_from_headers(&headers(&[("host", "127.0.0.1:8080")])), "http://127.0.0.1:8080");
         assert_eq!(origin_from_headers(&headers(&[("host", "cloud.exemple.com")])), "https://cloud.exemple.com");
+    }
+
+    fn mail_config(public_url: &str) -> MailConfig {
+        MailConfig {
+            enabled: true,
+            host: "smtp.exemple.com".into(),
+            port: 587,
+            security: Security::Starttls,
+            username: String::new(),
+            password: String::new(),
+            from_address: "noreply@exemple.com".into(),
+            from_name: "Kubuno".into(),
+            public_url: public_url.into(),
+        }
+    }
+
+    #[test]
+    fn a_secret_link_never_follows_the_request_host() {
+        let forged = headers(&[("host", "evil.example"), ("x-forwarded-host", "evil.example")]);
+        // The pinned public URL wins whatever the request says.
+        assert_eq!(
+            trusted_link_base(&mail_config("https://cloud.exemple.com/"), &forged, &[]).as_deref(),
+            Some("https://cloud.exemple.com")
+        );
+        // No public URL: a host that is not configured gives no link at all.
+        assert_eq!(trusted_link_base(&mail_config(""), &forged, &[]), None);
+        assert_eq!(
+            trusted_link_base(&mail_config(""), &forged, &["https://cloud.exemple.com".into()]),
+            None
+        );
+        // ... and a configured origin is accepted (compared without case or trailing slash).
+        let genuine = headers(&[("host", "Cloud.Exemple.com"), ("x-forwarded-proto", "https")]);
+        assert_eq!(
+            trusted_link_base(&mail_config(""), &genuine, &["https://cloud.exemple.com/".into()]).as_deref(),
+            Some("https://cloud.exemple.com")
+        );
     }
 
     #[test]

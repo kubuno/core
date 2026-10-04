@@ -104,7 +104,17 @@ pub async fn forgot_password(
     };
 
     let instance = mailer::instance_name(&state.db).await;
-    let base = cfg.base_url(&mailer::origin_from_headers(&headers));
+    // The link carries a live reset token: its host comes from configuration only,
+    // never from the request's `Host` / `X-Forwarded-Host` (attacker-chosen).
+    let Some(base) =
+        mailer::trusted_link_base(&cfg, &headers, &state.settings.server.cors_origins)
+    else {
+        tracing::warn!(
+            "password reset: no trusted public URL (set mail.public_url in the mail relay \
+             settings); reset link not sent"
+        );
+        return ok;
+    };
     let link = format!(
         "{base}/reset-password?token={}",
         url::form_urlencoded::byte_serialize(raw_token.as_bytes()).collect::<String>()

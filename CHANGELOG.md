@@ -11,6 +11,20 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **Adding a linked account from another instance can no longer be used to reach
+  the server's internal network.** The sign-in relay now requires being signed in,
+  only contacts public internet addresses (never the server itself, its local
+  network or cloud metadata endpoints), does not follow redirects, and reports
+  any failure with a single generic message.
+- **Password-reset links always point at this instance.** The link in the reset
+  e-mail is built from the public URL configured in the mail relay settings
+  (`mail.public_url`), or from the request's address only when it is one of the
+  configured allowed origins — never from a `Host` header chosen by the sender.
+  **Action required:** if neither is set, reset e-mails are not sent; set the
+  public URL in Administration → Mail relay.
+- **Tool calls made by AI assistants to apps carry a signed identity**, so apps
+  that only accept the signed identity keep answering them.
+
 - **A module's private routes are no longer reachable from a browser.** The core's proxy rejected client requests
   to a module's `/internal/*` routes, but not to its `/ipc/*` routes, and it compared the raw path. Since the proxy
   presents the module's internal secret, any visitor, even signed out, could reach a module's IPC handlers (for

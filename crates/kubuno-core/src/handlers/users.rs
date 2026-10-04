@@ -1215,55 +1215,82 @@ pub async fn get_avatar_original(
     Err(AppError::NotFound("Image originale introuvable".into()))
 }
 
+/// Largest answer accepted from a remote instance's login route.
+const LINKED_LOGIN_MAX_BODY: usize = 256 * 1024;
+
 /// POST /api/v1/linked-account/login
-/// Proxifie un login vers une instance Kubuno distante (contourne CORS).
+/// Proxies a login to a remote Kubuno instance (works around CORS).
+///
+/// The server makes this request from its own network position, so it is
+/// reserved to signed-in accounts and only ever reaches a **public** address:
+/// the host is resolved and checked first, the connection is pinned to the
+/// checked address (no DNS rebinding), redirects are not followed, and the
+/// answer is bounded. Failures are reported with one generic message, so the
+/// route cannot be used to map the server's internal network.
 pub async fn linked_account_login(
+    AuthUser(user): AuthUser,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let instance_url = body
+    let raw_url = body
         .get("instance_url")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::Validation("instance_url requis".into()))?
-        .trim_end_matches('/')
-        .to_owned();
-
-    // Basic URL sanity check — must start with http:// or https://
-    if !instance_url.starts_with("http://") && !instance_url.starts_with("https://") {
-        return Err(AppError::Validation("URL invalide".into()));
+        .ok_or_else(|| AppError::Validation("instance_url requis".into()))?;
+    let login = body.get("email").and_then(|v| v.as_str()).unwrap_or("");
+    let password = body.get("password").and_then(|v| v.as_str()).unwrap_or("");
+    if raw_url.len() > 2048 || login.len() > 320 || password.len() > 1024 {
+        return Err(AppError::Validation("Données invalides".into()));
     }
 
-    let login_url = format!("{instance_url}/api/v1/auth/login");
+    let unreachable = || AppError::Validation("Impossible de joindre l'instance".into());
+    let target = crate::network::outbound::resolve_public_http(raw_url.trim_end_matches('/'))
+        .await
+        .map_err(|e| {
+            tracing::warn!(user_id = %user.id, reason = ?e, "linked account: instance URL refused");
+            match e {
+                crate::network::outbound::OutboundError::InvalidUrl => {
+                    AppError::Validation("URL invalide".into())
+                }
+                _ => unreachable(),
+            }
+        })?;
 
-    let payload = serde_json::json!({
-        "login":   body.get("email").and_then(|v| v.as_str()).unwrap_or(""),
-        "password": body.get("password").and_then(|v| v.as_str()).unwrap_or(""),
-    });
+    let base = target.url.as_str().trim_end_matches('/').to_owned();
+    let login_url = format!("{base}/api/v1/auth/login");
+    let payload = serde_json::json!({ "login": login, "password": password });
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(&target.host, &target.addrs)
         .build()
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("HTTP client : {e}")))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("HTTP client: {e}")))?;
 
-    let resp = client
-        .post(&login_url)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| AppError::Validation(format!("Impossible de joindre l'instance : {e}")))?;
+    let mut resp = client.post(&login_url).json(&payload).send().await.map_err(|e| {
+        tracing::warn!(user_id = %user.id, error = %e, "linked account: remote instance unreachable");
+        unreachable()
+    })?;
 
     let status = resp.status();
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Réponse invalide : {e}")))?;
-
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
         return Err(AppError::Validation("Identifiants incorrects".into()));
     }
     if !status.is_success() {
-        return Err(AppError::Validation(format!("Erreur {status} de l'instance distante")));
+        tracing::warn!(user_id = %user.id, %status, "linked account: remote login failed");
+        return Err(unreachable());
     }
 
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|_| unreachable())? {
+        if bytes.len() + chunk.len() > LINKED_LOGIN_MAX_BODY {
+            return Err(unreachable());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let json: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| unreachable())?;
+    // Only a Kubuno login answer is relayed, never another service's document.
+    if json.get("access_token").and_then(|v| v.as_str()).is_none() {
+        return Err(unreachable());
+    }
     Ok(Json(json))
 }
 

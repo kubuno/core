@@ -7,7 +7,9 @@
 //!   * stores the certificate the server should serve, with its private key
 //!     encrypted at rest ([`cert`]),
 //!   * holds the live TLS state and builds/reloads the rustls config
-//!     ([`runtime`]).
+//!     ([`runtime`]),
+//!   * checks user-supplied URLs before the server fetches them (SSRF guard,
+//!     [`outbound`]).
 //!
 //! Turning HTTPS on/off or moving a port binds or unbinds a socket and therefore
 //! needs a restart; replacing the certificate and changing HSTS take effect
@@ -15,6 +17,7 @@
 
 pub mod acme;
 pub mod cert;
+pub mod outbound;
 pub mod config;
 pub mod redirect;
 pub mod runtime;
