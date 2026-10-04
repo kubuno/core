@@ -1,7 +1,7 @@
 # The WebAssembly build of the web `.kbview` compiler (vskubuno docs/WEB-VIEWS.md, WV-2).
 #
-# The compiler itself is the `kubuno-views-web` crate of the desktop repository (next to the shared grammar,
-# `kubuno-views-syntax`): it is consumed here as a TAGGED git dependency, like every shared crate
+# The compiler itself is the `kubuno-web-views-compiler-core` crate of the desktop repository (next to the shared
+# grammar, `kubuno-desktop-views-syntax`; both were renamed on 2026-10-03, the dependency key stays `kubuno-views-web`): it is consumed here as a TAGGED git dependency, like every shared crate
 # (CLAUDE.md §3, "published" mode). This crate only adds a tiny C ABI (JSON in, JSON out) so the `.wasm`
 # loads in Node and in the browser with no glue generator (no wasm-bindgen).
 #
@@ -20,7 +20,7 @@ crate-type = ["cdylib"]
 path       = "src/lib.rs"
 
 [dependencies]
-kubuno-views-web = { git = "https://github.com/kubuno/desktop", tag = "views-web-v0.1.0" }
+kubuno-views-web = { package = "kubuno-web-views-compiler-core", git = "https://github.com/kubuno/desktop", tag = "web-views-compiler-core-v0.1.0" }
 serde            = { version = "1", features = ["derive"] }
 serde_json       = "1"
 

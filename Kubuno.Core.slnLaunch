@@ -1,0 +1,24 @@
+[
+  {
+    "Name": "Kubuno Core (server)",
+    "Projects": [
+      {
+        "Path": "crates\\kubuno-core\\Kubuno.Core.Server.rsproj",
+        "Action": "Start"
+      }
+    ]
+  },
+  {
+    "Name": "Kubuno Core (server + Vite)",
+    "Projects": [
+      {
+        "Path": "crates\\kubuno-core\\Kubuno.Core.Server.rsproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "frontend\\Kubuno.Core.Frontend.esproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

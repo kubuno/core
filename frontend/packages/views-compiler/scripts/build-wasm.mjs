@@ -32,7 +32,10 @@ const toml = (p) => p.split('\\').join('/')
 let manifestDir = crate
 let source = 'git tag (wasm/Cargo.toml)'
 if (desktop) {
-  const webCrate = resolve(desktop, 'windows', 'src', 'crates', 'kubuno-views-web')
+  // The crate was renamed kubuno-web-views-compiler-core (2026-10-03); an older checkout still has kubuno-views-web.
+  const renamed = resolve(desktop, 'windows', 'src', 'crates', 'kubuno-web-views-compiler-core')
+  const webCrate = existsSync(join(renamed, 'Cargo.toml')) ? renamed : resolve(desktop, 'windows', 'src', 'crates', 'kubuno-views-web')
+  const webPackage = webCrate === renamed ? 'kubuno-web-views-compiler-core' : 'kubuno-views-web'
   if (!existsSync(join(webCrate, 'Cargo.toml'))) {
     console.error(`build-wasm: ${webCrate} has no Cargo.toml (expected a kubuno/desktop checkout)`)
     process.exit(2)
@@ -43,7 +46,7 @@ if (desktop) {
   cpSync(join(crate, 'src'), join(manifestDir, 'src'), { recursive: true })
   const manifest = readFileSync(join(crate, 'Cargo.toml'), 'utf8').replace(
     /^kubuno-views-web\s*=.*$/m,
-    `kubuno-views-web = { path = "${toml(webCrate)}" }`,
+    `kubuno-views-web = { package = "${webPackage}", path = "${toml(webCrate)}" }`,
   )
   writeFileSync(join(manifestDir, 'Cargo.toml'), manifest)
   source = `local checkout ${toml(webCrate)}`

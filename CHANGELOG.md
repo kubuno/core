@@ -34,6 +34,17 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Visual Studio projects renamed** (`Kubuno.<Product>.<Component>`, the naming of every Kubuno repository): the
+  solution is now `Kubuno.Core.slnx` (it replaces `Kubuno.Core.Web.slnx`), with the folders Server, Libraries,
+  Frontend and npm packages, and the projects `Kubuno.Core.Server` (crate `kubuno-core`), `Kubuno.Core.Db`, `.Mcp`,
+  `.Modauth`, `.Paths`, `.Seccomp`, `.Storage`, `.Vectors`, `Kubuno.Core.Frontend`, and for the npm packages
+  `Kubuno.Web.UI`, `Kubuno.Web.Sdk`, `Kubuno.Web.Drive`, `Kubuno.Web.Views`, `Kubuno.Web.Views.Compiler` and
+  `Kubuno.Web.Vectors`. Crate names and npm package names do not change.
+- **`@kubuno/views-compiler`'s WebAssembly build follows the desktop rename**: the compiler crate is now
+  `kubuno-web-views-compiler-core` (tag `web-views-compiler-core-v0.1.0`), and `npm run build:wasm -- --desktop <checkout>`
+  finds it under its new folder (an older checkout's `kubuno-views-web` still works). The shipped
+  `wasm/kubuno-views-web.wasm` keeps its name.
+
 - **The header's app launcher and account panel are now declarative views** (`.kbcontrol` user controls,
   shared in name and shape with the desktop app), and they look and behave as before. Both always open above
   the page, anchored to their button: a narrow or scrolling container can no longer cut them, they flip above

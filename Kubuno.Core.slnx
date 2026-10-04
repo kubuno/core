@@ -1,0 +1,57 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/Server/">
+    <Project Path="crates/kubuno-core/Kubuno.Core.Server.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+  </Folder>
+  <Folder Name="/Libraries/">
+    <Project Path="crates/kubuno-db/Kubuno.Core.Db.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+    <Project Path="crates/kubuno-mcp/Kubuno.Core.Mcp.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+    <Project Path="crates/kubuno-modauth/Kubuno.Core.Modauth.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+    <Project Path="crates/kubuno-paths/Kubuno.Core.Paths.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+    <Project Path="crates/kubuno-seccomp/Kubuno.Core.Seccomp.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+    <Project Path="crates/kubuno-storage/Kubuno.Core.Storage.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+    <Project Path="crates/kubuno-vectors/Kubuno.Core.Vectors.rsproj" Type="6c7c4cb5-6e36-4c6f-9c6f-9c6e9b4d4c13" />
+  </Folder>
+  <Folder Name="/Frontend/">
+    <Project Path="frontend/Kubuno.Core.Frontend.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+      <BuildDependency Project="frontend/packages/ui/Kubuno.Web.UI.esproj" />
+      <BuildDependency Project="frontend/packages/sdk/Kubuno.Web.Sdk.esproj" />
+      <BuildDependency Project="frontend/packages/drive/Kubuno.Web.Drive.esproj" />
+      <BuildDependency Project="frontend/packages/vectors/Kubuno.Web.Vectors.esproj" />
+      <BuildDependency Project="frontend/packages/views/Kubuno.Web.Views.esproj" />
+      <BuildDependency Project="frontend/packages/views-compiler/Kubuno.Web.Views.Compiler.esproj" />
+    </Project>
+  </Folder>
+  <Folder Name="/npm packages/">
+    <Project Path="frontend/packages/drive/Kubuno.Web.Drive.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+      <BuildDependency Project="frontend/packages/sdk/Kubuno.Web.Sdk.esproj" />
+    </Project>
+    <Project Path="frontend/packages/sdk/Kubuno.Web.Sdk.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+      <BuildDependency Project="frontend/packages/ui/Kubuno.Web.UI.esproj" />
+    </Project>
+    <Project Path="frontend/packages/ui/Kubuno.Web.UI.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+    </Project>
+    <Project Path="frontend/packages/vectors/Kubuno.Web.Vectors.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+    </Project>
+    <Project Path="frontend/packages/views-compiler/Kubuno.Web.Views.Compiler.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+    </Project>
+    <Project Path="frontend/packages/views/Kubuno.Web.Views.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+    </Project>
+  </Folder>
+</Solution>
