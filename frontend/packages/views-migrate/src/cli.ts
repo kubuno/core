@@ -8,7 +8,7 @@
  * deleted, importers are switched to the default export, and the `defaultValue`s of strings missing from the
  * fallback bundle are collected into `<project>/src/views-defaults.json` (to review, then move into the bundles).
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { openProject } from './project.js'
@@ -122,16 +122,62 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   if (write) {
     const defaults = results.flatMap((r) => r.defaults)
     if (defaults.length) {
-      const file = join(root, 'src', 'views-defaults.json')
-      const prev = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, Record<string, string>>) : {}
-      for (const d of defaults) (prev[d.ns] ??= {})[d.key] = d.value
-      writeFileSync(file, JSON.stringify(prev, null, 2) + '\n')
+      // A `t('k', { defaultValue })` whose key no bundle has showed its default in every language: the default goes
+      // into the fallback language's bundle, which every language falls back to — the view shows the same text.
+      const left: typeof defaults = []
+      const byNs = new Map<string, typeof defaults>()
+      for (const d of defaults) byNs.set(d.ns, [...(byNs.get(d.ns) ?? []), d])
+      for (const [ns, list] of byNs) {
+        const file = fallbackBundle(root, ns)
+        if (!file) {
+          left.push(...(list ?? []))
+          continue
+        }
+        const doc = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+        for (const d of list ?? []) {
+          const path = d.key.split('.')
+          let o = doc
+          let ok = true
+          for (const seg of path.slice(0, -1)) {
+            const next = o[seg]
+            if (next === undefined) o = (o[seg] = {}) as Record<string, unknown>
+            else if (next && typeof next === 'object') o = next as Record<string, unknown>
+            else ok = false
+            if (!ok) break
+          }
+          if (ok && o[path[path.length - 1]] === undefined) o[path[path.length - 1]] = d.value
+          else if (!ok) left.push(d)
+        }
+        writeFileSync(file, JSON.stringify(doc, null, 2) + '\n')
+      }
+      if (left.length) {
+        const file = join(root, 'src', 'views-defaults.json')
+        const prev = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, Record<string, string>>) : {}
+        for (const d of left) (prev[d.ns] ??= {})[d.key] = d.value
+        writeFileSync(file, JSON.stringify(prev, null, 2) + '\n')
+      }
     }
   }
   if (reportFile) writeFileSync(reportFile, JSON.stringify(summary(root, results), null, 2) + '\n')
   const s = summary(root, results)
   console.log(`\n${s.converted} converted, ${s.partial} partial, ${s.skipped} skipped (of ${results.length}); elements mapped ${s.elementsMapped}/${s.elements} (${s.elements ? Math.round((100 * s.elementsMapped) / s.elements) : 0} %), ${s.parts} part(s), ${s.classAttributes} Class attribute(s)`)
   return 0
+}
+
+/** `src/**\/locales/<fallback>/<ns>.json` of the project (the first found), the bundle every language falls back to. */
+function fallbackBundle(root: string, ns: string, lang = 'en'): string | undefined {
+  const walk = (dir: string): string | undefined => {
+    for (const name of readdirSync(dir)) {
+      if (['node_modules', '.kubuno', 'dist', '.git'].includes(name)) continue
+      const full = join(dir, name)
+      if (!statSync(full).isDirectory()) continue
+      if (name === 'locales' && existsSync(join(full, lang, `${ns}.json`))) return join(full, lang, `${ns}.json`)
+      const found = walk(full)
+      if (found) return found
+    }
+    return undefined
+  }
+  return existsSync(join(root, 'src')) ? walk(join(root, 'src')) : undefined
 }
 
 export function summary(root: string, results: MigrationResult[]) {

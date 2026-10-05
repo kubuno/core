@@ -87,6 +87,11 @@ interface Local {
   /** TypeScript type text of the field (`@bind accessor x: T`). */
   type?: string
   init?: string
+  /**
+   * For a list, map or set filled by statements of the body (`const rows = []; walk(root)`): those statements, and
+   * the local functions they call, run again in its getter.
+   */
+  fill?: ts.Node[]
   /** For `translate`: the namespace of its `useTranslation(ns)`. */
   ns?: string
 }
@@ -694,21 +699,33 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
   }
   // `if (cond) return <A/>` before the main JSX: alternative screens, each shown when its condition holds and none of
   // the earlier ones did (the main screen when none holds).
-  const branches: Array<{ cond: ts.Expression; jsx: ts.Expression }> = []
+  // `outer`: the condition of the block the return sits in (`if (!scoped) { …; if (n === 0) return null; … }`).
+  const branches: Array<{ cond: ts.Expression; jsx: ts.Expression; outer?: ts.Expression }> = []
   const branchesBefore = new Map<ts.Statement, number>()
   // Constants of a branch's own block (`if (outcome) { const n = …; return <A/> }`): computed only under its condition.
-  const ownBranch = new Map<ts.Statement, number>()
+  const ownBranch = new Map<ts.Statement, ts.Expression>()
+  const simpleReturn = (st: ts.Statement): ts.Expression | undefined => {
+    if (!ts.isIfStatement(st) || st.elseStatement) return undefined
+    const then = ts.isBlock(st.thenStatement) && st.thenStatement.statements.length === 1 ? st.thenStatement.statements[0] : st.thenStatement
+    return ts.isReturnStatement(then) && then.expression ? then.expression : undefined
+  }
   for (let k = 0; k < statements.length; k++) {
     const s = statements[k]
     if (ts.isIfStatement(s) && !s.elseStatement && ts.isBlock(s.thenStatement) && s.thenStatement.statements.length > 1) {
       const inner = s.thenStatement.statements
       const last = inner[inner.length - 1]
-      if (ts.isReturnStatement(last) && last.expression && inner.slice(0, -1).every((x) => ts.isVariableStatement(x))) {
+      if (ts.isReturnStatement(last) && last.expression && inner.slice(0, -1).every((x) => ts.isVariableStatement(x) || !!simpleReturn(x))) {
+        const before = branches.length
+        const locals = inner.slice(0, -1).filter((x) => ts.isVariableStatement(x))
+        // Its own early returns first (each under the block's condition too), then the block's final return.
+        for (const x of inner.slice(0, -1)) {
+          const r = simpleReturn(x)
+          if (r) branches.push({ cond: (x as ts.IfStatement).expression, jsx: r, outer: s.expression })
+        }
         branches.push({ cond: s.expression, jsx: last.expression })
-        const locals = inner.slice(0, -1)
         for (const v of locals) {
-          branchesBefore.set(v, branches.length - 1)
-          ownBranch.set(v, branches.length - 1)
+          branchesBefore.set(v, before)
+          ownBranch.set(v, s.expression)
         }
         for (const later of statements.slice(k + 1)) branchesBefore.set(later, branches.length)
         statements.splice(k, 1, ...locals)
@@ -814,6 +831,31 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       pending.push(() => m.addUse(m.rewrite(s, { inUse: true }), s))
       continue
     }
+    // A statement filling a list, a map or a set declared before it (`if (root) walk(root, 0)`, `flatten(units, …, out)`):
+    // it runs, with the local functions it calls, inside that collection's getter.
+    if (ts.isExpressionStatement(s) || ts.isIfStatement(s) || ts.isForOfStatement(s) || ts.isForStatement(s) || ts.isForInStatement(s)) {
+      const touched = new Set<Local>()
+      const fns: ts.Node[] = []
+      const seen = new Set<ts.Node>()
+      const scan = (n: ts.Node): void => {
+        if (ts.isIdentifier(n)) {
+          const l = m.localOf(n)
+          if (l?.kind === 'derived' && ts.isVariableDeclaration(l.decl) && l.decl.initializer && isCollectionInit(l.decl.initializer)) touched.add(l)
+          if (l?.kind === 'method' && !seen.has(l.decl)) {
+            seen.add(l.decl)
+            const st = ts.isVariableDeclaration(l.decl) ? l.decl.parent.parent : l.decl
+            fns.push(st)
+            scan(st)
+          }
+        }
+        ts.forEachChild(n, scan)
+      }
+      scan(s)
+      if (touched.size) {
+        for (const l of touched) l.fill = [...(l.fill ?? []), ...fns.filter((x) => !(l.fill ?? []).includes(x)), s]
+        continue
+      }
+    }
     // A type declared in the body (`interface Report {…}`): a module-level type of the code-behind.
     if (ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s)) {
       m.hoisted.push(s.getText())
@@ -824,13 +866,13 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
 
   // Pass 2: fill in `use()`, the getters and the methods, now that every local is known.
   // A constant declared after an early return was only computed when it did not return: its getter is guarded alike.
-  const branchConds = branches.map((b) => m.rewrite(b.cond))
+  const branchConds = branches.map((b) => (b.outer ? `(${m.rewrite(b.outer)}) && (${m.rewrite(b.cond)})` : m.rewrite(b.cond)))
   const guardsOf = (decl: ts.Node): string[] | undefined => {
     let st: ts.Node | undefined = decl
     while (st && !ts.isVariableStatement(st) && !(ts.isFunctionDeclaration(st) && st.parent === body)) st = st.parent
     const n = st ? branchesBefore.get(st as ts.Statement) ?? 0 : 0
     const own = st ? ownBranch.get(st as ts.Statement) : undefined
-    const g = [...branchConds.slice(0, n).map((c) => `!(${c})`), ...(own !== undefined ? [`!!(${branchConds[own]})`] : [])]
+    const g = [...branchConds.slice(0, n).map((c) => `!(${c})`), ...(own !== undefined ? [`!!(${m.rewrite(own)})`] : [])]
     return g.length ? g : undefined
   }
   for (const p of pending) p()
@@ -838,7 +880,18 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
     if (l.kind === 'derived' && ts.isVariableDeclaration(l.decl) && l.decl.initializer) {
       const init = l.decl.initializer
       if (ts.isIdentifier(l.decl.name)) {
-        const body = m.rewrite(init)
+        let body = m.rewrite(init)
+        if (l.fill?.length) {
+          // Filled by statements: they run here, in their order, on a fresh collection (the other collections they
+          // fill too, each getter computing its own).
+          const others = [...m.locals.values()].filter((o) => o !== l && o.fill?.some((x) => l.fill!.includes(x)))
+          // The collections and the local functions stay local names there.
+          const fnLocals = [...m.locals.values()].filter((o) => o.kind === 'method' && l.fill!.some((x) => x === o.decl || x === o.decl.parent?.parent))
+          const bare = new Set<Local>([l, ...others, ...fnLocals])
+          const decls = [l, ...others].map((o) => `const ${m.rewrite(o.decl, { bare })}`)
+          const order = [...l.fill].sort((a, b) => a.getStart() - b.getStart())
+          body = `(() => {\n      ${[...decls, ...order.map((x) => m.rewrite(x, { bare }))].join('\n      ')}\n      return ${l.name}\n    })()`
+        }
         // Its type written out (the TSX inferred it): a getter typed from hooks typed from getters would otherwise
         // depend on itself.
         const inferred = l.type ?? declaredType(m, l.decl.name)
@@ -900,7 +953,7 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       return `{Binding ${m.getter(base, parts.join(' && ') || 'true')}}`
     }
     branches.forEach((b, k) => {
-      const cond = m.rewrite(b.cond)
+      const cond = branchConds[k]
       const vis = show(cond, `show_case_${k + 1}`)
       for (const n of convertBranch(m, b.jsx, { guards: [...earlier.map((c) => `!(${c})`), cond] })) root.children.push(withVisible(m, n, vis, {}))
       earlier.push(cond)
@@ -2073,7 +2126,37 @@ function part(m: Migration, node: ts.Node, ctx: JsxCtx, why: string): XNode {
   const name = m.member(`Part${m.parts.length + 1}`)
   // Free variables: the component's locals and the template parameters it reads.
   const free = new Map<string, { expr: string; type?: string }>()
+  // A property the TSX narrowed where the part sits (`menu.pos && <Menu pos={menu.pos}/>`): passed as a prop of its
+  // own, with its narrowed type (passing `menu` would lose the narrowing of `menu.pos`).
+  const edits: Array<{ s: number; e: number; text: string }> = []
   const visit = (n: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n) && !(ts.isCallExpression(n.parent) && n.parent.expression === n)) {
+      let root: ts.Expression = n
+      while (ts.isPropertyAccessExpression(root)) root = root.expression
+      const l = ts.isIdentifier(root) ? m.localOf(root) : undefined
+      if (l && l.kind !== 'method' && l.kind !== 'setter' && !n.questionDotToken) {
+        const sym = m.checker.getSymbolAtLocation(n.name)
+        let declared: ts.Type | undefined
+        try { declared = sym ? m.checker.getTypeOfSymbol(sym) : undefined } catch { declared = undefined }
+        const here = m.checker.getTypeAtLocation(n)
+        const isNull = (t: ts.Type): boolean => (t.isUnion() ? t.types : [t]).some((x) => !!(x.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)))
+        // Its type: as TypeScript writes it when that can be imported-free, else reached from the member's type.
+        const indexed = (): string => {
+          const segs: string[] = []
+          for (let x: ts.Expression = n; ts.isPropertyAccessExpression(x); x = x.expression) segs.unshift(x.name.text)
+          let t = l.kind === 'prop' ? `${m.stem}['props']['${l.member}']` : l.kind === 'props-object' ? `${m.stem}['props']` : `${m.stem}['${l.member}']`
+          for (const seg of segs) t = `NonNullable<${t}>['${seg}']`
+          return `NonNullable<${t}>`
+        }
+        const type = declared && isNull(declared) && !isNull(here) ? (writableType(m, m.typeText(n)) ?? indexed()) : undefined
+        if (type) {
+          const propName = n.getText().replace(/[^A-Za-z0-9_$]+/g, '_')
+          free.set(propName, { expr: m.rewrite(n, { rows: ctx.rows }), type })
+          edits.push({ s: n.getStart(), e: n.getEnd(), text: propName })
+          return
+        }
+      }
+    }
     if (ts.isIdentifier(n)) {
       const p = n.parent
       if ((ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAssignment(p) && p.name === n) || ts.isJsxAttribute(p)) return
@@ -2098,7 +2181,9 @@ function part(m: Migration, node: ts.Node, ctx: JsxCtx, why: string): XNode {
   visit(node)
   const props = [...free].map(([n, v]) => ({ name: n, expr: v.expr, type: v.type }))
   // A list or an expression is wrapped in a fragment (a part renders one element).
-  const jsx = ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node) ? node.getText() : `<>{${node.getText()}}</>`
+  let text = node.getText()
+  for (const e of edits.sort((a, b) => b.s - a.s)) text = text.slice(0, e.s - node.getStart()) + e.text + text.slice(e.e - node.getStart())
+  const jsx = ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node) ? text : `<>{${text}}</>`
   m.parts.push({ name, props, jsx, rowScoped: !!ctx.row })
   // The props object: a memoized getter (page) or a row field (template).
   const obj = `{ ${props.map((p) => `${p.name}: ${p.expr}`).join(', ')} }`
@@ -2574,6 +2659,14 @@ function iconColorOf(className: string | undefined): string | undefined {
   if (!className || /\s/.test(className.trim()) || !className.startsWith('text-')) return undefined
   const mapped = mapLabelClasses(className)
   return mapped.rest.length === 0 ? mapped.props.ForeColor : undefined
+}
+
+/** `[]`, `new Map()`, `new Set()`, `{}`: a collection a later statement may fill. */
+function isCollectionInit(e: ts.Expression): boolean {
+  const x = skipParens(e)
+  if (ts.isArrayLiteralExpression(x) && x.elements.length === 0) return true
+  if (ts.isObjectLiteralExpression(x) && x.properties.length === 0) return true
+  return ts.isNewExpression(x) && ts.isIdentifier(x.expression) && ['Map', 'Set', 'WeakMap', 'WeakSet'].includes(x.expression.text)
 }
 
 /** The type of a declaration as the code-behind can write it (`import("./x").T` paths), when it is a reasonable one. */

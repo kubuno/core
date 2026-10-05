@@ -21,6 +21,7 @@ under the published version number.
 
 ### Added
 
+- More conversions: a list, map or set filled by statements of the body (`const rows = []; walk(root)`, a `for` loop) is computed in its getter with the local functions it calls; a branch block's own early returns (`if (!scoped) { …; if (n === 0) return null; … }`); a property narrowed where a part sits (`menu.pos && <Menu pos={menu.pos}/>`) is passed to the part as a prop of its own; with `--write`, the `defaultValue` of a key no bundle has goes into the fallback language's bundle (the view shows the same text in every language).
 - More conversions: an early return whose block computes constants first (`if (outcome) { const n = …; return <A/> }`), several children of a one-child element (`Card`, `FloatingWindow`) wrapped in a layout-neutral panel, `checked={cond}` on a radio (`SelectedValue` against `Value="true"`), an icon prop's theme colour (`IconColor`), and the props object of a ReactHost typed as the component's props (inline callbacks keep their parameter types).
 - **`--split`: a file exporting several screens is cut into one file per screen before the conversion** (each then
   becomes its own view): the helpers only one screen uses move with it, the shared ones stay exported, and the

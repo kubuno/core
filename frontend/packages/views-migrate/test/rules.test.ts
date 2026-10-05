@@ -125,3 +125,20 @@ describe('hooks reading constants of earlier hooks', () => {
     expect(o.code).toMatch(/const groups = useMemo\([^\n]*\n\s*this\.publish\(\{ groups \}\)\s*\n\s*useEffect/)
   })
 })
+
+describe('early returns nested in a branch block', () => {
+  it('gives the inner return its own case, under the block condition', () => {
+    const b = convert('Branch2.tsx')
+    expect(b.result.status).toBe('converted')
+    expect(b.code).toMatch(/get show_case_2\(\)[^{]*\{\s*return !\(\(!this\.props\.scoped\) && \(this\.n === 0\)\) && !!\(!this\.props\.scoped\)/)
+  })
+})
+
+describe('collections filled by statements of the body', () => {
+  it('runs the filling statements, with the functions they call, in the collection getter', () => {
+    const f = convert('Fill.tsx')
+    expect(f.result.status).toBe('converted')
+    expect(f.code).toMatch(/get rows\(\)[^\n]*\n\s*return this\.memo\('rows', \[[^\]]*\], \(\) => \(\(\) => \{\s*const rows: \{ unit: Unit; depth: number \}\[\] = \[\]\s*const walk = \(u: Unit, depth: number\) => \{\s*rows\.push/)
+    expect(f.code).toMatch(/if \(this\.root\) walk\(this\.root, 0\)\s*return rows/)
+  })
+})
