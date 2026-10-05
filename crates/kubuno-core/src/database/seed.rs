@@ -42,6 +42,22 @@ pub async fn root_org_unit(db: &DbPool) -> Option<Uuid> {
     }
 }
 
+/// The unit an account is created in when its caller may leave it unnamed (the
+/// admin console, the directory provisioner): the one asked for, else the root.
+///
+/// The `users_place_in_tree` trigger that coerces a NULL unit to the root exists
+/// on PostgreSQL only. On MySQL/MariaDB and SQLite `core.users.org_unit_id` is a
+/// bare `NOT NULL`, so binding the caller's `None` failed the INSERT and turned
+/// account creation into a 500. Resolving the root here places the account the
+/// same way on every engine, and lets its password policy and quota resolve
+/// from the unit it really lands in.
+pub async fn unit_for_new_account(db: &DbPool, requested: Option<Uuid>) -> Option<Uuid> {
+    match requested {
+        Some(unit) => Some(unit),
+        None => root_org_unit(db).await,
+    }
+}
+
 /// Where the generated first password is left for the operator when they did
 /// not supply one: `KUBUNO_INITIAL_PASSWORD_FILE`, else the instance's state
 /// directory (`kubuno-paths`), never inferred from whether a directory exists.

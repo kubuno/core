@@ -11,6 +11,17 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Signing up and creating accounts work on MySQL / MariaDB.** Public registration
+  answered with an error 500 on MySQL and MariaDB: keeping the password history to
+  its configured depth used a `LIMIT` inside an `IN (...)` subquery, which those
+  engines refuse. Creating an account from the administration console also failed
+  there, and on SQLite, when no organisational unit was chosen; such an account is
+  now placed in the root unit, as PostgreSQL already did, and gets that unit's
+  password policy and quota. Accounts created by a directory (LDAP) with no default
+  unit are placed the same way. The clipboard history and the TLS certificate
+  history, trimmed with the same kind of query, no longer fail on MySQL / MariaDB
+  either.
+
 - **Release build ids are no longer marked as modified (`.dirty`).** The 0.1.14 and 0.1.15 packages still
   carried the marker: the workspace lock file was not bumped with the version, so the release build
   rewrote it. The lock file now follows the version.

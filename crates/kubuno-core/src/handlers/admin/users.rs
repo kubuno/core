@@ -569,13 +569,18 @@ pub async fn create_user(
         return Err(AppError::Conflict("Email ou username déjà utilisé".into()));
     }
 
+    // No unit named means the root, resolved here rather than left to the
+    // PostgreSQL-only trigger: MySQL/MariaDB and SQLite refuse a NULL unit.
+    let org_unit_id =
+        crate::database::seed::unit_for_new_account(&state.db, dto.org_unit_id).await;
+
     // The password policy of the unit the account is being created in
     // (migration `000115`). An administrator is not exempt from the policy they
     // set: an account handed out below the instance's own minimum would be a
     // permanent exception nobody would ever notice again.
     let policy = crate::settings::password_policy::PasswordPolicy::for_new_account(
         &state.db,
-        dto.org_unit_id,
+        org_unit_id,
     )
     .await?;
     policy.check(&dto.password)?;
@@ -589,7 +594,7 @@ pub async fn create_user(
     // who gave Marketing 50 GiB expects an account created there to get 50 GiB.
     let quota = match dto.quota_bytes {
         Some(explicit) => explicit,
-        None => crate::models::user::default_quota_for(&state.db, dto.org_unit_id).await,
+        None => crate::models::user::default_quota_for(&state.db, org_unit_id).await,
     };
 
     // Audited transaction: the account and its trail entry commit together, so
@@ -614,7 +619,7 @@ pub async fn create_user(
             dto.display_name.as_deref(),
             role,
             quota,
-            dto.org_unit_id,
+            org_unit_id,
             now
         ],
         "*",

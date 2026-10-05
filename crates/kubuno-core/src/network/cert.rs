@@ -134,11 +134,15 @@ pub async fn store_active(
     })?;
 
     // Bounded history. An ACME renewal lands here every ~60 days for the life of
-    // the instance; without a ceiling the table grows without end.
+    // the instance; without a ceiling the table grows without end. The kept set
+    // is a derived table (`kept`): MySQL/MariaDB reject `LIMIT` directly inside
+    // `IN (...)` and a subquery on the table being deleted from.
     tx.execute(
         "DELETE FROM core.tls_certificates WHERE is_active = FALSE AND id NOT IN ( \
-             SELECT id FROM core.tls_certificates WHERE is_active = FALSE \
-             ORDER BY created_at DESC LIMIT 20 )",
+             SELECT id FROM ( \
+                 SELECT id FROM core.tls_certificates WHERE is_active = FALSE \
+                 ORDER BY created_at DESC LIMIT 20 \
+             ) kept )",
         params![],
     )
     .await

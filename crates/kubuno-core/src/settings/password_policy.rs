@@ -382,12 +382,20 @@ pub async fn remember(
 
     // `user_id` feeds two placeholders ($1, $2); the engine-agnostic layer
     // numbers placeholders strictly and never reuses one, so it is bound twice.
+    //
+    // The kept set is wrapped in a derived table (`kept`): MySQL and MariaDB
+    // refuse a `LIMIT` directly inside an `IN (...)` subquery (error 1235) and a
+    // subquery reading the very table being deleted from (error 1093). The
+    // derived table is materialised first, which both engines accept, and it
+    // means the same on PostgreSQL and SQLite.
     tx.execute(
         "DELETE FROM core.password_history \
           WHERE user_id = $1 \
             AND id NOT IN ( \
-                SELECT id FROM core.password_history \
-                 WHERE user_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3 \
+                SELECT id FROM ( \
+                    SELECT id FROM core.password_history \
+                     WHERE user_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3 \
+                ) kept \
             )",
         params![user_id, user_id, depth as i64],
     )

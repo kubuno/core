@@ -170,14 +170,17 @@ pub async fn push(
     // Trim: keep the newest MAX_ITEMS unpinned entries of this user.
     // `owner_id` is matched in both the outer and the inner query; the value is
     // bound twice because a positional placeholder is never reused across engines.
+    // The kept set is a derived table (`kept`): MySQL/MariaDB reject `LIMIT`
+    // directly inside `IN (...)` and a subquery on the table being deleted from.
     tx.execute(
         r#"DELETE FROM core.clipboard_items
             WHERE owner_id = $1 AND pinned = FALSE
               AND id NOT IN (
-                    SELECT id FROM core.clipboard_items
-                     WHERE owner_id = $2 AND pinned = FALSE
-                     ORDER BY created_at DESC
-                     LIMIT $3)"#,
+                    SELECT id FROM (
+                        SELECT id FROM core.clipboard_items
+                         WHERE owner_id = $2 AND pinned = FALSE
+                         ORDER BY created_at DESC
+                         LIMIT $3) kept)"#,
         params![user.id, user.id, MAX_ITEMS],
     )
     .await

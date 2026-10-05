@@ -251,7 +251,9 @@ pub async fn upsert(
     // account placed nowhere follows the INSTANCE policy — which may well not
     // include `directory`, leaving somebody the directory just authenticated
     // unable to sign in tomorrow.
-    let unit = dir.default_org_unit_id;
+    // No unit named for the directory means the root: MySQL/MariaDB and SQLite
+    // have no trigger to coerce the NULL the column refuses.
+    let unit = crate::database::seed::unit_for_new_account(db, dir.default_org_unit_id).await;
     // Quota resolved through the same chain every other account creation uses,
     // from that unit when there is one.
     let quota = crate::models::user::default_quota_for(db, unit).await;
