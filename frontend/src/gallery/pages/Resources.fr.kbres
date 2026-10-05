@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="title">Fichiers de {{name}}</String>
+  <String Name="files_one">{{count}} fichier</String>
+  <String Name="files_many">{{count}} de fichiers</String>
+  <String Name="files_other">{{count}} fichiers</String>
+</Resources>

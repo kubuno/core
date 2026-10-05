@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="title">ملفات {{name}}</String>
+  <String Name="files_zero">لا توجد ملفات</String>
+  <String Name="files_one">ملف واحد</String>
+  <String Name="files_two">ملفان</String>
+  <String Name="files_few">{{count}} ملفات</String>
+  <String Name="files_many">{{count}} ملفًا</String>
+  <String Name="files_other">{{count}} ملف</String>
+</Resources>
