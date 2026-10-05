@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { GENERATED_DIR, generatedPaths, generatedRelPath, removeStaleGenerated, writeGenerated } from '../src/project.js'
+import { GENERATED_DIR, generatedPaths, generatedRelPath, projectPath, removeStaleGenerated, writeGenerated } from '../src/project.js'
 import type { CompileOutput } from '../src/types.js'
 
 const work = mkdtempSync(join(tmpdir(), 'kbview-paths-'))
@@ -74,5 +74,23 @@ describe('generated file paths', () => {
     const written = filesUnder(work).filter((f) => f.includes('_external'))
     expect(written.length).toBe(3)
     for (const f of written) expect(join(work, f).startsWith(generated + sep), f).toBe(true)
+  })
+})
+
+describe('a project reached through a link', () => {
+  it('gives the real path of a view the same root-relative path (Vite hands out real paths)', () => {
+    // `C:\kubuno-build` as a junction to `E:\kubuno-build`: the project root is the link, the file ids the real path.
+    const real = join(work, 'real-project')
+    mkdirSync(join(real, 'src', 'menus'), { recursive: true })
+    writeFileSync(join(real, 'src', 'menus', 'Menu.kbcontrol'), '<UserControl/>')
+    const link = join(work, 'linked-project')
+    symlinkSync(real, link, 'junction')
+    const viaReal = join(real, 'src', 'menus', 'Menu.kbcontrol')
+    expect(projectPath(link, viaReal)).toBe('src/menus/Menu.kbcontrol')
+    expect(generatedRelPath(link, viaReal)).toBe('src/menus/Menu.kbcontrol')
+    // A file not written yet resolves through its folder.
+    expect(projectPath(link, join(real, 'src', 'New.kbview'))).toBe('src/New.kbview')
+    // Outside stays outside.
+    expect(projectPath(link, join(work, 'elsewhere', 'X.kbview'))).toBe('../elsewhere/X.kbview')
   })
 })

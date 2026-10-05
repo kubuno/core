@@ -27,7 +27,9 @@ describe('kbres-convert: the core\'s own dictionaries round-trip in the 13 langu
   const sources = [
     { name: 'core', bundles: () => readJsonLocales(join(FRONTEND, 'src/core/i18n/locales'), 'core') },
     { name: 'setup', bundles: () => readI18nModule(ts, join(FRONTEND, 'src/core/setup/i18n.ts')).find((r) => r.ns === 'setup')!.bundles },
-    { name: 'nav', bundles: () => readI18nModule(ts, join(FRONTEND, 'src/core/i18n/nav.ts')).find((r) => r.ns === 'nav')!.bundles },
+    // The navigation labels were converted (src/core/i18n/nav.kbres + satellites, imported by nav.ts): their set
+    // round-trips again.
+    { name: 'nav', bundles: () => compileKbresSet(codec, join(FRONTEND, 'src/core/i18n/nav.kbres')).bundles },
   ]
 
   for (const source of sources) {

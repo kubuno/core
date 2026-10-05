@@ -4,7 +4,7 @@
  * `kbview-tsc`. Paths are handled with `node:path` and normalised to `/` in everything the compiler sees,
  * so the same project builds identically on Linux, Windows and macOS.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -31,9 +31,31 @@ export function toPosix(p: string): string {
   return p.split(sep).join('/')
 }
 
+/** `p` with its links resolved (a junction, a symbolic link); for a file not written yet, its folder's. */
+function realOf(p: string): string {
+  try {
+    return realpathSync.native(p)
+  } catch {
+    const parent = dirname(p)
+    return parent === p ? p : join(realOf(parent), p.slice(parent.length).replace(/^[\\/]+/, ''))
+  }
+}
+
+/**
+ * `file` relative to `root` (native separators). When `file` seems outside `root` but is inside it through a link
+ * (Vite hands out real paths: a root reached through a junction, `C:\x` → `E:\x`, gives file ids on the other
+ * drive), the path relative to the root's real path.
+ */
+function relativeToRoot(root: string, file: string): string {
+  const rel = relative(resolve(root), resolve(file))
+  if (rel && !isAbsolute(rel) && !rel.split(/[\\/]/).includes('..')) return rel
+  const real = relative(realOf(resolve(root)), realOf(resolve(file)))
+  return real && !isAbsolute(real) && !real.split(/[\\/]/).includes('..') ? real : rel
+}
+
 /** The project-root-relative, `/`-separated path of `file`. */
 export function projectPath(root: string, file: string): string {
-  return toPosix(relative(root, file))
+  return toPosix(relativeToRoot(root, file))
 }
 
 /** The same-stem code-behind of a view (`X.ts`, else `X.tsx`), if any. */
@@ -112,7 +134,7 @@ export const EXTERNAL_DIR = '_external'
  * rule, byte for byte.
  */
 export function generatedRelPath(root: string, viewFile: string): string {
-  const rel = relative(resolve(root), resolve(viewFile))
+  const rel = relativeToRoot(root, viewFile)
   const segments = rel.split(/[\\/]/)
   if (rel && !isAbsolute(rel) && !segments.includes('..')) return segments.filter((s) => s && s !== '.').join('/')
   const external = resolve(viewFile)

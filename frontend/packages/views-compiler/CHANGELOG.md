@@ -28,6 +28,10 @@ under the published version number.
 
 ### Fixed
 
+- **A project opened through a link** (a folder junction, `C:\kubuno-build` → `E:\kubuno-build`, or a symbolic link):
+  Vite hands out the real paths of the files, which the plugin took for files outside the project, so a view's
+  imports of the project's own controls pointed nowhere (`../../../…/src/…`) and its generated types went under
+  `_external/`. A file inside the project through a link now keeps its project path.
 - **Generated files of deleted views are removed.** `kbview-tsc` and the Vite plugin delete the `.d.ts`, check file and
   span map of a view that no longer exists (renamed, moved, or turned back into TSX): left behind, the check file
   would still be type-checked against a code-behind that is gone.
