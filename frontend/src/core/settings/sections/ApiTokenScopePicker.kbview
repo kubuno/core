@@ -1,0 +1,52 @@
+<!-- ApiTokenScopePicker — converted from ApiTokenScopePicker.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="ApiTokenScopePickerProps" Class="contents">
+  <EmptyState IconSize="26"
+              Icon="KeyRound"
+              Title="{Res settings.tok_scopes_empty_title}"
+              Description="{Res settings.tok_scopes_empty_desc}"
+              Variant="NoResults"
+              Compact="true"
+              Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="space-y-3">
+    <Panel Class="flex flex-col sm:flex-row gap-2">
+      <Panel Class="flex-1 relative">
+        <Icon Name="Search" Size="14" Class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"/>
+        <TextField Text="{Binding query, Mode=TwoWay}"
+                   Placeholder="{Res settings.tok_scopes_search}"
+                   FieldClass="pl-8"
+                   AccessibleName="{Res settings.tok_scopes_search}"/>
+      </Panel>
+      <!-- TODO(views-migrate): <ComboBox> searchPlaceholder, width, maxHeight: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Panel>
+    <Stack Direction="LeftToRight" CrossAlign="Start" WrapContents="true" Visible="{Binding show_selected}">
+      <Repeater ItemKey="rowKey" ItemsSource="{Binding rows_selected}">
+        <Panel AccessibleRole="PushButton"
+               AutoSize="true"
+               ToolTip="{Res settings.tok_scopes_clear}"
+               Class="inline-flex items-center gap-1 rounded-full bg-primary-light text-primary px-2 py-0.5 text-xs hover:bg-primary hover:text-white transition-colors"
+               OnClick="panel_click">
+          <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+          <Icon Name="X" Size="11"/>
+        </Panel>
+      </Repeater>
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             Class="text-xs text-text-tertiary hover:text-text-primary px-1 py-0.5"
+             OnClick="panel_click2">
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res settings.tok_scopes_clear}"/>
+      </Panel>
+    </Stack>
+    <Panel Class="max-h-72 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+      <!-- TODO(views-migrate): a list callback destructuring its item -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+      <Label Text="{Res settings.tok_scopes_empty_title}"
+             Role="Meta"
+             TextAlign="TopCenter"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             Visible="{Binding show_groups}"
+             Class="px-3 py-4"/>
+    </Panel>
+  </Panel>
+</Panel>

@@ -1,0 +1,10 @@
+<!-- Section — converted from Section.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="SectionProps" HtmlTag="Section" Class="rounded-xl border border-border overflow-hidden">
+  <Panel BackColor="Surface1" Class="px-5 py-3 border-b border-border">
+    <Label HtmlTag="H3" Text="{Binding props.title}" FontWeight="SemiBold" Overflow="Wrap" ForeColor="TextPrimary"/>
+  </Panel>
+  <Panel Class="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_children}"/>
+  </Panel>
+</Panel>

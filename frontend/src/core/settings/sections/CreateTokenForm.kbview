@@ -1,0 +1,3 @@
+<!-- CreateTokenForm — converted from CreateTokenForm.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<!-- TODO(views-migrate): <Card Icon>: an icon size the element cannot take -->
+<ReactHost x:Props="CreateTokenFormProps" Component="{Binding Part1}" Props="{Binding part1_props}"/>

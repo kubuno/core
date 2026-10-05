@@ -13,8 +13,8 @@ import ThemesTab from "./sections/ThemesTab"
 import ClientsTab from "./sections/ClientsTab"
 import SecurityTab from "./sections/SecurityTab"
 import SessionsTab from "./sections/SessionsTab"
-import { ApiTokensTab } from "./sections/ApiTokensTab"
-import { MyDataTab } from "./sections/my-data/MyDataTab"
+import ApiTokensTab from "./sections/ApiTokensTab"
+import MyDataTab from "./sections/my-data/MyDataTab"
 
 import { ViewBase } from './SettingsPage.kbview'
 

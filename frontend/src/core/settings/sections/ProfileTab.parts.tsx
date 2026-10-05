@@ -4,8 +4,9 @@
  */
 import { Trash2, Plus, Clock } from "lucide-react"
 import { Input, Dropdown, Textarea } from "@ui"
-import { Field, Section } from "./profileFields"
 import type { ProfileTab } from './ProfileTab'
+import Field from './Field'
+import Section from './Section'
 const PROFILE_LOCALES: [string, string][] = [
   ['fr-FR', 'French'], ['en-US', 'English (US)'], ['en-GB', 'English (UK)'],
   ['de-DE', 'German'], ['es-ES', 'Spanish'], ['it-IT', 'Italian'],

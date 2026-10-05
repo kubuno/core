@@ -1,41 +1,21 @@
-import { useEffect, useState, type ComponentType } from 'react'
-import { useTranslation } from 'react-i18next'
-import { ShieldCheck, ShieldOff, Shield } from 'lucide-react'
-import * as ReactQRCode from 'react-qr-code'
-import { Button, Callout, Input } from '@ui'
-import { useAuthStore } from '../../store/authStore'
-import { api } from '../../api/client'
-import { BackupCodesPanel } from './BackupCodesPanel'
-import { BackupCodesSection } from './BackupCodesSection'
+/**
+ * Code-behind of `TwoFactorSection.kbview` (converted from `TwoFactorSection.tsx` by @kubuno/views-migrate).
+ */
+import { bind, type EventArgs, type MouseEventArgs } from '@kubuno/views'
+import { Fragment } from 'react'
+import { useEffect } from "react"
+import { useTranslation } from "react-i18next"
+import { Callout } from "@ui"
+import { useAuthStore } from "../../store/authStore"
+import { api } from "../../api/client"
+import BackupCodesPanel from "./BackupCodesPanel"
+import BackupCodesSection from "./BackupCodesSection"
 
-// react-qr-code is a CommonJS package: under Vite/rolldown the ESM-interop can
-// nest the actual component under `.default`/`.QRCode` (sometimes several levels
-// deep), so a plain default import resolves to a module *object* and crashes the
-// render with React error #130 ("Element type is invalid… got: object"). Walk the
-// interop wrappers and grab the first thing that is actually a function.
-type QRCodeProps = { value: string; size?: number; bgColor?: string; fgColor?: string }
-// A React element type is either a function component OR an object carrying
-// `$$typeof` (forwardRef/memo). react-qr-code is a forwardRef component, so the
-// real value is an OBJECT — a `typeof === 'function'` check would wrongly skip it.
-function isReactComponent(x: unknown): x is ComponentType<QRCodeProps> {
-  return typeof x === 'function' || (typeof x === 'object' && x !== null && '$$typeof' in x)
-}
-function resolveQRCode(mod: unknown): ComponentType<QRCodeProps> {
-  let cur = mod
-  for (let i = 0; cur && i < 5; i++) {
-    if (isReactComponent(cur)) return cur
-    const obj = cur as { QRCode?: unknown; default?: unknown }
-    if (isReactComponent(obj.QRCode)) return obj.QRCode
-    if (isReactComponent(obj.default)) return obj.default
-    cur = obj.default
-  }
-  return mod as ComponentType<QRCodeProps>
-}
-const QRCode = resolveQRCode(ReactQRCode)
+import { ViewBase } from './TwoFactorSection.kbview'
+import * as __parts from './TwoFactorSection.parts'
 
 type TotpSetupStep = 'idle' | 'qr' | 'verify' | 'codes' | 'done'
 
-/** Instance requirement, as reported by `GET /me/security`. */
 interface Admin2faStatus {
   required: boolean
   satisfied: boolean
@@ -44,220 +24,290 @@ interface Admin2faStatus {
   locked_out: boolean
 }
 
-export function TwoFactorSection() {
-  const { t } = useTranslation()
-  const { user, updateUser } = useAuthStore()
-  const [step, setStep] = useState<TotpSetupStep>('idle')
-  const [uri, setUri] = useState('')
-  const [secret, setSecret] = useState('')
-  const [code, setCode] = useState('')
-  const [error, setError] = useState('')
-  const [disableCode, setDisableCode] = useState('')
-  const [disableError, setDisableError] = useState('')
-  const [showDisableForm, setShowDisableForm] = useState(false)
-  const [freshCodes, setFreshCodes] = useState<string[]>([])
-  const [requirement, setRequirement] = useState<Admin2faStatus | null>(null)
+export class TwoFactorSection extends ViewBase {
+  @bind accessor step: TotpSetupStep = 'idle'
+  @bind accessor uri = ''
+  @bind accessor secret = ''
+  @bind accessor code = ''
+  @bind accessor error = ''
+  @bind accessor disableCode = ''
+  @bind accessor disableError = ''
+  @bind accessor showDisableForm = false
+  @bind accessor freshCodes: string[] = []
+  @bind accessor requirement: Admin2faStatus | null = null
+  tr!: TwoFactorSectionStores['t']
+  user!: TwoFactorSectionStores['user']
+  updateUser!: TwoFactorSectionStores['updateUser']
 
-  const enabled = user?.totp_enabled ?? false
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const { user, updateUser } = useAuthStore()
+    return { t, user, updateUser }
+  }
 
-  // The requirement banner is fetched rather than inferred: whether the instance
-  // demands a second factor of its administrators, and by when, is a server fact.
-  useEffect(() => {
-    let cancelled = false
-    api
-      .get<{ admin_2fa: Admin2faStatus }>('/me/security')
-      .then(({ data }) => { if (!cancelled) setRequirement(data.admin_2fa) })
-      .catch(() => { /* purely informational: a failure must not break the tab */ })
-    return () => { cancelled = true }
-  }, [enabled])
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    useEffect(() => {
+      let cancelled = false
+      api
+        .get<{ admin_2fa: Admin2faStatus }>('/me/security')
+        .then(({ data }) => { if (!cancelled) this.requirement = data.admin_2fa })
+        .catch(() => { /* purely informational: a failure must not break the tab */ })
+      return () => { cancelled = true }
+    }, [this.enabled])
+    return {  }
+  }
 
-  const requirementBanner =
-    requirement && requirement.required && !requirement.satisfied ? (
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, user: s.user, updateUser: s.updateUser })
+    this.useHooks()
+  }
+
+  get enabled() {
+    return this.user?.totp_enabled ?? false
+  }
+
+  get requirementBanner() {
+    return this.memo('requirementBanner', [this.requirement, this.tr], () => this.requirement && this.requirement.required && !this.requirement.satisfied ? (
       <Callout
-        variant={requirement.locked_out ? 'danger' : 'warning'}
-        title={t(requirement.locked_out ? 'settings.tfa_req_locked_title' : 'settings.tfa_req_title')}
+        variant={this.requirement.locked_out ? 'danger' : 'warning'}
+        title={this.tr(this.requirement.locked_out ? 'settings.tfa_req_locked_title' : 'settings.tfa_req_title')}
         className="mb-4"
-        t={t}
+        t={this.tr}
       >
-        {requirement.locked_out
-          ? t('settings.tfa_req_locked_desc')
-          : t('settings.tfa_req_desc', { count: requirement.days_left ?? 0 })}
+        {this.requirement.locked_out
+          ? this.tr('settings.tfa_req_locked_desc')
+          : this.tr('settings.tfa_req_desc', { count: this.requirement.days_left ?? 0 })}
       </Callout>
-    ) : null
+    ) : null)
+  }
 
-  const startSetup = async () => {
-    setError('')
+  get show_case_1() {
+    return !!(this.step === 'codes')
+  }
+
+  /** `<BackupCodesPanel>`, rendered by a ReactHost. */
+  get BackupCodesPanel() {
+    if (!(this.step === 'codes')) return undefined as never
+    return BackupCodesPanel
+  }
+
+  get backup_codes_panel_props() {
+    return this.memo('backup_codes_panel_props', [this.freshCodes, this.step], () => {
+      if (!(this.step === 'codes')) return undefined as never
+      return ({ codes: this.freshCodes, onDone: () => this.step = 'done' })
+    })
+  }
+
+  get show_case_2() {
+    return !(this.step === 'codes') && !!(this.enabled)
+  }
+
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_requirement_banner() {
+    return this.memo('content_requirement_banner', [this.requirementBanner, this.step, this.enabled], () => {
+      if (!(!(this.step === 'codes')) || !(this.enabled)) return undefined as never
+      return ({ children: this.requirementBanner })
+    })
+  }
+
+  /** `<BackupCodesSection>`, rendered by a ReactHost. */
+  get BackupCodesSection() {
+    return BackupCodesSection
+  }
+
+  get show_show_disable_form() {
+    if (!(!(this.step === 'codes')) || !(this.enabled)) return undefined as never
+    return !this.showDisableForm
+  }
+
+  get show_not_show_disable_form() {
+    if (!(!(this.step === 'codes')) || !(this.enabled)) return undefined as never
+    return !(!this.showDisableForm)
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.disableCode, this.tr, this.step, this.enabled, this.showDisableForm], () => {
+      if (!(!(this.step === 'codes')) || !(this.enabled) || !(!(!this.showDisableForm))) return undefined as never
+      return ({ disableCode: this.disableCode, setDisableCode: this.setDisableCode.bind(this), t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<TextField> inputMode, autoFocus: no .kbview property). */
+  get Part1() {
+    if (!(!(this.step === 'codes')) || !(this.enabled) || !(!(!this.showDisableForm))) return undefined as never
+    return __parts.Part1
+  }
+
+  get show_disable_error() {
+    if (!(!(this.step === 'codes')) || !(this.enabled) || !(!(!this.showDisableForm))) return undefined as never
+    return !!(this.disableError)
+  }
+
+  get enabled_unless_disable_code() {
+    if (!(!(this.step === 'codes')) || !(this.enabled) || !(!(!this.showDisableForm))) return undefined as never
+    return !(this.disableCode.length !== 6)
+  }
+
+  get show_case_3() {
+    return !(this.step === 'codes') && !(this.enabled) && !!(this.step === 'done')
+  }
+
+  get show_case_4() {
+    return !(this.step === 'codes') && !(this.enabled) && !(this.step === 'done') && !!(this.step === 'qr')
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.uri, this.step, this.enabled], () => {
+      if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+      return ({ uri: this.uri })
+    })
+  }
+
+  /** A part of the screen still written in React (<QRCode> is no .kbview element (a local or dynamic component)). */
+  get Part2() {
+    if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+    return __parts.Part2
+  }
+
+  get part3_props() {
+    return this.memo('part3_props', [this.tr, this.secret, this.step, this.enabled], () => {
+      if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+      return ({ t: this.tr, secret: this.secret })
+    })
+  }
+
+  /** A part of the screen still written in React (<details> has no .kbview element yet). */
+  get Part3() {
+    if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+    return __parts.Part3
+  }
+
+  get part4_props() {
+    return this.memo('part4_props', [this.code, this.tr, this.step, this.enabled], () => {
+      if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+      return ({ code: this.code, setCode: this.setCode.bind(this), t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<TextField> inputMode, autoFocus: no .kbview property). */
+  get Part4() {
+    if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+    return __parts.Part4
+  }
+
+  get show_error() {
+    if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+    return !!(this.error)
+  }
+
+  get enabled_unless_code() {
+    if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+    return !(this.code.length !== 6)
+  }
+
+  get show_main() {
+    return !(this.step === 'codes') && !(this.enabled) && !(this.step === 'done') && !(this.step === 'qr')
+  }
+
+  get content_requirement_banner2() {
+    return this.memo('content_requirement_banner2', [this.requirementBanner, this.step, this.enabled], () => {
+      if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(!(this.step === 'qr'))) return undefined as never
+      return ({ children: this.requirementBanner })
+    })
+  }
+
+  get show_error2() {
+    if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(!(this.step === 'qr'))) return undefined as never
+    return !!(this.error)
+  }
+
+  async startSetup() {
+    this.error = ''
     try {
       const { data } = await api.post<{ uri: string; secret: string }>('/me/2fa/setup')
-      setUri(data.uri)
-      setSecret(data.secret)
-      setStep('qr')
+      this.uri = data.uri
+      this.secret = data.secret
+      this.step = 'qr'
     } catch (err: unknown) {
-      setError((err as { message?: string })?.message ?? t('settings.error'))
+      this.error = (err as { message?: string })?.message ?? this.tr('settings.error')
     }
   }
 
-  const enableTotp = async (e: React.FormEvent) => {
+  async enableTotp(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
+    this.error = ''
     try {
-      const { data } = await api.post<{ backup_codes: string[] }>('/me/2fa/enable', { code })
-      updateUser({ totp_enabled: true })
+      const { data } = await api.post<{ backup_codes: string[] }>('/me/2fa/enable', { code: this.code })
+      this.updateUser({ totp_enabled: true })
       // The codes arrive with the enrolment and are readable exactly here. The
       // step exists so the sheet cannot be skipped past by the same click that
       // turned the second factor on.
-      setFreshCodes(data.backup_codes ?? [])
-      setStep('codes')
-      setCode('')
+      this.freshCodes = data.backup_codes ?? []
+      this.step = 'codes'
+      this.code = ''
     } catch (err: unknown) {
-      setError((err as { message?: string })?.message ?? t('settings.tfa_code_wrong'))
+      this.error = (err as { message?: string })?.message ?? this.tr('settings.tfa_code_wrong')
     }
   }
 
-  const disableTotp = async (e: React.FormEvent) => {
+  async disableTotp(e: React.FormEvent) {
     e.preventDefault()
-    setDisableError('')
+    this.disableError = ''
     try {
-      await api.delete('/me/2fa', { data: { code: disableCode } })
-      updateUser({ totp_enabled: false })
-      setShowDisableForm(false)
-      setDisableCode('')
+      await api.delete('/me/2fa', { data: { code: this.disableCode } })
+      this.updateUser({ totp_enabled: false })
+      this.showDisableForm = false
+      this.disableCode = ''
     } catch (err: unknown) {
-      setDisableError((err as { message?: string })?.message ?? t('settings.tfa_code_wrong'))
+      this.disableError = (err as { message?: string })?.message ?? this.tr('settings.tfa_code_wrong')
     }
   }
 
-  // Checked BEFORE the `enabled` branch: enrolling flips `totp_enabled`, and the
-  // sheet of codes must not be swallowed by the state change that produced it.
-  if (step === 'codes') {
-    return (
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-primary">{t('settings.tfa_title')}</h3>
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-success-light border border-success">
-          <ShieldCheck size={18} className="text-success shrink-0" />
-          <p className="text-sm font-medium text-success">{t('settings.tfa_on_success')}</p>
-        </div>
-        <BackupCodesPanel codes={freshCodes} onDone={() => setStep('done')} />
-      </div>
-    )
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.step === 'codes')) || !(this.enabled) || !(!this.showDisableForm)) return undefined as never
+    this.showDisableForm = true
   }
 
-  if (enabled) {
-    return (
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-3">{t('settings.tfa_title')}</h3>
-        {requirementBanner}
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-success-light border border-success mb-4">
-          <ShieldCheck size={18} className="text-success shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-success">{t('settings.tfa_on')}</p>
-            <p className="text-xs text-success/80">{t('settings.tfa_on_desc')}</p>
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <BackupCodesSection />
-        </div>
-
-        {!showDisableForm ? (
-          <Button variant="danger" size="sm" icon={<ShieldOff size={14} />} onClick={() => setShowDisableForm(true)}>
-            {t('settings.tfa_disable_btn')}
-          </Button>
-        ) : (
-          <form onSubmit={disableTotp} className="space-y-3 max-w-xs">
-            <p className="text-sm text-text-secondary">{t('settings.tfa_disable_confirm')}</p>
-            <Input
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={disableCode}
-              onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ''))}
-              autoFocus
-              placeholder={t('settings.tfa_code_ph')}
-              className="tracking-widest text-center"
-            />
-            {disableError && <p className="text-xs text-danger">{disableError}</p>}
-            <div className="flex gap-2">
-              <Button type="submit" variant="danger" size="sm" disabled={disableCode.length !== 6}>{t('settings.tfa_disable')}</Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => { setShowDisableForm(false); setDisableCode(''); setDisableError('') }}>{t('common.cancel')}</Button>
-            </div>
-          </form>
-        )}
-      </div>
-    )
+  panel_submit(_sender: unknown, args: EventArgs) {
+    return this.disableTotp(args.native as never)
   }
 
-  if (step === 'done') {
-    return (
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-3">{t('settings.tfa_title')}</h3>
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-success-light border border-success">
-          <ShieldCheck size={18} className="text-success shrink-0" />
-          <p className="text-sm font-medium text-success">{t('settings.tfa_on_success')}</p>
-        </div>
-      </div>
-    )
+  button_click2(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.step === 'codes')) || !(this.enabled) || !(!(!this.showDisableForm))) return undefined as never
+ this.showDisableForm = false; this.disableCode = ''; this.disableError = '' }
+
+  panel_submit2(_sender: unknown, args: EventArgs) {
+    return this.enableTotp(args.native as never)
   }
 
-  if (step === 'qr') {
-    return (
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-3">{t('settings.tfa_title')}</h3>
-        <div className="space-y-4 max-w-sm">
-          <p className="text-sm text-text-secondary">
-            {t('settings.tfa_scan_desc')}
-          </p>
-          <div className="flex justify-center p-4 bg-white border border-border rounded-lg w-fit">
-            <QRCode value={uri} size={180} />
-          </div>
-          <details className="text-xs">
-            <summary className="cursor-pointer text-text-secondary hover:text-text-primary">
-              {t('settings.tfa_manual')}
-            </summary>
-            <code className="block mt-2 px-3 py-2 bg-surface-2 rounded border border-border break-all font-mono text-text-primary select-all">
-              {secret}
-            </code>
-          </details>
-          <p className="text-sm text-text-secondary pt-1">{t('settings.tfa_then_enter')}</p>
-          <form onSubmit={enableTotp} className="space-y-3">
-            <Input
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              autoFocus
-              placeholder={t('settings.tfa_code_ph')}
-              className="tracking-widest text-center"
-            />
-            {error && <p className="text-xs text-danger">{error}</p>}
-            <div className="flex gap-2">
-              <Button type="submit" disabled={code.length !== 6}>{t('settings.tfa_enable')}</Button>
-              <Button type="button" variant="secondary" onClick={() => { setStep('idle'); setCode(''); setError('') }}>{t('common.cancel')}</Button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )
+  button_click3(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
+ this.step = 'idle'; this.code = ''; this.error = '' }
+
+  /** `setDisableCode` of the TSX: a value, or an update of the previous one. */
+  setDisableCode(value: TwoFactorSection['disableCode'] | ((prev: TwoFactorSection['disableCode']) => TwoFactorSection['disableCode'])) {
+    this.disableCode = typeof value === 'function' ? (value as (prev: TwoFactorSection['disableCode']) => TwoFactorSection['disableCode'])(this.disableCode) : value
   }
 
-  return (
-    <div>
-      <h3 className="text-sm font-medium text-text-primary mb-3">{t('settings.tfa_title')}</h3>
-      {requirementBanner}
-      <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-surface-1 border border-border mb-4">
-        <Shield size={18} className="text-text-tertiary shrink-0 mt-0.5" />
-        <div>
-          <p className="text-sm font-medium text-text-primary">{t('settings.tfa_off')}</p>
-          <p className="text-xs text-text-secondary mt-0.5">
-            {t('settings.tfa_off_desc')}
-          </p>
-        </div>
-      </div>
-      {error && <p className="text-sm text-danger mb-3">{error}</p>}
-      <Button icon={<ShieldCheck size={15} />} onClick={startSetup}>
-        {t('settings.tfa_enable_btn')}
-      </Button>
-    </div>
-  )
+  /** `setCode` of the TSX: a value, or an update of the previous one. */
+  setCode(value: TwoFactorSection['code'] | ((prev: TwoFactorSection['code']) => TwoFactorSection['code'])) {
+    this.code = typeof value === 'function' ? (value as (prev: TwoFactorSection['code']) => TwoFactorSection['code'])(this.code) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type TwoFactorSectionStores = ReturnType<TwoFactorSection['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type TwoFactorSectionHooks = ReturnType<TwoFactorSection['useHooks']>
+
+export default TwoFactorSection.component()

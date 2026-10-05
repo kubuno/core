@@ -1,0 +1,19 @@
+<!-- TokenScopeList — converted from TokenScopeList.tsx by @kubuno/views-migrate. -->
+<Panel x:Props="TokenScopeListProps" Class="contents">
+  <Label HtmlTag="Span"
+         Text="{Res settings.tok_no_scopes}"
+         Role="Meta"
+         Overflow="Wrap"
+         ForeColor="TextTertiary"
+         Visible="{Binding show_case_1}"/>
+  <Stack Direction="LeftToRight" Gap="4" WrapContents="true" Visible="{Binding show_main}">
+    <Repeater ItemKey="rowKey" ItemsSource="{Binding rows_scopes}">
+      <Label HtmlTag="Code"
+             Text="{Binding key}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             BackColor="Surface2"
+             Class="text-[11px] font-mono px-1.5 py-0.5 rounded"/>
+    </Repeater>
+  </Stack>
+</Panel>

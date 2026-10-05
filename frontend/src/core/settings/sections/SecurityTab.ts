@@ -4,7 +4,7 @@
 import { bind, type EventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { api } from "../../api/client"
-import { TwoFactorSection } from "./TwoFactorSection"
+import TwoFactorSection from "./TwoFactorSection"
 
 import { ViewBase } from './SecurityTab.kbview'
 

@@ -1,0 +1,3 @@
+<!-- BackupCodesPanel — converted from BackupCodesPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<!-- TODO(views-migrate): <Card> bodyClassName: no .kbview property -->
+<ReactHost x:Props="Props" Component="{Binding Part1}" Props="{Binding part1_props}"/>

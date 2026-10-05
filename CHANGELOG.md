@@ -50,6 +50,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The account settings' API tokens, two-step verification, backup codes and « Download my data » sections are views**
+  (`.kbview` + code-behind, editable in the Visual Studio designer), converted with the codemod and checked identical
+  (pixels, text, accessibility tree and keyboard order; light and dark, French, English and Arabic, desktop and phone).
+  The profile's field helpers are views too.
 - **The settings screens, the appearance dialog and the administration home are now views** (`.kbview` + a
   TypeScript class), editable in the Visual Studio designer: profile, notifications, themes, clients, security and
   sessions tabs, the settings page around them, the appearance dialog, the administration home and its « coming soon »
