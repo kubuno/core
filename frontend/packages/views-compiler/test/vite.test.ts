@@ -61,6 +61,32 @@ describe('the Vite plugin', () => {
     await expect(bundle(root, join(root, 'src', 'Broken.kbview'))).rejects.toThrow(/src\/Broken\.kbview\(2,5\): error KBV-unknown-element: unknown element `Buton` on the web target; did you mean `Button`\?/)
   })
 
+  it('compiles a .kbres set to i18next bundles and {Res} arguments to accessors (WV-6)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kbview-kbres-'))
+    temp.push(root)
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'package.json'), '{"name":"kbres","private":true,"type":"module"}')
+    writeFileSync(join(root, 'kubuno.views.json'), JSON.stringify({ hostRegistry: UI_REGISTRY }))
+    const kbres = (culture: string | null, entries: Record<string, string>) =>
+      `<?xml version="1.0" encoding="utf-8"?>\n<Resources Version="1"${culture ? ` Culture="${culture}"` : ''}>\n${Object.entries(entries).map(([k, v]) => `  <String Name="${k}">${v}</String>`).join('\n')}\n</Resources>\n`
+    writeFileSync(join(root, 'src', 'strings.kbres'), kbres('en', { 'files.count_one': '{{count}} file', 'files.count_other': '{{count}} files', title: 'Files' }))
+    writeFileSync(join(root, 'src', 'strings.fr.kbres'), kbres(null, { 'files.count_one': '{{count}} fichier', 'files.count_many': '{{count}} de fichiers', 'files.count_other': '{{count}} fichiers' }))
+    writeFileSync(join(root, 'src', 'strings.ar.kbres'), kbres(null, { title: 'الملفات' }))
+    writeFileSync(join(root, 'src', 'Files.kbview'), '<Stack>\n  <Label Text="{Res files.count, Count={Binding n}, Who=Kim}"/>\n  <Label Text="{Res title}"/>\n</Stack>\n')
+    writeFileSync(join(root, 'src', 'main.ts'), "import strings from './strings.kbres'\nimport Files from './Files.kbview'\nexport { strings, Files }\n")
+    const [chunk] = await bundle(root, join(root, 'src', 'main.ts'))
+    const code = chunk.code
+    const squeeze = (s: string) => s.replace(/\s+/g, '')
+    const flat = squeeze(code)
+    // The set: one nested bundle per language, the neutral file as its Culture.
+    expect(flat).toContain(squeeze('"en":{"files":{"count_one":"{{count}} file","count_other":"{{count}} files"},"title":"Files"}'))
+    expect(flat).toContain(squeeze('"fr":{"files":{"count_one":"{{count}} fichier","count_many":"{{count}} de fichiers","count_other":"{{count}} fichiers"}}'))
+    expect(flat).toContain(squeeze('"ar":{"title":"الملفات"}'))
+    // The arguments: a literal, and a binding with its compiled accessor.
+    expect(flat).toMatch(/res:\{key:"files\.count",args:\[\{n:"Count",b:\{[^}]*path:"n"[^}]*,g:\(o\)=>o\.n/)
+    expect(flat).toContain('{n:"Who",v:"Kim"}')
+  })
+
   it('writes the generated declarations and check files of every view at startup', async () => {
     const { existsSync, readFileSync } = await import('node:fs')
     const dts = join(APP, '.kubuno', 'views', 'src', 'Counter.kbview.d.ts')

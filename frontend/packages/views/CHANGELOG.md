@@ -8,6 +8,10 @@ under the published version number.
 
 ### Added
 
+- **`{Res}` arguments and plurals.** A plan's `{Res}` may carry arguments (`{Res files, Count={Binding n}, Name=Kim}`):
+  the host's resolver receives them (`setResourceResolver((key, set, args) => …)`, `interpolationOptions(args)` turns
+  them into i18next options: each name as written and with a lower-case first letter, `Count` as a number) and a
+  view re-reads its strings when a bound argument changes. `View.t(key, set, args)` takes them too.
 - **`TableLayoutPanel`.** A grid of cells: column and row counts, sizes per column and row (pixels, shares of
   the room left, or the content's), children placed in reading order or at a given cell, spanning several
   cells, aligned in their cell by their anchors, more children adding rows (or columns), optional cell lines

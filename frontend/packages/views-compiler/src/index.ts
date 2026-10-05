@@ -9,6 +9,7 @@ export { CompilerWasm, ViewCompiler, type CompilerVersion } from './compiler.js'
 export {
   ViewProject,
   loadNodeCompiler,
+  loadNodeKbres,
   scanViews,
   userControlsOf,
   codeBehindOf,
@@ -39,3 +40,20 @@ export {
 export { runKbviewTsc, remapTscOutput, mapCheckPosition, loadRemapContext, type KbviewTscResult } from './tsc.js'
 export { encodeMappings, decodeMappings, type SourceMapV3, type Segment } from './sourcemap.js'
 export type * from './types.js'
+export {
+  KbresCodec,
+  kbresName,
+  kbresSet,
+  nestStrings,
+  flattenBundle,
+  compileKbresSet,
+  bundlesToKbres,
+  kbresModule,
+  DEFAULT_NEUTRAL_CULTURE,
+  type KbresString,
+  type KbresDocument,
+  type KbresDiagnostic,
+  type I18nBundle,
+  type CompiledKbresSet,
+} from './kbres.js'
+export { readJsonLocales, readI18nModule, loadTypeScript, writeKbresSet, verifyKbresSet, sameBundles, type ConvertedSet } from './i18n-convert.js'

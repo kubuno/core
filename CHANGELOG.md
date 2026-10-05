@@ -11,6 +11,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Translations of web views in `.kbres` files, with counts and names in the text.** Screens built as views can
+  keep their strings in `.kbres` resource files (one per language, the format of the desktop applications) as well
+  as in the existing dictionaries, and a text can include a number or a name and take the right plural form for
+  each of the 13 languages (« 1 fichier », « 2 fichiers », the six Arabic forms). A converter turns the existing
+  dictionaries into `.kbres` files and checks that every text of every language comes back identical.
 - **More elements for web views (`.kbview`).** Screens written as views can now use a grid of cells
   (`TableLayoutPanel`, with column and row sizes, spans and cell lines), a titled group (`GroupBox`), a settings
   row (`SettingsRow`: the setting's name and help line beside its control, stacked on a phone), a set of

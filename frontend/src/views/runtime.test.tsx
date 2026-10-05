@@ -178,3 +178,54 @@ describe('views runtime', () => {
     error.mockRestore()
   })
 })
+
+describe('{Res} arguments and plurals (WV-6)', () => {
+  it('fills the placeholders, picks the plural form of the language and follows changes', async () => {
+    const { createInstance } = await import('i18next')
+    const { interpolationOptions, invalidateResources, setResourceResolver } = await import('./index')
+    const i18n = createInstance()
+    await i18n.init({
+      lng: 'fr', fallbackLng: 'en', interpolation: { escapeValue: false },
+      resources: {
+        en: { core: { files_one: '{{count}} file for {{name}}', files_other: '{{count}} files for {{name}}' } },
+        fr: { core: { files_one: '{{count}} fichier pour {{name}}', files_many: '{{count}} de fichiers pour {{name}}', files_other: '{{count}} fichiers pour {{name}}' } },
+        ar: { core: { files_zero: 'لا ملفات', files_one: 'ملف واحد', files_two: 'ملفان', files_few: '{{count}} ملفات', files_many: '{{count}} ملفًا', files_other: '{{count}} ملف' } },
+      },
+      defaultNS: 'core',
+    })
+    // What the host does (core/viewsHost.ts).
+    setResourceResolver((key, set, args) => (args ? i18n.t(set ? `${set}:${key}` : key, interpolationOptions(args)) : i18n.t(set ? `${set}:${key}` : key)))
+    const resPlan: ViewPlan = {
+      abi: 1, file: 'test/Files.kbview', kind: 'view', names: {}, handlers: [],
+      root: {
+        id: '', el: 'Box', at: [1, 1], m: 'test-ui', x: 'Box', content: 'children',
+        children: [{
+          id: '0', el: 'Btn', at: [2, 3], m: 'test-ui', x: 'Btn',
+          props: [{
+            n: 'Text', to: { prop: 'children' }, kind: 'String', at: [2, 8],
+            res: { key: 'files', args: [{ n: 'Count', b: { path: 'n', mode: 'OneWay', at: [2, 30] } }, { n: 'Name', v: 'Kim' }] },
+          }],
+        }],
+      },
+    }
+    const Base = createViewBase(resPlan)
+    let vm: { n: number; invalidate(): void } | undefined
+    class Files extends (Base as unknown as new () => { n: number; invalidate(): void }) {
+      n = 1
+      constructor() { super(); vm = this }
+    }
+    render(createElement(KbView, { view: Files as never }))
+    const text = () => screen.getByRole('button').textContent
+    expect(text()).toBe('1 fichier pour Kim')
+    await act(async () => { vm!.n = 1_000_000; vm!.invalidate() })
+    expect(text()).toBe('1000000 de fichiers pour Kim')
+    await act(async () => { vm!.n = 2; vm!.invalidate() })
+    expect(text()).toBe('2 fichiers pour Kim')
+    for (const [n, expected] of [[0, 'لا ملفات'], [1, 'ملف واحد'], [2, 'ملفان'], [3, '3 ملفات'], [11, '11 ملفًا'], [100, '100 ملف']] as const) {
+      await act(async () => { await i18n.changeLanguage('ar'); vm!.n = n; vm!.invalidate(); invalidateResources() })
+      expect(text()).toBe(expected)
+    }
+    await act(async () => { await i18n.changeLanguage('en'); vm!.n = 1; vm!.invalidate(); invalidateResources() })
+    expect(text()).toBe('1 file for Kim')
+  })
+})

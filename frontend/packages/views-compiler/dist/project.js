@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CompilerWasm, ViewCompiler } from './compiler.js';
+import { KbresCodec } from './kbres.js';
 /** View file extensions (VIEWS-SPEC §1.1). */
 export const VIEW_EXTENSIONS = ['.kbview', '.kbcontrol'];
 /** Where generated declarations and check files go, under the project root (git-ignored). */
@@ -200,6 +201,11 @@ let wasmModule = null;
 export async function loadNodeCompiler() {
     wasmModule ??= WebAssembly.compile(readFileSync(wasmPath()));
     return new ViewCompiler(await CompilerWasm.instantiate(await wasmModule));
+}
+/** The `.kbres` reader / writer over the same `.wasm` (one instance per call). */
+export async function loadNodeKbres() {
+    wasmModule ??= WebAssembly.compile(readFileSync(wasmPath()));
+    return new KbresCodec(await CompilerWasm.instantiate(await wasmModule));
 }
 /** A project: its root, its views, and a compiler loaded with its registries and user controls. */
 export class ViewProject {

@@ -13,13 +13,16 @@
  * - Code-behinds use standard (TC39) decorators (`@bind accessor`): they are lowered with TypeScript before
  *   Vite's own transform, which leaves standard decorators as they are.
  * - `vite serve` also serves the Visual Studio design surface at `/__kubuno_design__/` (`design-server.ts`).
+ * - `X.kbres` (a string resource set: the neutral file and its `X.<lang>.kbres` satellites) → `export default` its
+ *   i18next bundles by language (`kbres.ts`, WV-6), for `registerModuleTranslations(ns, bundles)`.
  */
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { installDesignServer } from './design-server.js';
 import { emitViewModule } from './emit.js';
-import { codeBehindOf, isViewFile, projectPath, viewOfCodeBehind, writeGenerated, ViewProject } from './project.js';
+import { compileKbresSet, kbresModule, kbresSet } from './kbres.js';
+import { codeBehindOf, isViewFile, loadNodeKbres, projectPath, viewOfCodeBehind, writeGenerated, ViewProject } from './project.js';
 /** `file(line,col): severity code: message` — the format tsc, MSBuild and VS use. */
 export function formatDiagnostic(file, d) {
     return `${file}(${d.line},${d.column}): ${d.severity} KBV-${d.code}: ${d.message}`;
@@ -31,6 +34,7 @@ export function kbview(options = {}) {
     let project = null;
     let serve = false;
     let ts = null;
+    let kbres = null;
     const getProject = () => {
         project ??= ViewProject.open(config.root, options).then((p) => {
             if (options.generateTypes !== false)
@@ -55,6 +59,33 @@ export function kbview(options = {}) {
         },
         async buildStart() {
             await getProject();
+        },
+        // `import strings from './strings.kbres'` → `{ en: {…}, fr: {…} }`: the set's i18next bundles (WV-6).
+        async load(id) {
+            const file = id.split('?')[0];
+            if (!/\.kbres$/i.test(file))
+                return null;
+            kbres ??= loadNodeKbres();
+            const set = compileKbresSet(await kbres, file, options.neutralCulture);
+            for (const f of set.files)
+                this.addWatchFile(f);
+            for (const w of set.warnings)
+                this.warn(w);
+            if (set.errors.length)
+                this.error(set.errors.join('\n'));
+            return { code: kbresModule(set), map: null };
+        },
+        // A satellite (`strings.fr.kbres`) changed, or was added: reload the module of its set's neutral file.
+        handleHotUpdate(ctx) {
+            if (!/\.kbres$/i.test(ctx.file))
+                return;
+            const { neutral } = kbresSet(ctx.file);
+            const mods = ctx.server.moduleGraph.getModulesByFile(neutral);
+            if (!mods?.size)
+                return;
+            for (const m of mods)
+                ctx.server.moduleGraph.invalidateModule(m);
+            return [...mods];
         },
         async transform(code, id) {
             const file = id.split('?')[0];

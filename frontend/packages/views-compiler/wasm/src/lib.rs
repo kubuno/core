@@ -6,7 +6,7 @@
 //!
 //! Requests (`op`): `version`, `session_new`, `session_free {session}`, `add_registry {session, json,
 //! label, host}`, `set_user_controls {session, controls}`, `compile {session, source, options}`,
-//! `handle_types {session}`. Every response is `{"ok": true, "result": …}` or `{"ok": false, "error": "…"}`.
+//! `handle_types {session}`, `kbres_parse {text}`, `kbres_write {strings, culture?}` (`.kbres` string resources, WV-6). Every response is `{"ok": true, "result": …}` or `{"ok": false, "error": "…"}`.
 
 use std::cell::RefCell;
 
@@ -28,6 +28,43 @@ enum Request {
     SetUserControls { session: usize, controls: Vec<UserControlRef> },
     Compile { session: usize, source: String, options: CompileOptions },
     HandleTypes { session: usize },
+    KbresParse { text: String },
+    KbresWrite { strings: Vec<KbresString>, #[serde(default)] culture: Option<String> },
+}
+
+#[derive(Deserialize, serde::Serialize)]
+struct KbresString {
+    name: String,
+    value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+}
+
+/// 1-based line and UTF-16 column of byte `offset` in `text` (the unit of TypeScript and editors).
+fn line_col(text: &str, offset: usize) -> (usize, usize) {
+    let mut offset = offset.min(text.len());
+    while !text.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    let before = &text[..offset];
+    let line = before.matches('\n').count() + 1;
+    let start = before.rfind('\n').map_or(0, |i| i + 1);
+    (line, before[start..].encode_utf16().count() + 1)
+}
+
+fn kbres_parse(text: &str) -> Value {
+    let (file, diags) = kubuno_resources_model::ResourceFile::read(text);
+    let strings: Vec<KbresString> = file.strings().map(|(n, v, c)| KbresString { name: n.to_string(), value: v.to_string(), comment: c.map(str::to_string) }).collect();
+    let others = file.entries.len() - strings.len();
+    let diagnostics: Vec<Value> = diags
+        .iter()
+        .map(|d| {
+            let (line, column) = line_col(text, d.range.start);
+            let severity = if d.severity == kubuno_resources_model::Severity::Error { "error" } else { "warning" };
+            json!({ "severity": severity, "line": line, "column": column, "message": d.message })
+        })
+        .collect();
+    json!({ "culture": file.culture, "strings": strings, "others": others, "diagnostics": diagnostics })
 }
 
 fn with_session<T>(id: usize, f: impl FnOnce(&mut Session) -> T) -> Result<T, String> {
@@ -70,6 +107,11 @@ fn handle(request: &[u8]) -> Value {
             serde_json::to_value(out).unwrap_or_else(|e| json!({ "serialisation_error": e.to_string() }))
         }),
         Request::HandleTypes { session } => with_session(session, |s| json!({ "text": s.handle_types() })),
+        Request::KbresParse { text } => Ok(kbres_parse(&text)),
+        Request::KbresWrite { strings, culture } => {
+            let file = kubuno_resources_model::ResourceFile::from_strings(culture, strings.into_iter().map(|s| (s.name, s.value, s.comment)));
+            Ok(json!({ "text": file.to_text() }))
+        }
     };
     match result {
         Ok(value) => json!({ "ok": true, "result": value }),

@@ -23,7 +23,7 @@ import {
 
 import { UNSET, readBinding, writeBinding, type Scope } from './binding'
 import { applyArgs, makeArgs, type ArgsContext } from './events'
-import type { IconValue, PlanEvent, PlanNode, PlanProp, ViewPlan } from './plan'
+import type { IconValue, PlanEvent, PlanNode, PlanProp, PlanResArg, ViewPlan } from './plan'
 import { onResourcesChanged, resolveComponent, resolveIcon, resolveResource, resourcesVersion } from './resolve'
 import { CELL, KB, handleFor, notify, setComponentFactory, setLive, type Cell, type Internals, type View, type ViewClass } from './view'
 import { ELEVATIONS, HOVER_CLASS, PRESSED_CLASS, ensureViewStyles, tokenColor } from './style'
@@ -113,8 +113,18 @@ function valueOf(i: Internals, node: PlanNode, p: PlanProp, scope: Scope): unkno
     }
     return readBinding(b, scope)
   }
-  if (p.res) return resolveResource(p.res.key, p.res.set)
+  if (p.res) return resolveResource(p.res.key, p.res.set, p.res.args ? resourceArgs(p.res.args, scope) : undefined)
   return p.v === undefined ? UNSET : p.v
+}
+
+/** The values of a `{Res}`'s arguments: literals as written, bindings read one way in `scope`. */
+function resourceArgs(args: readonly PlanResArg[], scope: Scope): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const a of args) {
+    const v = a.b ? readBinding(a.b, scope) : a.v
+    out[a.n] = v === UNSET ? '' : v
+  }
+  return out
 }
 
 function shallowEqual(a: readonly unknown[], b: readonly unknown[]): boolean {

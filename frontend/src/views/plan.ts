@@ -68,9 +68,24 @@ export interface PlanProp {
   readonly to: PropTarget
   readonly v?: unknown
   readonly b?: PlanBinding
-  readonly res?: { readonly key: string; readonly set?: string }
+  readonly res?: PlanRes
   readonly kind: 'Bool' | 'F32' | 'String' | 'Enum'
   readonly at: At
+}
+
+/** One argument of a `{Res key, Name=value}`: a literal or a one-way binding. */
+export interface PlanResArg {
+  /** The name as written (`Count`, `Name`). */
+  readonly n: string
+  readonly v?: string
+  readonly b?: PlanBinding
+}
+
+/** A `{Res key[, Source=set][, Name=value]…}` (WV-6: arguments fill `{{name}}` placeholders, `Count` picks the plural form). */
+export interface PlanRes {
+  readonly key: string
+  readonly set?: string
+  readonly args?: readonly PlanResArg[]
 }
 
 export interface PlanEvent {

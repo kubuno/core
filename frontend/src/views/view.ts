@@ -5,7 +5,7 @@
  */
 import type { ComponentType } from 'react'
 
-import { resolveResource } from './resolve'
+import { resolveResource, type ResourceArgs } from './resolve'
 import { VIEWS_ABI, type ViewPlan } from './plan'
 import type { Scope } from './binding'
 
@@ -166,9 +166,9 @@ export abstract class View<P extends object = object> {
   /** Runs on every render of the view; the only place React hooks are allowed. */
   use(): void {}
 
-  /** A string of the view's resources (`{Res}`) in the current language. */
-  t(key: string, set?: string): string {
-    return resolveResource(key, set)
+  /** A string of the view's resources (`{Res}`) in the current language; `args` fill its `{{placeholders}}` and `Count` picks its plural form. */
+  t(key: string, set?: string, args?: ResourceArgs): string {
+    return resolveResource(key, set, args)
   }
 
   /** Marks the view as changed (after mutating a `@bind` object in place). */

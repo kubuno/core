@@ -47,6 +47,10 @@ if (desktop) {
   const manifest = readFileSync(join(crate, 'Cargo.toml'), 'utf8').replace(
     /^kubuno-views-web\s*=.*$/m,
     `kubuno-views-web = { package = "${webPackage}", path = "${toml(webCrate)}" }`,
+  ).replace(
+    // The `.kbres` model (WV-6) comes from the same checkout.
+    /^kubuno-resources-model\s*=.*$/m,
+    `kubuno-resources-model = { package = "kubuno-desktop-resources-model", path = "${toml(resolve(desktop, 'windows', 'src', 'crates', 'kubuno-desktop-resources-model'))}" }`,
   )
   writeFileSync(join(manifestDir, 'Cargo.toml'), manifest)
   source = `local checkout ${toml(webCrate)}`

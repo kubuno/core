@@ -8,6 +8,18 @@ under the published version number.
 
 ### Added
 
+- **String resources as `.kbres` sets.** `import strings from './strings.kbres'` gives the set's i18next bundles by
+  language (`{ en: {…}, fr: {…} }`, ready for `registerModuleTranslations`): the neutral file (its language named by
+  `<Resources Culture="en">`, English when absent) and its `strings.<lang>.kbres` satellites, dotted names nested as
+  i18next keys, plural forms kept (`files_one`, `files_other`). A satellite edit reloads the set in `vite serve`. Add
+  `/// <reference types="@kubuno/views-compiler/client" />` for the `*.kbres` module type.
+- **`{Res}` with arguments and plurals in views.** `{Res files_count, Count={Binding n}, Name={Binding user.name}}`:
+  the arguments fill the string's `{{count}}` / `{{name}}` placeholders and `Count` picks the plural form of the
+  language, as i18next does; a bound argument is type-checked like any binding (`kbview-tsc`).
+- **`kbres-convert`**, a converter from existing dictionaries to `.kbres` sets: `locales/<lang>/<ns>.json` folders
+  (`--json`) or `i18n.ts` modules calling `registerModuleTranslations` (`--module`, read statically). Every set is
+  read back and compared before the command succeeds: every key, value and key order of every language identical.
+  `--check` compares an existing set with its source.
 - **The development server serves the Visual Studio design surface.** While `vite serve` runs, the page the
   Kubuno extension for Visual Studio shows in its web view designer is available at `/__kubuno_design__/`, with
   what it needs to render your views with your own controls (`/__kubuno_design__/project.json`, the Kubuno themes),

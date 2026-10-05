@@ -94,6 +94,12 @@ export function emitViewModule(plan, options) {
         body.write(', s: ');
         body.write(`(o, v) => { ${set} = v }`, b.at);
     };
+    /** `, b: { …the binding's fields, g, s }`. */
+    const binding = (b) => {
+        body.write(`, b: { ${Object.entries(b).map(([k, v]) => `${key(k)}: ${json(v)}`).join(', ')}`);
+        accessor(b);
+        body.write(' }');
+    };
     const iconValue = (p) => {
         const conv = p.to.convert;
         if ((conv !== 'icon-node' && conv !== 'icon-component') || typeof p.v !== 'string' || p.v === '')
@@ -114,14 +120,28 @@ export function emitViewModule(plan, options) {
         body.write(`n: ${json(p.n)}, to: ${json(p.to)}, kind: ${json(p.kind)}, at: ${json(p.at)}`);
         if (p.v !== undefined && !iconValue(p))
             body.write(`, v: ${json(p.v)}`);
-        if (p.res)
-            body.write(`, res: ${json(p.res)}`);
-        if (p.b) {
-            const { ...b } = p.b;
-            body.write(`, b: { ${Object.entries(b).map(([k, v]) => `${key(k)}: ${json(v)}`).join(', ')}`);
-            accessor(p.b);
-            body.write(' }');
+        if (p.res) {
+            const { args, ...res } = p.res;
+            if (!args?.length)
+                body.write(`, res: ${json(p.res)}`);
+            else {
+                // `{Res key, Count={Binding n}}`: each bound argument gets its accessor, like a property's binding.
+                body.write(`, res: { ${Object.entries(res).map(([k, v]) => `${key(k)}: ${json(v)}`).join(', ')}, args: [`);
+                args.forEach((a, i) => {
+                    if (i)
+                        body.write(', ');
+                    body.write(`{ n: ${json(a.n)}`);
+                    if (a.v !== undefined)
+                        body.write(`, v: ${json(a.v)}`);
+                    if (a.b)
+                        binding(a.b);
+                    body.write(' }');
+                });
+                body.write('] }');
+            }
         }
+        if (p.b)
+            binding(p.b);
         body.write(' }');
     };
     const event = (e) => {

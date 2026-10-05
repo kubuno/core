@@ -16,11 +16,13 @@
     "bin",
     "wasm/kubuno-views-web.wasm",
     "wasm/BUILD-INFO.json",
+    "client.d.ts",
     "README.md",
     "CHANGELOG.md"
   ],
   "bin": {
-    "kbview-tsc": "./bin/kbview-tsc.js"
+    "kbview-tsc": "./bin/kbview-tsc.js",
+    "kbres-convert": "./bin/kbres-convert.js"
   },
   "types": "./dist/index.d.ts",
   "exports": {
@@ -33,6 +35,7 @@
       "import": "./dist/browser.js"
     },
     "./wasm": "./wasm/kubuno-views-web.wasm",
+    "./client": { "types": "./client.d.ts" },
     "./package.json": "./package.json"
   },
   "scripts": {

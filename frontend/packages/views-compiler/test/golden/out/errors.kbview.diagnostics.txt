@@ -4,5 +4,5 @@
 3:31-3:35 error [value] `Variant`: `Huge` is not valid here; expected one of: Primary, Secondary, Ghost, Text, Danger, TextDanger
 3:37-3:51 error [handler-name] `1bad` is not a valid handler name (a method of the code-behind)
 5:11-5:22 error [x-name] `x:Name="ok"` is used twice in this view
-6:4-6:10 error [item-placement] `<Option>` is an item of Dropdown, ComboBox: it can only be a child of one of these
+6:4-6:10 error [item-placement] `<Option>` is an item of Dropdown, ComboBox, RadioGroup: it can only be a child of one of these
 7:4-7:8 error [children] `<Card>` takes a single child element (wrap several in a layout container)

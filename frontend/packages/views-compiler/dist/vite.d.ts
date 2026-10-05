@@ -13,6 +13,8 @@ export interface KbviewPluginOptions extends ProjectOptions {
      * `.kubuno/design-server.json` (see `design-server.ts`). Default `true`.
      */
     designServer?: boolean;
+    /** Language of a neutral `.kbres` file without a `Culture` attribute. Default `en`. */
+    neutralCulture?: string;
 }
 /** `file(line,col): severity code: message` — the format tsc, MSBuild and VS use. */
 export declare function formatDiagnostic(file: string, d: Diagnostic): string;

@@ -35,6 +35,8 @@ export {
   resolveComponent,
   setIconResolver,
   setResourceResolver,
+  interpolationOptions,
+  type ResourceArgs,
   invalidateResources,
 } from './resolve'
 export type {
@@ -51,5 +53,5 @@ export type {
   PaintEventArgs,
   ItemCheckEventArgs,
 } from './events'
-export { VIEWS_ABI, type ViewPlan, type PlanNode, type PlanProp, type PlanEvent, type PlanBinding } from './plan'
+export { VIEWS_ABI, type ViewPlan, type PlanNode, type PlanProp, type PlanEvent, type PlanBinding, type PlanRes, type PlanResArg } from './plan'
 export type * from './handles.generated'

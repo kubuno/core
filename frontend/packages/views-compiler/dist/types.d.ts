@@ -41,6 +41,18 @@ export interface PlanBinding {
     depth?: number;
     at: At;
 }
+/** One argument of a `{Res key, Name=value}` (WV-6): a literal or a one-way binding. */
+export interface PlanResArg {
+    n: string;
+    v?: string;
+    b?: PlanBinding;
+}
+/** A `{Res key[, Source=set][, Name=value]…}`. */
+export interface PlanRes {
+    key: string;
+    set?: string;
+    args?: PlanResArg[];
+}
 export interface PlanProp {
     n: string;
     to: {
@@ -53,10 +65,7 @@ export interface PlanProp {
     };
     v?: unknown;
     b?: PlanBinding;
-    res?: {
-        key: string;
-        set?: string;
-    };
+    res?: PlanRes;
     kind: 'Bool' | 'F32' | 'String' | 'Enum';
     at: At;
 }

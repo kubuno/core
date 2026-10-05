@@ -9,6 +9,7 @@ import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:p
 import { fileURLToPath } from 'node:url'
 
 import { CompilerWasm, ViewCompiler } from './compiler.js'
+import { KbresCodec } from './kbres.js'
 import type { CompileOutput, UserControlRef } from './types.js'
 
 /** View file extensions (VIEWS-SPEC §1.1). */
@@ -222,6 +223,12 @@ let wasmModule: Promise<WebAssembly.Module> | null = null
 export async function loadNodeCompiler(): Promise<ViewCompiler> {
   wasmModule ??= WebAssembly.compile(readFileSync(wasmPath()))
   return new ViewCompiler(await CompilerWasm.instantiate(await wasmModule))
+}
+
+/** The `.kbres` reader / writer over the same `.wasm` (one instance per call). */
+export async function loadNodeKbres(): Promise<KbresCodec> {
+  wasmModule ??= WebAssembly.compile(readFileSync(wasmPath()))
+  return new KbresCodec(await CompilerWasm.instantiate(await wasmModule))
 }
 
 export interface ProjectOptions {

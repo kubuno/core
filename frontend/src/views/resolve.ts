@@ -11,7 +11,10 @@ type IconComponent = ComponentType<{ size?: number; color?: string; className?: 
 
 const modules = new Map<string, Readonly<Record<string, unknown>>>()
 let iconResolver: (name: string) => IconComponent | undefined = () => undefined
-let resourceResolver: (key: string, set?: string) => string = (key) => key
+/** The values of a `{Res}`'s arguments, by the name written in the view (`Count`, `Name`). */
+export type ResourceArgs = Readonly<Record<string, unknown>>
+
+let resourceResolver: (key: string, set?: string, args?: ResourceArgs) => string = (key) => key
 let resourceVersion = 0
 
 /**
@@ -41,13 +44,31 @@ export function resolveIcon(name: string): IconComponent | undefined {
  * Sets how `{Res key[, Source=set]}` resolves (the host passes i18next's `t`). Call
  * `invalidateResources()` when the language changes: every live view re-reads its strings.
  */
-export function setResourceResolver(resolve: (key: string, set?: string) => string): void {
+export function setResourceResolver(resolve: (key: string, set?: string, args?: ResourceArgs) => string): void {
   resourceResolver = resolve
   invalidateResources()
 }
 
-export function resolveResource(key: string, set?: string): string {
-  return resourceResolver(key, set)
+export function resolveResource(key: string, set?: string, args?: ResourceArgs): string {
+  return resourceResolver(key, set, args)
+}
+
+/**
+ * The interpolation options of a `{Res}`'s arguments for i18next: each argument under its name as written and
+ * with its first letter lower-cased (`Count` fills `{{count}}` and selects the plural form, the way
+ * `t(key, { count })` does; `UserName` fills `{{userName}}`). A numeric text count becomes a number, so the plural
+ * rules apply to `Count="3"` too.
+ */
+export function interpolationOptions(args: ResourceArgs): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [name, raw] of Object.entries(args)) {
+    const isCount = name.toLowerCase() === 'count'
+    const lower = isCount ? 'count' : name.charAt(0).toLowerCase() + name.slice(1)
+    const value = isCount && typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw)) ? Number(raw) : raw
+    out[name] = value
+    out[lower] = value
+  }
+  return out
 }
 
 const resourceListeners = new Set<() => void>()

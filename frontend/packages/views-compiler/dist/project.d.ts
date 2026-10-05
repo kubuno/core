@@ -1,4 +1,5 @@
 import { ViewCompiler } from './compiler.js';
+import { KbresCodec } from './kbres.js';
 import type { CompileOutput, UserControlRef } from './types.js';
 /** View file extensions (VIEWS-SPEC §1.1). */
 export declare const VIEW_EXTENSIONS: readonly [".kbview", ".kbcontrol"];
@@ -72,6 +73,8 @@ export declare function projectRegistryJson(root: string, file: string): string;
 export declare function wasmPath(): string;
 /** A compiler instance over the shipped `.wasm` (compiled once per process). */
 export declare function loadNodeCompiler(): Promise<ViewCompiler>;
+/** The `.kbres` reader / writer over the same `.wasm` (one instance per call). */
+export declare function loadNodeKbres(): Promise<KbresCodec>;
 export interface ProjectOptions {
     /** Host registry file; default: from `kubuno.views.json`, else `@kubuno/ui` in node_modules. */
     hostRegistry?: string;
