@@ -73,8 +73,15 @@ function snapshotProps(i: Internals, node: PlanNode, out: PlanProp[] = []): Plan
   out.push(...effectiveProps(i, node))
   for (const item of node.items?.list ?? []) {
     snapshotProps(i, item, out)
-    // Nested items (sub-menus) are children of the item.
-    for (const c of item.children ?? []) if (!c.m) snapshotProps(i, c, out)
+    // Nested items (sub-menus, sub-trees) are children of the item, at any depth (WV-5b: TreeView levels).
+    const nested = (n: PlanNode): void => {
+      for (const c of n.children ?? []) {
+        if (c.m) continue
+        snapshotProps(i, c, out)
+        nested(c)
+      }
+    }
+    nested(item)
   }
   return out
 }
@@ -307,6 +314,27 @@ function wireOpenItems(i: Internals, node: PlanNode, scope: Scope, values: Map<P
   })
 }
 
+/**
+ * Items checked by their parent (`CheckedListBox` `Item Checked`): the parent reports a user change with
+ * `onItemCheck(index, checked)`; a two-way `Checked` binding on that item is written back (WV-5b).
+ */
+function wireCheckedItems(i: Internals, node: PlanNode, scope: Scope, props: Props): void {
+  const list = node.items?.list ?? []
+  const bindings = list.map((it) => effectiveProps(i, it).find((p) => p.n === 'Checked')?.b)
+  const events = list.map((it) => it.events?.find((e) => e.from.runtime === 'parent-adapter' && e.from.args === 'item-check'))
+  const writes = (b: (typeof bindings)[number]): boolean => !!b && (b.mode === 'TwoWay' || b.mode === 'OneWayToSource')
+  if (!bindings.some(writes) && !events.some(Boolean)) return
+  addCallback(props, 'onItemCheck', undefined, (index, checked) => {
+    const k = Number(index)
+    if (i.design || !list[k]) return
+    const b = bindings[k]
+    if (b && writes(b) && writeBinding(b, scope, !!checked)) notify(i)
+    // The item's own `OnCheckedChanged` (the change event of its two-way `Checked`).
+    const e = events[k]
+    if (e) dispatch(i, list[k], e, [k, !!checked], { item: handleFor(i, list[k].id), index: k }, scope)
+  })
+}
+
 /** Builds the React props of a node from its current values. */
 function build(
   i: Internals,
@@ -451,6 +479,7 @@ function build(
     const built = shown.map(([it, k]) => buildItem(it, k, keys[k]))
     props[items.prop] = items.shape === 'record' ? Object.fromEntries(built.map((o, k) => [keys[shown[k][1]], o])) : built
     wireOpenItems(i, node, scope, values, props, keys)
+    wireCheckedItems(i, node, scope, props)
     if (content === 'selected-after') {
       // A strip without a bound selection keeps its own (the first item at first).
       if (props.value === undefined) {

@@ -1,0 +1,44 @@
+<!-- ListView: Details with Column children over bound rows; Item children with sub-items; List and LargeIcon views. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="20">
+  <Stack Gap="6">
+    <Label Text="Details — Columns over ItemsSource (2 000 rows), MultiSelect" Role="Meta" ForeColor="TextSecondary"/>
+    <ListView ItemsSource="{Binding files}" MultiSelect="true" Height="220" SelectedIndex="{Binding file, Mode=TwoWay}"
+              AccessibleName="Fichiers" AccessibleDescription="gallery-list" OnItemActivate="file_activate">
+      <Column Header="Nom" Binding="{Binding Name}"/>
+      <Column Header="Taille" Binding="{Binding Size}" Width="96" Alignment="Right"/>
+      <Column Header="Modifié" Binding="{Binding Date}" Width="120"/>
+    </ListView>
+    <Label Text="{Binding fileText}" Role="Meta" ForeColor="TextSecondary"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="20" WrapContents="true" CrossAlign="Start">
+    <Stack Gap="6" Width="300">
+      <Label Text="Details — Item children" Role="Meta" ForeColor="TextSecondary"/>
+      <ListView AccessibleName="Contacts">
+        <Column Header="Nom"/>
+        <Column Header="Ville" Width="110"/>
+        <Item Text="Camille Martin"><Item Text="Paris"/></Item>
+        <Item Text="Yasmine Haddad"><Item Text="Tunis"/></Item>
+        <Item Text="Lucas Bernard"><Item Text="Lyon"/></Item>
+      </ListView>
+    </Stack>
+    <Stack Gap="6" Width="220">
+      <Label Text="View List" Role="Meta" ForeColor="TextSecondary"/>
+      <ListView View="List" AccessibleName="Liste">
+        <Item Text="Documents" Icon="Folder"/>
+        <Item Text="Images" Icon="Image"/>
+        <Item Text="Musique" Icon="Music"/>
+      </ListView>
+    </Stack>
+    <Stack Gap="6" Width="340">
+      <Label Text="View LargeIcon" Role="Meta" ForeColor="TextSecondary"/>
+      <ListView View="LargeIcon" SelectedIndex="1" AccessibleName="Tuiles" AccessibleDescription="gallery-tiles">
+        <Item Text="Drive" Icon="HardDrive"/>
+        <Item Text="Mail" Icon="Mail"/>
+        <Item Text="Agenda" Icon="Calendar"/>
+        <Item Text="Photos" Icon="Image"/>
+        <Item Text="Notes" Icon="StickyNote"/>
+        <Item Text="Tâches" Icon="SquareCheck"/>
+      </ListView>
+    </Stack>
+  </Stack>
+</Stack>

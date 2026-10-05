@@ -1,0 +1,17 @@
+<!-- CheckedListBox: Item children with two-way Checked, CheckOnClick, OnCheckedChanged; bound rows. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Direction="LeftToRight" Gap="24" WrapContents="true" CrossAlign="Start">
+  <Stack Gap="6" Width="260">
+    <Label Text="Item children, Checked two-way" Role="Meta" ForeColor="TextSecondary"/>
+    <CheckedListBox AccessibleName="Notifications" AccessibleDescription="gallery-list" OnCheckedChanged="checked_changed">
+      <Item Text="Courriels" Checked="{Binding mail, Mode=TwoWay}"/>
+      <Item Text="Agenda" Checked="true"/>
+      <Item Text="Tâches"/>
+      <Item Text="Discussions" Checked="true"/>
+    </CheckedListBox>
+    <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary" Overflow="Wrap"/>
+  </Stack>
+  <Stack Gap="6" Width="260">
+    <Label Text="CheckOnClick, ItemsSource" Role="Meta" ForeColor="TextSecondary"/>
+    <CheckedListBox ItemsSource="{Binding modules}" CheckOnClick="true" SelectedIndex="0" AccessibleName="Modules"/>
+  </Stack>
+</Stack>

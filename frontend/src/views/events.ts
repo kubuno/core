@@ -63,6 +63,13 @@ export interface ItemActivateEventArgs<T = unknown> extends EventArgs {
   readonly index: number
 }
 
+/** An item of a `CheckedListBox` was checked or unchecked. `value` is `checked`. */
+export interface ItemCheckEventArgs extends EventArgs {
+  readonly index: number
+  readonly checked: boolean
+  readonly value: boolean
+}
+
 const BUTTONS: readonly MouseButton[] = ['Left', 'Middle', 'Right']
 
 interface DomLike {
@@ -126,6 +133,8 @@ export function makeArgs(adapter: string, raw: readonly unknown[], ctx: ArgsCont
       return { native, e: { ...base, item: ctx.item, index: ctx.index ?? -1 } }
     case 'row':
       return { native, e: { ...base, item: raw[0], index: typeof raw[1] === 'number' ? raw[1] : -1 } }
+    case 'item-check':
+      return { native, e: { ...base, index: typeof raw[0] === 'number' ? raw[0] : -1, checked: !!raw[1], value: !!raw[1] } }
     case 'sort':
       return { native, e: { ...base, value: (raw[0] as { columnId?: unknown } | undefined)?.columnId ?? raw[0] } }
     default:

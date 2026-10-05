@@ -6,6 +6,7 @@
  * add an entry with a reason). Entries tagged "WV-…" name the lot that is expected to close them.
  */
 import type { AllowEntry } from './conformance.ts'
+import { LISTS_ALLOWLIST } from './allowlist.lists.ts'
 
 const WINDOW_CHROME = 'Window chrome and window behaviour (title bar, caption buttons, backdrop, taskbar, MDI, opacity…): a web view is a page or a dialog inside the host shell, never a top-level window. The web keeps Title only.'
 const NOT_YET = (lot: string, what: string) => `Not implemented by the @ui component yet (${lot}): ${what}`
@@ -42,7 +43,6 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'property-missing-on-web', element: '*', level: 'TextBoxBase', reason: NOT_YET('WV-5a', 'AcceptsTab, CharacterCasing, HideSelection, PasswordChar (a password TextField), TextAlign. ReadOnly and MaxLength are supported.') },
 
   // ── Element level ──
-  { kind: 'element-mismatch', element: 'DataTable', member: 'default_event', reason: 'The desktop default event (OnSelectionChanged) does not exist on the web yet (WV-5b): no default event until it does.' },
   { kind: 'element-mismatch', element: 'DockArea', member: 'default_event', reason: 'The desktop default event (OnPanelActivated) does not exist on the web yet (WV-5b): no default event until it does.' },
 
   // ── Own members: web-only field chrome ──
@@ -94,9 +94,6 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'property-missing-on-web', element: 'Popover', member: 'PopupHeight', reason: NOT_YET('WV-5b', 'the popover sizes to its content.') },
   { kind: 'property-missing-on-web', element: 'Popover', member: 'LightDismiss', reason: NOT_YET('WV-5b', 'AnchoredPopover always closes on an outside click or Escape.') },
   { kind: 'event-missing-on-web', element: 'Popover', member: 'OnOpened', reason: NOT_YET('WV-5b', 'AnchoredPopover reports closing only.') },
-  { kind: 'property-missing-on-web', element: 'DataTable', member: 'SelectedIndex', reason: 'The web DataTable selects several rows by id (Selectable, selectedIds); a single selected index is aligned in WV-5b ("DataTable alignment").' },
-  { kind: 'event-missing-on-web', element: 'DataTable', member: 'OnSelectionChanged', reason: 'See SelectedIndex (WV-5b).' },
-  { kind: 'event-missing-on-web', element: 'DataTable', member: 'OnRowActivated', reason: 'The web DataTable reports a single click on a row (onRowClick); double-click activation is aligned in WV-5b.' },
   { kind: 'property-missing-on-web', element: 'DataTable', member: 'ReadOnly', reason: 'The web DataTable does not edit cells (WV-5b).' },
   { kind: 'property-missing-on-web', element: 'Column', member: 'ReadOnly', reason: 'The web DataTable does not edit cells (WV-5b).' },
   { kind: 'event-missing-on-web', element: 'DataTable', member: 'OnCellBeginEdit', reason: 'The web DataTable does not edit cells (WV-5b).' },
@@ -104,9 +101,6 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'event-missing-on-web', element: 'DataTable', member: 'OnCellValueChanged', reason: 'The web DataTable does not edit cells (WV-5b).' },
   { kind: 'event-missing-on-web', element: 'DataTable', member: 'OnCellEndEdit', reason: 'The web DataTable does not edit cells (WV-5b).' },
   { kind: 'property-missing-on-web', element: 'DataTable', member: 'Culture', reason: 'Web cells are formatted in the user\'s language (i18next); a per-table culture comes with the Column formats (WV-3).' },
-  { kind: 'property-missing-on-web', element: 'DataTable', member: 'Density', reason: NOT_YET('WV-5b', 'row density.') },
-  { kind: 'property-missing-on-web', element: 'DataTable', member: 'EmptyTitle', reason: 'The web DataTable takes a whole empty-state node; texts-only empty states are aligned in WV-5b.' },
-  { kind: 'property-missing-on-web', element: 'DataTable', member: 'EmptyText', reason: 'See EmptyTitle (WV-5b).' },
   { kind: 'property-web-only', element: 'DataTable', member: 'Selectable', reason: 'Web multi-row selection with check boxes. Proposed for the desktop with the WV-5b alignment.' },
   { kind: 'property-missing-on-web', element: 'DockArea', member: 'Layout', reason: 'The web DockArea keeps its layout in localStorage (StorageKey) and exposes it through a controller ref; a bindable JSON layout comes with WV-5b.' },
   { kind: 'property-missing-on-web', element: 'DockArea', member: 'ActivePanel', reason: 'Through the controller ref on the web (activate); a bindable property comes with WV-5b.' },
@@ -165,4 +159,6 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'element-web-only', element: 'RadioGroup', reason: 'New element (WEB-VIEWS §3): the radio list copied in 20 module repositories (desktop proposal: RadioButtons, XML_VIEWS §7). Web first; the desktop element comes with the desktop side of WV-5a.' },
   { kind: 'property-web-only', element: 'GroupBox', member: 'Description', reason: 'Web settings sections carry a help line under their title. Proposed for the desktop GroupBox.' },
   { kind: 'property-missing-on-web', element: 'PictureBox', member: 'ImageData', reason: 'Image bytes from a Rust Shared<Vec<u8>>: a web picture is an address (Image, a data: or blob: URL for bytes).' },
+  // ── WV-5b list elements (allowlist.lists.ts) ──
+  ...LISTS_ALLOWLIST,
 ]

@@ -1,0 +1,28 @@
+<!-- TreeView: nested Item children (Expanded, icons), two-way SelectedPath; ten thousand bound rows with sub-trees. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Direction="LeftToRight" Gap="24" WrapContents="true" CrossAlign="Start">
+  <Stack Gap="6" Width="280">
+    <Label Text="Item children" Role="Meta" ForeColor="TextSecondary"/>
+    <TreeView SelectedPath="{Binding path, Mode=TwoWay}" AccessibleName="Dossiers" AccessibleDescription="gallery-list" OnItemActivate="item_activate">
+      <Item Text="Mon Drive" Icon="HardDrive" Expanded="true">
+        <Item Text="Documents" Icon="Folder" Expanded="true">
+          <Item Text="Factures" Icon="Folder"/>
+          <Item Text="Contrats" Icon="Folder"/>
+        </Item>
+        <Item Text="Photos" Icon="Folder">
+          <Item Text="2025" Icon="Folder"/>
+          <Item Text="2026" Icon="Folder"/>
+        </Item>
+        <Item Text="Notes.txt" Icon="FileText"/>
+      </Item>
+      <Item Text="Partagés avec moi" Icon="Users">
+        <Item Text="Projet Kubuno" Icon="Folder"/>
+      </Item>
+      <Item Text="Corbeille" Icon="Trash2"/>
+    </TreeView>
+    <Label Text="{Binding pathText}" Role="Meta" ForeColor="TextSecondary"/>
+  </Stack>
+  <Stack Gap="6" Width="280">
+    <Label Text="10 000 bound rows, MultiSelect" Role="Meta" ForeColor="TextSecondary"/>
+    <TreeView ItemsSource="{Binding rows}" MultiSelect="true" Height="280" AccessibleName="Big tree" AccessibleDescription="gallery-biglist"/>
+  </Stack>
+</Stack>

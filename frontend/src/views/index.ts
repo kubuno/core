@@ -48,6 +48,7 @@ export type {
   ValueChangedEventArgs,
   ItemEventArgs,
   ItemActivateEventArgs,
+  ItemCheckEventArgs,
 } from './events'
 export { VIEWS_ABI, type ViewPlan, type PlanNode, type PlanProp, type PlanEvent, type PlanBinding } from './plan'
 export type * from './handles.generated'

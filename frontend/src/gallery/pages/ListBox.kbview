@@ -1,0 +1,31 @@
+<!--
+  ListBox: Item children with icons and a two-way SelectedIndex; ten thousand bound rows (virtualised) with
+  Ctrl / Shift selection and SelectedValue; a disabled list.
+-->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Direction="LeftToRight" Gap="24" WrapContents="true" CrossAlign="Start">
+  <Stack Gap="6" Width="240">
+    <Label Text="SelectionMode One — Item children" Role="Meta" ForeColor="TextSecondary"/>
+    <ListBox x:Name="fruits" SelectedIndex="{Binding fruit, Mode=TwoWay}" AccessibleName="Fruits" AccessibleDescription="gallery-list">
+      <Item Text="Abricot" Icon="Apple"/>
+      <Item Text="Banane" Icon="Banana"/>
+      <Item Text="Cerise" Icon="Cherry"/>
+      <Item Text="Citron" Icon="Citrus"/>
+      <Item Text="Raisin" Icon="Grape"/>
+      <Item Text="Pomme" Icon="Apple"/>
+    </ListBox>
+    <Label Text="{Binding fruitText}" Role="Meta" ForeColor="TextSecondary"/>
+  </Stack>
+  <Stack Gap="6" Width="240">
+    <Label Text="MultiExtended — 10 000 bound rows" Role="Meta" ForeColor="TextSecondary"/>
+    <ListBox ItemsSource="{Binding rows}" SelectionMode="MultiExtended" Height="240" SelectedValue="{Binding picked, Mode=TwoWay}"
+             AccessibleName="Rows" AccessibleDescription="gallery-biglist"/>
+    <Label Text="{Binding pickedText}" Role="Meta" ForeColor="TextSecondary"/>
+  </Stack>
+  <Stack Gap="6" Width="200">
+    <Label Text="Enabled false" Role="Meta" ForeColor="TextSecondary"/>
+    <ListBox Enabled="false" SelectedIndex="1" AccessibleName="Disabled">
+      <Item Text="Lecture seule"/>
+      <Item Text="Sélectionné"/>
+    </ListBox>
+  </Stack>
+</Stack>

@@ -658,6 +658,88 @@ export interface CheckBox extends ElementHandle {
   elevation: "None" | "Sm" | "Md" | "Lg"
 }
 
+/** `<CheckedListBox>` — A list of items, each with a check box. Space or a click on the box checks an item. */
+export interface CheckedListBox extends ElementHandle {
+  /** Index of the selected item, starting at 0. -1 means none. */
+  selectedIndex: number
+  /** Checks or unchecks an item with a single click anywhere on it. */
+  checkOnClick: boolean
+  /** Binding to the list of items to show, instead of Item children (each row's Text, or its DisplayMember field). */
+  itemsSource: readonly unknown[]
+  /** Web only: field of each bound item shown as its text. */
+  displayMember: string
+  /** Web only: field of each bound item used as its value. */
+  valueMember: string
+  /** Web only: height of a row, in pixels; 0 for the standard height. */
+  itemHeight: number
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+  /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+  hoverBackColor: string
+  /** Web only: background colour while the control is pressed. Leave empty for none. */
+  pressedBackColor: string
+  /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+  cornerRadius: number
+  /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+  borderBrush: string
+  /** Web only: width of the line drawn with BorderBrush, in pixels. */
+  borderThickness: number
+  /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+  elevation: "None" | "Sm" | "Md" | "Lg"
+}
+
 /** `<ColorField>` — A colour swatch that opens a colour picker. */
 export interface ColorField extends ElementHandle {
   /** Colour shown, as #rrggbb. */
@@ -837,7 +919,15 @@ export interface ContextMenu extends ElementHandle {
 /** `<DataTable>` — A data table with sortable columns and pages. Declare the columns as Column children. */
 export interface DataTable extends ElementHandle {
   /** Binding to the list of rows to show. Each column shows the field named by its Binding. */
-  itemsSource: string
+  itemsSource: readonly unknown[]
+  /** Index of the selected row in ItemsSource (whatever the sort), starting at 0. -1 means none. */
+  selectedIndex: number
+  /** Height of the rows. */
+  density: "Compact" | "Normal" | "Comfortable"
+  /** Title shown when there is no row. Empty uses the default text. */
+  emptyTitle: string
+  /** Description shown when there is no row. Empty uses the default text. */
+  emptyText: string
   /** Number of rows per page. 0 shows every row without a pager. */
   pageSize: number
   /** Page shown, starting at 0. A two-way binding follows the pager. */
@@ -1670,6 +1760,20 @@ export interface IconButton extends ElementHandle {
   elevation: "None" | "Sm" | "Md" | "Lg"
 }
 
+/** `<Item>` — An item of a ListBox, CheckedListBox, ListView or TreeView. Item children make a sub-tree (TreeView) or the next columns' cells (ListView). */
+export interface Item extends ElementHandle {
+  /** Text of the item. */
+  text: string
+  /** Web only: value of the item (SelectedValue); its text when empty. */
+  value: string
+  /** Web only: icon shown before the text (a name of the Kubuno icon set). */
+  icon: string
+  /** Web only: the item is checked (CheckedListBox). A two-way binding follows the user's clicks. */
+  checked: boolean
+  /** Web only: the item shows its children at first (TreeView). */
+  expanded: boolean
+}
+
 /** `<Label>` — A line or paragraph of text, in one of the shared typographic roles. */
 export interface Label extends ElementHandle {
   /** Text shown. */
@@ -1764,6 +1868,170 @@ export interface LinkLabel extends ElementHandle {
   fontWeight: "Default" | "Regular" | "Medium" | "SemiBold" | "Bold"
   /** Web only: upright or italic text. */
   fontStyle: "Normal" | "Italic"
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+  /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+  hoverBackColor: string
+  /** Web only: background colour while the control is pressed. Leave empty for none. */
+  pressedBackColor: string
+  /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+  cornerRadius: number
+  /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+  borderBrush: string
+  /** Web only: width of the line drawn with BorderBrush, in pixels. */
+  borderThickness: number
+  /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+  elevation: "None" | "Sm" | "Md" | "Lg"
+}
+
+/** `<ListBox>` — A list of items. Add the items as Item children or bind ItemsSource. Arrow keys, Home / End, Page Up / Page Down and type-ahead move the selection; long lists are virtualised. */
+export interface ListBox extends ElementHandle {
+  /** How many items can be selected, and how Ctrl and Shift combine with a click. */
+  selectionMode: "None" | "One" | "MultiSimple" | "MultiExtended"
+  /** Index of the selected item, starting at 0. -1 means none. */
+  selectedIndex: number
+  /** Binding to the list of items to show, instead of Item children (each row's Text, or its DisplayMember field). */
+  itemsSource: readonly unknown[]
+  /** Height of a row, in pixels; 0 for the standard height. */
+  itemHeight: number
+  /** Web only: field of each bound item shown as its text. */
+  displayMember: string
+  /** Web only: field of each bound item used as its value. */
+  valueMember: string
+  /** Web only: value of the selected item (its Value, or ValueMember field of a bound row; else its text). Empty when none is selected. */
+  selectedValue: string
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+  /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+  hoverBackColor: string
+  /** Web only: background colour while the control is pressed. Leave empty for none. */
+  pressedBackColor: string
+  /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+  cornerRadius: number
+  /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+  borderBrush: string
+  /** Web only: width of the line drawn with BorderBrush, in pixels. */
+  borderThickness: number
+  /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+  elevation: "None" | "Sm" | "Md" | "Lg"
+}
+
+/** `<ListView>` — A list of items in columns. Declare the columns as Column children; the rows are Item children (their Item children fill the next columns) or ItemsSource (each column shows the field its Binding names). On the web, View also shows the items as a list or as tiles. */
+export interface ListView extends ElementHandle {
+  /** Index of the selected item, starting at 0. -1 means none. */
+  selectedIndex: number
+  /** Allows several items to be selected (Ctrl and Shift). */
+  multiSelect: boolean
+  /** Binding to the list of rows to show. Each column shows the field named by its Binding. */
+  itemsSource: readonly unknown[]
+  /** Web only: Details (rows in columns), List (the items' texts) or LargeIcon (tiles with the items' icons). */
+  view: "Details" | "List" | "LargeIcon"
+  /** Web only: height of a row, in pixels; 0 for the standard height. */
+  itemHeight: number
   /** Name that screen readers announce for the control. Leave empty to use its text. */
   accessibleName: string
   /** Description that screen readers announce for the control. */
@@ -3094,6 +3362,84 @@ export interface ToolTip extends ElementHandle {
   active: boolean
 }
 
+/** `<TreeView>` — A tree of items that can be expanded. Add the items as nested Item children, or bind ItemsSource (a row's Items field nests). */
+export interface TreeView extends ElementHandle {
+  /** Selected item, as indexes separated by dots, for example 0.2.1. Empty means none. */
+  selectedPath: string
+  /** Allows several items to be selected (Ctrl and Shift). */
+  multiSelect: boolean
+  /** Binding to the items to show, instead of Item children (a row's Items or Children list makes its sub-tree on the web). */
+  itemsSource: readonly unknown[]
+  /** Height of a row, in pixels; 0 for the standard height. */
+  itemHeight: number
+  /** Name that screen readers announce for the control. Leave empty to use its text. */
+  accessibleName: string
+  /** Description that screen readers announce for the control. */
+  accessibleDescription: string
+  /** Kind of element that screen readers announce. Default uses the control's own kind. */
+  accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  backColor: string
+  /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+  foreColor: string
+  /** Mouse pointer shown over the control. */
+  cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow"
+  /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+  rightToLeft: "No" | "Yes" | "Inherit"
+  /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+  enabled: boolean
+  /** Whether the control is shown when the application runs. The designer still shows it. */
+  visible: boolean
+  /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+  tabIndex: number
+  /** Whether the Tab key stops on the control. */
+  tabStop: boolean
+  /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+  contextMenu: string
+  /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+  allowDrop: boolean
+  /** Shows the busy pointer over the control and everything inside it. */
+  useWaitCursor: boolean
+  /** Text of the tooltip shown when the mouse rests on the control. */
+  toolTip: string
+  /** Any text you want to keep with the control, for your own code. */
+  tag: string
+  /** Distance from the left edge of the parent panel, in pixels. */
+  x: number
+  /** Distance from the top edge of the parent panel, in pixels. */
+  y: number
+  /** Width of the element, in pixels. */
+  width: number
+  /** Height of the element, in pixels. */
+  height: number
+  /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+  dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill"
+  /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+  anchor: string
+  /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+  margin: string
+  /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+  padding: string
+  /** Smallest size of the control: width, height in pixels (0 means no limit). */
+  minimumSize: string
+  /** Largest size of the control: width, height in pixels (0 means no limit). */
+  maximumSize: string
+  /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+  class: string
+  /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+  hoverBackColor: string
+  /** Web only: background colour while the control is pressed. Leave empty for none. */
+  pressedBackColor: string
+  /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+  cornerRadius: number
+  /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+  borderBrush: string
+  /** Web only: width of the line drawn with BorderBrush, in pixels. */
+  borderThickness: number
+  /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+  elevation: "None" | "Sm" | "Md" | "Lg"
+}
+
 /** `<WorkspaceShell>` — The frame of an editor: a top bar with the title, the editor's name and the document's details, an optional status bar, and one child element as its body (typically a DockArea). */
 export interface WorkspaceShell extends ElementHandle {
   /** Title shown in the top bar (the document's name). */
@@ -3202,6 +3548,7 @@ export interface ElementHandles {
   Callout: Callout
   Card: Card
   CheckBox: CheckBox
+  CheckedListBox: CheckedListBox
   ColorField: ColorField
   Column: Column
   ComboBox: ComboBox
@@ -3217,8 +3564,11 @@ export interface ElementHandles {
   GroupBox: GroupBox
   Icon: Icon
   IconButton: IconButton
+  Item: Item
   Label: Label
   LinkLabel: LinkLabel
+  ListBox: ListBox
+  ListView: ListView
   MenuItem: MenuItem
   NumericField: NumericField
   Option: Option
@@ -3239,5 +3589,6 @@ export interface ElementHandles {
   TextArea: TextArea
   TextField: TextField
   ToolTip: ToolTip
+  TreeView: TreeView
   WorkspaceShell: WorkspaceShell
 }
