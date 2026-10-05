@@ -1,0 +1,15 @@
+<!-- ComingSoon — converted from ComingSoon.tsx by @kubuno/views-migrate. -->
+<Stack x:Props="ComingSoonProps" Gap="12" CrossAlign="Center" Justify="Center" Class="py-24 text-center">
+  <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="Center" BackColor="Surface2" Class="w-16 h-16 rounded-2xl">
+    <Icon Name="Clock" Size="30" Class="text-text-tertiary"/>
+  </Stack>
+  <Label HtmlTag="H2" Text="{Binding h2_text}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-lg"/>
+  <Label Text="{Res admin.soon_desc}" Overflow="Wrap" ForeColor="TextSecondary" Class="max-w-sm"/>
+  <Label HtmlTag="Span"
+         Text="{Res admin.soon_badge}"
+         Role="Meta"
+         Overflow="Wrap"
+         ForeColor="Primary"
+         BackColor="PrimaryLight"
+         Class="px-2.5 py-0.5 rounded-full"/>
+</Stack>
