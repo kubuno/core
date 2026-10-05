@@ -1,0 +1,33 @@
+<!-- GroupsPanel — converted from GroupsPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel>
+  <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="SpaceBetween" Class="mb-5">
+    <Panel>
+      <Label HtmlTag="H3" Text="{Res admin.g_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+      <Label Text="{Res admin.g_desc}" Overflow="Wrap" ForeColor="TextSecondary" Class="mt-0.5"/>
+    </Panel>
+    <Button IconSize="15" Icon="Plus" Text="{Res admin.g_new}" OnClick="button_click"/>
+  </Stack>
+  <Panel Visible="{Binding showCreate}" Class="mb-5 p-4 border border-primary rounded-lg bg-primary-light/10">
+    <Label HtmlTag="H4" Text="{Res admin.g_create}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="mb-3"/>
+    <!-- TODO(views-migrate): <GroupForm> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding GroupForm}" Props="{Binding group_form_props}"/>
+  </Panel>
+  <Label Text="{Res common.loading}" Overflow="Wrap" ForeColor="TextSecondary" Visible="{Binding isLoading}" Class="py-4"/>
+  <Panel ForeColor="TextTertiary" Visible="{Binding show_rows_rows}" Class="text-center py-10">
+    <Icon Name="Users" Size="32" Class="mx-auto mb-2 opacity-30"/>
+    <Label Text="{Res admin.g_none}" Overflow="Wrap"/>
+  </Panel>
+  <Panel Class="space-y-3">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_rows}">
+      <!-- TODO(views-migrate): <GroupRow> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding GroupRow}" Props="{Binding group_row_props}"/>
+    </Repeater>
+  </Panel>
+  <Panel BackColor="Surface1" Class="mt-6 p-3 rounded-lg border border-border">
+    <Panel HtmlTag="P" ForeColor="TextSecondary" Class="text-sm">
+      <Label HtmlTag="Strong" Text="{Res admin.g_access_logic_title}" Overflow="Wrap" ForeColor="TextPrimary" InheritFontSize="true"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" "/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.g_access_logic}"/>
+    </Panel>
+  </Panel>
+</Panel>

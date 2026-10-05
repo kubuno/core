@@ -1,27 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Database, Check, TriangleAlert } from 'lucide-react'
-import { Button, Callout, Card, OutlinedField, Radio, Spinner, useToast } from '@ui'
-import { api } from '../api/client'
-import { usePrivileges } from '../authz/usePrivileges'
-import KnownConnectionsCard from './database/KnownConnectionsCard'
-
 /**
- * Applications ▸ a module ▸ "Database" — point ONE module at its own engine or
- * server instead of the core's (superadmin only).
- *
- * A module inherits the core's database by default: nothing to configure, and
- * the card says so. Choosing an engine reveals the same connection fields as the
- * install wizard, with an engine-aware "Test connection" and a "Save & restart"
- * that stores the override and restarts the module so it reconnects (and
- * migrates itself) onto the new target. Going back to "Main database" clears the
- * override.
- *
- * The password is write-only: an existing override reports only that a password
- * is stored (`has_password`), never the value. Leaving the field untouched keeps
- * the stored password; typing replaces it; clearing it removes it.
+ * Code-behind of `ModuleDatabaseCard.kbview` (converted from `ModuleDatabaseCard.tsx` by @kubuno/views-migrate).
  */
+import { bind, type ValueChangedEventArgs, type MouseEventArgs } from '@kubuno/views'
+import { Fragment } from 'react'
+import { useEffect, useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { Database, Check } from "lucide-react"
+import { Button, Callout, OutlinedField, useToast } from "@ui"
+import { api } from "../api/client"
+import { usePrivileges } from "../authz/usePrivileges"
+import KnownConnectionsCard from "./database/KnownConnectionsCard"
+
+import { ViewBase } from './ModuleDatabaseCard.kbview'
+import * as __parts from './ModuleDatabaseCard.parts'
 
 const PRIMARY = 'var(--color-primary)'
 
@@ -39,7 +31,6 @@ interface OverrideView {
   enabled: boolean
 }
 
-/** The main database's connection (no password), to seed the fields from. */
 interface MainView {
   engine: string
   host: string
@@ -67,7 +58,6 @@ interface DbTest {
   already_initialised: boolean
 }
 
-/** `null` selection means "inherit the main database". */
 type Mode = 'inherit' | EngineName
 
 const DEFAULT_PORT: Record<EngineName, string> = {
@@ -80,285 +70,458 @@ function engineLabel(t: (k: string) => string, e: EngineName): string {
   return t(`admin.mdb_engine_${e}`)
 }
 
-export default function ModuleDatabaseCard({ moduleId }: { moduleId: string }) {
-  const { t } = useTranslation()
-  const { isSuperuser } = usePrivileges()
-  const toast = useToast()
-  const qc = useQueryClient()
+export type ModuleDatabaseCardProps = { moduleId: string }
 
-  const cfg = useQuery({
-    queryKey: ['module-database', moduleId],
-    queryFn: () => api.get<DbConfigResponse>(`/admin/modules/${moduleId}/database`).then(r => r.data),
-    enabled: isSuperuser,
-    staleTime: 30_000,
-  })
+export class ModuleDatabaseCard extends ViewBase {
+  @bind accessor mode: Mode = 'inherit'
+  @bind accessor host = ''
+  @bind accessor port = ''
+  @bind accessor user = ''
+  @bind accessor password = ''
+  @bind accessor passwordTouched = false
+  @bind accessor database = ''
+  @bind accessor path = ''
+  @bind accessor prefix = ''
+  @bind accessor test: DbTest | null = null
+  @bind accessor migrateResult: { ok: boolean; text: string } | null = null
+  tr!: ModuleDatabaseCardStores['t']
+  isSuperuser!: boolean
+  toast!: ModuleDatabaseCardStores['toast']
+  qc!: ModuleDatabaseCardStores['qc']
+  cfg!: ModuleDatabaseCardHooks['cfg']
+  testMut!: ModuleDatabaseCardHooks['testMut']
+  saveMut!: ModuleDatabaseCardHooks['saveMut']
+  migrateMut!: ModuleDatabaseCardHooks['migrateMut']
+  revertMut!: ModuleDatabaseCardHooks['revertMut']
 
-  // ── Editable form state, seeded from the stored override ───────────────────
-  const [mode, setMode] = useState<Mode>('inherit')
-  const [host, setHost] = useState('')
-  const [port, setPort] = useState('')
-  const [user, setUser] = useState('')
-  const [password, setPassword] = useState('')
-  const [passwordTouched, setPasswordTouched] = useState(false)
-  const [database, setDatabase] = useState('')
-  const [path, setPath] = useState('')
-  const [prefix, setPrefix] = useState('')
-  const [test, setTest] = useState<DbTest | null>(null)
-
-  const ov = cfg.data?.override ?? null
-  // Seed once the config is loaded (and whenever it is refetched after a save).
-  useEffect(() => {
-    if (!cfg.data) return
-    if (ov && ov.enabled) {
-      setMode(ov.engine)
-      setHost(ov.host)
-      setPort(ov.port != null ? String(ov.port) : '')
-      setUser(ov.user)
-      setDatabase(ov.database)
-      setPath(ov.path)
-      setPrefix(ov.schema_prefix ?? '')
-    } else {
-      setMode('inherit')
-    }
-    setPassword('')
-    setPasswordTouched(false)
-    setTest(null)
-  }, [cfg.data]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const engine = mode === 'inherit' ? null : mode
-  // Invalidate the last test result whenever the connection changes.
-  const onEdit = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setTest(null) }
-
-  const body = useMemo(() => {
-    if (!engine) return null
-    const b: Record<string, unknown> = {
-      engine,
-      host: host.trim(),
-      port: port.trim() ? Number(port.trim()) : null,
-      user: user.trim(),
-      database: database.trim(),
-      path: path.trim(),
-      schema_prefix: prefix.trim() || null,
-      enabled: true,
-    }
-    // Only send a password when the operator typed one; otherwise the stored one
-    // is kept server-side.
-    if (passwordTouched) b.password = password
-    return b
-  }, [engine, host, port, user, database, path, prefix, password, passwordTouched])
-
-  const testMut = useMutation({
-    mutationFn: () => api.post<DbTest>(`/admin/modules/${moduleId}/database/test`, body).then(r => r.data),
-    onSuccess: (data) => setTest(data),
-    onError: () => toast.error(t('admin.mdb_test_failed')),
-  })
-
-  const saveMut = useMutation({
-    mutationFn: () => api.put(`/admin/modules/${moduleId}/database`, body).then(r => r.data),
-    onSuccess: () => {
-      toast.success(t('admin.mdb_saved'))
-      void qc.invalidateQueries({ queryKey: ['module-database', moduleId] })
-    },
-    onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg || t('admin.mdb_save_failed'))
-    },
-  })
-
-  // #3 — switch the module's engine AND copy its existing data across, instead
-  // of repointing it at an empty target. The module self-migrates the target on
-  // restart, then the old data is copied in; the source is kept intact.
-  const [migrateResult, setMigrateResult] = useState<{ ok: boolean; text: string } | null>(null)
-  const migrateMut = useMutation({
-    mutationFn: () => api.post<{ job: { status: string; tables_total: number; total_rows: number; error: string } }>(
-      `/admin/modules/${moduleId}/database/migrate`, body).then(r => r.data),
-    onSuccess: (data) => {
-      const j = data.job
-      setMigrateResult(j.status === 'succeeded'
-        ? { ok: true, text: t('admin.mdb_copy_ok', { tables: j.tables_total, rows: j.total_rows }) }
-        : { ok: false, text: j.error || t('admin.mdb_copy_failed') })
-      void qc.invalidateQueries({ queryKey: ['module-database', moduleId] })
-    },
-    onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setMigrateResult({ ok: false, text: msg || t('admin.mdb_copy_failed') })
-    },
-  })
-
-  const revertMut = useMutation({
-    mutationFn: () => api.delete(`/admin/modules/${moduleId}/database`).then(r => r.data),
-    onSuccess: () => {
-      toast.success(t('admin.mdb_reverted'))
-      void qc.invalidateQueries({ queryKey: ['module-database', moduleId] })
-    },
-    onError: () => toast.error(t('admin.mdb_save_failed')),
-  })
-
-  if (!isSuperuser) return null
-
-  const inheritedEngine = cfg.data?.inherited_engine ?? 'postgres'
-  const engines: EngineName[] = cfg.data?.engines ?? ['postgres', 'mysql', 'sqlite']
-  const hasOverride = !!(ov && ov.enabled)
-  const main = cfg.data?.main ?? null
-
-  // Selecting a concrete engine from "inherit" (no override yet) starts the
-  // fields from the main database's known parameters instead of blank ones. The
-  // port is only carried over when the chosen engine matches the main one.
-  const pickEngine = (e: EngineName) => {
-    if (!hasOverride && mode === 'inherit' && main) {
-      setHost(main.host || '')
-      setUser(main.user || '')
-      setDatabase(main.database || '')
-      setPath(main.path || '')
-      setPort(e === main.engine && main.port != null ? String(main.port) : '')
-    }
-    setMode(e)
-    setTest(null)
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const { isSuperuser } = usePrivileges()
+    const toast = useToast()
+    const qc = useQueryClient()
+    return { t, isSuperuser, toast, qc }
   }
 
-  const busy = testMut.isPending || saveMut.isPending || revertMut.isPending || migrateMut.isPending
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const t = this.tr
+    const isSuperuser = this.isSuperuser
+    const toast = this.toast
+    const qc = this.qc
+    const cfg = useQuery({
+      queryKey: ['module-database', this.props.moduleId],
+      queryFn: () => api.get<DbConfigResponse>(`/admin/modules/${this.props.moduleId}/database`).then(r => r.data),
+      enabled: isSuperuser,
+      staleTime: 30_000,
+    })
+    this.publish({ cfg })
+    useEffect(() => {
+      if (!cfg.data) return
+      if (this.ov && this.ov.enabled) {
+        this.mode = this.ov.engine
+        this.host = this.ov.host
+        this.port = this.ov.port != null ? String(this.ov.port) : ''
+        this.user = this.ov.user
+        this.database = this.ov.database
+        this.path = this.ov.path
+        this.prefix = this.ov.schema_prefix ?? ''
+      } else {
+        this.mode = 'inherit'
+      }
+      this.password = ''
+      this.passwordTouched = false
+      this.test = null
+    }, [cfg.data])
+    const body = useMemo(() => {
+      if (!this.engine) return null
+      const b: Record<string, unknown> = {
+        engine: this.engine,
+        host: this.host.trim(),
+        port: this.port.trim() ? Number(this.port.trim()) : null,
+        user: this.user.trim(),
+        database: this.database.trim(),
+        path: this.path.trim(),
+        schema_prefix: this.prefix.trim() || null,
+        enabled: true,
+      }
+      // Only send a password when the operator typed one; otherwise the stored one
+      // is kept server-side.
+      if (this.passwordTouched) b.password = this.password
+      return b
+    }, [this.engine, this.host, this.port, this.user, this.database, this.path, this.prefix, this.password, this.passwordTouched])
+    const testMut = useMutation({
+      mutationFn: () => api.post<DbTest>(`/admin/modules/${this.props.moduleId}/database/test`, body).then(r => r.data),
+      onSuccess: (data) => this.test = data,
+      onError: () => toast.error(t('admin.mdb_test_failed')),
+    })
+    this.publish({ testMut })
+    const saveMut = useMutation({
+      mutationFn: () => api.put(`/admin/modules/${this.props.moduleId}/database`, body).then(r => r.data),
+      onSuccess: () => {
+        toast.success(t('admin.mdb_saved'))
+        void qc.invalidateQueries({ queryKey: ['module-database', this.props.moduleId] })
+      },
+      onError: (e: unknown) => {
+        const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+        toast.error(msg || t('admin.mdb_save_failed'))
+      },
+    })
+    this.publish({ saveMut })
+    const migrateMut = useMutation({
+      mutationFn: () => api.post<{ job: { status: string; tables_total: number; total_rows: number; error: string } }>(
+        `/admin/modules/${this.props.moduleId}/database/migrate`, body).then(r => r.data),
+      onSuccess: (data) => {
+        const j = data.job
+        this.migrateResult = j.status === 'succeeded'
+          ? { ok: true, text: t('admin.mdb_copy_ok', { tables: j.tables_total, rows: j.total_rows }) }
+          : { ok: false, text: j.error || t('admin.mdb_copy_failed') }
+        void qc.invalidateQueries({ queryKey: ['module-database', this.props.moduleId] })
+      },
+      onError: (e: unknown) => {
+        const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+        this.migrateResult = { ok: false, text: msg || t('admin.mdb_copy_failed') }
+      },
+    })
+    this.publish({ migrateMut })
+    const revertMut = useMutation({
+      mutationFn: () => api.delete(`/admin/modules/${this.props.moduleId}/database`).then(r => r.data),
+      onSuccess: () => {
+        toast.success(t('admin.mdb_reverted'))
+        void qc.invalidateQueries({ queryKey: ['module-database', this.props.moduleId] })
+      },
+      onError: () => toast.error(t('admin.mdb_save_failed')),
+    })
+    this.publish({ revertMut })
+    return { cfg, body, testMut, saveMut, migrateMut, revertMut }
+  }
 
-  const fields = engine && (
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, isSuperuser: s.isSuperuser, toast: s.toast, qc: s.qc })
+    const h = this.useHooks()
+    this.publish({ cfg: h.cfg, testMut: h.testMut, saveMut: h.saveMut, migrateMut: h.migrateMut, revertMut: h.revertMut })
+  }
+
+  get ov(): OverrideView | null {
+    return this.memo('ov', [this.cfg], () => this.cfg.data?.override ?? null)
+  }
+
+  get engine(): EngineName | null {
+    return this.mode === 'inherit' ? null : this.mode
+  }
+
+  get inheritedEngine(): string {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    return this.cfg.data?.inherited_engine ?? 'postgres'
+  }
+
+  get engines(): EngineName[] {
+    return this.memo('engines', [this.cfg, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return this.cfg.data?.engines ?? ['postgres', 'mysql', 'sqlite']
+    })
+  }
+
+  get hasOverride(): boolean {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    return !!(this.ov && this.ov.enabled)
+  }
+
+  get main(): MainView | null {
+    return this.memo('main', [this.cfg, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return this.cfg.data?.main ?? null
+    })
+  }
+
+  get busy(): boolean {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    return this.testMut.isPending || this.saveMut.isPending || this.revertMut.isPending || this.migrateMut.isPending
+  }
+
+  get fields() {
+    return this.memo('fields', [this.engine, this.tr, this.host, this.port, this.database, this.props, this.user, this.hasOverride, this.passwordTouched, this.password, this.test, this.path, this.prefix, this.migrateResult, this.testMut, this.busy, this.saveMut, this.migrateMut, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return this.engine && (
     <div className="mt-4 flex flex-col gap-4">
-      {engine !== 'sqlite' && (
+      {this.engine !== 'sqlite' && (
         <>
           <div className="flex gap-3">
             <div className="flex-1">
-              <OutlinedField label={t('admin.mdb_host')} value={host} onChange={onEdit(setHost)}
+              <OutlinedField label={this.tr('admin.mdb_host')} value={this.host} onChange={this.onEdit(this.setHost.bind(this))}
                 icon={<Database size={20} strokeWidth={1.8} />} primaryColor={PRIMARY} />
             </div>
             <div style={{ width: 120 }}>
-              <OutlinedField label={t('admin.mdb_port')} value={port} onChange={onEdit(setPort)}
-                placeholder={DEFAULT_PORT[engine]} inputMode="numeric" primaryColor={PRIMARY} />
+              <OutlinedField label={this.tr('admin.mdb_port')} value={this.port} onChange={this.onEdit(this.setPort.bind(this))}
+                placeholder={DEFAULT_PORT[this.engine]} inputMode="numeric" primaryColor={PRIMARY} />
             </div>
           </div>
-          {engine === 'postgres' && (
-            <OutlinedField label={t('admin.mdb_database')} value={database} onChange={onEdit(setDatabase)}
+          {this.engine === 'postgres' && (
+            <OutlinedField label={this.tr('admin.mdb_database')} value={this.database} onChange={this.onEdit(this.setDatabase.bind(this))}
               primaryColor={PRIMARY} />
           )}
-          {engine === 'mysql' && (
+          {this.engine === 'mysql' && (
             <p className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {t('admin.mdb_mysql_db_hint', { schema: moduleId })}
+              {this.tr('admin.mdb_mysql_db_hint', { schema: this.props.moduleId })}
             </p>
           )}
-          <OutlinedField label={t('admin.mdb_user')} value={user} onChange={onEdit(setUser)} primaryColor={PRIMARY} />
+          <OutlinedField label={this.tr('admin.mdb_user')} value={this.user} onChange={this.onEdit(this.setUser.bind(this))} primaryColor={PRIMARY} />
           <OutlinedField
-            label={hasOverride && !passwordTouched ? t('admin.mdb_password_kept') : t('admin.mdb_password')}
-            value={password}
-            onChange={(v) => { setPassword(v); setPasswordTouched(true); setTest(null) }}
+            label={this.hasOverride && !this.passwordTouched ? this.tr('admin.mdb_password_kept') : this.tr('admin.mdb_password')}
+            value={this.password}
+            onChange={(v) => { this.password = v; this.passwordTouched = true; this.test = null }}
             type="password" autoComplete="off" primaryColor={PRIMARY} />
         </>
       )}
-      {engine === 'sqlite' && (
+      {this.engine === 'sqlite' && (
         <div>
-          <OutlinedField label={t('admin.mdb_sqlite_path')} value={path} onChange={onEdit(setPath)}
+          <OutlinedField label={this.tr('admin.mdb_sqlite_path')} value={this.path} onChange={this.onEdit(this.setPath.bind(this))}
             placeholder="/var/lib/kubuno/db" primaryColor={PRIMARY} />
           <p className="mt-1 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('admin.mdb_sqlite_hint', { schema: moduleId })}
+            {this.tr('admin.mdb_sqlite_hint', { schema: this.props.moduleId })}
           </p>
         </div>
       )}
       <div>
-        <OutlinedField label={t('admin.mdb_schema_prefix')} value={prefix} onChange={onEdit(setPrefix)}
+        <OutlinedField label={this.tr('admin.mdb_schema_prefix')} value={this.prefix} onChange={this.onEdit(this.setPrefix.bind(this))}
           primaryColor={PRIMARY} />
         <p className="mt-1 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {t('admin.mdb_schema_prefix_hint')}
+          {this.tr('admin.mdb_schema_prefix_hint')}
         </p>
       </div>
 
       {/* Test result */}
-      {test?.ok && (
-        <Callout variant={test.already_initialised ? 'warning' : 'success'}>
+      {this.test?.ok && (
+        <Callout variant={this.test.already_initialised ? 'warning' : 'success'}>
           <span className="inline-flex items-center gap-1.5">
             <Check size={15} />
-            {test.server_version
-              ? t('admin.mdb_connected_version', { version: test.server_version })
-              : t('admin.mdb_connected')}
+            {this.test.server_version
+              ? this.tr('admin.mdb_connected_version', { version: this.test.server_version })
+              : this.tr('admin.mdb_connected')}
           </span>
-          {test.already_initialised && <div className="mt-1">{t('admin.mdb_already_initialised')}</div>}
+          {this.test.already_initialised && <div className="mt-1">{this.tr('admin.mdb_already_initialised')}</div>}
         </Callout>
       )}
-      {test && !test.ok && test.database_missing && (
-        <Callout variant={test.can_create_database ? 'info' : 'warning'}>
-          {test.can_create_database ? t('admin.mdb_missing_creatable') : t('admin.mdb_missing_not_creatable')}
+      {this.test && !this.test.ok && this.test.database_missing && (
+        <Callout variant={this.test.can_create_database ? 'info' : 'warning'}>
+          {this.test.can_create_database ? this.tr('admin.mdb_missing_creatable') : this.tr('admin.mdb_missing_not_creatable')}
         </Callout>
       )}
-      {test && !test.ok && !test.database_missing && (
-        <Callout variant="danger" title={t('admin.mdb_test_error')}>
-          {test.error}
+      {this.test && !this.test.ok && !this.test.database_missing && (
+        <Callout variant="danger" title={this.tr('admin.mdb_test_error')}>
+          {this.test.error}
         </Callout>
       )}
 
-      {migrateResult && (
-        <Callout variant={migrateResult.ok ? 'success' : 'danger'}>{migrateResult.text}</Callout>
+      {this.migrateResult && (
+        <Callout variant={this.migrateResult.ok ? 'success' : 'danger'}>{this.migrateResult.text}</Callout>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="secondary" size="sm" onClick={() => testMut.mutate()} loading={testMut.isPending} disabled={busy}>
-          {t('admin.mdb_test')}
+        <Button variant="secondary" size="sm" onClick={() => this.testMut.mutate()} loading={this.testMut.isPending} disabled={this.busy}>
+          {this.tr('admin.mdb_test')}
         </Button>
-        <Button variant="primary" size="sm" onClick={() => saveMut.mutate()} loading={saveMut.isPending} disabled={busy}>
-          {t('admin.mdb_save')}
+        <Button variant="primary" size="sm" onClick={() => this.saveMut.mutate()} loading={this.saveMut.isPending} disabled={this.busy}>
+          {this.tr('admin.mdb_save')}
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => migrateMut.mutate()} loading={migrateMut.isPending} disabled={busy}>
-          {t('admin.mdb_copy')}
+        <Button variant="secondary" size="sm" onClick={() => this.migrateMut.mutate()} loading={this.migrateMut.isPending} disabled={this.busy}>
+          {this.tr('admin.mdb_copy')}
         </Button>
       </div>
       <p className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-        {t('admin.mdb_copy_hint')}
+        {this.tr('admin.mdb_copy_hint')}
       </p>
     </div>
   )
+    })
+  }
 
-  return (
-    <Card title={t('admin.mdb_title')} icon={<Database size={16} />} className="mb-4"
-      subtitle={t('admin.mdb_subtitle')}>
-      {cfg.isLoading ? (
-        <div className="py-6 flex justify-center"><Spinner /></div>
-      ) : cfg.isError ? (
-        <Callout variant="danger" icon={<TriangleAlert size={16} />}>{t('admin.mdb_load_error')}</Callout>
-      ) : (
-        <>
-          <div className="flex flex-col gap-2">
-            <Radio
-              checked={mode === 'inherit'}
-              onChange={() => { setMode('inherit'); setTest(null) }}
-              label={t('admin.mdb_inherit', { engine: engineLabel(t, inheritedEngine as EngineName) })}
-              description={t('admin.mdb_inherit_desc')}
-            />
-            {engines.map((e) => (
-              <Radio
-                key={e}
-                checked={mode === e}
-                onChange={() => pickEngine(e)}
-                label={engineLabel(t, e)}
-              />
-            ))}
-          </div>
+  get show_case_1() {
+    return !!(!this.isSuperuser)
+  }
 
-          {fields}
+  get show_main() {
+    return !(!this.isSuperuser)
+  }
 
-          {mode === 'inherit' && hasOverride && (
-            <div className="mt-4">
-              <Callout variant="info" className="mb-3">{t('admin.mdb_will_revert')}</Callout>
-              <Button variant="secondary" size="sm" onClick={() => revertMut.mutate()} loading={revertMut.isPending} disabled={busy}>
-                {t('admin.mdb_revert')}
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+  get show_not_cfg_is_loading() {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    return !(this.cfg.isLoading)
+  }
 
-      {/* Known connections registry, grouped into this database-management card */}
-      <div className="mt-6 pt-6 border-t border-border">
-        <KnownConnectionsCard
-          basePath={`/admin/modules/${moduleId}/database`}
-          queryKey={['module', moduleId]}
-          embedded
-          heading={t('admin.dbconn_title')}
-          onChanged={() => void qc.invalidateQueries({ queryKey: ['module-database', moduleId] })}
-        />
-      </div>
-    </Card>
-  )
+  get show_not_cfg_is_error() {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading))) return undefined as never
+    return !(this.cfg.isError)
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.tr, this.isSuperuser, this.cfg], () => {
+      if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(this.cfg.isError)) return undefined as never
+      return ({ t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<Callout> icon: a value the property converts (null-when-false)). */
+  get Part1() {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(this.cfg.isError)) return undefined as never
+    return __parts.Part1
+  }
+
+  get selected_value() {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError))) return undefined as never
+    return this.mode === 'inherit'
+  }
+
+  get mdb_inherit_engine() {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError))) return undefined as never
+    return engineLabel(this.tr, this.inheritedEngine as EngineName)
+  }
+
+  /** The rows of the Repeater over `engines`. */
+  get rows_engines() {
+    return this.memo('rows_engines', [this.engines, this.isSuperuser, this.cfg, this.mode, this.tr], () => {
+      if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError))) return undefined as never
+      return this.engines.map((e) => {
+      return { e, selected_value: ((!(!this.isSuperuser)) && (!(this.cfg.isLoading)) && (!(this.cfg.isError))) ? (this.mode === e) : undefined, text: ((!(!this.isSuperuser)) && (!(this.cfg.isLoading)) && (!(this.cfg.isError))) ? (engineLabel(this.tr, e)) : undefined, key: e }
+    })
+    })
+  }
+
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_fields() {
+    return this.memo('content_fields', [this.fields, this.isSuperuser, this.cfg], () => {
+      if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError))) return undefined as never
+      return ({ children: this.fields })
+    })
+  }
+
+  get show_mode_inherit_has_override() {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError))) return undefined as never
+    return this.mode === 'inherit' && this.hasOverride
+  }
+
+  get enabled_unless_busy() {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError)) || !(this.mode === 'inherit' && this.hasOverride)) return undefined as never
+    return !(this.busy)
+  }
+
+  get visible() {
+    return this.memo('visible', [this.show_mode_inherit_has_override, this.show_not_cfg_is_error, this.isSuperuser, this.cfg], () => {
+      if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading))) return undefined as never
+      return this.show_mode_inherit_has_override && this.show_not_cfg_is_error
+    })
+  }
+
+  get visible2() {
+    return this.memo('visible2', [this.cfg, this.show_not_cfg_is_loading, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return this.cfg.isError && this.show_not_cfg_is_loading
+    })
+  }
+
+  get visible3() {
+    return this.memo('visible3', [this.show_not_cfg_is_error, this.show_not_cfg_is_loading, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return this.show_not_cfg_is_error && this.show_not_cfg_is_loading
+    })
+  }
+
+  get visible4() {
+    return this.memo('visible4', [this.visible, this.show_not_cfg_is_loading, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return this.visible && this.show_not_cfg_is_loading
+    })
+  }
+
+  /** `<KnownConnectionsCard>`, rendered by a ReactHost. */
+  get KnownConnectionsCard() {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    return KnownConnectionsCard
+  }
+
+  get known_connections_card_props() {
+    return this.memo('known_connections_card_props', [this.props, this.tr, this.qc, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return ({ basePath: `/admin/modules/${this.props.moduleId}/database`, queryKey: ['module', this.props.moduleId], embedded: true, heading: this.tr('admin.dbconn_title'), onChanged: () => void this.qc.invalidateQueries({ queryKey: ['module-database', this.props.moduleId] }) } as React.ComponentProps<typeof KnownConnectionsCard>)
+    })
+  }
+
+  onEdit<T>(setter: (v: T) => void) {
+    return (v: T) => { setter(v); this.test = null }
+  }
+
+  pickEngine(e: EngineName) {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    if (!this.hasOverride && this.mode === 'inherit' && this.main) {
+      this.host = this.main.host || ''
+      this.user = this.main.user || ''
+      this.database = this.main.database || ''
+      this.path = this.main.path || ''
+      this.port = e === this.main.engine && this.main.port != null ? String(this.main.port) : ''
+    }
+    this.mode = e
+    this.test = null
+  }
+
+  radio_button_checked_changed(_sender: unknown, _args: ValueChangedEventArgs) {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError))) return undefined as never
+ this.mode = 'inherit'; this.test = null }
+
+  radio_button_checked_changed2(_sender: unknown, args: ValueChangedEventArgs) {
+    const { e } = args.row as RowOf_rows_engines
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError))) return undefined as never
+    this.pickEngine(e)
+  }
+
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(!this.isSuperuser)) || !(!(this.cfg.isLoading)) || !(!(this.cfg.isError)) || !(this.mode === 'inherit' && this.hasOverride)) return undefined as never
+    this.revertMut.mutate()
+  }
+
+  /** `setHost` of the TSX: a value, or an update of the previous one. */
+  setHost(value: ModuleDatabaseCard['host'] | ((prev: ModuleDatabaseCard['host']) => ModuleDatabaseCard['host'])) {
+    this.host = typeof value === 'function' ? (value as (prev: ModuleDatabaseCard['host']) => ModuleDatabaseCard['host'])(this.host) : value
+  }
+
+  /** `setPort` of the TSX: a value, or an update of the previous one. */
+  setPort(value: ModuleDatabaseCard['port'] | ((prev: ModuleDatabaseCard['port']) => ModuleDatabaseCard['port'])) {
+    this.port = typeof value === 'function' ? (value as (prev: ModuleDatabaseCard['port']) => ModuleDatabaseCard['port'])(this.port) : value
+  }
+
+  /** `setDatabase` of the TSX: a value, or an update of the previous one. */
+  setDatabase(value: ModuleDatabaseCard['database'] | ((prev: ModuleDatabaseCard['database']) => ModuleDatabaseCard['database'])) {
+    this.database = typeof value === 'function' ? (value as (prev: ModuleDatabaseCard['database']) => ModuleDatabaseCard['database'])(this.database) : value
+  }
+
+  /** `setUser` of the TSX: a value, or an update of the previous one. */
+  setUser(value: ModuleDatabaseCard['user'] | ((prev: ModuleDatabaseCard['user']) => ModuleDatabaseCard['user'])) {
+    this.user = typeof value === 'function' ? (value as (prev: ModuleDatabaseCard['user']) => ModuleDatabaseCard['user'])(this.user) : value
+  }
+
+  /** `setPath` of the TSX: a value, or an update of the previous one. */
+  setPath(value: ModuleDatabaseCard['path'] | ((prev: ModuleDatabaseCard['path']) => ModuleDatabaseCard['path'])) {
+    this.path = typeof value === 'function' ? (value as (prev: ModuleDatabaseCard['path']) => ModuleDatabaseCard['path'])(this.path) : value
+  }
+
+  /** `setPrefix` of the TSX: a value, or an update of the previous one. */
+  setPrefix(value: ModuleDatabaseCard['prefix'] | ((prev: ModuleDatabaseCard['prefix']) => ModuleDatabaseCard['prefix'])) {
+    this.prefix = typeof value === 'function' ? (value as (prev: ModuleDatabaseCard['prefix']) => ModuleDatabaseCard['prefix'])(this.prefix) : value
+  }
+
 }
+
+type RowOf_rows_engines = ModuleDatabaseCard['rows_engines'][number]
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ModuleDatabaseCardStores = ReturnType<ModuleDatabaseCard['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type ModuleDatabaseCardHooks = ReturnType<ModuleDatabaseCard['useHooks']>
+
+export default ModuleDatabaseCard.component()

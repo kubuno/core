@@ -1,0 +1,69 @@
+<!-- MarketplacePanel — converted from MarketplacePanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="MarketplacePanelProps">
+  <Panel AccessibleRole="PushButton"
+         AutoSize="true"
+         Class="mb-4 inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary"
+         OnClick="panel_click">
+    <Icon Name="ArrowLeft" Size="15"/>
+    <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.m_back}"/>
+  </Panel>
+  <Stack Direction="LeftToRight" CrossAlign="Center" Class="mb-4">
+    <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="Center" BackColor="PrimaryLight" Class="w-8 h-8 rounded-lg">
+      <Icon Name="Package" Size="16" Class="text-primary"/>
+    </Stack>
+    <Panel>
+      <Label Text="{Res admin.m_marketplace}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+      <Label Text="{Res admin.mk_subtitle}" Overflow="Wrap" ForeColor="TextTertiary"/>
+    </Panel>
+  </Stack>
+  <Stack Direction="LeftToRight"
+         CrossAlign="Start"
+         ForeColor="TextPrimary"
+         BackColor="SuccessLight"
+         Visible="{Binding show_ok_msg}"
+         Class="mb-4 rounded-lg border border-success px-4 py-3 text-sm">
+    <Icon Name="Check" Size="16" Class="mt-0.5 flex-shrink-0 text-success"/>
+    <Label HtmlTag="Span" Text="{Binding okMsg}" Overflow="Wrap" InheritFontSize="true" Class="flex-1"/>
+    <Panel AccessibleRole="PushButton" AutoSize="true" Class="flex-shrink-0" OnClick="panel_click2">
+      <Icon Name="X" Size="14"/>
+    </Panel>
+  </Stack>
+  <Stack Direction="LeftToRight"
+         CrossAlign="Start"
+         ForeColor="Danger"
+         BackColor="DangerLight"
+         Visible="{Binding show_err_msg}"
+         Class="mb-4 rounded-lg border border-danger px-4 py-3 text-sm">
+    <Icon Name="AlertCircle" Size="16" Class="mt-0.5 flex-shrink-0"/>
+    <Label HtmlTag="Span" Text="{Binding errMsg}" Overflow="Wrap" InheritFontSize="true" Class="flex-1"/>
+    <Panel AccessibleRole="PushButton" AutoSize="true" Class="flex-shrink-0" OnClick="panel_click3">
+      <Icon Name="X" Size="14"/>
+    </Panel>
+  </Stack>
+  <Label Text="{Res admin.mk_loading}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding isLoading}"/>
+  <Label Text="{Res admin.mk_catalog_error}" Overflow="Wrap" ForeColor="Danger" Visible="{Binding isError}"/>
+  <Stack Direction="LeftToRight"
+         CrossAlign="Center"
+         Justify="SpaceBetween"
+         BackColor="PrimaryLight"
+         Visible="{Binding show_self}"
+         Class="mb-4 rounded-lg px-4 py-2.5">
+    <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" ForeColor="TextPrimary"/>
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           Class="text-sm font-medium text-primary hover:text-primary-hover flex-shrink-0"
+           OnClick="panel_click4">
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+    </Panel>
+  </Stack>
+  <Label Text="{Res admin.mk_related_empty}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_related_active_visible}"/>
+  <Repeater ItemKey="key" ItemsSource="{Binding rows_categories}">
+    <Panel Class="mb-6">
+      <Label HtmlTag="H4" Text="{Binding cat}" FontWeight="Bold" Overflow="Wrap" ForeColor="TextSecondary" Class="mb-2"/>
+      <Panel Class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- TODO(views-migrate): a list inside a list (nested Repeater) -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+    </Panel>
+  </Repeater>
+</Panel>

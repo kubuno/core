@@ -50,6 +50,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Administration ▸ Groups, installed modules, a module's page and settings, and the marketplace are views** (editable in the Visual Studio designer), checked identical to the previous screens.
 - **Administration ▸ Users is made of views**: the accounts list, an account's sheet (identity card, profile, security and activity tabs, their cards) and the « Reset the password » dialog are `.kbview` views editable in the Visual Studio designer, checked identical to the previous screens (pixels, text, accessibility tree and keyboard order; light and dark, three languages, desktop and phone).
 - **The account settings' API tokens, two-step verification, backup codes and « Download my data » sections are views**
   (`.kbview` + code-behind, editable in the Visual Studio designer), converted with the codemod and checked identical

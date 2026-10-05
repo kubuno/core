@@ -1,0 +1,53 @@
+<!-- ModulesPanel — converted from ModulesPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <MarketplacePanel> is no .kbview element (./MarketplacePanel#default) -->
+  <ReactHost Component="{Binding MarketplacePanel}" Props="{Binding marketplace_panel_props}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+      <Label HtmlTag="H1"
+             Text="{Res admin.nav_installed_modules}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.m_count, Count={Binding m_count_count}}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Visible="{Binding show_data}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Panel HtmlTag="Span" Class="flex-1"/>
+      <Button Variant="Secondary" IconSize="15" Icon="Store" Text="{Res admin.m_marketplace}" OnClick="button_click"/>
+    </Panel>
+    <Stack Direction="LeftToRight"
+           CrossAlign="Start"
+           ForeColor="TextPrimary"
+           BackColor="WarningLight"
+           Visible="{Binding show_info_msg}"
+           Class="mb-4 rounded-lg border border-warning px-4 py-3 text-sm">
+      <Icon Name="AlertCircle" Size="16" Class="mt-0.5 flex-shrink-0 text-warning"/>
+      <Label HtmlTag="Span" Text="{Binding infoMsg}" Overflow="Wrap" InheritFontSize="true" Class="flex-1"/>
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             Class="flex-shrink-0 text-text-tertiary hover:text-text-primary"
+             OnClick="panel_click">
+        <Icon Name="X" Size="14"/>
+      </Panel>
+    </Stack>
+    <Stack Direction="LeftToRight"
+           CrossAlign="Start"
+           ForeColor="Danger"
+           BackColor="DangerLight"
+           Visible="{Binding show_error_msg}"
+           Class="mb-4 rounded-lg border border-danger px-4 py-3 text-sm">
+      <Icon Name="AlertCircle" Size="16" Class="mt-0.5 flex-shrink-0"/>
+      <Label HtmlTag="Span" Text="{Binding errorMsg}" Overflow="Wrap" InheritFontSize="true" Class="flex-1"/>
+      <Panel AccessibleRole="PushButton" AutoSize="true" Class="flex-shrink-0" OnClick="panel_click2">
+        <Icon Name="X" Size="14"/>
+      </Panel>
+    </Stack>
+    <!-- TODO(views-migrate): <DataTable> columns, rowKey, filtered, onClearFilters, rowActions, onRowClick, defaultSort, t, toolbar: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Panel>
+</Panel>

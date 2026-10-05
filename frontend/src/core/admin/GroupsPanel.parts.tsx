@@ -1,19 +1,17 @@
-import { formatDate } from '../../core/intl/datetime'
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { foldIncludes } from '@ui'
-import { api } from '../api/client'
-import { useAdminAction } from './adminAction'
-import type { UserGroup } from '../types'
-import { Users, Plus, Trash2, Edit2, X, Check, Shield, ChevronDown, ChevronRight } from 'lucide-react'
-import { Checkbox, Button, Input } from '@ui'
-import { useConfirm } from '../hooks/useConfirm'
-import ConfirmDialog from '@ui/ConfirmDialog'
-
-// ── Permissions disponibles ───────────────────────────────────────────────────
-
+/**
+ * The parts of `GroupsPanel.kbview` still written in React (the codemod could not convert them; see the
+ * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
+ */
+import { formatDate } from "../../core/intl/datetime"
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { api } from "../api/client"
+import type { UserGroup } from "../types"
+import { Users, Trash2, Edit2, X, Check, Shield, ChevronDown, ChevronRight } from "lucide-react"
+import { Checkbox, Button, Input } from "@ui"
+import { useConfirm } from "../hooks/useConfirm"
+import ConfirmDialog from "@ui/ConfirmDialog"
 const KNOWN_PERMISSIONS: { key: string; labelKey: string; descKey: string }[] = [
   {
     key:      'api_tokens.create',
@@ -22,8 +20,6 @@ const KNOWN_PERMISSIONS: { key: string; labelKey: string; descKey: string }[] = 
   },
   // D'autres permissions peuvent être ajoutées par les modules
 ]
-
-// ── Badge permission ──────────────────────────────────────────────────────────
 
 function PermBadge({ perm }: { perm: string }) {
   const { t } = useTranslation()
@@ -36,8 +32,7 @@ function PermBadge({ perm }: { perm: string }) {
     </span>
   )
 }
-
-// ── Formulaire de création / édition ─────────────────────────────────────────
+export { PermBadge }
 
 function GroupForm({
   initial,
@@ -163,8 +158,7 @@ function GroupForm({
     </div>
   )
 }
-
-// ── Ligne d'un groupe ─────────────────────────────────────────────────────────
+export { GroupForm }
 
 function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: number }; onDeleted: () => void }) {
   const { t } = useTranslation()
@@ -318,88 +312,4 @@ function GroupRow({ group, onDeleted }: { group: UserGroup & { member_count: num
     </div>
   )
 }
-
-// ── Panneau principal ─────────────────────────────────────────────────────────
-
-export default function GroupsPanel() {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const [showCreate, setShowCreate] = useState(false)
-
-  // `/admin/groups?action=create` opens the form directly (adminAction.ts).
-  useAdminAction('create', () => setShowCreate(true))
-
-  // `?q=` narrows the list — what the admin search deep-links to when a group
-  // is picked among its results.
-  const [params] = useSearchParams()
-  const filter = params.get('q')?.trim() ?? ''
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-groups'],
-    queryFn: () =>
-      api.get<{ groups: (UserGroup & { member_count: number })[] }>('/admin/groups')
-        .then((r) => r.data.groups),
-  })
-
-  const createGroup = useMutation({
-    mutationFn: (body: object) => api.post('/admin/groups', body),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-groups'] }); setShowCreate(false) },
-  })
-
-  // Accent-insensitive, like every other local match in the console.
-  const rows = filter
-    ? data?.filter(g => foldIncludes(`${g.name} ${g.description ?? ''}`, filter))
-    : data
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h3 className="text-sm font-medium text-text-primary">{t('admin.g_title')}</h3>
-          <p className="text-sm text-text-secondary mt-0.5">
-            {t('admin.g_desc')}
-          </p>
-        </div>
-        <Button icon={<Plus size={15} />} onClick={() => setShowCreate(!showCreate)}>
-          {t('admin.g_new')}
-        </Button>
-      </div>
-
-      {showCreate && (
-        <div className="mb-5 p-4 border border-primary rounded-lg bg-primary-light/10">
-          <h4 className="text-sm font-medium text-text-primary mb-3">{t('admin.g_create')}</h4>
-          <GroupForm
-            onSave={(data) => createGroup.mutate(data)}
-            onCancel={() => setShowCreate(false)}
-          />
-        </div>
-      )}
-
-      {isLoading && <p className="text-sm text-text-secondary py-4">{t('common.loading')}</p>}
-
-      {rows && rows.length === 0 && (
-        <div className="text-center py-10 text-text-tertiary">
-          <Users size={32} className="mx-auto mb-2 opacity-30" />
-          <p className="text-sm">{t('admin.g_none')}</p>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {rows?.map((g) => (
-          <GroupRow
-            key={g.id}
-            group={g}
-            onDeleted={() => queryClient.invalidateQueries({ queryKey: ['admin-groups'] })}
-          />
-        ))}
-      </div>
-
-      <div className="mt-6 p-3 bg-surface-1 rounded-lg border border-border">
-        <p className="text-sm text-text-secondary">
-          <strong className="text-text-primary">{t('admin.g_access_logic_title')}</strong>{' '}
-          {t('admin.g_access_logic')}
-        </p>
-      </div>
-    </div>
-  )
-}
+export { GroupRow }

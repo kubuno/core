@@ -1,0 +1,66 @@
+<!-- ModuleAdminSettings — converted from ModuleAdminSettings.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="ModuleAdminSettingsProps" Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-6">
+    <Spinner/>
+  </Stack>
+  <Label Text="{Res admin.m_no_settings_title}"
+         Overflow="Wrap"
+         ForeColor="TextTertiary"
+         InheritFontSize="true"
+         Visible="{Binding show_case_2}"
+         Class="py-6 [font-size:var(--kb-text-meta)]"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-4">
+      <Panel Class="relative max-w-md">
+        <Icon Name="Search" Size="15" Class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary"/>
+        <TextField Text="{Binding filter, Mode=TwoWay}" Placeholder="{Binding placeholder}" FieldClass="pl-8"/>
+      </Panel>
+      <Label Text="{Binding p_text}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_filtering_matches}"
+             Class="mt-2 [font-size:var(--kb-text-micro)]"/>
+    </Panel>
+    <Callout Variant="Danger"
+             Dismissible="true"
+             Body="{Binding error}"
+             Visible="{Binding show_error}"
+             Class="mb-4"
+             OnDismiss="callout_dismiss"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_render_matches_matches}" Visible="{Binding filtering}"/>
+    <!-- TODO(views-migrate): <Tabs> tabs: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding visible8}"/>
+    <!-- TODO(views-migrate): <ExtraTab> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding visible9}"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}"
+               Props="{Binding content_category_section_active_tab_active_categ}"
+               Visible="{Binding visible10}"/>
+    <Label Text="{Binding p_text2}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Visible="{Binding visible11}"
+           Class="py-6 [font-size:var(--kb-text-meta)]"/>
+    <Panel Visible="{Binding visible12}" Class="space-y-3">
+      <!-- TODO(views-migrate): a list whose item is not a single element -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    </Panel>
+    <Panel HtmlTag="P"
+           ForeColor="TextTertiary"
+           Visible="{Binding show_shows_sections_dirty_count}"
+           Class="mt-4 [font-size:var(--kb-text-meta)]">
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+      <Panel HtmlTag="Span" Class="ml-2">
+        <!-- TODO(views-migrate): elements held in an expression -->
+        <ReactHost Component="{Binding Fragment}" Props="{Binding content_elsewhere_action_object_keys}"/>
+      </Panel>
+    </Panel>
+  </Panel>
+  <!-- TODO(views-migrate): <InheritanceChainWindow> is no .kbview element (./settings/InheritanceChainWindow#default) -->
+  <ReactHost Component="{Binding InheritanceChainWindow}" Props="{Binding inheritance_chain_window_props}" Visible="{Binding visible13}"/>
+  <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+  <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding visible14}"/>
+</Panel>

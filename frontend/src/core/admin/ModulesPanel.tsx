@@ -1,42 +1,22 @@
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/client'
-import {
-  AlertCircle, CircleSlash, Package, Search, Settings, Store, TriangleAlert, X,
-} from 'lucide-react'
-import { Badge, Button, DataTable, Input, type DataTableColumn, type DataTableRowAction } from '@ui'
-import MarketplacePanel from './MarketplacePanel'
-import { adminUrl, useAdminAction } from './adminAction'
-import type { AdminSectionProps } from './sections/registry'
-import { moduleGlyph } from './nav/moduleGlyph'
-import {
-  useAdminModules, useModuleLiveState, useToggleModule,
-  type AdminModule, type ModuleLiveState,
-} from './adminModules'
-import { getPublicConfig } from '../api/publicConfig'
+/**
+ * Code-behind of `ModulesPanel.kbview` (converted from `ModulesPanel.tsx` by @kubuno/views-migrate).
+ */
+import { bind, type MouseEventArgs } from '@kubuno/views'
+import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { api } from "../api/client"
+import { Package, Settings } from "lucide-react"
+import { Badge, type DataTableColumn, type DataTableRowAction } from "@ui"
+import MarketplacePanel from "./MarketplacePanel"
+import { adminUrl, useAdminAction } from "./adminAction"
+import { moduleGlyph } from "./nav/moduleGlyph"
+import { useAdminModules, useModuleLiveState, useToggleModule, type AdminModule, type ModuleLiveState } from "./adminModules"
+import { getPublicConfig } from "../api/publicConfig"
 
-// Applications ▸ Modules installés — the inventory, at `/admin/modules`.
-//
-// ── A list of services, not a wall of switches ───────────────────────────────
-// This used to be a grid of cards, each carrying a bare toggle. A toggle says
-// "on" and nothing else: it does not say on FOR WHOM, it does not distinguish a
-// service somebody switched off from one that is switched on and answering
-// nothing, and a reader scanning twenty of them has to interpret twenty
-// switches rather than read twenty sentences.
-//
-// So the panel is a list, and every row spells its service's state out in
-// words — "Activé pour tout le monde", "Désactivé pour tout le monde",
-// "Activé — ne répond pas". The state is a sortable column, because "show me
-// everything that is off" is the question this page exists to answer. Switching
-// a service is a deliberate act in the row's menu, not something a stray click
-// on a switch can do while scrolling.
-//
-// One module's administration is not opened *inside* this panel: it is a place
-// of its own (`/admin/modules/<id>`, rendered by `ModuleAdminPage`), which is
-// what lets the sidebar list every module as a row and an operator bookmark
-// one. This panel therefore only navigates; it never holds a "currently open
-// module" of its own.
+import { ViewBase } from './ModulesPanel.kbview'
+import * as __parts from './ModulesPanel.parts'
+import { ServiceStatus } from './ModulesPanel.parts'
 
 function useDefaultModule() {
   return useQuery({
@@ -50,116 +30,82 @@ function useDefaultModule() {
   })
 }
 
-/**
- * How a service's availability is SAID — the sentence, not the switch.
- *
- * The three states are not degrees of one thing and never share a shape:
- * `disabled` is a decision (neutral), `unreachable` is an incident (a warning),
- * `running` is the normal case and is stated plainly rather than decorated.
- */
-const STATUS_KEY: Record<ModuleLiveState, string> = {
-  running:     'admin.m_on_everyone',
-  unknown:     'admin.m_on_everyone',
-  disabled:    'admin.m_off_everyone',
-  unreachable: 'admin.m_on_unreachable',
-}
-
-/** Sort order of the status column: what needs attention first. */
 const STATUS_RANK: Record<ModuleLiveState, number> = {
   unreachable: 0, disabled: 1, running: 2, unknown: 3,
 }
 
-function ServiceStatus({ state }: { state: ModuleLiveState }) {
-  const { t } = useTranslation()
-  const label = t(STATUS_KEY[state])
-  const glyph = state === 'disabled'
-    ? <CircleSlash size={14} className="shrink-0 text-text-tertiary" />
-    : state === 'unreachable'
-      ? <TriangleAlert size={14} className="shrink-0 text-warning" />
-      : <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-success" />
-  const tone = state === 'disabled'
-    ? 'text-text-tertiary'
-    : state === 'unreachable' ? 'text-warning' : 'text-text-secondary'
-  return (
-    <span className={`inline-flex items-center gap-2 text-sm ${tone}`}>
-      {glyph}
-      <span className="truncate">{label}</span>
-    </span>
-  )
-}
+export class ModulesPanel extends ViewBase {
+  @bind accessor errorMsg: string | null = null
+  @bind accessor infoMsg: string | null = null
+  @bind accessor showMarketplace = false
+  @bind accessor query = ''
+  tr!: ModulesPanelStores['t']
+  queryClient!: ModulesPanelStores['queryClient']
+  data!: ModulesPanelStores['data']
+  isLoading!: boolean
+  liveState!: (module: AdminModule) => ModuleLiveState
+  defaultModulePath!: string | null | undefined
+  setDefault!: ModulesPanelHooks['setDefault']
+  toggle!: ModulesPanelStores['toggle']
+  rows!: AdminModule[]
 
-export default function ModulesPanel({ navigate }: AdminSectionProps) {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [infoMsg,  setInfoMsg]  = useState<string | null>(null)
-  const [showMarketplace, setShowMarketplace] = useState(false)
-  const [query, setQuery] = useState('')
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const queryClient = useQueryClient()
+    const { data, isLoading } = useAdminModules()
+    const liveState = useModuleLiveState()
+    const { data: defaultModulePath } = useDefaultModule()
+    const toggle = useToggleModule()
+    return { t, queryClient, data, isLoading, liveState, defaultModulePath, toggle }
+  }
 
-  const { data, isLoading } = useAdminModules()
-  const liveState = useModuleLiveState()
-
-  // `/admin/modules?action=settings&id=<module>` is the historic spelling minted
-  // by the admin search and by alerts. It now RESOLVES to the module's own page
-  // rather than opening a panel in place.
-  useAdminAction('settings', (id) => {
-    if (id) navigate(adminUrl({ tab: 'modules', params: { module: id } }), { replace: true })
-  })
-
-  const { data: defaultModulePath } = useDefaultModule()
-
-  const setDefault = useMutation({
-    mutationFn: (path: string | null) =>
-      api.patch('/admin/settings', { 'navigation.default_module': path }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['public-config'] })
-    },
-    onError: (err) => {
-      const msg = (err as { message?: string })?.message ?? String(err)
-      setErrorMsg(msg)
-    },
-  })
-
-  const toggle = useToggleModule()
-
-  const flip = (id: string, is_enabled: boolean) => {
-    setErrorMsg(null)
-    toggle.mutate({ id, is_enabled }, {
-      onSuccess: (result) => {
-        if (!result.is_enabled && result.also_disabled.length > 0) {
-          setInfoMsg(t('admin.m_cascade', { list: result.also_disabled.join(', ') }))
-        }
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const queryClient = this.queryClient
+    const data = this.data
+    useAdminAction('settings', (id) => {
+      if (id) this.props.navigate(adminUrl({ tab: 'modules', params: { module: id } }), { replace: true })
+    })
+    const setDefault = useMutation({
+      mutationFn: (path: string | null) =>
+        api.patch('/admin/settings', { 'navigation.default_module': path }),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['public-config'] })
       },
       onError: (err) => {
         const msg = (err as { message?: string })?.message ?? String(err)
-        setErrorMsg(msg)
-        console.error('[ModulesPanel] toggle failed:', err)
+        this.errorMsg = msg
       },
     })
+    this.publish({ setDefault })
+    const rows = useMemo(() => {
+      const all = [...(data ?? [])].sort((a, b) => a.display_name.localeCompare(b.display_name))
+      const q = this.query.trim().toLowerCase()
+      if (!q) return all
+      return all.filter(m =>
+        m.display_name.toLowerCase().includes(q)
+        || (m.description ?? '').toLowerCase().includes(q)
+        || m.id.toLowerCase().includes(q))
+    }, [data, this.query])
+    this.publish({ rows })
+    return { setDefault, rows }
   }
 
-  const open = (mod: AdminModule) =>
-    navigate(adminUrl({ tab: 'modules', params: { module: mod.id } }))
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, queryClient: s.queryClient, data: s.data, isLoading: s.isLoading, liveState: s.liveState, defaultModulePath: s.defaultModulePath, toggle: s.toggle })
+    const h = this.useHooks()
+    this.publish({ setDefault: h.setDefault, rows: h.rows })
+  }
 
-  const isDefault = (mod: AdminModule) => defaultModulePath === `/${mod.id}`
-
-  // Matched on the name AND the description: an operator looking for the file
-  // browser types "fichiers", not the module's own name.
-  const rows = useMemo(() => {
-    const all = [...(data ?? [])].sort((a, b) => a.display_name.localeCompare(b.display_name))
-    const q = query.trim().toLowerCase()
-    if (!q) return all
-    return all.filter(m =>
-      m.display_name.toLowerCase().includes(q)
-      || (m.description ?? '').toLowerCase().includes(q)
-      || m.id.toLowerCase().includes(q))
-  }, [data, query])
-
-  const columns: DataTableColumn<AdminModule>[] = [
+  get columns(): DataTableColumn<AdminModule>[] {
+    return this.memo('columns', [this.tr, this.liveState], () => [
     {
       id:         'app',
-      header:     t('admin.m_col_app'),
-      headerText: t('admin.m_col_app'),
+      header:     this.tr('admin.m_col_app'),
+      headerText: this.tr('admin.m_col_app'),
       required:   true,
       primary:    true,
       minWidth:   260,
@@ -185,7 +131,7 @@ export default function ModulesPanel({ navigate }: AdminSectionProps) {
                 <span className="shrink-0 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
                   v{m.version}
                 </span>
-                {isDefault(m) && <Badge size="sm">{t('admin.m_default')}</Badge>}
+                {this.isDefault(m) && <Badge size="sm">{this.tr('admin.m_default')}</Badge>}
               </span>
               {m.description && (
                 <span className="block truncate text-text-tertiary"
@@ -204,109 +150,155 @@ export default function ModulesPanel({ navigate }: AdminSectionProps) {
     // the page exists for off to the side.
     {
       id:         'status',
-      header:     t('admin.m_col_status'),
-      headerText: t('admin.m_col_status'),
+      header:     this.tr('admin.m_col_status'),
+      headerText: this.tr('admin.m_col_status'),
       // Narrow enough that the status text is never clipped by the card edge:
       // the app column absorbs the remaining width and truncates instead.
       minWidth:   150,
       width:      190,
-      sortValue:  m => STATUS_RANK[liveState(m)],
-      cell:       m => <ServiceStatus state={liveState(m)} />,
+      sortValue:  m => STATUS_RANK[this.liveState(m)],
+      cell:       m => <ServiceStatus state={this.liveState(m)} />,
     },
-  ]
-
-  const rowActions: DataTableRowAction<AdminModule>[] = [
-    {
-      id: 'manage', label: t('admin.card_manage'), icon: <Settings size={15} />,
-      onClick: open,
-    },
-    {
-      id: 'enable', label: t('admin.m_turn_on'),
-      hidden:  m => m.is_enabled,
-      onClick: m => flip(m.id, true),
-    },
-    {
-      id: 'disable', label: t('admin.m_turn_off'),
-      hidden:  m => !m.is_enabled,
-      onClick: m => flip(m.id, false),
-    },
-    {
-      id: 'default', label: t('admin.m_default_set'),
-      // A switched-off service cannot be what the product opens on, and a
-      // service that already is offers the opposite action instead.
-      hidden:  m => !m.is_enabled || isDefault(m),
-      onClick: m => setDefault.mutate(`/${m.id}`),
-    },
-    {
-      id: 'undefault', label: t('admin.m_default_unset'),
-      hidden:  m => !isDefault(m),
-      onClick: () => setDefault.mutate(null),
-    },
-  ]
-
-  if (showMarketplace) {
-    return <MarketplacePanel onBack={() => setShowMarketplace(false)} />
+  ])
   }
 
-  return (
-    <div className="min-w-0">
-      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-          {t('admin.nav_installed_modules')}
-        </h1>
-        {data && (
-          <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('admin.m_count', { count: data.length })}
-          </span>
-        )}
-        <span className="flex-1" />
-        <Button variant="secondary" icon={<Store size={15} />} onClick={() => setShowMarketplace(true)}>
-          {t('admin.m_marketplace')}
-        </Button>
-      </div>
+  get rowActions(): DataTableRowAction<AdminModule>[] {
+    return this.memo('rowActions', [this.tr, this.setDefault], () => [
+    {
+      id: 'manage', label: this.tr('admin.card_manage'), icon: <Settings size={15} />,
+      onClick: this.open.bind(this),
+    },
+    {
+      id: 'enable', label: this.tr('admin.m_turn_on'),
+      hidden:  m => m.is_enabled,
+      onClick: m => this.flip(m.id, true),
+    },
+    {
+      id: 'disable', label: this.tr('admin.m_turn_off'),
+      hidden:  m => !m.is_enabled,
+      onClick: m => this.flip(m.id, false),
+    },
+    {
+      id: 'default', label: this.tr('admin.m_default_set'),
+      // A switched-off service cannot be what the product opens on, and a
+      // service that already is offers the opposite action instead.
+      hidden:  m => !m.is_enabled || this.isDefault(m),
+      onClick: m => this.setDefault.mutate(`/${m.id}`),
+    },
+    {
+      id: 'undefault', label: this.tr('admin.m_default_unset'),
+      hidden:  m => !this.isDefault(m),
+      onClick: () => this.setDefault.mutate(null),
+    },
+  ])
+  }
 
-      {infoMsg && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning bg-warning-light px-4 py-3 text-sm text-text-primary">
-          <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-warning" />
-          <span className="flex-1">{infoMsg}</span>
-          <button onClick={() => setInfoMsg(null)} className="flex-shrink-0 text-text-tertiary hover:text-text-primary">
-            <X size={14} />
-          </button>
-        </div>
-      )}
-      {errorMsg && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-danger bg-danger-light px-4 py-3 text-sm text-danger">
-          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-          <span className="flex-1">{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="flex-shrink-0">
-            <X size={14} />
-          </button>
-        </div>
-      )}
+  get show_case_1() {
+    return !!(this.showMarketplace)
+  }
 
-      <DataTable
-        rows={rows}
-        columns={columns}
-        rowKey={m => m.id}
-        loading={isLoading}
-        filtered={query.trim().length > 0}
-        onClearFilters={() => setQuery('')}
-        rowActions={rowActions}
-        onRowClick={open}
-        defaultSort={{ columnId: 'app', direction: 'asc' }}
-        pageSize={0}
-        t={t}
-        toolbar={
-          <Input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder={t('admin.m_filter_ph')}
-            aria-label={t('admin.m_filter_ph')}
-            leftIcon={<Search size={16} />}
-            className="w-64 max-w-full"
-          />
+  /** `<MarketplacePanel>`, rendered by a ReactHost. */
+  get MarketplacePanel() {
+    if (!(this.showMarketplace)) return undefined as never
+    return MarketplacePanel
+  }
+
+  get marketplace_panel_props() {
+    return this.memo('marketplace_panel_props', [this.showMarketplace], () => {
+      if (!(this.showMarketplace)) return undefined as never
+      return ({ onBack: () => this.showMarketplace = false } as React.ComponentProps<typeof MarketplacePanel>)
+    })
+  }
+
+  get show_main() {
+    return !(this.showMarketplace)
+  }
+
+  get show_data() {
+    return this.memo('show_data', [this.data, this.showMarketplace], () => {
+      if (!(!(this.showMarketplace))) return undefined as never
+      return !!(this.data)
+    })
+  }
+
+  get m_count_count() {
+    if (!(!(this.showMarketplace)) || !(this.data)) return undefined as never
+    return this.data.length
+  }
+
+  get show_info_msg() {
+    if (!(!(this.showMarketplace))) return undefined as never
+    return !!(this.infoMsg)
+  }
+
+  get show_error_msg() {
+    if (!(!(this.showMarketplace))) return undefined as never
+    return !!(this.errorMsg)
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.query, this.rowActions, this.tr, this.showMarketplace], () => {
+      if (!(!(this.showMarketplace))) return undefined as never
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, query: this.query, setQuery: this.setQuery.bind(this), rowActions: this.rowActions, open: this.open.bind(this), t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, filtered, onClearFilters, rowActions, onRowClick, defaultSort, t, toolbar: no .kbview property). */
+  get Part1() {
+    if (!(!(this.showMarketplace))) return undefined as never
+    return __parts.Part1
+  }
+
+  flip(id: string, is_enabled: boolean) {
+    this.errorMsg = null
+    this.toggle.mutate({ id, is_enabled }, {
+      onSuccess: (result) => {
+        if (!result.is_enabled && result.also_disabled.length > 0) {
+          this.infoMsg = this.tr('admin.m_cascade', { list: result.also_disabled.join(', ') })
         }
-      />
-    </div>
-  )
+      },
+      onError: (err) => {
+        const msg = (err as { message?: string })?.message ?? String(err)
+        this.errorMsg = msg
+        console.error('[ModulesPanel] toggle failed:', err)
+      },
+    })
+  }
+
+  open(mod: AdminModule) {
+    return this.props.navigate(adminUrl({ tab: 'modules', params: { module: mod.id } }))
+  }
+
+  isDefault(mod: AdminModule) {
+    return this.defaultModulePath === `/${mod.id}`
+  }
+
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.showMarketplace))) return undefined as never
+    this.showMarketplace = true
+  }
+
+  panel_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.showMarketplace)) || !(this.infoMsg)) return undefined as never
+    this.infoMsg = null
+  }
+
+  panel_click2(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.showMarketplace)) || !(this.errorMsg)) return undefined as never
+    this.errorMsg = null
+  }
+
+  /** `setQuery` of the TSX: a value, or an update of the previous one. */
+  setQuery(value: ModulesPanel['query'] | ((prev: ModulesPanel['query']) => ModulesPanel['query'])) {
+    this.query = typeof value === 'function' ? (value as (prev: ModulesPanel['query']) => ModulesPanel['query'])(this.query) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ModulesPanelStores = ReturnType<ModulesPanel['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type ModulesPanelHooks = ReturnType<ModulesPanel['useHooks']>
+
+export default ModulesPanel.component()

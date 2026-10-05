@@ -1,0 +1,34 @@
+<!-- ModuleAdminPage — converted from ModuleAdminPage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <EmptyState ActionLabel="{Res admin.m_retry}"
+              Variant="Error"
+              IconSize="26"
+              Icon="PackageX"
+              Title="{Res admin.m_load_error_title}"
+              Description="{Res admin.m_load_error_desc}"
+              Visible="{Binding show_case_2}"
+              OnAction="empty_state_action"/>
+  <EmptyState ActionLabel="{Res admin.m_back_to_list}"
+              Variant="Unavailable"
+              IconSize="26"
+              Icon="PackageX"
+              Title="{Res admin.m_not_installed_title}"
+              Description="{Res admin.m_not_installed_desc, Id={Binding id}}"
+              Visible="{Binding show_case_3}"
+              OnAction="backToList"/>
+  <Panel Visible="{Binding show_case_4}" Class="min-w-0">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_header}"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_columns_group_heading_group}"/>
+  </Panel>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_header2}"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_columns_scope_callout_module_state_card}"/>
+  </Panel>
+</Panel>
