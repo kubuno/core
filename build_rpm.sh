@@ -142,7 +142,7 @@ install -m 755 %{_srcdir}/target/release/kubuno-core %{buildroot}/usr/bin/kubuno
 install -m 755 %{_srcdir}/target/release/kubuno       %{buildroot}/usr/bin/kubuno
 gzip -c %{_srcdir}/man/kubuno.1 > %{buildroot}/usr/share/man/man1/kubuno.1.gz
 cp -r %{_srcdir}/frontend/dist/. %{buildroot}/usr/share/kubuno/frontend/
-cp %{_srcdir}/migrations/*.sql %{buildroot}/usr/share/kubuno/migrations/
+cp -r %{_srcdir}/migrations/. %{buildroot}/usr/share/kubuno/migrations/
 cp -r %{_srcdir}/themes/. %{buildroot}/usr/share/kubuno/themes/
 install -m 644 %{_srcdir}/config.toml.example %{buildroot}/etc/kubuno/config.toml.example
 install -m 644 %{_sourcedir}/kubuno.service %{buildroot}/usr/lib/systemd/system/kubuno.service

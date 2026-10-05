@@ -71,3 +71,6 @@ obj/
 **/.kubuno/views/
 /frontend/packages/views-compiler/wasm/target/
 /frontend/packages/views-compiler/tsconfig.tsbuildinfo
+
+# TypeScript incremental build state (per machine; tracked copies made every build "dirty")
+*.tsbuildinfo

@@ -91,7 +91,7 @@ touch "$PKGROOT/usr/local/kubuno/modules/.keep"
 install -m 755 "$BIN_DIR/kubuno-core" "$PKGROOT/usr/local/kubuno/bin/kubuno-core"
 install -m 755 "$BIN_DIR/kubuno"      "$PKGROOT/usr/local/kubuno/bin/kubuno"
 cp -R frontend/dist/. "$PKGROOT/usr/local/kubuno/frontend/"
-cp migrations/*.sql    "$PKGROOT/usr/local/kubuno/migrations/"
+cp -R migrations/.     "$PKGROOT/usr/local/kubuno/migrations/"
 cp -R themes/.         "$PKGROOT/usr/local/kubuno/themes/"
 
 # config.toml.example adapté macOS (chemins Apple)

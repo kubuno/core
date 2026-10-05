@@ -9,6 +9,14 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **The RPM and macOS packages build again.** Database migrations are now organised in one folder per
+  database engine; both packages copied only top-level `.sql` files and failed. They now ship the whole
+  migrations tree, like the Debian and Windows packages.
+- **Release builds are no longer marked as modified (`.dirty`).** The TypeScript incremental build files
+  were tracked by git and rewritten by every build; they are now ignored.
+
 ## [0.1.14] - 2026-10-05
 
 ### Fixed
