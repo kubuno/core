@@ -1,10 +1,10 @@
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { GENERATED_DIR, generatedPaths, generatedRelPath, writeGenerated } from '../src/project.js'
+import { GENERATED_DIR, generatedPaths, generatedRelPath, removeStaleGenerated, writeGenerated } from '../src/project.js'
 import type { CompileOutput } from '../src/types.js'
 
 const work = mkdtempSync(join(tmpdir(), 'kbview-paths-'))
@@ -55,11 +55,23 @@ describe('generated file paths', () => {
     expect(generatedRelPath(root, sibling)).toBe(['_external', ...segments].join('/'))
   })
 
+  it('removes the generated files of a view that no longer exists', () => {
+    const keep = join(root, 'src', 'Kept.kbview')
+    const gone = join(root, 'src', 'Gone.kbview')
+    const out = { dts: '// d', check: '// c', check_map: [], handlers: [], class_name: 'X' } as unknown as CompileOutput
+    writeGenerated(root, keep, out)
+    writeGenerated(root, gone, out)
+    const kept = new Set(Object.values(generatedPaths(root, keep)).map((p) => resolve(p)))
+    expect(removeStaleGenerated(generated, kept)).toBe(3)
+    for (const p of Object.values(generatedPaths(root, gone))) expect(existsSync(p), p).toBe(false)
+    for (const p of Object.values(generatedPaths(root, keep))) expect(existsSync(p), p).toBe(true)
+  })
+
   it('writes the three files of an outside view inside .kubuno/views only', () => {
     const view = join(work, 'shared', 'E.kbview')
     const out = { dts: '// d', check: '// c', check_map: [], handlers: [], class_name: 'E' } as unknown as CompileOutput
     writeGenerated(root, view, out)
-    const written = filesUnder(work).filter((f) => !f.startsWith('shared'))
+    const written = filesUnder(work).filter((f) => f.includes('_external'))
     expect(written.length).toBe(3)
     for (const f of written) expect(join(work, f).startsWith(generated + sep), f).toBe(true)
   })

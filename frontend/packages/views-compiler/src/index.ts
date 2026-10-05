@@ -17,6 +17,7 @@ export {
   generatedPaths,
   generatedRelPath,
   writeGenerated,
+  removeStaleGenerated,
   findHostRegistry,
   projectRegistryJson,
   GENERATED_DIR,

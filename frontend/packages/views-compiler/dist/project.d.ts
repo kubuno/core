@@ -101,3 +101,8 @@ export declare class ViewProject {
     /** Compiles every view and writes its generated files; returns the outputs by file. */
     generateAll(): Map<string, CompileOutput>;
 }
+/**
+ * Deletes the generated files of views that no longer exist (a view renamed, moved or turned back into TSX): left
+ * behind, their check files would still be type-checked and fail against a code-behind that is gone.
+ */
+export declare function removeStaleGenerated(dir: string, keep: ReadonlySet<string>): number;

@@ -4,7 +4,7 @@
  * `kbview-tsc`. Paths are handled with `node:path` and normalised to `/` in everything the compiler sees,
  * so the same project builds identically on Linux, Windows and macOS.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CompilerWasm, ViewCompiler } from './compiler.js';
@@ -258,11 +258,49 @@ export class ViewProject {
     /** Compiles every view and writes its generated files; returns the outputs by file. */
     generateAll() {
         const out = new Map();
+        const keep = new Set();
         for (const v of this.views) {
             const result = this.compile(v);
             writeGenerated(this.root, v, result);
             out.set(v, result);
+            for (const p of Object.values(generatedPaths(this.root, v)))
+                keep.add(resolve(p));
         }
+        removeStaleGenerated(join(this.root, GENERATED_DIR), keep);
         return out;
     }
+}
+/**
+ * Deletes the generated files of views that no longer exist (a view renamed, moved or turned back into TSX): left
+ * behind, their check files would still be type-checked and fail against a code-behind that is gone.
+ */
+export function removeStaleGenerated(dir, keep) {
+    let removed = 0;
+    const walk = (d) => {
+        let entries;
+        try {
+            entries = readdirSync(d);
+        }
+        catch {
+            return;
+        }
+        for (const name of entries) {
+            const full = join(d, name);
+            let st;
+            try {
+                st = statSync(full);
+            }
+            catch {
+                continue;
+            }
+            if (st.isDirectory())
+                walk(full);
+            else if (/\.(kbview|kbcontrol)\.(d\.ts|check\.ts|check\.json)$/.test(name) && !keep.has(resolve(full))) {
+                rmSync(full, { force: true });
+                removed++;
+            }
+        }
+    };
+    walk(dir);
+    return removed;
 }

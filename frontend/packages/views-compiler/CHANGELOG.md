@@ -28,6 +28,9 @@ under the published version number.
 
 ### Fixed
 
+- **Generated files of deleted views are removed.** `kbview-tsc` and the Vite plugin delete the `.d.ts`, check file and
+  span map of a view that no longer exists (renamed, moved, or turned back into TSX): left behind, the check file
+  would still be type-checked against a code-behind that is gone.
 - **Generated files never leave `.kubuno/views`.** A view outside the project root (a sibling folder, another
   drive) had its `.d.ts`, check file and span map written outside the project's `.kubuno/views` folder; they now
   go under `.kubuno/views/_external/` followed by the view's absolute path (`generatedRelPath`, the same rule as
