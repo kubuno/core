@@ -13,6 +13,7 @@ node_modules/
 
 # Frontend — sorties de build
 /frontend/dist/
+/frontend/dist-gallery/
 /frontend/dist-modules/
 /frontend/dist-types/
 

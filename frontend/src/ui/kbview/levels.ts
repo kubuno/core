@@ -243,6 +243,45 @@ export const CONTROL_PROPERTIES: readonly PropertyMeta<never>[] = [
     docFr: "Web uniquement, aide à la migration : classes Tailwind ajoutées à l'élément. Signalé par le serveur de langage ; utilisez plutôt les jetons du thème et les éléments de disposition.",
     to: { runtime: 'class' },
   },
+  // Web only (WV-5a): the interaction states and the outline of any element, with theme tokens — what the
+  // hand-written screens write as `hover:bg-surface-1`, `rounded-[20px]`, `border border-border`, `shadow-md`.
+  // Proposed for the desktop (its controls paint their own hover and pressed states today).
+  {
+    name: 'HoverBackColor', kind: 'String', default: '', category: 'Appearance', editor: 'color', typeConverter: 'Color', bindable: true, webOnly: true,
+    doc: 'Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none.',
+    docFr: "Web uniquement : couleur de fond quand la souris est au-dessus du contrôle (une couleur du thème ; Jeton/NN pour NN % d'opacité). Laisser vide pour aucune.",
+    to: { runtime: 'hover-color' },
+  },
+  {
+    name: 'PressedBackColor', kind: 'String', default: '', category: 'Appearance', editor: 'color', typeConverter: 'Color', bindable: true, webOnly: true,
+    doc: 'Web only: background colour while the control is pressed. Leave empty for none.',
+    docFr: 'Web uniquement : couleur de fond pendant que le contrôle est enfoncé. Laisser vide pour aucune.',
+    to: { runtime: 'pressed-color' },
+  },
+  {
+    name: 'CornerRadius', kind: 'F32', default: '', category: 'Appearance', typeConverter: 'CornerRadius', bindable: true, webOnly: true,
+    doc: 'Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element\'s own corners.',
+    docFr: "Web uniquement : rayon des coins arrondis, en pixels (une grande valeur comme 9999 fait une pilule). Un conteneur rogne ses enfants à ses coins. Laisser vide pour les coins propres à l'élément.",
+    to: { runtime: 'corner-radius' },
+  },
+  {
+    name: 'BorderBrush', kind: 'String', default: '', category: 'Appearance', editor: 'color', typeConverter: 'Color', bindable: true, webOnly: true,
+    doc: 'Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none.',
+    docFr: 'Web uniquement : couleur d\'une ligne tracée autour du contrôle (large de BorderThickness pixels). Laisser vide pour aucune.',
+    to: { runtime: 'border-brush' },
+  },
+  {
+    name: 'BorderThickness', kind: 'F32', default: '1', category: 'Appearance', webOnly: true,
+    doc: 'Web only: width of the line drawn with BorderBrush, in pixels.',
+    docFr: 'Web uniquement : largeur de la ligne tracée avec BorderBrush, en pixels.',
+    to: { runtime: 'border-thickness' },
+  },
+  {
+    name: 'Elevation', kind: { Enum: ['None', 'Sm', 'Md', 'Lg'] }, default: 'None', category: 'Appearance', webOnly: true,
+    doc: 'Web only: a shadow under the control, small, medium or large (the host\'s shadow steps).',
+    docFr: "Web uniquement : une ombre sous le contrôle, petite, moyenne ou grande (les paliers d'ombre de l'hôte).",
+    to: { runtime: 'elevation' },
+  },
 ]
 
 /** `Control`'s common events on the web, raised by the runtime from DOM listeners on the root. */
@@ -381,4 +420,6 @@ export const INHERITED_LEVELS: Readonly<Record<string, InheritedLevel>> = {
 }
 
 /** The web-only members of the inherited levels (listed in the export, allowlisted in conformance). */
-export const WEB_ONLY_INHERITED = new Set(['Class', 'OnUnload'])
+export const WEB_ONLY_INHERITED = new Set([
+  'Class', 'OnUnload', 'HoverBackColor', 'PressedBackColor', 'CornerRadius', 'BorderBrush', 'BorderThickness', 'Elevation',
+])

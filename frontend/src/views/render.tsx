@@ -26,6 +26,7 @@ import { applyArgs, makeArgs, type ArgsContext } from './events'
 import type { IconValue, PlanEvent, PlanNode, PlanProp, ViewPlan } from './plan'
 import { onResourcesChanged, resolveComponent, resolveIcon, resolveResource, resourcesVersion } from './resolve'
 import { CELL, KB, handleFor, notify, setComponentFactory, setLive, type Cell, type Internals, type View, type ViewClass } from './view'
+import { ELEVATIONS, HOVER_CLASS, PRESSED_CLASS, ensureViewStyles, tokenColor } from './style'
 
 type Props = Record<string, unknown>
 type AnyComponent = ComponentType<Props>
@@ -117,10 +118,7 @@ function shallowEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
 
 const ICON_SIZES: Readonly<Record<string, number>> = { Small: 16, Medium: 20, Large: 24, XLarge: 32 }
 
-/** A Kubuno colour token (`TextSecondary`) → its CSS variable. */
-export function tokenColor(token: string): string {
-  return `var(--color-${token.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()})`
-}
+export { tokenColor }
 
 function iconComponent(v: unknown): ComponentType<Props> | undefined {
   if (v && typeof v === 'object') {
@@ -178,6 +176,12 @@ function applyRuntime(t: DomTargets, runtime: string, name: string, v: unknown):
     case 'cursor': if (name === 'UseWaitCursor') { if (v === true) t.style.cursor = 'wait' } else if (CURSORS[s]) t.style.cursor = CURSORS[s]; break
     case 'direction': t.attrs.dir = s === 'Yes' ? 'rtl' : s === 'No' ? 'ltr' : null; break
     case 'theme-color': if (s) t.style[name === 'BackColor' ? 'background-color' : 'color'] = tokenColor(s); break
+    case 'hover-color': if (s) { t.style['--kb-v-hover-bg'] = tokenColor(s); t.classes.push(HOVER_CLASS); ensureViewStyles() } break
+    case 'pressed-color': if (s) { t.style['--kb-v-pressed-bg'] = tokenColor(s); t.classes.push(PRESSED_CLASS); ensureViewStyles() } break
+    case 'corner-radius': { const r = Number(v); if (s !== '' && Number.isFinite(r) && r >= 0) t.style['border-radius'] = `${r}px`; break }
+    case 'border-brush': if (s) { t.style['border-color'] = tokenColor(s); t.style['border-style'] = 'solid'; t.style['border-width'] ??= '1px' } break
+    case 'border-thickness': { const w = Number(v); if (s !== '' && Number.isFinite(w) && w >= 0) t.style['border-width'] = `${w}px`; break }
+    case 'elevation': if (ELEVATIONS[s]) t.style['box-shadow'] = ELEVATIONS[s]; break
     case 'class': t.classes.push(...s.split(/\s+/).filter(Boolean)); break
     case 'layout':
       switch (name) {
@@ -187,7 +191,8 @@ function applyRuntime(t: DomTargets, runtime: string, name: string, v: unknown):
         case 'Padding': { const m = box(v); if (m && m !== '0px 0px 0px 0px') t.style.padding = m; break }
         case 'MinimumSize': { const [w, h] = s.split(',').map(Number); if (w) t.style['min-width'] = `${w}px`; if (h) t.style['min-height'] = `${h}px`; break }
         case 'MaximumSize': { const [w, h] = s.split(',').map(Number); if (w) t.style['max-width'] = `${w}px`; if (h) t.style['max-height'] = `${h}px`; break }
-        case 'Stack.Fill': if (v === true) t.style.flex = '1 1 0%'; break
+        // A filling child may also shrink below its content's width (a truncated label inside it).
+        case 'Stack.Fill': if (v === true) { t.style.flex = '1 1 0%'; t.style['min-width'] ??= '0px' } break
         default: break // Dock / Anchor / X / Y / table cells: applied by their container (WV-5a).
       }
       break
@@ -252,6 +257,54 @@ function renderList(nodes: readonly PlanNode[] | undefined, scope: Scope): React
   if (!nodes?.length) return undefined
   const els = nodes.map((c) => createElement(KbNode, { key: c.id, node: c, scope }))
   return els.length === 1 ? els[0] : els
+}
+
+/** Key of an adapter item's plan node (see `build`). */
+const ITEM_NODE: unique symbol = Symbol('kb-item-node')
+
+/** The open item keys an uncontrolled parent last reported (to tell which item a change toggled). */
+const lastOpen = new WeakMap<Scope, Map<string, readonly string[]>>()
+
+/**
+ * Items opened and closed by their parent (`AccordionSection Open` / `OnToggled`): the parent's `open` list is
+ * derived from the items' `Open` (controlled when one of them is bound, else the initial `defaultOpen`), and its
+ * `onOpenChange` raises `OnToggled` on each item whose state changed and writes a two-way `Open` back.
+ */
+function wireOpenItems(i: Internals, node: PlanNode, scope: Scope, values: Map<PlanProp, unknown>, props: Props, keys: readonly string[]): void {
+  const list = node.items?.list ?? []
+  const openOf = list.map((it) => effectiveProps(i, it).find((p) => p.n === 'Open'))
+  const toggled = list.map((it) => it.events?.find((e) => e.from.runtime === 'parent-adapter' && e.from.args === 'open-keys'))
+  if (!openOf.some(Boolean) && !toggled.some(Boolean)) return
+  const isOpen = (k: number): boolean => {
+    const p = openOf[k]
+    const v = p ? values.get(p) : false
+    return v === true || v === 'true'
+  }
+  const now = keys.filter((_, k) => isOpen(k))
+  const controlled = openOf.some((p) => p?.b && p.b.mode !== 'OneTime')
+  if (controlled) props.open = now
+  else props.defaultOpen = now
+  let seen = lastOpen.get(scope)
+  if (!seen) lastOpen.set(scope, (seen = new Map()))
+  if (!seen.has(node.id)) seen.set(node.id, now)
+  const memo = seen
+  addCallback(props, 'onOpenChange', undefined, (next) => {
+    if (i.design) return
+    const after = new Set((next as unknown[]).map(String))
+    const before = new Set(controlled ? now : memo.get(node.id) ?? now)
+    memo.set(node.id, [...after])
+    let wrote = false
+    list.forEach((it, k) => {
+      const was = before.has(keys[k])
+      const is = after.has(keys[k])
+      if (was === is) return
+      const b = openOf[k]?.b
+      if (b && (b.mode === 'TwoWay' || b.mode === 'OneWayToSource') && writeBinding(b, scope, is)) wrote = true
+      const e = toggled[k]
+      if (e) dispatch(i, it, e, [[...after]], { item: handleFor(i, it.id), index: k, itemKey: keys[k] }, scope)
+    })
+    if (wrote) notify(i)
+  })
 }
 
 /** Builds the React props of a node from its current values. */
@@ -381,6 +434,8 @@ function build(
     const buildItem = (it: PlanNode, k: number, key: string): Props => {
       const ib = build(i, it, scope, values, new Map(), () => {}, [undefined, () => {}], { item: handleFor(i, it.id), index: k, itemKey: key })
       const o = ib.props
+      // The item's plan node, for the parent's runtime (menu check marks); not enumerable, so never a React prop.
+      Object.defineProperty(o, ITEM_NODE, { value: it })
       if (items.key) o[items.key] = key
       const sub = it.children ?? []
       if (items.nested && sub.length && sub.every((c) => c.el === it.el)) {
@@ -391,8 +446,11 @@ function build(
       }
       return o
     }
-    const built = items.list.map((it, k) => buildItem(it, k, keys[k]))
-    props[items.prop] = items.shape === 'record' ? Object.fromEntries(built.map((o, k) => [keys[k], o])) : built
+    // An item with Visible="false" is left out of the parent's list (a hidden menu command, tab or step).
+    const shown = items.list.map((it, k) => [it, k] as const).filter(([it]) => !effectiveProps(i, it).some((p) => p.to.runtime === 'visible' && values.get(p) === false))
+    const built = shown.map(([it, k]) => buildItem(it, k, keys[k]))
+    props[items.prop] = items.shape === 'record' ? Object.fromEntries(built.map((o, k) => [keys[shown[k][1]], o])) : built
+    wireOpenItems(i, node, scope, values, props, keys)
     if (content === 'selected-after') {
       // A strip without a bound selection keeps its own (the first item at first).
       if (props.value === undefined) {
@@ -543,13 +601,79 @@ function renderMenu(i: Internals, scope: Scope, menu: Menu, close: () => void): 
   const values = new Map<PlanProp, unknown>()
   for (const p of snapshotProps(i, tray)) values.set(p, valueOf(i, tray, p, scope))
   const built = build(i, tray, scope, values, new Map(), () => {}, [undefined, () => {}])
-  const items = ((built.props.items as Props[] | undefined) ?? []).map(function wrap(it: Props): Props {
+  const checks = menuChecks.get(i) ?? new Map<string, boolean>()
+  menuChecks.set(i, checks)
+  const index = nodeIndex(i.cell.plan)
+  const itemValue = (n: PlanNode, name: string): unknown => {
+    const p = effectiveProps(i, n).find((x) => x.n === name)
+    if (!p) return undefined
+    const v = valueOf(i, n, p, scope)
+    return v === UNSET ? undefined : v
+  }
+  const checkedOf = (n: PlanNode): boolean => checks.get(n.id) ?? itemValue(n, 'Checked') === true
+  /** `CheckOnClick` / `RadioGroup`: the check marks a choice changes, `OnCheckedChanged` on each changed command. */
+  const toggle = (n: PlanNode): void => {
+    const group = String(itemValue(n, 'RadioGroup') ?? '')
+    const changes: [PlanNode, boolean][] = []
+    if (group) {
+      for (const other of index.values()) {
+        if (other.el !== 'MenuItem' || String(itemValue(other, 'RadioGroup') ?? '') !== group) continue
+        const want = other === n
+        if (checkedOf(other) !== want) changes.push([other, want])
+      }
+    } else if (itemValue(n, 'CheckOnClick') === true) {
+      changes.push([n, !checkedOf(n)])
+    }
+    let wrote = false
+    for (const [m, v] of changes) {
+      checks.set(m.id, v)
+      const b = effectiveProps(i, m).find((x) => x.n === 'Checked')?.b
+      if (b && (b.mode === 'TwoWay' || b.mode === 'OneWayToSource') && writeBinding(b, scope, v)) wrote = true
+      const e = m.events?.find((x) => x.n === 'OnCheckedChanged')
+      if (e) dispatch(i, m, e, [v], { item: handleFor(i, m.id) }, scope)
+    }
+    if (wrote) notify(i)
+  }
+  const base = tray.items?.list.length ? ((built.props.items as Props[] | undefined) ?? []) : []
+  const items = base.map(function wrap(it: Props): Props {
+    const n = (it as { [ITEM_NODE]?: PlanNode })[ITEM_NODE]
     const onClick = it.onClick as (() => void) | undefined
     const sub = it.items as Props[] | undefined
-    return { type: 'action', ...it, ...(onClick ? { onClick: () => { close(); onClick() } } : { onClick: close }), ...(sub ? { items: sub.map(wrap) } : {}) }
+    const out: Props = { type: 'action', ...it, onClick: () => { close(); if (n) toggle(n); onClick?.() }, ...(sub ? { items: sub.map(wrap) } : {}) }
+    if (n && (checks.has(n.id) || itemValue(n, 'CheckOnClick') === true || itemValue(n, 'RadioGroup'))) out.checked = checkedOf(n)
+    if (out.type === 'label' && out.text === undefined) out.text = out.label
+    return out
   })
+  // `ItemsSource`: commands made from a list, after the MenuItem children; choosing one raises `OnItemClicked` with its key.
+  const source = effectiveProps(i, tray).find((p) => p.n === 'ItemsSource')
+  const rows = source ? valueOf(i, tray, source, scope) : UNSET
+  const clicked = tray.events?.find((e) => e.n === 'OnItemClicked')
+  if (Array.isArray(rows)) {
+    for (const row of rows) {
+      const r = (row && typeof row === 'object' ? row : { Text: String(row) }) as Props
+      const get = (k: string): unknown => r[k] ?? r[k.charAt(0).toLowerCase() + k.slice(1)]
+      const kind = String(get('Kind') ?? 'Command')
+      if (kind === 'Separator' || get('Text') === '-') { items.push({ type: 'separator' }); continue }
+      if (kind === 'Header') { items.push({ type: 'label', text: String(get('Text') ?? '') }); continue }
+      const key = String(get('Key') ?? get('Value') ?? get('Text') ?? '')
+      const Icon = iconComponent(get('Icon'))
+      items.push({
+        type: 'action',
+        label: String(get('Text') ?? key),
+        shortcut: get('ShortcutKeys') as string | undefined,
+        checked: get('Checked') === true ? true : undefined,
+        disabled: get('Enabled') === false ? true : undefined,
+        danger: get('Danger') === true ? true : undefined,
+        icon: Icon ? createElement(Icon, { size: 16 }) : undefined,
+        onClick: () => { close(); if (clicked) dispatch(i, tray, clicked, [key], {}, scope) },
+      })
+    }
+  }
   return createElement(Menu, { key: 'menu', ...built.props, items, pos: { top: menu.top, left: menu.left }, onClose: close })
 }
+
+/** The check marks the user changed in a view's menus (`CheckOnClick`, `RadioGroup`), by item id. */
+const menuChecks = new WeakMap<Internals, Map<string, boolean>>()
 
 /** A `Repeater`: its children once per item of `ItemsSource`, each with the item as its row scope. */
 function renderTemplate(node: PlanNode, scope: Scope, values: Map<PlanProp, unknown>): ReactNode {

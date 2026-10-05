@@ -231,7 +231,7 @@ export const ComboBoxMeta = {
 /** `Option` items feed `Dropdown.options` and `Combobox.options`: checked against both item types. */
 export const OptionMeta = ({
   name: 'Option',
-  doc: 'An item of a Dropdown or ComboBox list.',
+  doc: 'An item of a Dropdown or ComboBox list, or a choice of a RadioGroup.',
   docFr: "Élément de la liste d'un Dropdown ou d'une ComboBox.",
   family: 'text',
   baseChain: ['Option', 'Component'],
@@ -245,7 +245,7 @@ export const OptionMeta = ({
       to: { prop: 'label' } },
   ],
   events: [],
-  web: { module: null, export: null, domRoot: 'none', itemOf: ['Dropdown', 'ComboBox'] },
+  web: { module: null, export: null, domRoot: 'none', itemOf: ['Dropdown', 'ComboBox', 'RadioGroup'] },
 } as const satisfies ElementMeta<DropdownOption>) satisfies ElementMeta<ComboboxOption>
 
 export const DatePickerMeta = {

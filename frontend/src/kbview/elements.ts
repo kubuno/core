@@ -17,22 +17,23 @@ import {
 import { ColumnMeta, DataTableMeta } from '../ui/kbview/data.meta.ts'
 import { ContextMenuMeta, MenuItemMeta, ToolTipMeta } from '../ui/kbview/components.meta.ts'
 import { DockAreaMeta, DockPanelMeta, WorkspaceShellMeta } from '../sdk/kbview/workspace.meta.ts'
-import { PanelMeta, RepeaterMeta, ScrollAreaMeta, StackMeta, UserControlMeta } from '../ui/kbview/views.meta.ts'
-import { AvatarMeta, IconMeta, LabelMeta, LinkLabelMeta } from '../ui/kbview/primitives.meta.ts'
+import { PanelMeta, RepeaterMeta, ScrollAreaMeta, StackMeta, TableLayoutPanelMeta, UserControlMeta } from '../ui/kbview/views.meta.ts'
+import { GroupBoxMeta, RadioGroupMeta, SettingsRowMeta } from '../ui/kbview/forms.meta.ts'
+import { AvatarMeta, IconMeta, LabelMeta, LinkLabelMeta, PictureBoxMeta } from '../ui/kbview/primitives.meta.ts'
 
 export const WEB_ELEMENTS: readonly AnyElementMeta[] = [
   // core
   ButtonMeta, SwitchMeta, TextFieldMeta, CardMeta, StackMeta,
   // display
   LabelMeta, LinkLabelMeta, BadgeMeta, SpinnerMeta, ProgressBarMeta, SeparatorMeta, CalloutMeta, EmptyStateMeta,
-  IconMeta, AvatarMeta,
+  IconMeta, AvatarMeta, PictureBoxMeta,
   // choice
-  IconButtonMeta, CheckBoxMeta, RadioButtonMeta, SliderMeta, NumericFieldMeta,
+  IconButtonMeta, CheckBoxMeta, RadioButtonMeta, RadioGroupMeta, SliderMeta, NumericFieldMeta,
   // text
   OptionMeta, TextAreaMeta, DropdownMeta, ComboBoxMeta, DatePickerMeta, ColorFieldMeta, GradientFieldMeta,
   // containers
   TabItemMeta, TabsMeta, BreadcrumbItemMeta, BreadcrumbMeta, AccordionSectionMeta, AccordionMeta, StepMeta, StepperMeta,
-  FloatingWindowMeta, PopoverMeta, PanelMeta, UserControlMeta, ScrollAreaMeta,
+  FloatingWindowMeta, PopoverMeta, PanelMeta, UserControlMeta, ScrollAreaMeta, TableLayoutPanelMeta, GroupBoxMeta, SettingsRowMeta,
   // data
   DataTableMeta, ColumnMeta, RepeaterMeta,
   // docking (@kubuno/sdk)

@@ -4,7 +4,7 @@
  * registry (VIEWS-SPEC §2, §5); the web-only members are allowlisted with their reason.
  */
 import type { ComponentProps } from 'react'
-import type { Panel, ScrollArea, Stack, UserControl } from '../../views/layout'
+import type { Panel, ScrollArea, Stack, TableLayoutPanel, UserControl } from '../../views/layout'
 import type { Repeater } from '../../views/controls'
 import type { ElementMeta, PropertyMeta } from './types.ts'
 
@@ -49,7 +49,16 @@ const CONTAINER_INHERITED = {
   TabIndex: { prop: 'tabIndex' },
   // Given to the element as its className (kept by React across renders, merged with its own classes).
   Class: { prop: 'className' },
+  // A container clips its children to its corners (a card of hoverable rows).
+  CornerRadius: { prop: 'cornerRadius' },
 } as const
+
+const DIVIDER: PropertyMeta<{ dividerColor?: string }> = {
+  name: 'DividerColor', kind: 'String', default: '', category: 'Appearance', editor: 'color', typeConverter: 'Color', bindable: true, webOnly: true,
+  doc: 'Web only: draws a line of this colour between two children (under each child but the last; between them across a row). Leave empty for none.',
+  docFr: "Web uniquement : trace une ligne de cette couleur entre deux enfants (sous chaque enfant sauf le dernier ; entre eux dans une rangée). Laisser vide pour aucune.",
+  to: { prop: 'dividerColor' },
+}
 
 const DOCK_LAYOUT: PropertyMeta<{ layout?: 'Dock' | 'Absolute' }> = {
   name: 'Layout', kind: { Enum: ['Dock', 'Absolute'] }, default: 'Dock', category: 'Layout', webOnly: true,
@@ -83,7 +92,7 @@ export const PanelMeta = {
   children: 'List',
   layoutKind: 'DockAnchor',
   defaultEvent: 'OnClick',
-  properties: [SURFACE, DOCK_LAYOUT, HREF],
+  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER],
   events: [],
   inheritedMap: CONTAINER_INHERITED,
   designDefaults: { size: [200, 100] },
@@ -121,6 +130,7 @@ export const StackMeta = {
       docFr: "Web uniquement : place des enfants le long du flux quand ils laissent de la place : au début, centrés, à la fin, ou répartis avec la place entre eux.",
       to: { prop: 'justify' } },
     HREF,
+    DIVIDER,
   ],
   events: [],
   inheritedMap: CONTAINER_INHERITED,
@@ -149,9 +159,13 @@ export const ScrollAreaMeta = {
       doc: 'Web only: room kept for the scroll bar whether it shows or not (Stable), on both edges so the content stays centred (StableBothEdges).',
       docFr: "Web uniquement : place réservée à la barre de défilement qu'elle soit affichée ou non (Stable), des deux côtés pour que le contenu reste centré (StableBothEdges).",
       to: { prop: 'gutter', values: { Auto: 'Auto', Stable: 'Stable', StableBothEdges: 'StableBothEdges' } } },
+    { name: 'ScrollBarStyle', kind: { Enum: ['Default', 'Inset'] }, default: 'Default', category: 'Appearance', webOnly: true,
+      doc: 'Web only: the look of the scroll bar. Inset: a thin bar that starts and ends inside rounded corners (menus, popovers).',
+      docFr: 'Web uniquement : aspect de la barre de défilement. Inset : une barre fine qui commence et finit à l\'intérieur des coins arrondis (menus, panneaux surgissants).',
+      to: { prop: 'scrollBarStyle', values: { Default: 'Default', Inset: 'Inset' } } },
   ],
   events: [],
-  inheritedMap: { AccessibleName: { prop: 'aria-label' }, AccessibleRole: { prop: 'role', values: ARIA_ROLES }, TabIndex: { prop: 'tabIndex' }, Class: { prop: 'className' } },
+  inheritedMap: { AccessibleName: { prop: 'aria-label' }, AccessibleRole: { prop: 'role', values: ARIA_ROLES }, TabIndex: { prop: 'tabIndex' }, Class: { prop: 'className' }, CornerRadius: { prop: 'corner' } },
   designDefaults: { size: [240, 160] },
   web: { module: '@kubuno/views', export: 'ScrollArea', domRoot: 'ref', content: 'children' },
 } as const satisfies ElementMeta<ComponentProps<typeof ScrollArea>>
@@ -182,3 +196,44 @@ export const RepeaterMeta = {
   designDefaults: { size: [240, 160] },
   web: { module: '@kubuno/views', export: 'Repeater', domRoot: 'none', content: 'children', template: true },
 } as const satisfies ElementMeta<ComponentProps<typeof Repeater>>
+
+export const TableLayoutPanelMeta = {
+  name: 'TableLayoutPanel',
+  doc: 'A grid: its children are placed in rows and columns sized in pixels, in shares of the room left, or to their content. On the web, a CSS grid whose columns follow the reading direction.',
+  docFr: 'Grille : ses enfants sont placés en lignes et en colonnes dimensionnées en pixels, en parts de la place restante, ou selon leur contenu.',
+  family: 'containers',
+  baseChain: ['TableLayoutPanel', ...CONTAINER_CHAIN],
+  children: 'List',
+  layoutKind: 'Flow',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'ColumnCount', kind: 'F32', default: '2', category: 'Layout',
+      doc: 'The number of columns.', docFr: 'Nombre de colonnes.', to: { prop: 'columnCount' } },
+    { name: 'RowCount', kind: 'F32', default: '2', category: 'Layout',
+      doc: 'The number of rows (more are added when the children need them, with GrowStyle AddRows).',
+      docFr: "Nombre de lignes (d'autres sont ajoutées quand les enfants en ont besoin, avec GrowStyle AddRows).",
+      to: { prop: 'rowCount' } },
+    { name: 'ColumnStyles', kind: 'String', default: '', category: 'Layout',
+      doc: 'How each column is sized, separated by semicolons: Absolute 120, Percent 50 or AutoSize. A missing one is Percent 1 (an equal share).',
+      docFr: 'Dimensionnement de chaque colonne, séparé par des points-virgules : Absolute 120, Percent 50 ou AutoSize. Une colonne sans style reçoit Percent 1 (une part égale).',
+      to: { prop: 'columnStyles' } },
+    { name: 'RowStyles', kind: 'String', default: '', category: 'Layout',
+      doc: 'How each row is sized, separated by semicolons: Absolute 40, Percent 50 or AutoSize. A missing one is AutoSize.',
+      docFr: 'Dimensionnement de chaque ligne, séparé par des points-virgules : Absolute 40, Percent 50 ou AutoSize. Une ligne sans style est AutoSize.',
+      to: { prop: 'rowStyles' } },
+    { name: 'GrowStyle', kind: { Enum: ['AddRows', 'AddColumns', 'FixedSize'] }, default: 'AddRows', category: 'Layout',
+      doc: 'What happens when the children do not fit the declared grid.',
+      docFr: 'Ce qui se passe quand les enfants ne tiennent pas dans la grille déclarée.',
+      to: { prop: 'growStyle', values: { AddRows: 'AddRows', AddColumns: 'AddColumns', FixedSize: 'FixedSize' } } },
+    { name: 'CellBorderStyle', kind: { Enum: ['None', 'Single'] }, default: 'None', category: 'Appearance',
+      doc: 'Lines drawn around and between the cells.', docFr: 'Lignes dessinées autour des cellules et entre elles.',
+      to: { prop: 'cellBorderStyle', values: { None: 'None', Single: 'Single' } } },
+    { name: 'CellSpacing', kind: 'F32', default: '0', category: 'Layout',
+      doc: 'Space between two cells, in pixels.', docFr: 'Espace entre deux cellules, en DIP.',
+      to: { prop: 'cellSpacing' } },
+  ],
+  events: [],
+  inheritedMap: CONTAINER_INHERITED,
+  designDefaults: { size: [320, 160] },
+  web: { module: '@kubuno/views', export: 'TableLayoutPanel', domRoot: 'ref', content: 'children' },
+} as const satisfies ElementMeta<ComponentProps<typeof TableLayoutPanel>>

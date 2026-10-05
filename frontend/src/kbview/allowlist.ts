@@ -147,4 +147,22 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'property-missing-on-web', element: 'Repeater', member: 'EmptyText', reason: NOT_YET('WV-5b', 'an empty list shows nothing; the view shows its own empty state.') },
   { kind: 'event-missing-on-web', element: 'Repeater', member: 'OnItemClick', reason: NOT_YET('WV-5b', 'the template\'s elements raise their own clicks.') },
   { kind: 'event-missing-on-web', element: 'Repeater', member: 'OnSelectionChanged', reason: NOT_YET('WV-5b', 'see SelectionMode.') },
+
+  // ── WV-5a: interaction states, outlines and text weights (what the pilot's Class attributes carried) ──
+  ...(['HoverBackColor', 'PressedBackColor'] as const).map((member): AllowEntry => ({ kind: 'property-web-only', element: '*', level: 'Control', member, reason: 'Web hover / pressed background of any element with a theme token (the hand-written screens\' hover:bg-… / active:bg-…), so a clickable row or card needs no Class. Proposed for the desktop, whose controls paint their own states today.' })),
+  { kind: 'property-web-only', element: '*', level: 'Control', member: 'CornerRadius', reason: 'Web corner radius of any element (a container clips its children to it). The desktop has CornerRadius on PictureBox and FloatingWindow only; proposed for its containers.' },
+  ...(['BorderBrush', 'BorderThickness'] as const).map((member): AllowEntry => ({ kind: 'property-web-only', element: '*', level: 'Control', member, reason: 'Web outline of any element in a theme colour (border border-…). The desktop containers have BorderStyle (FixedSingle draws the theme border); proposed as a colour on the desktop.' })),
+  { kind: 'property-web-only', element: '*', level: 'Control', member: 'Elevation', reason: 'Web shadow steps of the host (shadow-sm / -md / -lg). Proposed for the desktop (its popups draw their own shadow).' },
+  ...(['Stack', 'Panel'] as const).map((element): AllowEntry => ({ kind: 'property-web-only', element, member: 'DividerColor', reason: 'Web lines between the children of a container (divide-y / divide-x of the hand-written lists). Proposed for the desktop Stack and Panel.' })),
+  { kind: 'property-web-only', element: 'ScrollArea', member: 'ScrollBarStyle', reason: 'Web: the thin scroll bar inset from rounded corners of the menus (kb-inset-scroll). Desktop scroll bars are overlay bars already.' },
+  ...(['Label', 'LinkLabel'] as const).flatMap((element): AllowEntry[] => [
+    { kind: 'property-web-only', element, member: 'FontWeight', reason: 'Web text weight on the host\'s steps (font-medium, font-semibold…): typography comes from tokens on the web, where the desktop takes a weight from Font. Proposed for the desktop Label.' },
+    { kind: 'property-web-only', element, member: 'FontStyle', reason: 'Web italic text (see FontWeight). Proposed for the desktop Label.' },
+  ]),
+
+  // ── WV-5a elements ──
+  { kind: 'element-web-only', element: 'SettingsRow', reason: 'New element (WEB-VIEWS §3, decision 2026-10-01 "new components"): the settings row copied in 20 module repositories. Web first; the desktop element (same name and members) comes with the desktop side of WV-5a.' },
+  { kind: 'element-web-only', element: 'RadioGroup', reason: 'New element (WEB-VIEWS §3): the radio list copied in 20 module repositories (desktop proposal: RadioButtons, XML_VIEWS §7). Web first; the desktop element comes with the desktop side of WV-5a.' },
+  { kind: 'property-web-only', element: 'GroupBox', member: 'Description', reason: 'Web settings sections carry a help line under their title. Proposed for the desktop GroupBox.' },
+  { kind: 'property-missing-on-web', element: 'PictureBox', member: 'ImageData', reason: 'Image bytes from a Rust Shared<Vec<u8>>: a web picture is an address (Image, a data: or blob: URL for bytes).' },
 ]

@@ -63,6 +63,10 @@ import BaseConflictDialog from './ConflictDialog'
 import { Label as BaseLabel, LinkLabel as BaseLinkLabel } from './Label'
 import { Avatar as BaseAvatar } from './Avatar'
 import { IconGlyph as BaseIconGlyph, IconButton as BaseIconButton } from './IconGlyph'
+import { GroupBox as BaseGroupBox } from './GroupBox'
+import { SettingsRow as BaseSettingsRow } from './SettingsRow'
+import { RadioGroup as BaseRadioGroup } from './RadioGroup'
+import { PictureBox as BasePictureBox } from './PictureBox'
 
 // Every visual primitive/complex component is themeable: a theme can replace its
 // markup and behaviour, and otherwise it renders its default ("Base")
@@ -127,6 +131,15 @@ export const LinkLabel = t('ui.LinkLabel', BaseLinkLabel)
 export const Avatar = t('ui.Avatar', BaseAvatar)
 export const IconGlyph = t('ui.IconGlyph', BaseIconGlyph)
 export const IconButton = t('ui.IconButton', BaseIconButton)
+export const GroupBox = t('ui.GroupBox', BaseGroupBox)
+export const SettingsRow = t('ui.SettingsRow', BaseSettingsRow)
+export const RadioGroup = t('ui.RadioGroup', BaseRadioGroup)
+export const PictureBox = t('ui.PictureBox', BasePictureBox)
+export type { GroupBoxProps } from './GroupBox'
+export type { SettingsRowProps } from './SettingsRow'
+export type { RadioGroupProps, RadioOption } from './RadioGroup'
+export type { PictureBoxProps, PictureSizeMode } from './PictureBox'
+export type { TextWeight, TextStyle } from './Label'
 export { initialsOf } from './Avatar'
 export type { AvatarProps } from './Avatar'
 export type { LabelProps, LinkLabelProps, TextRole, TextAlign, TextOverflow } from './Label'

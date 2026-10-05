@@ -6,9 +6,24 @@ import type { ComponentProps } from 'react'
 import type { Label, LinkLabel } from '../Label'
 import type { Avatar } from '../Avatar'
 import type { IconGlyph } from '../IconGlyph'
+import type { PictureBox } from '../PictureBox'
 import type { ElementMeta } from './types.ts'
 
 const ROLE_VALUES = { Micro: 'Micro', Meta: 'Meta', Body: 'Body', Heading: 'Heading', Title: 'Title' } as const
+
+/** Web-only text weight and style (WV-5a), proposed for the desktop Label (which takes them from Font today). */
+const FONT_WEIGHT = {
+  name: 'FontWeight', kind: { Enum: ['Default', 'Regular', 'Medium', 'SemiBold', 'Bold'] }, default: 'Default', category: 'Appearance', webOnly: true,
+  doc: "Web only: weight of the text. Default keeps the running text's weight; Medium is the host's emphasised step (rendered at 600).",
+  docFr: "Web uniquement : graisse du texte. Default garde celle du texte courant ; Medium est le palier d'emphase de l'hôte (rendu en 600).",
+  to: { prop: 'weight', values: { Regular: 'Regular', Medium: 'Medium', SemiBold: 'SemiBold', Bold: 'Bold' } },
+} as const
+const FONT_STYLE = {
+  name: 'FontStyle', kind: { Enum: ['Normal', 'Italic'] }, default: 'Normal', category: 'Appearance', webOnly: true,
+  doc: 'Web only: upright or italic text.',
+  docFr: 'Web uniquement : texte droit ou italique.',
+  to: { prop: 'fontStyle', values: { Normal: 'Normal', Italic: 'Italic' } },
+} as const
 
 export const LabelMeta = {
   name: 'Label',
@@ -33,6 +48,8 @@ export const LabelMeta = {
       doc: 'What a text too long for the label does: ellipsis, clipped, or wrapped onto the next lines.',
       docFr: 'Traitement du texte trop long : points de suspension, coupé, ou renvoyé à la ligne.',
       to: { prop: 'overflow', values: { Ellipsis: 'Ellipsis', Clip: 'Clip', Wrap: 'Wrap' } } },
+    FONT_WEIGHT,
+    FONT_STYLE,
   ],
   events: [],
   inheritedMap: { AccessibleName: { prop: 'aria-label' }, TabIndex: { prop: 'tabIndex' }, Class: { prop: 'className' } },
@@ -59,6 +76,8 @@ export const LinkLabelMeta = {
       doc: 'Web only: the address of the link. A plain click stays in the app (OnClick decides); a middle or modified click opens the address.',
       docFr: "Web uniquement : l'adresse du lien. Un clic simple reste dans l'application (OnClick décide) ; un clic du milieu ou avec une touche de modification ouvre l'adresse.",
       to: { prop: 'href' } },
+    FONT_WEIGHT,
+    FONT_STYLE,
   ],
   events: [
     { name: 'OnClick', category: 'Action', args: 'MouseEventArgs',
@@ -132,3 +151,33 @@ export const IconMeta = {
   designDefaults: { attributes: { Name: 'Star' }, size: [20, 20] },
   web: { module: '@ui', export: 'IconGlyph', domRoot: 'ref' },
 } as const satisfies ElementMeta<ComponentProps<typeof IconGlyph>>
+
+export const PictureBoxMeta = {
+  name: 'PictureBox',
+  doc: 'An image, fitted into the control by SizeMode. On the web an <img>: its AccessibleName is the alternative text (none = a decorative picture).',
+  docFr: "Image : le chemin d'un fichier image, relatif à la vue, ajustée au contrôle selon SizeMode.",
+  family: 'display',
+  baseChain: ['PictureBox', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: 'OnClick',
+  properties: [
+    { name: 'Image', kind: 'String', default: '', category: 'Appearance', bindable: true, editor: 'image',
+      doc: 'The image: an image address (web) or the path of an image file, relative to the view.',
+      docFr: "Image : le chemin d'un fichier image, relatif à la vue.",
+      to: { prop: 'src' } },
+    { name: 'SizeMode', kind: { Enum: ['Normal', 'Stretch', 'Zoom', 'Center', 'Cover'] }, default: 'Normal', category: 'Behavior',
+      doc: "Normal: at its size, top left. Stretch: to the control's size. Zoom: as large as fits, keeping its proportions. Center: at its size, centred. Cover: fills the control, keeping its proportions (cropped).",
+      docFr: 'Normal : à sa taille, en haut à gauche. Stretch : à la taille du contrôle. Zoom : aussi grande que possible en gardant ses proportions. Center : à sa taille, centrée. Cover : remplit le contrôle en gardant ses proportions (rognée).',
+      to: { prop: 'sizeMode', values: { Normal: 'Normal', Stretch: 'Stretch', Zoom: 'Zoom', Center: 'Center', Cover: 'Cover' } } },
+    { name: 'CornerRadius', kind: 'F32', default: '0', category: 'Appearance',
+      doc: 'Rounds the corners of the image, in pixels.', docFr: "Arrondit les coins de l'image, en DIP.",
+      to: { prop: 'cornerRadius' } },
+    { name: 'BorderStyle', kind: { Enum: ['None', 'FixedSingle'] }, default: 'None', category: 'Appearance',
+      doc: 'A line drawn around the control.', docFr: 'Ligne dessinée autour du contrôle.',
+      to: { prop: 'borderStyle', values: { None: 'None', FixedSingle: 'FixedSingle' } } },
+  ],
+  events: [],
+  inheritedMap: { AccessibleName: { prop: 'alt' }, Class: { prop: 'className' } },
+  designDefaults: { size: [160, 120] },
+  web: { module: '@ui', export: 'PictureBox', domRoot: 'ref' },
+} as const satisfies ElementMeta<ComponentProps<typeof PictureBox>>

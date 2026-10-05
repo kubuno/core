@@ -35,7 +35,7 @@ export const ContextMenuMeta = {
     { name: 'OnItemClicked', category: 'Action', args: 'ValueChangedEventArgs',
       doc: 'Occurs when a command made from ItemsSource is chosen: its key is the new text.',
       docFr: "Se produit quand une commande issue d'ItemsSource est choisie : sa clé est le nouveau texte.",
-      from: { runtime: 'parent-adapter', args: 'item' } },
+      from: { runtime: 'parent-adapter', args: 'value' } },
   ],
   web: { module: '@ui', export: 'MenuDropdown', domRoot: 'portal', childrenToProp: { prop: 'items', item: 'MenuItem', content: 'none', nested: 'items' } },
 } as const satisfies ElementMeta<ComponentProps<typeof MenuDropdown>>

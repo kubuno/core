@@ -1,0 +1,18 @@
+<!--
+  Panel Layout="Absolute" with Anchor. The panel is laid out first at 320 × 160 (its first layout is the size the
+  X / Y / Width / Height were authored against), then the page widens it: a docked child keeps its band in flow;
+  the others keep their distance to the edges they are anchored to (Right = the inline end: they mirror in RTL),
+  Left + Right stretches, an axis anchored on neither side keeps its size and stays centred.
+-->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="8" OnShown="page_shown">
+  <Label Text="{Binding caption}" Role="Meta" ForeColor="TextSecondary"/>
+  <Panel x:Name="board" Layout="Absolute" Width="{Binding boardWidth}" Height="{Binding boardHeight}" BorderBrush="Border" CornerRadius="8" Surface="Card">
+    <Panel Dock="Top" Surface="Well" Padding="8, 4, 8, 4"><Label Text="Docked band (stays in flow)" Role="Meta"/></Panel>
+    <Button Text="Top, Left" X="8" Y="36" Size="Sm" Variant="Secondary"/>
+    <Button Text="Top, Right" X="216" Y="36" Width="96" Size="Sm" Variant="Secondary" Anchor="Top, Right"/>
+    <Button Text="Bottom, Left" X="8" Y="116" Size="Sm" Variant="Secondary" Anchor="Bottom, Left"/>
+    <Button Text="Bottom, Right" X="188" Y="116" Width="124" Size="Sm" Variant="Secondary" Anchor="Bottom, Right"/>
+    <Label Text="Left, Right: stretched" X="8" Y="80" Width="304" Anchor="Top, Left, Right" TextAlign="TopCenter" BackColor="PrimaryLight" CornerRadius="4"/>
+    <Icon Name="Star" Size="16" X="152" Y="44" Anchor="Top"/>
+  </Panel>
+</Stack>

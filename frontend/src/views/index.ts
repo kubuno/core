@@ -24,7 +24,11 @@ export {
   type MessageBoxButtons,
   type MessageBoxIcon,
 } from './controls'
-export { Panel, UserControl, Stack, ScrollArea, dockGrid, type DockGrid, type DockPlacement, type DockValue, type Surface } from './layout'
+export {
+  Panel, UserControl, Stack, ScrollArea, TableLayoutPanel, dockGrid, parseAnchor, anchoredStyle, tableTracks,
+  type DockGrid, type DockPlacement, type DockValue, type Surface, type AnchorEdges,
+} from './layout'
+export { ensureViewStyles } from './style'
 export { registerConverter, format, formatValue, type ValueConverter, type Scope } from './binding'
 export {
   registerElements,

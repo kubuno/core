@@ -1,0 +1,35 @@
+<!-- Label: the shared roles, the web weights and styles, alignment and overflow, theme colours. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <Stack Gap="4">
+    <Label Text="Micro — badges, counters" Role="Micro"/>
+    <Label Text="Meta — metadata, captions" Role="Meta"/>
+    <Label Text="Body — labels, fields, menus" Role="Body"/>
+    <Label Text="Heading — section headers" Role="Heading"/>
+    <Label Text="Title — object name" Role="Title"/>
+  </Stack>
+  <Stack Gap="4">
+    <Label Text="FontWeight Regular" FontWeight="Regular"/>
+    <Label Text="FontWeight Default (running text)"/>
+    <Label Text="FontWeight Medium" FontWeight="Medium"/>
+    <Label Text="FontWeight SemiBold" FontWeight="SemiBold"/>
+    <Label Text="FontWeight Bold" FontWeight="Bold"/>
+    <Label Text="FontStyle Italic" FontStyle="Italic"/>
+  </Stack>
+  <Stack Gap="4" Width="280" BorderBrush="Border" CornerRadius="8" Padding="8, 8, 8, 8">
+    <Label Text="TextAlign TopLeft (start)"/>
+    <Label Text="TextAlign TopCenter" TextAlign="TopCenter"/>
+    <Label Text="TextAlign TopRight (end)" TextAlign="TopRight"/>
+    <Label Text="Overflow Ellipsis: a long line of text cut with an ellipsis at the end"/>
+    <Label Text="Overflow Wrap: a long line of text that wraps onto the next lines of the label" Overflow="Wrap"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="12" WrapContents="true" CrossAlign="Center">
+    <Label Text="TextPrimary" ForeColor="TextPrimary"/>
+    <Label Text="TextSecondary" ForeColor="TextSecondary"/>
+    <Label Text="TextTertiary" ForeColor="TextTertiary"/>
+    <Label Text="Primary" ForeColor="Primary"/>
+    <Label Text="Danger" ForeColor="Danger"/>
+    <Label Text="Chip" BackColor="Surface2" Padding="8, 2, 8, 2" CornerRadius="4" Role="Meta"/>
+    <Label Text="Pill" BorderBrush="Primary/40" ForeColor="Primary" Padding="12, 4, 12, 4" CornerRadius="9999"/>
+    <Label Text="3" BackColor="Danger" ForeColor="OnPrimary" FontWeight="Bold" Role="Micro" Padding="6, 1, 6, 1" CornerRadius="9999"/>
+  </Stack>
+</Stack>

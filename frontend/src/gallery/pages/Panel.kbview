@@ -1,0 +1,39 @@
+<!--
+  Panel: surfaces, corners (children clipped), outline, shadow, hover / pressed states, lines between children,
+  dock bands, and Layout="Absolute" with Anchor (the buttons keep their distance to their edges when the panel
+  is wider or narrower than the 320 px it was designed at).
+-->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <Stack Direction="LeftToRight" Gap="12" WrapContents="true">
+    <Panel Surface="Card" Width="140" Height="72" Padding="12, 12, 12, 12" BorderBrush="Border"><Label Text="Card + border"/></Panel>
+    <Panel Surface="Well" Width="140" Height="72" Padding="12, 12, 12, 12" CornerRadius="12"><Label Text="Well, radius 12"/></Panel>
+    <Panel Surface="Card" Width="140" Height="72" Padding="12, 12, 12, 12" CornerRadius="8" Elevation="Md"><Label Text="Elevation Md"/></Panel>
+    <Panel Surface="Card" Width="140" Height="72" Padding="12, 12, 12, 12" CornerRadius="20" Elevation="Lg"><Label Text="Radius 20, Lg"/></Panel>
+  </Stack>
+
+  <!-- A card of clickable rows: corners clip the hover, a line between rows. -->
+  <Panel Surface="Card" CornerRadius="20" DividerColor="Border/50" Width="320" Elevation="Sm">
+    <Stack AccessibleRole="PushButton" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12"
+           HoverBackColor="Surface1" PressedBackColor="Surface2" AccessibleDescription="gallery-hover" OnClick="row_click">
+      <Icon Name="UserPlus" Size="16" Disc="Neutral" ForeColor="TextSecondary"/>
+      <Label Text="Add an account" Overflow="Wrap" ForeColor="TextPrimary"/>
+    </Stack>
+    <Stack AccessibleRole="PushButton" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12" HoverBackColor="Surface1" OnClick="row_click">
+      <Icon Name="Tag" Size="16" Disc="Neutral" ForeColor="TextSecondary"/>
+      <Label Text="Labels" Overflow="Wrap" ForeColor="TextPrimary"/>
+    </Stack>
+    <Stack AccessibleRole="PushButton" Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12" HoverBackColor="Surface1" Enabled="false">
+      <Icon Name="LogOut" Size="16" Disc="Neutral" ForeColor="TextSecondary"/>
+      <Label Text="Disabled row" Overflow="Wrap" ForeColor="TextPrimary"/>
+    </Stack>
+  </Panel>
+  <Label Text="{Binding clicks}" Role="Meta" ForeColor="TextSecondary"/>
+
+  <!-- Dock bands. -->
+  <Panel Height="140" BorderBrush="Border" CornerRadius="8">
+    <Panel Dock="Top" Surface="Well" Padding="8, 6, 8, 6"><Label Text="Dock Top"/></Panel>
+    <Panel Dock="Left" Surface="Layer" Padding="8, 6, 8, 6" Width="90"><Label Text="Dock Left"/></Panel>
+    <Panel Dock="Bottom" Surface="Well" Padding="8, 6, 8, 6"><Label Text="Dock Bottom"/></Panel>
+    <Panel Dock="Fill" Padding="8, 6, 8, 6"><Label Text="Dock Fill: the rest" Overflow="Wrap"/></Panel>
+  </Panel>
+</Stack>

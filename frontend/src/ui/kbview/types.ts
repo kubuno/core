@@ -107,6 +107,8 @@ export type RuntimeTarget =
   | 'icon-size' | 'icon-color' | 'icon-scaling'
   /** Web-only `Class` (Tailwind classes) merged into the component's `className`. */
   | 'class'
+  /** Web-only interaction states and outline (WV-5a): `HoverBackColor`, `PressedBackColor`, `CornerRadius`, `BorderBrush`, `BorderThickness`, `Elevation`. */
+  | 'hover-color' | 'pressed-color' | 'corner-radius' | 'border-brush' | 'border-thickness' | 'elevation'
   /** The view's root: the page / dialog title. */
   | 'view-title'
   /** Selects one of the element's `alternates` components (`TextField Variant`). */

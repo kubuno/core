@@ -14,6 +14,8 @@ interface RadioProps {
   disabled?: boolean
   className?: string
   labelClassName?: string
+  /** The native radio group: radios sharing a name move the choice with the arrow keys (`RadioGroup`). */
+  name?: string
 }
 
 const LBL: Record<RadioVariant, { label: string; desc: string }> = {
@@ -35,7 +37,7 @@ const DURATION = 100   // ms — the CSS transition this replaces
 export function Radio({
   checked, onChange, label, description,
   variant = 'default', color, disabled = false,
-  className, labelClassName,
+  className, labelClassName, name,
 }: RadioProps) {
   const inputRef  = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -159,6 +161,7 @@ export function Radio({
         <input
           ref={inputRef}
           type="radio"
+          name={name}
           checked={checked}
           disabled={disabled}
           // onClick (et non onChange seul) pour permettre de re-cliquer un radio

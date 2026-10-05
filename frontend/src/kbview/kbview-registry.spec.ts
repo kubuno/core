@@ -180,7 +180,9 @@ describe('kbview registry — conformance with the desktop export', () => {
     const report = checkConformance(buildWebRegistry(), desktopSnapshot(), KBVIEW_ALLOWLIST)
     const out = process.env.KBVIEW_CONFORMANCE_REPORT ?? join(tmpdir(), 'kbview-conformance-report.json')
     writeFileSync(out, JSON.stringify(report, null, 2) + '\n')
-    expect(report.summary.compared_elements).toBe(report.summary.web_elements)
+    // Every web element is compared, except the new ones the desktop does not have yet (allowlisted, with a reason).
+    const webOnly = KBVIEW_ALLOWLIST.filter(e => e.kind === 'element-web-only').length
+    expect(report.summary.compared_elements).toBe(report.summary.web_elements - webOnly)
     expect(report.failures, `see ${out}`).toEqual([])
     expect(report.unused_allowlist, `see ${out}`).toEqual([])
   })

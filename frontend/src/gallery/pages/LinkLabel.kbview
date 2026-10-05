@@ -1,0 +1,8 @@
+<!-- LinkLabel: roles, weights, an address (middle click opens it), a pill made with the web outline properties. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12" CrossAlign="Start">
+  <LinkLabel Text="A link in the running text" ForeColor="Primary" OnClick="link_click"/>
+  <LinkLabel Text="Heading link, SemiBold" Role="Heading" FontWeight="SemiBold" ForeColor="Primary" Href="https://kubuno.com" OnClick="link_click"/>
+  <LinkLabel Text="Gérer votre compte" ForeColor="Primary" BorderBrush="Primary/40" CornerRadius="9999" Padding="20, 6, 20, 6"
+             HoverBackColor="Primary/5" Href="https://kubuno.com" OnClick="link_click"/>
+  <Label Text="{Binding clicks}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>
