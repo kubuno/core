@@ -45,6 +45,19 @@ interface FloatingWindowProps {
     icon?: React.ReactNode;
     children: React.ReactNode;
     titleActions?: React.ReactNode;
+    /**
+     * What the window has to say about ITSELF — a refused save, a caveat that
+     * applies to the whole form.
+     *
+     * Rendered BETWEEN the title bar and the content, therefore **outside the
+     * scrolling area**. An alert placed in the flow of a form sinks below the fold
+     * as soon as the form is taller than the window, and the operator presses
+     * "Save" again without ever seeing why it will not save. Lived through on the
+     * building sheet: the refusal was there, at the bottom, out of sight.
+     *
+     * `null`/`undefined` reserves no space at all.
+     */
+    banner?: React.ReactNode;
     popout?: {
         route: string;
         label?: string;
@@ -75,5 +88,5 @@ interface FloatingWindowProps {
 }
 /** Ancienne marge intérieure par défaut, gardée pour les fenêtres qui la veulent. */
 export declare const WINDOW_PADDING = 20;
-export declare function FloatingWindow({ title, icon, children, titleActions, popout, onClose, defaultWidth, defaultHeight, minWidth, minHeight, resizable, backdrop, className, padding, actions, t, }: FloatingWindowProps): import("react").ReactPortal | null;
+export declare function FloatingWindow({ title, icon, children, titleActions, banner, popout, onClose, defaultWidth, defaultHeight, minWidth, minHeight, resizable, backdrop, className, padding, actions, t, }: FloatingWindowProps): import("react").ReactPortal | null;
 export {};

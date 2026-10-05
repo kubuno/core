@@ -1,5 +1,4 @@
-export default function AudienceSheet({ id, canManage, onBack, }: {
+export default function AudienceSheet({ id, canManage, }: {
     id: string;
     canManage: boolean;
-    onBack: () => void;
 }): import("react").JSX.Element;

@@ -55,4 +55,7 @@ export declare const SECURITY_DASHBOARD_KEY: readonly ["admin-security-dashboard
  * would be the only thing the page did.
  */
 export declare function useSecurityDashboard(period: string): import("@tanstack/react-query").UseQueryResult<NoInfer<SecurityDashboard>, Error>;
-export declare function errorMessage(err: unknown, fallback: string): string;
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage';

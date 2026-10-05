@@ -1,5 +1,5 @@
 interface KubunoLogoProps {
-    /** Hauteur du logo en px (la largeur suit le ratio 321:346). */
+    /** Hauteur du logo en px (la largeur suit le ratio 512:567). */
     size?: number;
     className?: string;
     title?: string;

@@ -33,6 +33,8 @@ export * from '../core/store/rightPanelStore';
 export * from '../core/i18n';
 export { default as i18n } from '../core/i18n';
 export { api } from '../core/api/client';
+export { signedUrl, signedUrls, useSignedUrl, signedSocketUrl, downloadSignedUrl, openSignedUrl, } from '../core/api/signedUrl';
+export type { TicketPurpose, SignedUrlOptions } from '../core/api/signedUrl';
 export { navigate } from '../core/navigation';
 export { useAuthStore } from '../core/store/authStore';
 export { useModulesStore } from '../core/store/modulesStore';
@@ -74,9 +76,20 @@ export type { VoiceDictation, UseVoiceDictationOptions } from '../core/shell/use
 export { startVoiceSession } from '../core/shell/voiceStt';
 export type { VoiceSession, VoiceCallbacks, VoiceErrorCode } from '../core/shell/voiceStt';
 /**
- * Version de contrat du SDK. À incrémenter UNIQUEMENT sur un changement cassant
+ * Version de contrat du SDK. À incrémenter sur tout changement cassant
  * (export retiré/renommé, signature de registry modifiée). Le loader rejette
- * proprement un module dont la `sdk_version` déclarée diffère.
+ * proprement un module dont la `sdkVersion` déclarée diffère.
+ *
+ * ⚠️ Ce handshake ne suffit PAS à lui seul : un export retiré/renommé fait
+ * échouer la LIAISON ES du bundle du module (« does not provide an export named
+ * 'X' ») AVANT que ce garde-fou ne s'exécute — le module bâti contre l'ancienne
+ * surface disparaissait alors en silence. Deux filets complètent donc ce
+ * numéro :
+ *   1. tout retrait d'export doit s'accompagner d'un bump ici ET d'un bridge de
+ *      compat pour les modules déjà installés (cf. `getDateLocale` ci-dessous) ;
+ *   2. si un module échoue quand même à se charger, le loader le recense
+ *      (`moduleLoadStore`) et la cloche l'annonce aux opérateurs
+ *      (`useModuleLoadAlerts`) au lieu de le laisser disparaître sans trace.
  */
 export declare const SDK_VERSION: 1;
 export * from '../core/intl/datetime';

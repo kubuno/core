@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node packages/views-compiler/bin/kbview-tsc.js -b && vite build",
+    "typecheck": "node packages/views-compiler/bin/kbview-tsc.js -b",
     "build:module": "vite build --config vite.module.config.ts",
     "build:registry": "node scripts/build-kbview-registry.mjs",
     "check:registry": "node scripts/build-kbview-registry.mjs --check && node scripts/kbview-conformance.mjs",

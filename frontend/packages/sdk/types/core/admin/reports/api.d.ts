@@ -122,4 +122,7 @@ export declare function usePanelReport(source: PanelSource, panelId: string, per
  * so the two share one cached read.
  */
 export declare function useInstanceName(): string | null;
-export declare function errorMessage(err: unknown, fallback: string): string;
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage';

@@ -6,7 +6,13 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-05
+
 ### Fixed
+
+- **`kbview-tsc` no longer warns about a missing `.kubuno/views` setup in projects with a solution-style
+  `tsconfig.json`** (`files: []` + `references`, the Vite template): it now also looks in the referenced
+  projects (such as `tsconfig.app.json`), where the setup lives.
 
 - **A compiled view finds its components even inside an import cycle.** A view of an application whose own
   code imports back into it (the core's shell views) could be evaluated before the components it uses; it

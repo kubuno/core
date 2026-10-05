@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-05
+
 ### Added
 
 - **Layout elements: `Stack`, `Panel`, `UserControl` and `ScrollArea`.** A stack places its children along a

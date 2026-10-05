@@ -75,7 +75,7 @@ jobs:
         with: { node-version: 24 }
       - name: install
         run: npm ci
-      - name: typecheck (tsc -b)
-        run: npx tsc -b
+      - name: typecheck (kbview-tsc -b, generates the .kbview/.kbcontrol types first)
+        run: npm run typecheck
       - name: unit tests (vitest)
         run: npx vitest run --passWithNoTests

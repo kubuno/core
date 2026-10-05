@@ -9,6 +9,21 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **The frontend builds again from a fresh checkout.** The type-check step of the build, the CI checks
+  and the npm package generation now run `kbview-tsc` instead of plain `tsc`: it first generates the types
+  of the shell's `.kbview` / `.kbcontrol` user controls (account panel, app launcher), which `tsc` alone
+  could not find, then type-checks the project. A `npm run typecheck` script does the same on its own.
+- **The published `@kubuno/sdk` type surface includes the declarations of the shell's user controls**, so
+  modules that type-check against it no longer meet an unresolved `./AccountMenu.kbcontrol` import.
+
+### Changed
+
+- **New npm package versions:** `@kubuno/sdk` 0.1.11 (signed URLs for browser-made requests),
+  `@kubuno/ui` 0.1.13 (`Label`, `LinkLabel`, `Avatar`, `IconGlyph`, round `IconButton`), and the first
+  releases of `@kubuno/views` 0.1.0, `@kubuno/views-compiler` 0.1.0 and `@kubuno/vectors` 0.1.0.
+
 ## [0.1.13] - 2026-10-05
 
 ### Security

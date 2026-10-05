@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-10-05
+
 ### Added
 
 - **`Label`, `LinkLabel`, `Avatar`, `IconGlyph` and `IconButton` components.** A line of text in one of the

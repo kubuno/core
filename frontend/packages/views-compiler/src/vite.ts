@@ -171,5 +171,14 @@ export const TSCONFIG_HINT = {
 export function hasGeneratedTypesSetup(root: string): boolean {
   const file = resolve(root, 'tsconfig.json')
   if (!existsSync(file)) return false
-  return readFileSync(file, 'utf8').includes('.kubuno/views')
+  const text = readFileSync(file, 'utf8')
+  if (text.includes('.kubuno/views')) return true
+  // A solution-style tsconfig.json (`files: []` + `references`, the Vite template) keeps the setup in a
+  // referenced project, usually tsconfig.app.json: look one level down.
+  for (const m of text.matchAll(/"path"\s*:\s*"([^"]+)"/g)) {
+    let ref = resolve(root, m[1])
+    if (!ref.endsWith('.json')) ref = join(ref, 'tsconfig.json')
+    if (existsSync(ref) && readFileSync(ref, 'utf8').includes('.kubuno/views')) return true
+  }
+  return false
 }

@@ -114,4 +114,7 @@ export declare function useDeleteExport(): import("@tanstack/react-query").UseMu
  * nothing of it ever sits in this tab's memory.
  */
 export declare const downloadUrl: (id: string) => string;
-export declare function errorMessage(err: unknown, fallback: string): string;
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../../api/errorMessage';

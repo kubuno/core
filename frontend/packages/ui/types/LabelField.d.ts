@@ -18,10 +18,4 @@ export interface LabelFieldProps {
     /** Search box label, for the list. */
     searchPlaceholder?: string;
 }
-/**
- * Picking labels for one element, as a form field. Presentational: it is handed
- * the labels that exist and the ones chosen, and reports back what was chosen —
- * it never calls the labels API, because the element being labelled may not
- * exist yet.
- */
-export declare function LabelField({ options, value, onChange, disabled, placeholder, emptyHint, searchPlaceholder }: LabelFieldProps): import("react").JSX.Element;
+export declare function LabelField({ options, value, onChange, disabled, placeholder, emptyHint, searchPlaceholder, }: LabelFieldProps): import("react").JSX.Element;

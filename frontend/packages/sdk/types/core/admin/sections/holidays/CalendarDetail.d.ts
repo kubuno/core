@@ -1,6 +1,5 @@
-export default function CalendarDetail({ calendarId, canManage, onBack, onOpenCalendar, }: {
+export default function CalendarDetail({ calendarId, canManage, onOpenCalendar, }: {
     calendarId: string;
     canManage: boolean;
-    onBack: () => void;
     onOpenCalendar: (id: string) => void;
 }): import("react").JSX.Element;

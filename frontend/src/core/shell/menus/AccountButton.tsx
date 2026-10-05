@@ -22,7 +22,7 @@ import { usePrivileges } from '../../authz/usePrivileges'
 import { useLinkedAccountsStore } from '../../store/linkedAccountsStore'
 import { api } from '../../api/client'
 import { authApi, type BrowserAccount } from '../../api/auth'
-import { initialsOf, type AccountEntry, type AccountUser } from './model'
+import { initialsOf, type AccountEntry, type AccountEventArgs, type AccountUser } from './model'
 import AccountMenu from './AccountMenu'
 
 /** The panel's width (`w-80`) and its distance to the viewport's edges. */
@@ -264,8 +264,8 @@ function AccountButtonImpl({ onAddAccount }: AccountButtonProps) {
               onOpenLabels={() => go('/labels')}
               onOpenAdmin={() => go('/admin')}
               onAddAccount={() => { close(false); onAddAccount?.() }}
-              onOpenAccount={(e) => { void openAccount(e.id) }}
-              onRemoveAccount={(e) => { void removeAccount(e.id) }}
+              onOpenAccount={(e: AccountEventArgs) => { void openAccount(e.id) }}
+              onRemoveAccount={(e: AccountEventArgs) => { void removeAccount(e.id) }}
               onSignOut={() => { void signOut() }}
               onChangeAvatar={() => setCropOpen(true)}
               onCloseRequested={() => close()}

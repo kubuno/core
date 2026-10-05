@@ -14,7 +14,7 @@ export declare const CHART_SERIES_DARK: readonly ["var(--kb-chart-1-dark)", "var
 export declare function useChartSeries(): readonly string[];
 /** Octets → chaîne lisible (Ko/Mo/Go…). */
 export declare function fmtBytes(n: number): string;
-export declare function BarChart({ data, color, height, unit, }: {
+export declare function BarChart({ data, color, height, unit, xLabels, }: {
     data: {
         label: string;
         value: number;
@@ -22,6 +22,13 @@ export declare function BarChart({ data, color, height, unit, }: {
     color?: string;
     height?: number;
     unit?: string;
+    /** Writes the category under each bar, thinning them out as far as it must to
+     *  keep them from touching. Off by default: where the categories are a series
+     *  of days whose exact date adds nothing, the hover tooltip already names the
+     *  bar and a row of dates is noise. Turn it on when the reader has to be able
+     *  to point at a bar and say *which* one it is — an hour of the day, above
+     *  all, is unreadable without it. */
+    xLabels?: boolean;
 }): import("react").JSX.Element;
 export declare function AreaChart({ data, color, height, unit, }: {
     data: {
@@ -50,7 +57,7 @@ export declare function DonutChart({ data, centerValue, centerLabel, size, }: {
     centerLabel?: string;
     size?: number;
 }): import("react").JSX.Element;
-export declare function HBarList({ items, color, }: {
+export declare function HBarList({ items, color, warnFull, }: {
     /** `color` per item overrides the list's own — a printed report ties each bar
         to the slice and to the table row that carry the same entry. */
     items: {
@@ -61,6 +68,11 @@ export declare function HBarList({ items, color, }: {
         color?: string;
     }[];
     color?: string;
+    /** Paints a nearly-full bar in the danger colour. Right when `max` is a LIMIT
+        (a quota being consumed), wrong when it is merely the largest value in the
+        list: the leader of a ranking would then always be red, and red would be
+        saying "problem" about the most-used room, which is good news. */
+    warnFull?: boolean;
 }): import("react").JSX.Element;
 /**
  * The same series as {@link BarChart} and {@link AreaChart}, drawn in SVG.

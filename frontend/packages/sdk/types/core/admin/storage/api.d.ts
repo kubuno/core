@@ -268,4 +268,7 @@ export declare function useSetDefaultQuota(): import("@tanstack/react-query").Us
 }, unknown>;
 /** The fill ratio at which an account starts being reported as near its limit. */
 export declare function useSetWarnPercent(): import("@tanstack/react-query").UseMutationResult<unknown, Error, number, unknown>;
-export declare function errorMessage(err: unknown, fallback: string): string;
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage';

@@ -42,12 +42,37 @@ export interface BackupStats {
     consecutive_failures: number;
     total_runs: number;
 }
+/** One recorded hot restore. */
+export interface RestoreRun {
+    id: string;
+    triggered_by: string | null;
+    actor_label: string | null;
+    status: 'running' | 'success' | 'failed';
+    source_file: string;
+    safety_file: string | null;
+    format: string | null;
+    started_at: string;
+    finished_at: string | null;
+    duration_ms: number | null;
+    schemas_count: number | null;
+    rows_count: number | null;
+    error: string | null;
+}
+/** One backup file present in the destination directory. */
+export interface BackupFile {
+    name: string;
+    size_bytes: number;
+    modified_at: string | null;
+    /** 'postgres' (a COPY archive) or 'portable' (NDJSON, MySQL/SQLite). */
+    format: 'postgres' | 'portable';
+}
 export interface BackupOverview {
     policy: BackupPolicy;
     next_run_at: string | null;
     running: boolean;
     stats: BackupStats;
     history: BackupRun[];
+    restore_history: RestoreRun[];
     restore_test: {
         at: string | null;
         declared: boolean;
@@ -56,14 +81,39 @@ export interface BackupOverview {
     covers: string[];
     /** Same, as `admin.bk_notcov_<id>`. This half must never silently shrink. */
     not_covers: string[];
-    schema: string;
+    /** The schemas actually covered by the dump, discovered on the server. */
+    schemas: string[];
     can_manage: boolean;
+    /** Restoring is super-user only; the console hides the control otherwise. */
+    can_restore: boolean;
+}
+export interface BackupFilesResponse {
+    destination: string;
+    files: BackupFile[];
 }
 export declare const BACKUP_KEY: readonly ["admin-backup"];
 export declare function useBackup(): import("@tanstack/react-query").UseQueryResult<NoInfer<BackupOverview>, Error>;
 export declare function useRunBackup(): import("@tanstack/react-query").UseMutationResult<unknown, Error, void, unknown>;
+export declare const BACKUP_FILES_KEY: readonly ["admin-backup-files"];
+/** The backup files present in the destination, for the restore picker. */
+export declare function useBackupFiles(enabled: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<BackupFilesResponse>, Error>;
+export interface RestoreResult {
+    message: string;
+    id: string;
+    source_file: string;
+    safety_file: string;
+    rows: number;
+}
+/** Hot restore. The caller must retype the exact file name as confirmation. */
+export declare function useRestoreBackup(): import("@tanstack/react-query").UseMutationResult<RestoreResult, Error, {
+    file_name: string;
+    confirm: string;
+}, unknown>;
 export declare function useDeclareRestoreTest(): import("@tanstack/react-query").UseMutationResult<unknown, Error, {
     note?: string;
     clear?: boolean;
 }, unknown>;
-export declare function errorMessage(err: unknown, fallback: string): string;
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage';

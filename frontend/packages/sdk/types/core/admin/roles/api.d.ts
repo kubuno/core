@@ -2,8 +2,10 @@ import type { Privilege, Role, RoleAssignment } from '../../authz/types';
 export declare const ROLES_KEY: string[];
 export declare const PRIVILEGES_KEY: string[];
 export declare const ASSIGNMENTS_KEY: string[];
-/** Message the server actually sent, or a caller-supplied fallback. */
-export declare function errorMessage(err: unknown, fallback: string): string;
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage';
 export declare function usePrivilegeCatalogue(enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<Privilege[]>, Error>;
 export declare function useRoles(enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<Role[]>, Error>;
 export declare function useAssignments(params?: {

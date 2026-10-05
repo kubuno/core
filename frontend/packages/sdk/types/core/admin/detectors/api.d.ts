@@ -112,6 +112,7 @@ export declare function useTestDetector(): import("@tanstack/react-query").UseMu
     draft?: DetectorInput;
     min_confidence?: number;
 }, unknown>;
-/** Server message of a failed call, falling back to a sentence of our own. */
-export declare function errorMessage(err: unknown, fallback: string): string;
-export {};
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../api/errorMessage';

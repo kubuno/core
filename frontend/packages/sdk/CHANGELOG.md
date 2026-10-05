@@ -6,6 +6,14 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-05
+
+### Fixed
+
+- **The type surface is complete again.** The declarations of the shell's account panel and app launcher
+  (now `.kbcontrol` user controls) imported a `./X.kbcontrol` module that was not shipped; its generated
+  declaration is now included next to them.
+
 ### Added
 
 - **Signed URLs for requests the browser makes by itself:** `useSignedUrl()`, `signedUrl()`,

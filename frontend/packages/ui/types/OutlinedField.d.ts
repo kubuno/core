@@ -22,5 +22,8 @@ export interface OutlinedFieldProps {
     readOnly?: boolean;
     /** Trailing affordance inside the box, right-aligned (e.g. a chevron). */
     trailing?: ReactNode;
+    /** HTML autocomplete hint, so password managers and the browser's own
+     *  autofill recognise the field (`username`, `current-password`, `email`…). */
+    autoComplete?: string;
 }
-export declare function OutlinedField({ label, value, onChange, icon, type, placeholder, primaryColor, required, autoFocus, multiline, large, inputMode, readOnly, trailing, }: OutlinedFieldProps): import("react").JSX.Element;
+export declare function OutlinedField({ label, value, onChange, icon, type, placeholder, primaryColor, required, autoFocus, multiline, large, inputMode, readOnly, trailing, autoComplete, }: OutlinedFieldProps): import("react").JSX.Element;

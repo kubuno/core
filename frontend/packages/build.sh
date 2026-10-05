@@ -15,24 +15,32 @@ cd "$(dirname "$0")/.."                     # → frontend/
 FE="$(pwd)"
 PKG="$FE/packages"
 
-echo "==> 1/3  Emitting declarations (tsc -p tsconfig.emit.json)"
-rm -rf "$FE/dist-types"
-node_modules/.bin/tsc -p tsconfig.emit.json
+echo "==> 1/3  Building @kubuno/views-compiler (TypeScript; the committed .wasm is rebuilt by npm run build:wasm)"
+# First: kbview-tsc (below) runs from this package's dist/.
+node_modules/.bin/tsc -b packages/views-compiler
 
-echo "==> 2/3  Assembling type trees"
+echo "==> 2/3  Emitting declarations (kbview-tsc -p tsconfig.emit.json)"
+# kbview-tsc, not plain tsc: it first generates the types of the .kbview / .kbcontrol views
+# (.kubuno/views, gitignored) that the code-behinds import, then runs tsc with the same arguments.
+rm -rf "$FE/dist-types"
+node packages/views-compiler/bin/kbview-tsc.js -p tsconfig.emit.json
+
+echo "==> 2b   Assembling type trees"
 # @ui : autonomous, ships ui/ only
 rm -rf "$PKG/ui/types";    mkdir -p "$PKG/ui/types";        cp -r "$FE"/dist-types/ui/*    "$PKG/ui/types/"
 # @kubuno/sdk : sdk/ + core/ (sdk imports ../core)
 rm -rf "$PKG/sdk/types";   mkdir -p "$PKG/sdk/types/sdk" "$PKG/sdk/types/core"
 cp -r "$FE"/dist-types/sdk/*  "$PKG/sdk/types/sdk/"
 cp -r "$FE"/dist-types/core/* "$PKG/sdk/types/core/"
+# The core's user controls (X.kbcontrol + X.ts code-behind): the emitted code-behind declarations import
+# './X.kbcontrol', whose declaration kbview-tsc generated under .kubuno/views — ship it next to them.
+( cd "$FE/.kubuno/views/src" && find core -name '*.kbcontrol.d.ts' -o -name '*.kbview.d.ts' ) | while read -r f; do
+  mkdir -p "$PKG/sdk/types/$(dirname "$f")"; cp "$FE/.kubuno/views/src/$f" "$PKG/sdk/types/$f"
+done
 # @kubuno/drive : drive/ only
 rm -rf "$PKG/drive/types"; mkdir -p "$PKG/drive/types/drive"; cp -r "$FE"/dist-types/drive/* "$PKG/drive/types/drive/"
 # @kubuno/views : views/ only (the .kbview runtime; self-contained, imports react only)
 rm -rf "$PKG/views/types"; mkdir -p "$PKG/views/types";     cp -r "$FE"/dist-types/views/* "$PKG/views/types/"
-
-echo "==> 2b   Building @kubuno/views-compiler (TypeScript; the committed .wasm is rebuilt by npm run build:wasm)"
-node_modules/.bin/tsc -b packages/views-compiler
 
 echo "==> 3/3  Building @kubuno/ui ESM bundle"
 # ⚠️ The `cd` is load-bearing, not stylistic. Vite resolves `outDir` against the

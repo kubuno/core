@@ -36,6 +36,8 @@ declare const _default: {
         name: string;
         user: string;
         password: string;
+        schemaPrefix: string;
+        schemaPrefixHint: string;
         connected: string;
         createIt: string;
         createHint: string;

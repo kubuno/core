@@ -112,5 +112,7 @@ export declare function useRetryAccount(): import("@tanstack/react-query").UseMu
     accountId: string;
 }, unknown>;
 export declare function useDeleteCampaign(): import("@tanstack/react-query").UseMutationResult<any, Error, string, unknown>;
-/** The server's message when it has one — it is more specific than ours. */
-export declare function errorMessage(err: unknown, fallback: string): string;
+/** One implementation, shared: reading the failure of a request is the same
+ *  problem everywhere. Re-exported under the name this section's callers
+ *  already use. */
+export { apiErrorMessage as errorMessage } from '../../../api/errorMessage';

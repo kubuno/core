@@ -22,11 +22,16 @@ interface DropdownProps {
     variant?: DropdownVariant;
     /** Extra styles merged into the trigger button (e.g. to square joined corners). */
     buttonStyle?: React.CSSProperties;
-    /** Behave as a real focusable form control: the trigger takes focus on click
-     *  (so an adjacent field loses its focus ring) and shows the same border +
-     *  focus ring as `<Input>`. Off by default to preserve toolbar dropdowns that
-     *  deliberately keep focus on their editor (they set `onMouseDown` preventDefault). */
-    focusable?: boolean;
+    /**
+     * Whether the trigger takes the focus a click hands it.
+     *
+     * `'auto'` (the default) is what a native select does — the click moves the
+     * focus here, so the field the reader has just left goes dark — EXCEPT when
+     * a text-editing surface holds the focus, where the click leaves it there so
+     * the selection a toolbar is about to act on survives (see focusGuard.ts).
+     * `true` always takes it; `false` never does. Neither is needed by a form.
+     */
+    focusable?: boolean | 'auto';
 }
 export declare function Dropdown({ value, onChange, options, width, dropdownMinWidth, placeholder, disabled, height, fontSize, className, variant, buttonStyle, focusable, }: DropdownProps): React.JSX.Element;
 export {};

@@ -1,0 +1,15 @@
+/**
+ * `@kubuno/views` — the runtime of `.kbview` web views (vskubuno docs/WEB-VIEWS.md, lot WV-3).
+ *
+ * Provided by the host through its import map (one instance: one binding engine, one live-view registry);
+ * modules keep `@kubuno/views` external. The npm package ships the types only.
+ */
+export { View, bind, createViewBase, invalidateViews, type ElementHandle, type ViewClass } from './view';
+export { KbView, KbNode, ViewRoot, sizeClassOf, tokenColor } from './render';
+export { Repeater, Timer, Query, Mutation, ReactHost, defineControl, registerControls, MessageBox, Dialog, type QueryHandle, type MutationHandle, type ControlMeta, type DefinedControl, type DialogResult, type MessageBoxButtons, type MessageBoxIcon, } from './controls';
+export { Panel, UserControl, Stack, ScrollArea, dockGrid, type DockGrid, type DockPlacement, type DockValue, type Surface } from './layout';
+export { registerConverter, format, formatValue, type ValueConverter, type Scope } from './binding';
+export { registerElements, resolveComponent, setIconResolver, setResourceResolver, invalidateResources, } from './resolve';
+export type { EventArgs, MouseEventArgs, MouseButton, KeyEventArgs, KeyPressEventArgs, CancelEventArgs, DragEventArgs, ValueChangedEventArgs, ItemEventArgs, ItemActivateEventArgs, } from './events';
+export { VIEWS_ABI, type ViewPlan, type PlanNode, type PlanProp, type PlanEvent, type PlanBinding } from './plan';
+export type * from './handles.generated';

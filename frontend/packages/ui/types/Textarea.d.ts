@@ -18,5 +18,5 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
     /** Called with the HTML value when `mentions` is enabled. */
     onMentionsChange?: (html: string) => void;
 }
-export declare function Textarea({ label, error, hint, className, id, mentions, onMentionsChange, ...props }: TextareaProps): React.JSX.Element;
+export declare function Textarea({ label, error, hint, className, id, required, mentions, onMentionsChange, ...props }: TextareaProps): React.JSX.Element;
 export {};
