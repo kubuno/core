@@ -28,7 +28,7 @@ export interface EventSource {
 interface RegistryComponent {
   name: string
   children?: string
-  properties?: Array<{ name: string; kind: unknown; default?: string | null; bindable?: boolean }>
+  properties?: Array<{ name: string; kind: unknown; default?: string | null; bindable?: boolean; editor?: string | null }>
   events?: Array<{ name: string }>
   web?: {
     module?: string | null
@@ -59,6 +59,8 @@ export interface ElementInfo {
   eventNames: Set<string>
   /** Default values of the properties (to leave out what equals the default). */
   defaults: Map<string, string>
+  /** Properties taking an object or a list (registry editor `object` / `list`), not a text. */
+  objectProps: Set<string>
 }
 
 export class Registry {
@@ -100,6 +102,7 @@ export class Registry {
       propertyNames: new Set([...(c.properties ?? []).map((p) => p.name), ...Object.keys(w?.prop_map ?? {})]),
       eventNames: new Set((c.events ?? []).map((e) => e.name)),
       defaults,
+      objectProps: new Set((c.properties ?? []).filter((p) => p.editor === 'object' || p.editor === 'list').map((p) => p.name)),
     }
     this.byName.set(c.name, info)
     if (w?.module && w.export) {

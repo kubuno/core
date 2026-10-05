@@ -167,6 +167,17 @@ class Migration {
   readonly getters: Getter[] = []
   readonly methods: Method[] = []
   readonly useBody: string[] = []
+  /** The names each statement of `useBody` declares. */
+  readonly useNames: string[][] = []
+  /** The statements of `useBody` (rewritten again for `useHooks()`, where the names of `useStores()` are fields). */
+  readonly useStmts: Array<{ node: ts.Statement; transform: (t: string) => string }> = []
+
+  /** A statement of the hooks, with the names it declares. */
+  addUse(text: string, statement: ts.Statement, transform: (t: string) => string = (t) => t): void {
+    this.useBody.push(text)
+    this.useStmts.push({ node: statement, transform })
+    this.useNames.push(ts.isVariableStatement(statement) ? statement.declarationList.declarations.flatMap((d) => declaredNames(d.name).map((n) => n.name)) : [])
+  }
   readonly parts: Part[] = []
   readonly defaults: Array<{ ns: string; key: string; value: string }> = []
   readonly members = new Set<string>()
@@ -269,7 +280,7 @@ class Migration {
    * `this.x = v`, `t(…)` → `this.tr(…)`), `rows` maps a template's parameters to their row expressions.
    * `inUse`: the code stays in `use()`, where hook locals are still local variables.
    */
-  rewrite(node: ts.Node, opts: { inUse?: boolean; rows?: Map<ts.Node, string> } = {}): string {
+  rewrite(node: ts.Node, opts: { inUse?: boolean; rows?: Map<ts.Node, string>; localNames?: ReadonlySet<string> } = {}): string {
     const sfText = node.getSourceFile().text
     const start = node.getStart()
     const end = node.getEnd()
@@ -327,7 +338,7 @@ class Migration {
         const l = this.localOf(n)
         if (!l) return
         let text: string
-        if (opts.inUse && (l.kind === 'hook-data' || l.kind === 'hook-fn' || l.kind === 'translate')) return
+        if (opts.inUse && (l.kind === 'hook-data' || l.kind === 'hook-fn' || l.kind === 'translate') && (!opts.localNames || opts.localNames.has(l.name))) return
         switch (l.kind) {
           case 'setter':
             // A setter passed as a value: the generated method (`setForm(v)`), bound.
@@ -734,7 +745,8 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
             // Its type written out when it can be (the hooks type would otherwise depend on itself through the getters
             // the initial value reads).
             const written = typeArg ?? printableType(m, v)
-            pending.push(() => m.useBody.push(typeArg || !written ? m.rewrite(s, { inUse: true }) : m.rewrite(s, { inUse: true }).replace(/\buseState\(/, `useState<${written}>(`)))
+            const typed = (t: string): string => (typeArg || !written ? t : t.replace(/\buseState\(/, `useState<${written}>(`))
+            pending.push(() => m.addUse(typed(m.rewrite(s, { inUse: true })), s, typed))
           }
           continue
         }
@@ -751,7 +763,7 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
             const isFn = m.isFunctionType(n.decl)
             m.addLocal({ name: n.name, kind: isFn ? 'hook-fn' : 'hook-data', member: m.member(n.name), decl: n.decl, type: m.typeText(n.decl) })
           }
-          pending.push(() => m.useBody.push(m.rewrite(s, { inUse: true })))
+          pending.push(() => m.addUse(m.rewrite(s, { inUse: true }), s))
           continue
         }
         if (init && (ts.isArrowFunction(skipParens(init)) || ts.isFunctionExpression(skipParens(init))) && ts.isIdentifier(d.name)) {
@@ -777,7 +789,7 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       continue
     }
     if (ts.isExpressionStatement(s) && isHookCall(s.expression)) {
-      pending.push(() => m.useBody.push(m.rewrite(s, { inUse: true })))
+      pending.push(() => m.addUse(m.rewrite(s, { inUse: true }), s))
       continue
     }
     throw new Stop(`unsupported statement in the component body: \`${s.getText().slice(0, 60)}…\``)
@@ -1270,11 +1282,7 @@ function commonAttrs(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, 
         continue
       case 'title':
         attr(h.node, 'ToolTip', expr ? valueOf(m, expr, ctx, 'tooltip', 'text') : str ?? '')
-        // The title names the element for screen readers when it shows no text (icons only).
-        const showsText = ts.isJsxElement(e) && e.children.some((c) => (ts.isJsxText(c) && !!c.text.trim()) || (ts.isJsxExpression(c) && !!c.expression && !containsJsx(c.expression) && isTextValue(m, c.expression)))
-        if (!h.node.attrs.some((a) => a.name === 'AccessibleName') && !showsText) {
-          attr(h.node, 'AccessibleName', expr ? valueOf(m, expr, ctx, 'accessible_name', 'text') : str ?? '')
-        }
+        // ToolTip renders the element's `title` (the shell draws the Kubuno bubble): the same accessible name as before.
         h.done.add(name)
         continue
       case 'role': {
@@ -1492,6 +1500,8 @@ function intrinsicInner(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElemen
   if (tag === 'button') {
     if (type === 'submit') throw new NeedsPart('<button type="submit"> (submits its form)')
     attr(h.node, 'AccessibleRole', 'PushButton')
+    // Sized like the native button it was (a push-button container otherwise fills its line).
+    attr(h.node, 'AutoSize', 'true')
     if (jsxAttr(e, 'disabled')) {
       const d = jsxAttr(e, 'disabled')!
       attr(h.node, 'Enabled', d.initializer && ts.isJsxExpression(d.initializer) && d.initializer.expression ? invertExpr(m, d.initializer.expression, ctx, nameFor(d.initializer.expression, 'enabled_unless')) : 'false')
@@ -1703,7 +1713,8 @@ function component(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, in
           const name = lucideName(m, x)
           if (!name) throw new NeedsPart(`<${info.name} ${name ?? target.name}>: an icon that is not a Lucide icon`)
           value = name
-        } else if (target.convert && !isTextValue(m, x as ts.Expression)) throw new NeedsPart(`<${info.name}> ${p.name.getText()}: a value the property converts (${target.convert})`)
+        } else if (target.convert && target.convert !== 'items-source' && !isTextValue(m, x as ts.Expression)) throw new NeedsPart(`<${info.name}> ${p.name.getText()}: a value the property converts (${target.convert})`)
+        else if (!info.objectProps.has(target.name) && target.convert !== 'items-source' && !isTextValue(m, x as ts.Expression) && !(ts.isArrowFunction(x) || ts.isFunctionExpression(x))) throw new NeedsPart(`<${info.name}> ${p.name.getText()}: an object value for a text property`)
         else value = valueOf(m, expr, ctx, target.name, kindOfProp(info, target.name))
       } else continue
       attr(h.node, target.name, value)
@@ -1815,7 +1826,7 @@ function buildRepeater(m: Migration, list: ts.Expression, cb: ts.ArrowFunction |
   }
   const mapper = `(${[p0, idx].filter(Boolean).join(', ')}) => {${localDecls.map((d) => `\n      ${d}`).join('')}\n      return { ${objectFields.join(', ')} }\n    }`
   const body = `${listText}.map(${mapper})`
-  m.getters.push({ name: getterName, body, memo: true, doc: `The rows of the Repeater over \`${list.getText().replace(/\s+/g, ' ')}\`.` })
+  m.getters.push({ name: getterName, body, memo: true, doc: `The rows of the Repeater over \`${list.getText().replace(/\s+/g, ' ')}\`.`, guards: (ctx.guards ?? []).filter((c) => !/\b__row\b/.test(c)) })
   m.needsMemoize = true
   m.stats.getters++
   attr(rep, 'ItemsSource', `{Binding ${getterName}}`)
@@ -1841,7 +1852,13 @@ function part(m: Migration, node: ts.Node, ctx: JsxCtx, why: string): XNode {
         }
       }
       const l = m.localOf(n)
-      if (l) free.set(n.text, { expr: refText(m, l), type: l.kind === 'prop' ? `${m.stem}['props']['${l.member}']` : l.kind === 'props-object' ? `${m.stem}['props']` : `${m.stem}['${l.member}']` })
+      if (l) {
+        // Narrowed where the part sits (`x && <Part {...x}/>`): NonNullable of the member.
+        const base = l.kind === 'prop' ? `${m.stem}['props']['${l.member}']` : l.kind === 'props-object' ? `${m.stem}['props']` : `${m.stem}['${l.member}']`
+        const here = m.checker.getTypeAtLocation(n)
+        const nullable = (here.isUnion() ? here.types : [here]).some((t) => !!(t.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)))
+        free.set(n.text, { expr: refText(m, l), type: nullable || l.kind === 'method' ? base : `NonNullable<${base}>` })
+      }
     }
     ts.forEachChild(n, visit)
   }
@@ -1914,7 +1931,7 @@ function hostComponent(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement
 /** Whether `name` is used as an identifier in `text` (not as a property `x.name`). */
 function mentions(name: string, text: string): boolean {
   // Comments do not count (a getter's doc names the component it renders).
-  const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1')
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1').replace(/\.\.\./g, ' ')
   return new RegExp('(^|[^\\w$.])' + name.replace(/\$/g, '\\$') + '(?![\\w$])').test(code)
 }
 
@@ -1965,7 +1982,6 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   const cls: string[] = []
   cls.push(`export class ${m.stem} extends ViewBase {`)
   // The hooks run in `useHooks()`; what they give is typed from it (`<X>Hooks['name']`): no type to import.
-  const hooksType = `${m.stem}Hooks`
   const hookLocals = [...m.locals.values()].filter((l) => l.kind === 'hook-data' || l.kind === 'hook-fn' || l.kind === 'translate')
   const reads = [xmlText, ...m.getters.map((g) => g.body), ...m.methods.map((x) => x.body)].join('\n')
   const used = hookLocals.filter((l) => new RegExp('(this\\.|Binding |[^\\w$])' + l.member + '(?![\\w$])').test(reads))
@@ -1973,22 +1989,44 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   for (const l of m.locals.values()) {
     if (l.kind === 'state') members.push(`  @bind accessor ${l.member}${l.type ? `: ${l.type}` : ''} = ${l.init}`)
   }
+  // The hooks split in two, in that order (a stable order for React): the ones that read nothing of the class (stores,
+  // translations, queries on constants) in `useStores()`, then the ones reading its members (a state initialised from a
+  // getter, an effect) in `useHooks()`. The first ones' results land in the fields before the second ones run (their
+  // getters read fresh values), and each method types its fields (`XStores['user']`, `XHooks['n']`) without one type
+  // depending on itself.
+  const indep: number[] = []
+  const dep: number[] = []
+  m.useBody.forEach((s, k) => (/\bthis\./.test(s) ? dep : indep).push(k))
+  const groupOf = new Map<string, 'Stores' | 'Hooks'>()
+  for (const k of indep) for (const n of m.useNames[k] ?? []) groupOf.set(n, 'Stores')
+  for (const k of dep) for (const n of m.useNames[k] ?? []) groupOf.set(n, 'Hooks')
+  const typeOf = (l: Local): string => `${m.stem}${groupOf.get(l.name) ?? 'Hooks'}['${l.name}']`
   for (const l of used) {
-    if (l.kind === 'hook-data') members.push(`  @bind accessor ${l.member}: ${hooksType}['${l.name}'] = undefined as never`)
-    else members.push(`  ${l.member}!: ${hooksType}['${l.name}']`)
+    // Plain fields: `publish()` sets them and notifies the view only when a value changed (shallowly).
+    members.push(`  ${l.member}!: ${typeOf(l)}`)
   }
   if (m.needsNavigate) members.push(`  navigate!: ReturnType<typeof useNavigate>`)
   if (members.length) cls.push(...members, '')
-  const hookBody = m.useBody.map((s) => s.split('\n').map((l) => '    ' + l.trimStart()).join('\n'))
-  if (hookBody.length || m.needsNavigate) {
-    if (hookBody.length) {
-      cls.push(`  /** The screen's hooks, as the TSX called them (React's rules apply): run by \`use()\` on every render. */`, '  useHooks() {', ...hookBody)
-      cls.push(`    return { ${hookLocals.map((l) => l.name).join(', ')} }`, '  }', '')
-    }
-    cls.push(`  /** Publishes what the hooks give as fields (the bindings and the methods read them). */`, '  use(): void {')
-    if (hookBody.length) {
-      cls.push(used.length ? '    const h = this.useHooks()' : '    this.useHooks()')
-      for (const l of used) cls.push(`    this.${l.member} = h.${l.name}`)
+  const indent = (s: string): string => s.split('\n').map((l) => '    ' + l.trimStart()).join('\n')
+  const groups = [
+    { method: 'useStores', ks: indep, doc: `The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them.` },
+    { method: 'useHooks', ks: dep, doc: `The screen's hooks that read its members (run after the fields of \`useStores()\` are set).` },
+  ].filter((g) => g.ks.length)
+  for (const g of groups) {
+    const names = g.ks.flatMap((k) => m.useNames[k] ?? [])
+    // In useHooks(), the names useStores() declared are fields (`this.user`): written again with only its own names local.
+    const own = new Set(names)
+    const text = (k: number): string => (g.method === 'useHooks' ? m.useStmts[k].transform(m.rewrite(m.useStmts[k].node, { inUse: true, localNames: own })) : m.useBody[k])
+    cls.push(`  /** ${g.doc} React's rules apply: \`use()\` runs them on every render. */`, `  ${g.method}() {`, ...g.ks.map((k) => indent(text(k))))
+    cls.push(`    return { ${names.join(', ')} }`, '  }', '')
+  }
+  if (groups.length || m.needsNavigate) {
+    cls.push(`  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */`, '  use(): void {')
+    for (const g of groups) {
+      const mine = used.filter((l) => (groupOf.get(l.name) ?? 'Hooks') === (g.method === 'useStores' ? 'Stores' : 'Hooks'))
+      const v = g.method === 'useStores' ? 's' : 'h'
+      cls.push(mine.length ? `    const ${v} = this.${g.method}()` : `    this.${g.method}()`)
+      if (mine.length) cls.push(`    this.publish({ ${mine.map((l) => (l.member === l.name ? `${l.name}: ${v}.${l.name}` : `${l.member}: ${v}.${l.name}`)).join(', ') } })`)
     }
     if (m.needsNavigate) cls.push('    this.navigate = useNavigate()')
     cls.push('  }', '')
@@ -2016,7 +2054,7 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   const rowTypes = m.getters.filter((g) => /^rows_/.test(g.name) && methodText.includes(`RowOf_${g.name}`)).map((g) => `type RowOf_${g.name} = ${m.stem}['${g.name}'][number]`)
   cls.push('}')
   if (rowTypes.length) cls.push('', ...rowTypes)
-  if (m.useBody.length) cls.push('', `/** What the screen's hooks give (the types of the fields they fill). */`, `export type ${m.stem}Hooks = ReturnType<${m.stem}['useHooks']>`)
+  for (const g of groups) cls.push('', `/** What \`${g.method}()\` gives (the types of the fields it fills). */`, `export type ${m.stem}${g.method === 'useStores' ? 'Stores' : 'Hooks'} = ReturnType<${m.stem}['${g.method}']>`)
   cls.push('', `export default ${m.stem}.component()`, '')
   // Helpers the class uses (and the helpers those use), in file order.
   let code = body.join('\n') + cls.join('\n')
@@ -2034,7 +2072,7 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   const helperText = helpers.filter((_, k) => keep.has(k)).map((h) => h.text + '\n')
   code = [...helperText, ...body, ...cls].join('\n')
   // Imports: the TSX's, as far as the code uses them, and what the generated code needs.
-  const hasBind = [...m.locals.values()].some((l) => l.kind === 'state') || used.some((l) => l.kind === 'hook-data')
+  const hasBind = [...m.locals.values()].some((l) => l.kind === 'state')
   const usedTypes = [...m.viewsTypes].filter((t) => mentions(t, code))
   const viewsNames = [...(hasBind ? ['bind'] : []), ...usedTypes.map((t) => `type ${t}`)]
   const imports = importsUsedBy(sf, code)
@@ -2062,7 +2100,7 @@ function partsFile(m: Migration): string {
   }
   let text = body.join('\n')
   // The other statements of the file the parts use (types, constants, helpers), then the imports they need.
-  const uses = (name: string, t: string): boolean => new RegExp('(^|[^\\w$.])' + name.replace(/\$/g, '\\$') + '(?![\\w$])').test(t)
+  const uses = (name: string, t: string): boolean => mentions(name, t)
   const helpers: string[] = []
   for (const st of m.sf.getStatements()) {
     if (Node.isImportDeclaration(st) || Node.isExportAssignment(st)) continue

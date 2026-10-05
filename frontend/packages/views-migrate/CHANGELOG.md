@@ -18,3 +18,6 @@ under the published version number.
   `Repeater` over memoized rows, and what does not convert (a local or another screen's component, a raw `<input>`,
   an unmapped prop) rendered through `<ReactHost>` with a TODO comment. `--out <dir>` writes a dry run elsewhere,
   `--report` the per-file report (converted / partial with reasons / skipped).
+- Hooks are split in `useStores()` (reading nothing of the class) and `useHooks()`; their results become plain fields
+  published through `View.publish`, so a view sees them on its first render and does not re-render without end.
+  Lists over a getter or a field (`items-source`) map to a `Repeater` too.

@@ -57,8 +57,8 @@ describe('kbview-migrate on a sample screen', () => {
     expect(view).toMatch(/<Label Text="\{Res sample\.empty\}"[^>]*Visible="\{Binding show_items\}"/s)
     expect(view).toMatch(/<Panel HtmlTag="Ul" Class="space-y-1">\s*<Repeater ItemKey="key" ItemsSource="\{Binding rows_items\}">/)
     expect(view).toMatch(/<Icon Name="Check" Size="14" Visible="\{Binding item\.done\}" Class="text-success"\/>/)
-    // A <button> → a PushButton container; title → ToolTip + AccessibleName (icon only).
-    expect(view).toMatch(/<Panel AccessibleRole="PushButton"\s+ToolTip="\{Res sample\.copy\}"\s+AccessibleName="\{Res sample\.copy\}"/)
+    // A <button> → a PushButton container sized like a native button; title → ToolTip (rendered as the title).
+    expect(view).toMatch(/<Panel AccessibleRole="PushButton"\s+AutoSize="true"\s+ToolTip="\{Res sample\.copy\}"/)
     // <Link> → LinkLabel with the router navigation.
     expect(view).toMatch(/<LinkLabel Href="\/settings"\s+Text="\{Res sample\.settings\}"\s+ForeColor="Primary"[^>]*OnClick="link_label_click"\/>/)
     // The local component → a ReactHost rendering it, from the parts file.
@@ -66,14 +66,15 @@ describe('kbview-migrate on a sample screen', () => {
     expect(view).toContain('<!-- TODO(views-migrate): <Badge> is no .kbview element (a local or dynamic component) -->')
   })
 
-  it('writes a code-behind class: state as @bind fields, hooks in useHooks(), getters, methods', () => {
+  it('writes a code-behind class: state as @bind fields, hooks in useStores() / useHooks(), getters, methods', () => {
     expect(code).toContain("import { bind, type MouseEventArgs } from '@kubuno/views'")
     expect(code).toContain("import { ViewBase } from './Sample.kbview'")
     expect(code).toContain('export class Sample extends ViewBase {')
     expect(code).toContain('@bind accessor items: Item[] = []')
     expect(code).toContain("@bind accessor name = ''")
     expect(code).toContain('@bind accessor copied = false')
-    expect(code).toMatch(/useHooks\(\) \{\s*const \{ t \} = useTranslation\(\)\s*return \{ t \}\s*\}/)
+    // A hook reading nothing of the class: in useStores().
+    expect(code).toMatch(/useStores\(\) \{\s*const \{ t \} = useTranslation\(\)\s*return \{ t \}\s*\}/)
     // Every string is a {Res}: the hooks' `t` needs no field.
     expect(code).not.toContain('tr!:')
     // A derived constant → a getter; an object getter → View.memo.
@@ -81,7 +82,7 @@ describe('kbview-migrate on a sample screen', () => {
     expect(code).toMatch(/get rows_items\(\) \{\s*return this\.memo\('rows_items', \[this\.items\]/)
     // A setter call → an assignment; a functional update reads the current value.
     expect(code).toMatch(/add\(\) \{\s*this\.items = \[\.\.\.this\.items, \{ id: String\(this\.items\.length\), label: this\.name, done: false \}\]\s*this\.name = ''/)
-    expect(code).toContain('export type SampleHooks = ReturnType<Sample[\'useHooks\']>')
+    expect(code).toContain("export type SampleStores = ReturnType<Sample['useStores']>")
     expect(code).toContain('export default Sample.component()')
     // The code-behind is valid TypeScript (syntax).
     const out = ts.transpileModule(code, { reportDiagnostics: true, compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.Preserve } })
