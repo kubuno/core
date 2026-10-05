@@ -1,0 +1,28 @@
+<!-- InheritanceChainWindow — converted from InheritanceChainWindow.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<FloatingWindow x:Props="InheritanceChainWindowProps" Title="{Binding title}" Width="520" Modal="true" OnClose="floating_window_close">
+  <Panel Class="max-h-[60vh] overflow-y-auto p-4">
+    <Label Text="{Res admin.chain_intro}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary" Class="mb-3"/>
+    <Panel HtmlTag="Ol" Class="space-y-1">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+        <!-- TODO(views-migrate): <li> with a computed style -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Repeater>
+    </Panel>
+    <Panel Visible="{Binding show_data_overrides}" Class="mt-4 border-t border-border pt-3">
+      <Label Text="{Res admin.chain_overrides_intro, Count={Binding chain_overrides_intro_count}}"
+             Role="Meta"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             Class="mb-2"/>
+      <Panel HtmlTag="Ul" Class="space-y-1">
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_overrides}">
+          <Panel HtmlTag="Li" ForeColor="TextSecondary" Class="flex items-center gap-2 text-sm">
+            <Label HtmlTag="Span" Text="{Binding span_text}" Role="Meta" Overflow="Wrap" BackColor="Surface2" Class="rounded px-1.5 py-0.5"/>
+            <Label HtmlTag="Span" Text="{Binding o.scope_name}" InheritFontSize="true" Class="min-w-0"/>
+            <Icon Name="Lock" Size="12" Visible="{Binding o.locked}" Class="shrink-0 text-warning"/>
+          </Panel>
+        </Repeater>
+      </Panel>
+    </Panel>
+  </Panel>
+</FloatingWindow>

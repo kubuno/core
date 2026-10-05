@@ -1,91 +1,22 @@
-// The scope tree of a module's settings page: WHO the values beside it apply to.
-//
-// It is a tree in the page and not a dropdown on purpose. The unit being
-// configured qualifies every control beside it, and it has to stay legible
-// while the operator scrolls a long form — a value picked in a menu that then
-// closes is exactly how someone reconfigures the whole instance believing they
-// touched one branch. Keeping the tree in view also makes the hierarchy
-// readable, which is what makes "inherited from the parent" mean anything.
-//
-// It carries no chrome of its own: it is a SECTION of the module's side card
-// (`ModuleSidePanel`), which owns the card, the fold and the heading. On a
-// narrow screen that card sits above the settings rather than beside them, so
-// the tree is reachable at every width without a second, window-shaped copy of
-// itself.
+/**
+ * Code-behind of `ScopeTree.kbview` (converted from `ScopeTree.tsx` by @kubuno/views-migrate).
+ */
+import { bind, type MouseEventArgs } from '@kubuno/views'
+import { Fragment } from 'react'
+import { useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { useQuery } from "@tanstack/react-query"
+import { Building2 } from "lucide-react"
+import { foldIncludes } from "@ui"
+import { api } from "../../api/client"
+import type { OrgUnit } from "../../types"
+import { orgUnitPath, type ActiveScope } from "./scopeTypes"
 
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
-import { Building2, ChevronRight, Search } from 'lucide-react'
-import { Input, foldIncludes } from '@ui'
-import { api } from '../../api/client'
-import type { OrgUnit } from '../../types'
-import { orgUnitPath, type ActiveScope } from './scopeTypes'
+import { ViewBase } from './ScopeTree.kbview'
+import * as __parts from './ScopeTree.parts'
 
-/** Deepest nesting walked. A cycle is refused server-side; a stored one must
- *  truncate the panel rather than freeze the console — same bound as
- *  `OrgUnitPicker` and `orgUnitPath`. */
 const MAX_DEPTH = 32
 
-/**
- * The one line at the top of the settings column that names what is being
- * edited.
- *
- * The tree beside it already shows the selection, but a tree shows it as a
- * highlighted row twelve rows down a scrollable panel — and the operator's eye
- * is on the form, not on the panel. Every value below this line belongs to the
- * scope it names, and it says which level the unfilled ones follow, because
- * "inherited" means nothing until it says inherited FROM WHAT.
- *
- * It shares `admin-org-units` with the panel: same key, same cache, no second
- * request.
- */
-export function ScopeHeadline({ scope }: { scope: ActiveScope }) {
-  const { t } = useTranslation()
-  // The list is only ever read to spell out the PATH of an organisational unit.
-  // On the instance scope there is no path to resolve, and that is the scope
-  // every module without an `overridable` setting sits on permanently — asking
-  // the server for a list nobody reads, on every one of those pages, is a
-  // request that exists only to be discarded.
-  const { data } = useQuery({
-    enabled: scope.type === 'org_unit',
-    queryKey: ['admin-org-units'],
-    queryFn: () => api.get<{ org_units: OrgUnit[] }>('/admin/org-units').then(r => r.data.org_units),
-    staleTime: 30_000,
-  })
-  const units = data ?? []
-  const path  = orgUnitPath(units, scope.type === 'org_unit' ? scope.id : null)
-  const self  = path[path.length - 1]
-  const parent = path.length >= 2 ? path[path.length - 2] : null
-
-  const isInstance = scope.type === 'instance' || !self
-
-  return (
-    <div className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-border pb-3">
-      <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-        {t('admin.m_scope_applies_to', { defaultValue: 'Réglages appliqués à' })}
-      </span>
-      <span className="min-w-0 truncate font-medium text-text-primary"
-        style={{ fontSize: 'var(--kb-text-body)' }}>
-        {isInstance
-          ? t('admin.m_scope_instance', { defaultValue: "Toute l'instance" })
-          : self.name}
-      </span>
-      {!isInstance && (
-        <span className="min-w-0 truncate text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {t('admin.m_scope_inherits_from', {
-            parent: parent
-              ? parent.name
-              : t('admin.m_scope_instance', { defaultValue: "Toute l'instance" }),
-            defaultValue: `— un réglage non remplacé suit ${parent ? parent.name : "toute l'instance"}`,
-          })}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/** Past this many units, scanning the tree by eye stops being the fast way in. */
 const FILTER_THRESHOLD = 8
 
 const childrenOf = (units: OrgUnit[], parentId: string | null) =>
@@ -100,175 +31,220 @@ export interface ScopeTreeProps {
   overriding?: Set<string>
 }
 
-export default function ScopeTree({ scope, onChange, overriding }: ScopeTreeProps) {
-  const { t } = useTranslation()
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [needle, setNeedle]     = useState('')
+export class ScopeTree extends ViewBase {
+  @bind accessor needle = ''
+  tr!: ScopeTreeStores['t']
+  expanded!: Set<string>
+  setExpanded!: ScopeTreeStores['setExpanded']
+  units!: ScopeTreeStores['units']
+  openPath!: Set<string>
 
-  const { data } = useQuery({
-    queryKey: ['admin-org-units'],
-    queryFn: () => api.get<{ org_units: OrgUnit[] }>('/admin/org-units').then(r => r.data.org_units),
-    staleTime: 30_000,
-  })
-  const units = useMemo(() => data ?? [], [data])
-  const root  = units.find(u => u.parent_id === null) ?? null
-
-  // The branch leading to the selected unit is open on arrival: landing on a
-  // scope whose row is folded out of sight would read as "nothing selected".
-  const openPath = useMemo(() => {
-    const ids = new Set<string>()
-    if (root) ids.add(root.id)
-    for (const u of orgUnitPath(units, scope.type === 'org_unit' ? scope.id : null)) ids.add(u.id)
-    return ids
-  }, [units, root, scope.type, scope.id])
-
-  const isOpen = (id: string) => expanded.has(id) || openPath.has(id)
-  const toggle = (id: string) =>
-    setExpanded(prev => {
-      const next = new Set(prev)
-      // A row opened by the path has no entry of its own; closing it has to add
-      // every other open id first, or the click would look ignored.
-      if (isOpen(id)) { for (const o of openPath) next.add(o); next.delete(id) }
-      else next.add(id)
-      return next
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const [expanded, setExpanded] = useState<Set<string>>(new Set())
+    const { data } = useQuery({
+      queryKey: ['admin-org-units'],
+      queryFn: () => api.get<{ org_units: OrgUnit[] }>('/admin/org-units').then(r => r.data.org_units),
+      staleTime: 30_000,
     })
+    const units = useMemo(() => data ?? [], [data])
+    return { t, expanded, setExpanded, data, units }
+  }
 
-  // Flattened once, bounded: recursing at render time is what lets a cycle in
-  // the data spin forever.
-  const rows: { unit: OrgUnit; depth: number; kids: number }[] = []
-  const walk = (u: OrgUnit, depth: number) => {
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const units = this.units
+    const openPath = useMemo(() => {
+      const ids = new Set<string>()
+      if (this.root) ids.add(this.root.id)
+      for (const u of orgUnitPath(units, this.props.scope.type === 'org_unit' ? this.props.scope.id : null)) ids.add(u.id)
+      return ids
+    }, [units, this.root, this.props.scope.type, this.props.scope.id])
+    this.publish({ openPath })
+    return { openPath }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, expanded: s.expanded, setExpanded: s.setExpanded, units: s.units })
+    const h = this.useHooks()
+    this.publish({ openPath: h.openPath })
+  }
+
+  get root(): OrgUnit | null {
+    return this.memo('root', [this.units], () => this.units.find(u => u.parent_id === null) ?? null)
+  }
+
+  get rows(): { unit: OrgUnit; depth: number; kids: number }[] {
+    return this.memo('rows', [this.expanded, this.openPath, this.units, this.root], () => (() => {
+      const rows: { unit: OrgUnit; depth: number; kids: number }[] = []
+      const isOpen = (id: string) => this.expanded.has(id) || this.openPath.has(id)
+      const walk = (u: OrgUnit, depth: number) => {
     if (depth > MAX_DEPTH) return
-    const kids = childrenOf(units, u.id)
+    const kids = childrenOf(this.units, u.id)
     rows.push({ unit: u, depth, kids: kids.length })
     if (isOpen(u.id)) kids.forEach(k => walk(k, depth + 1))
   }
-  if (root) walk(root, 0)
+      if (this.root) walk(this.root, 0)
+      return rows
+    })())
+  }
 
-  const filtering = needle.trim().length > 0
-  // Results are FLAT and carry their path: a filtered tree either hides matches
-  // whose parents do not match, or forces every ancestor open. Both read as noise.
-  const results = filtering
-    ? units
-        .filter(u => foldIncludes(`${u.name} ${orgUnitPath(units, u.id).map(p => p.name).join(' ')}`, needle.trim()))
+  get filtering(): boolean {
+    return this.needle.trim().length > 0
+  }
+
+  get results(): OrgUnit[] {
+    return this.memo('results', [this.filtering, this.units, this.needle], () => this.filtering
+    ? this.units
+        .filter(u => foldIncludes(`${u.name} ${orgUnitPath(this.units, u.id).map(p => p.name).join(' ')}`, this.needle.trim()))
         .sort((a, b) => a.name.localeCompare(b.name))
-    : []
+    : [])
+  }
 
-  const isInstance = scope.type === 'instance'
+  get isInstance(): boolean {
+    return this.props.scope.type === 'instance'
+  }
 
-  const rowClass = (selected: boolean) =>
-    `flex w-full min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
-      selected ? 'bg-primary-light text-primary' : 'text-text-primary hover:bg-surface-2'
-    }`
-
-  // ONE tree, not two lists side by side. The instance is a real level of the
-  // chain — every unit resolves through it — so it is the ROOT of the tree and
-  // the units hang under it. Painted as a sibling of the top unit it read as a
-  // second, competing "everything" entry, and the operator had to work out
-  // which of the two rows meant the whole instance.
-  const instanceRow = (
+  get instanceRow() {
+    return this.memo('instanceRow', [this.props, this.isInstance, this.tr], () => (
     <div className="flex items-center">
       <span className="h-6 w-5 shrink-0" aria-hidden />
       <button
         type="button"
-        onClick={() => onChange({ type: 'instance', id: null })}
-        className={rowClass(isInstance)}
-        aria-current={isInstance ? 'true' : undefined}
+        onClick={() => this.props.onChange({ type: 'instance', id: null })}
+        className={this.rowClass(this.isInstance)}
+        aria-current={this.isInstance ? 'true' : undefined}
       >
         <Building2 size={15} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-sm">
-          {t('admin.m_scope_instance', { defaultValue: "Toute l'instance" })}
+          {this.tr('admin.m_scope_instance', { defaultValue: "Toute l'instance" })}
         </span>
       </button>
     </div>
-  )
+  ))
+  }
 
-  return (
-    <div aria-label={t('admin.m_scope_panel', { defaultValue: 'Portée des réglages' })}>
-      {units.length > FILTER_THRESHOLD && (
-        <div className="px-2 pt-2">
-          <Input
-            type="search"
-            value={needle}
-            onChange={e => setNeedle(e.target.value)}
-            placeholder={t('admin.ou_search_ph', { defaultValue: 'Rechercher une unité…' })}
-            leftIcon={<Search size={14} />}
-          />
-        </div>
-      )}
+  get show_units_filter_threshold() {
+    return this.units.length > FILTER_THRESHOLD
+  }
 
-      <div className="max-h-[50vh] space-y-0.5 overflow-y-auto p-2">
-        {instanceRow}
+  get part1_props() {
+    return this.memo('part1_props', [this.needle, this.tr, this.units], () => {
+      if (!(this.units.length > FILTER_THRESHOLD)) return undefined as never
+      return ({ needle: this.needle, setNeedle: this.setNeedle.bind(this), t: this.tr })
+    })
+  }
 
-        {filtering ? (
-          results.length === 0 ? (
-            <p className="px-2 py-2 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {t('admin.ou_no_results', { defaultValue: 'Aucune unité' })}
-            </p>
-          ) : (
-            results.map(u => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => onChange({ type: 'org_unit', id: u.id })}
-                className={rowClass(scope.type === 'org_unit' && scope.id === u.id)}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm">{u.name}</span>
-                  <span className="block truncate text-text-tertiary" style={{ fontSize: 'var(--kb-text-micro)' }}>
-                    {orgUnitPath(units, u.id).slice(0, -1).map(p => p.name).join(' / ')}
-                  </span>
-                </span>
-              </button>
-            ))
-          )
-        ) : (
-          rows.map(({ unit, depth, kids }) => {
-            const selected = scope.type === 'org_unit' && scope.id === unit.id
-            const open = isOpen(unit.id)
-            return (
-              // `depth + 1`: the units hang under the instance row above.
-              <div key={unit.id} className="flex items-center" style={{ paddingLeft: (depth + 1) * 12 }}>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                  onClick={() => toggle(unit.id)}
-                  className="flex h-6 w-5 shrink-0 items-center justify-center text-text-tertiary"
-                >
-                  {kids > 0 && (
-                    <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChange({ type: 'org_unit', id: unit.id })}
-                  className={rowClass(selected)}
-                  aria-current={selected ? 'true' : undefined}
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm">{unit.name}</span>
-                  {/* A branch that no longer follows its parent, named before
-                      it is opened. */}
-                  {overriding?.has(unit.id) && (
-                    <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                      title={t('admin.m_scope_has_overrides', {
-                        defaultValue: 'Cette unité remplace au moins un réglage',
-                      })}
-                    />
-                  )}
-                </button>
-              </div>
-            )
-          })
-        )}
-      </div>
+  /** A part of the screen still written in React (<TextField LeftIcon>: an icon size the element cannot take). */
+  get Part1() {
+    if (!(this.units.length > FILTER_THRESHOLD)) return undefined as never
+    return __parts.Part1
+  }
 
-      <p className="px-3 pb-2 leading-relaxed text-text-tertiary"
-        style={{ fontSize: 'var(--kb-text-micro)' }}>
-        {t('admin.m_scope_panel_hint', {
-          defaultValue: "Une unité hérite des valeurs de son parent tant qu'elle ne les remplace pas.",
-        })}
-      </p>
-    </div>
-  )
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_instance_row() {
+    return this.memo('content_instance_row', [this.instanceRow], () => ({ children: this.instanceRow }))
+  }
+
+  get show_not_filtering() {
+    return !(this.filtering)
+  }
+
+  get show_results() {
+    if (!(this.filtering)) return undefined as never
+    return this.results.length === 0
+  }
+
+  get show_not_results() {
+    if (!(this.filtering)) return undefined as never
+    return !(this.results.length === 0)
+  }
+
+  /** The rows of the Repeater over `results`. */
+  get rows_results() {
+    return this.memo('rows_results', [this.results, this.filtering, this.props, this.units], () => {
+      if (!(this.filtering) || !(!(this.results.length === 0))) return undefined as never
+      return this.results.map((u) => {
+      return { u, button_class: ((this.filtering) && (!(this.results.length === 0))) ? (this.rowClass(this.props.scope.type === 'org_unit' && this.props.scope.id === u.id)) : undefined, span_text: ((this.filtering) && (!(this.results.length === 0))) ? (orgUnitPath(this.units, u.id).slice(0, -1).map(p => p.name).join(' / ')) : undefined, key: u.id }
+    })
+    })
+  }
+
+  get visible() {
+    return this.memo('visible', [this.show_results, this.filtering], () => this.show_results && this.filtering)
+  }
+
+  get visible2() {
+    return this.memo('visible2', [this.show_not_results, this.filtering], () => this.show_not_results && this.filtering)
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.rows, this.props, this.tr, this.filtering], () => {
+      if (!(!(this.filtering))) return undefined as never
+      return ({ rows: this.rows, scope: this.props.scope, isOpen: this.isOpen.bind(this), toggle: this.toggle.bind(this), onChange: this.props.onChange, rowClass: this.rowClass.bind(this), overriding: this.props.overriding, t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (a list callback destructuring its item). */
+  get Part2() {
+    if (!(!(this.filtering))) return undefined as never
+    return __parts.Part2
+  }
+
+  isOpen(id: string) {
+    return this.expanded.has(id) || this.openPath.has(id)
+  }
+
+  toggle(id: string) {
+    return this.setExpanded(prev => {
+      const next = new Set(prev)
+      // A row opened by the path has no entry of its own; closing it has to add
+      // every other open id first, or the click would look ignored.
+      if (this.isOpen(id)) { for (const o of this.openPath) next.add(o); next.delete(id) }
+      else next.add(id)
+      return next
+    })
+  }
+
+  walk(u: OrgUnit, depth: number) {
+    if (depth > MAX_DEPTH) return
+    const kids = childrenOf(this.units, u.id)
+    this.rows.push({ unit: u, depth, kids: kids.length })
+    if (this.isOpen(u.id)) kids.forEach(k => this.walk(k, depth + 1))
+  }
+
+  rowClass(selected: boolean) {
+    return `flex w-full min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+      selected ? 'bg-primary-light text-primary' : 'text-text-primary hover:bg-surface-2'
+    }`
+  }
+
+  panel_click(_sender: unknown, args: MouseEventArgs) {
+    const { u } = args.row as RowOf_rows_results
+    if (!(this.filtering) || !(!(this.results.length === 0))) return undefined as never
+    this.props.onChange({ type: 'org_unit', id: u.id })
+  }
+
+  /** `setNeedle` of the TSX: a value, or an update of the previous one. */
+  setNeedle(value: ScopeTree['needle'] | ((prev: ScopeTree['needle']) => ScopeTree['needle'])) {
+    this.needle = typeof value === 'function' ? (value as (prev: ScopeTree['needle']) => ScopeTree['needle'])(this.needle) : value
+  }
+
 }
+
+type RowOf_rows_results = ScopeTree['rows_results'][number]
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ScopeTreeStores = ReturnType<ScopeTree['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type ScopeTreeHooks = ReturnType<ScopeTree['useHooks']>
+
+export default ScopeTree.component()

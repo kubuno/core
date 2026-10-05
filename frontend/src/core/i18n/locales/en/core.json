@@ -3800,7 +3800,10 @@
     "mdb_copy": "Copy data to the new engine",
     "mdb_copy_hint": "« Save & restart » repoints the module at an empty target (it re-migrates). « Copy data » restarts it on the target, then copies its existing data across — the previous database is kept intact.",
     "mdb_copy_ok": "Data copied: {{tables}} tables, {{rows}} rows.",
-    "mdb_copy_failed": "The data copy could not be completed."
+    "mdb_copy_failed": "The data copy could not be completed.",
+    "m_scope_applies_to": "Réglages appliqués à",
+    "m_scope_panel": "Portée des réglages",
+    "m_scope_panel_hint": "Une unité hérite des valeurs de son parent tant qu'elle ne les remplace pas."
   },
   "account": {
     "add_title": "Add a Kubuno account",

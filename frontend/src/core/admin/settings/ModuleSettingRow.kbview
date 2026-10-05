@@ -1,0 +1,23 @@
+<!-- ModuleSettingRow — converted from ModuleSettingRow.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="ModuleSettingRowProps" Class="{Binding div_class}">
+  <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" Visible="{Binding inline}">
+    <Panel Class="shrink-0">
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_control}"/>
+    </Panel>
+    <Panel Class="min-w-0 flex-1">
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_caption}"/>
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_trailer}"/>
+    </Panel>
+  </Stack>
+  <!-- TODO(views-migrate): elements held in an expression -->
+  <ReactHost Component="{Binding Fragment}" Props="{Binding content_caption2}" Visible="{Binding show_not_inline}"/>
+  <Panel Visible="{Binding show_not_inline}" Class="mt-2 min-w-0">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_control2}"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_trailer2}"/>
+  </Panel>
+</Panel>

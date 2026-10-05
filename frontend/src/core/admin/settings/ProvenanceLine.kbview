@@ -1,0 +1,41 @@
+<!-- ProvenanceLine — converted from ProvenanceLine.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="ProvenanceLineProps" Direction="LeftToRight" CrossAlign="Start" Class="mt-2">
+  <Panel HtmlTag="P" ForeColor="TextTertiary" Class="min-w-0 flex-1 text-xs leading-5">
+    <Panel HtmlTag="Span" ForeColor="TextSecondary" Visible="{Binding locked}" Class="inline-flex items-center gap-1">
+      <Icon Name="Lock" Size="12" Class="shrink-0 text-warning"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.prov_locked, Scope={Binding lockName}}"/>
+    </Panel>
+    <Panel HtmlTag="Span" ForeColor="Primary" Visible="{Binding visible}" Class="inline-flex items-center gap-1">
+      <Icon Name="Pencil" Size="12" Class="shrink-0"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.prov_overridden}"/>
+      <Panel HtmlTag="Span" ForeColor="TextSecondary" Visible="{Binding props.setting.locked_here}" Class="inline-flex items-center gap-1">
+        <Icon Name="Lock" Size="12" Class="shrink-0 text-warning"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.prov_locked_here}"/>
+      </Panel>
+    </Panel>
+    <Panel HtmlTag="Span" Visible="{Binding visible2}" Class="inline-flex items-center gap-1">
+      <Icon Name="CornerDownRight" Size="12" Class="shrink-0"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.prov_inherited, Scope={Binding fromName}}"/>
+    </Panel>
+    <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" · " Visible="{Binding show_setting_overrides}"/>
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           Visible="{Binding show_setting_overrides}"
+           Class="underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+           OnClick="panel_click">
+      <Label HtmlTag="Span"
+             InheritFontSize="true"
+             Overflow="Wrap"
+             Text="{Res admin.prov_overridden_by, Count={Binding props.setting.overrides.length}}"/>
+    </Panel>
+  </Panel>
+  <Panel AccessibleRole="PushButton"
+         AutoSize="true"
+         AccessibleName="{Res admin.setting_menu}"
+         Class="-mt-0.5 shrink-0 rounded p-1 text-text-tertiary hover:bg-surface-2 hover:text-text-primary"
+         OnClick="panel_click2">
+    <Icon Name="MoreVertical" Size="16"/>
+  </Panel>
+  <!-- TODO(views-migrate): <ContextMenu> pos, onClose, theme: no .kbview property -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_menu_pos}"/>
+</Stack>

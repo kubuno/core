@@ -1,0 +1,3 @@
+<!-- CaptchaPreview — converted from CaptchaPreview.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<!-- TODO(views-migrate): <div data-captcha-preview>: attribute(s) without a .kbview property -->
+<ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>

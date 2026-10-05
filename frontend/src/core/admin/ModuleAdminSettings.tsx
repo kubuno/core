@@ -15,10 +15,9 @@ import type { ModuleSettingGroup } from "./adminModules"
 import type { ModuleAdminSection } from "../slots/SlotRegistry"
 import { findIcon } from "../utils/iconMap"
 import ModuleSettingRow from "./settings/ModuleSettingRow"
-import { SettingRows } from "./settings/SettingsBlocks"
+import SettingRows from "./settings/SettingsBlocks"
 import SettingSectionCard from "./settings/SettingSectionCard"
 import SettingsSaveBar from "./settings/SettingsSaveBar"
-import { ScopeHeadline } from "./settings/ScopeTree"
 import ScopeStatusPill from "./settings/ScopeStatusPill"
 import ProvenanceLine from "./settings/ProvenanceLine"
 import InheritanceChainWindow from "./settings/InheritanceChainWindow"
@@ -29,6 +28,7 @@ import { apiErrorDetail } from "../api/errorMessage"
 
 import { ViewBase } from './ModuleAdminSettings.kbview'
 import * as __parts from './ModuleAdminSettings.parts'
+import ScopeHeadline from './settings/ScopeHeadline'
 
 export function useModuleInstanceSettings(moduleId: string, enabled = true) {
   const query = useQuery({
