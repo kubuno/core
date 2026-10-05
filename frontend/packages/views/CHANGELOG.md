@@ -8,6 +8,8 @@ under the published version number.
 
 ### Added
 
+- **`View.publish(values)`** sets fields from what hooks returned this render and re-renders only when one changed,
+  compared shallowly: a hook returning a fresh but equal object or list on every render no longer loops.
 - **`AutoSize` on `Panel` and `Stack`**: the container sizes to its content instead of filling its line; a push-button
   container (`AccessibleRole="PushButton"`) then sizes like a native button.
 - **`View.memo(key, deps, compute)`** for getters returning an object or a list: the same object while `deps` are

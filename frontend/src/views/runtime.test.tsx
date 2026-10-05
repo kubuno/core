@@ -229,3 +229,33 @@ describe('{Res} arguments and plurals (WV-6)', () => {
     expect(text()).toBe('1 file for Kim')
   })
 })
+
+describe('View.publish (hook results as fields)', () => {
+  it('re-renders on a changed value, not on a fresh but equal object (no render loop)', async () => {
+    const pubPlan: ViewPlan = {
+      abi: 1, file: 'test/Pub.kbview', kind: 'view', names: {}, handlers: [],
+      root: {
+        id: '', el: 'Box', at: [1, 1], m: 'test-ui', x: 'Box', content: 'children',
+        children: [{ id: '0', el: 'Btn', at: [2, 3], m: 'test-ui', x: 'Btn', props: [{ n: 'Text', to: { prop: 'children' }, kind: 'String', at: [2, 8], b: { path: 'state.label', mode: 'OneWay', at: [2, 20] } }] }],
+      },
+    }
+    let renders = 0
+    let external = 'one'
+    const Base = createViewBase(pubPlan)
+    class Pub extends (Base as unknown as new () => { publish(v: Record<string, unknown>): void }) {
+      state!: { label: string }
+      use(): void {
+        renders++
+        // A hook returning a fresh object every render.
+        this.publish({ state: { label: external } })
+      }
+    }
+    const { rerender } = render(createElement(KbView, { view: Pub as never }))
+    expect(screen.getByRole('button').textContent).toBe('one')
+    const settled = renders
+    expect(settled).toBeLessThan(5)
+    external = 'two'
+    await act(async () => { rerender(createElement(KbView, { view: Pub as never, key: 'same' } as never)) })
+    expect(renders).toBeLessThan(settled + 6)
+  })
+})

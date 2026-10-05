@@ -124,6 +124,19 @@ function defineHandles(vm: View<object>): void {
   }
 }
 
+/** `Object.is`, or for two plain objects / arrays, the same keys with `Object.is` values (one level). */
+function shallowEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const pa = Object.getPrototypeOf(a)
+  if (pa !== Object.getPrototypeOf(b) || (pa !== Object.prototype && pa !== Array.prototype)) return false
+  const ka = Object.keys(a)
+  const kb = Object.keys(b)
+  if (ka.length !== kb.length) return false
+  return ka.every((k) => Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+}
+
 /** The memos of `View.memo`, per view instance (outside the instance: a prototype swap keeps them). */
 const memos = new WeakMap<object, Map<string, { deps: unknown[]; value: unknown }>>()
 
@@ -187,6 +200,22 @@ export abstract class View<P extends object = object> {
     const value = compute()
     store.set(key, { deps: [...deps], value })
     return value
+  }
+
+  /**
+   * Sets fields from what hooks gave this render (`this.publish({ user, items })` in `use()`), notifying the view only
+   * when one changed — compared shallowly, so a hook returning a fresh but equal object or list on every render does
+   * not re-render the view without end, as a `@bind` field (compared by identity) would.
+   */
+  protected publish(values: Readonly<Record<string, unknown>>): void {
+    let changed = false
+    const self = this as unknown as Record<string, unknown>
+    for (const [k, v] of Object.entries(values)) {
+      if (shallowEqual(self[k], v)) continue
+      self[k] = v
+      changed = true
+    }
+    if (changed) notify(this[KB])
   }
 
   /** Marks the view as changed (after mutating a `@bind` object in place). */
