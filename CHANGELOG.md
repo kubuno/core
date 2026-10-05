@@ -11,6 +11,9 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **A codemod from React screens to views (`@kubuno/views-migrate`, `kbview-migrate`).** It turns a TSX screen into a
+  `.kbview` view and its code-behind class, says per file what it converted and what it left in React (and why), and
+  keeps the screen's look, text and accessibility; measured on the core's settings, admin and dialog screens.
 - **Web views keep the page structure screen readers rely on.** A view can say that a text is a heading or an
   inline run, that a container is a section, a navigation, a form or a list, that a backdrop is hidden from screen
   readers, that a field is a password or an e-mail address and what the browser may fill in, and that a button
