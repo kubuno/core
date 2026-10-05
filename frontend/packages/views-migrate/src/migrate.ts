@@ -200,6 +200,8 @@ class Migration {
   readonly extraImports = new Set<string>()
   /** Components defined in the file other than the converted one (used through parts). */
   readonly localComponents = new Set<string>()
+  /** Types the component body declared, moved to the code-behind's module level. */
+  readonly hoisted: string[] = []
 
   constructor(readonly cfg: MigrateConfig, readonly sf: SourceFile, readonly fn: FnLike, readonly name: string) {
     this.checker = cfg.project.getTypeChecker().compilerObject
@@ -299,7 +301,8 @@ class Migration {
             const inner = new Map(opts.rows ?? [])
             inner.set(p, field)
             const body = arg.body
-            value = ts.isBlock(body) ? `((${(p.name as ts.Identifier).text}) => ${this.rewrite(body, { ...opts, rows: inner })})(${field})` : this.rewrite(body, { ...opts, rows: inner })
+            // A block keeps its parameter (called with the current value); an expression reads the field directly.
+            value = ts.isBlock(body) ? `((${(p.name as ts.Identifier).text}) => ${this.rewrite(body, opts)})(${field})` : this.rewrite(body, { ...opts, rows: inner })
             if (!ts.isBlock(body) && ts.isObjectLiteralExpression(skipParens(body))) value = `(${value.replace(/^\((.*)\)$/s, '$1')})`
           } else {
             const t = this.checker.getTypeAtLocation(arg)
@@ -811,6 +814,11 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       pending.push(() => m.addUse(m.rewrite(s, { inUse: true }), s))
       continue
     }
+    // A type declared in the body (`interface Report {…}`): a module-level type of the code-behind.
+    if (ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s)) {
+      m.hoisted.push(s.getText())
+      continue
+    }
     throw new Stop(`unsupported statement in the component body: \`${s.getText().slice(0, 60)}…\``)
   }
 
@@ -831,7 +839,10 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       const init = l.decl.initializer
       if (ts.isIdentifier(l.decl.name)) {
         const body = m.rewrite(init)
-        m.getters.push({ name: l.member, body, memo: m.isObjectValue(init), type: l.type, guards: guardsOf(l.decl) })
+        // Its type written out (the TSX inferred it): a getter typed from hooks typed from getters would otherwise
+        // depend on itself.
+        const inferred = l.type ?? declaredType(m, l.decl.name)
+        m.getters.push({ name: l.member, body, memo: m.isObjectValue(init), type: inferred, guards: guardsOf(l.decl) })
         m.stats.getters++
       }
     } else if (l.kind === 'derived' && ts.isBindingElement(l.decl)) {
@@ -2027,7 +2038,9 @@ function buildRepeater(m: Migration, list: ts.Expression, cb: ts.ArrowFunction |
   const tmpl = convertChild(m, el, inner)
   const rep: XNode = { el: 'Repeater', attrs: [], children: tmpl }
   // The rows: one object per item with the parameters and every row field.
-  const listText = m.rewrite(list, { rows: ctx.rows })
+  // `list?.map(…)`: no list, no rows.
+  const optional = ts.isPropertyAccessExpression(call.expression) && !!call.expression.questionDotToken
+  const listText = optional ? `(${m.rewrite(list, { rows: ctx.rows })} ?? [])` : m.rewrite(list, { rows: ctx.rows })
   const fieldLines = [...scope.fields].filter(([k]) => !cb.parameters.some((p) => p.name.getText() === k) || !locals.length).map(([k, v]) => `${k}: ${v.replace(/__row\./g, '')}`)
   // Row fields reference the parameters and earlier locals by name: compute them in order inside the callback.
   const p0 = params[0] ?? 'item'
@@ -2230,6 +2243,7 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
     })
   }
   const body: string[] = []
+  for (const h of m.hoisted) body.push(h, "")
   if (m.propsTypeDecl) body.push(`export type ${m.propsType} = ${m.propsTypeDecl}`, '')
   else if (m.propsType && !sf.getInterface(m.propsType)?.isExported() && !sf.getTypeAlias(m.propsType)?.isExported() && (sf.getInterface(m.propsType) || sf.getTypeAlias(m.propsType))) {
     body.push(`export type { ${m.propsType} }`, '')
@@ -2288,7 +2302,8 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   const typeOf = (l: Local): string => `${m.stem}${groupOf.get(l.name) ?? 'Hooks'}['${l.name}']`
   for (const l of used) {
     // Plain fields: `publish()` sets them and notifies the view only when a value changed (shallowly).
-    members.push(`  ${l.member}!: ${typeOf(l)}`)
+    // Written out when it can be: a field typed from the hooks that read getters typed from fields can depend on itself.
+    members.push(`  ${l.member}!: ${(l.kind !== 'translate' && writableType(m, l.type)) || typeOf(l)}`)
   }
   if (m.needsNavigate) members.push(`  navigate!: ReturnType<typeof useNavigate>`)
   if (members.length) cls.push(...members, '')
@@ -2307,7 +2322,14 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
     const names = g.ks.flatMap((k) => m.useNames[k] ?? [])
     const text = (k: number): string => (g.method === 'useHooks' ? hooksText(k) : m.useBody[k])
     const aliases = g.method === 'useHooks' ? storesInHooks.map((l) => `    const ${l.name} = this.${l.member}`) : []
-    cls.push(`  /** ${g.doc} React's rules apply: \`use()\` runs them on every render. */`, `  ${g.method}() {`, ...aliases, ...g.ks.map((k) => indent(text(k), k)))
+    // In useHooks(), what a hook gives is published at once: a later hook's dependencies read getters that read it
+    // (the TSX computed its constants in order).
+    const publishNow = (k: number): string[] => {
+      if (g.method !== 'useHooks') return []
+      const mine = used.filter((l) => (m.useNames[k] ?? []).includes(l.name))
+      return mine.length ? [`    this.publish({ ${mine.map((l) => (l.member === l.name ? l.name : `${l.member}: ${l.name}`)).join(', ')} })`] : []
+    }
+    cls.push(`  /** ${g.doc} React's rules apply: \`use()\` runs them on every render. */`, `  ${g.method}() {`, ...aliases, ...g.ks.flatMap((k) => [indent(text(k), k), ...publishNow(k)]))
     cls.push(`    return { ${names.join(', ')} }`, '  }', '')
   }
   if (groups.length || m.needsNavigate) {
@@ -2372,7 +2394,12 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   if (viewsNames.length) head.push(`import { ${viewsNames.join(', ')} } from '@kubuno/views'`)
   if (m.needsNavigate && !imports.some((k) => /\buseNavigate\b/.test(k))) head.push(`import { useNavigate } from 'react-router-dom'`)
   head.push(...[...m.extraImports].filter((l) => !imports.includes(l)), ...imports, '', `import { ViewBase } from './${m.stem}.kbview'`)
+  // The file's local components the code itself renders (a derived element, a table column's cell): imported by
+  // name from the parts file, where they now live.
+  const localUsed = [...m.localComponents].filter((n) => new RegExp(`<${n}[\\s/>]`).test(code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')))
+  for (const n of localUsed) m.exportedLocals.add(n)
   if (m.parts.length || m.exportedLocals.size) head.push(`import * as __parts from './${m.stem}.parts'`)
+  if (localUsed.length) head.push(`import { ${localUsed.join(', ')} } from './${m.stem}.parts'`)
   head.push('')
   return head.join('\n') + '\n' + code
 }
@@ -2547,6 +2574,29 @@ function iconColorOf(className: string | undefined): string | undefined {
   if (!className || /\s/.test(className.trim()) || !className.startsWith('text-')) return undefined
   const mapped = mapLabelClasses(className)
   return mapped.rest.length === 0 ? mapped.props.ForeColor : undefined
+}
+
+/** The type of a declaration as the code-behind can write it (`import("./x").T` paths), when it is a reasonable one. */
+function declaredType(m: Migration, node: ts.Node): string | undefined {
+  return writableType(m, m.typeText(node))
+}
+
+/**
+ * A type text the code-behind can write as it is: short, no \`any\`, and naming only what is in scope there — types
+ * reached through \`import("…")\`, the file's imports, the global ones.
+ */
+function writableType(m: Migration, t: string | undefined): string | undefined {
+  if (!t || t.length > 300 || /\bany\b|\(\.\.\.args|\bunique symbol\b/.test(t)) return undefined
+  const bare = t.replace(/import\("[^"]*"\)\.[\w$.]+/g, ' ').replace(/"[^"]*"|'[^']*'/g, ' ').replace(/[\w$]+\??:/g, ' ')
+  const names = bare.match(/[A-Za-z_$][\w$]*(\.[\w$]+)*/g) ?? []
+  const imported = new Set(m.sf.getImportDeclarations().flatMap((i) => [...i.getNamedImports().map((n) => n.getAliasNode()?.getText() ?? n.getName()), ...(i.getDefaultImport() ? [i.getDefaultImport()!.getText()] : [])]))
+  const local = new Set(m.sf.getStatements().flatMap((st) => (Node.isInterfaceDeclaration(st) || Node.isTypeAliasDeclaration(st) || Node.isClassDeclaration(st) || Node.isEnumDeclaration(st)) && st.getName() ? [st.getName()!] : []))
+  const GLOBAL = /^(string|number|boolean|bigint|symbol|null|undefined|void|never|unknown|object|true|false|readonly|keyof|typeof|infer|extends|is|asserts|Array|ReadonlyArray|Record|Partial|Required|Readonly|Pick|Omit|NonNullable|Exclude|Extract|ReturnType|Parameters|Promise|Date|Map|Set|ReadonlyMap|ReadonlySet|WeakMap|Error|RegExp|URL|URLSearchParams|File|Blob|HTMLElement|HTML\w*Element|Event|\w+Event|React(\.\w+)*)$/
+  for (const n of names) {
+    const head = n.split('.')[0]
+    if (!GLOBAL.test(n) && !GLOBAL.test(head) && !imported.has(head) && !local.has(head)) return undefined
+  }
+  return t
 }
 
 /** Whether an expression's value is a string (or a string literal union). */

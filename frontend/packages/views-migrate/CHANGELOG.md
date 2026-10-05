@@ -8,6 +8,7 @@ under the published version number.
 
 ### Fixed
 
+- Code-behinds of larger screens: a hook result is published as soon as its hook ran (a later hook's dependencies read getters built on it — a module's page crashed); getters and hook fields carry their written types when they can (no type depending on itself); a local component rendered by the code itself is imported from the parts file; a type declared in the component body moves to the module level; `list?.map(…)` gives no rows instead of failing; a functional state update keeps its parameter.
 - Code-behinds that did not type-check: a binding path through a value that can be null (now a guarded getter); a
   template row whose parameter is called `key`; a hook reading what another hook gave (both now in `useHooks()`, read
   through local constants so the TSX's narrowing still applies); functions declared after an early return and

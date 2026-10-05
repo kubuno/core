@@ -114,7 +114,14 @@ describe('early returns with constants of their own', () => {
   it('turns the block constants into getters guarded by the branch condition', () => {
     const b = convert('Branch.tsx')
     expect(b.result.status).toBe('converted')
-    expect(b.code).toMatch(/get sessions\(\) \{\s*if \(!\(!!\(this\.outcome\)\)\) return undefined as never\s*return this\.outcome\.sessions/)
+    expect(b.code).toMatch(/get sessions\(\)(: \w+)? \{\s*if \(!\(!!\(this\.outcome\)\)\) return undefined as never\s*return this\.outcome\.sessions/)
     expect(b.view).toMatch(/<Label Text="\{Binding sessions\}"[^>]*Visible="\{Binding show_case_1\}"/s)
+  })
+})
+
+describe('hooks reading constants of earlier hooks', () => {
+  it('publishes a hook result at once in useHooks(), before a later hook reads a getter built on it', () => {
+    const o = convert('Ordered.tsx')
+    expect(o.code).toMatch(/const groups = useMemo\([^\n]*\n\s*this\.publish\(\{ groups \}\)\s*\n\s*useEffect/)
   })
 })

@@ -79,7 +79,7 @@ describe('kbview-migrate on a sample screen', () => {
     // Every string is a {Res}: the hooks' `t` needs no field.
     expect(code).not.toContain('tr!:')
     // A derived constant → a getter; an object getter → View.memo.
-    expect(code).toMatch(/get done\(\) \{\s*return this\.items\.filter\(\(i\) => i\.done\)\.length/)
+    expect(code).toMatch(/get done\(\)(: \w+)? \{\s*return this\.items\.filter\(\(i\) => i\.done\)\.length/)
     expect(code).toMatch(/get rows_items\(\) \{\s*return this\.memo\('rows_items', \[this\.items\]/)
     // A setter call → an assignment; a functional update reads the current value.
     expect(code).toMatch(/add\(\) \{\s*this\.items = \[\.\.\.this\.items, \{ id: String\(this\.items\.length\), label: this\.name, done: false \}\]\s*this\.name = ''/)
