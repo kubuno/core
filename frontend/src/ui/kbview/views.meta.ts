@@ -69,6 +69,14 @@ const CONTAINER_TAG: PropertyMeta<{ as?: string }> = {
   to: { prop: 'as', values: Object.fromEntries(CONTAINER_TAGS.map((t) => [t, t.toLowerCase()])) as Record<(typeof CONTAINER_TAGS)[number], string> },
 }
 
+/** Web-only: `aria-modal` of a dialog container. */
+const ACCESSIBLE_MODAL: PropertyMeta<{ 'aria-modal'?: boolean }> = {
+  name: 'AccessibleModal', kind: 'Bool', default: 'false', category: 'Accessibility', webOnly: true,
+  doc: 'Web only: the container is a modal dialog (with AccessibleRole="Dialog"): screen readers stay inside it.',
+  docFr: "Web uniquement : le conteneur est un dialogue modal (avec AccessibleRole=\"Dialog\") : les lecteurs d'écran restent à l'intérieur.",
+  to: { prop: 'aria-modal' },
+}
+
 /** Web-only: a container that is a form (`HtmlTag="Form"`) raises OnSubmit (Enter in one of its fields, a Submit button). */
 const ON_SUBMIT = {
   name: 'OnSubmit', category: 'Action', args: 'EventArgs',
@@ -109,7 +117,7 @@ export const PanelMeta = {
   children: 'List',
   layoutKind: 'DockAnchor',
   defaultEvent: 'OnClick',
-  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER, CONTAINER_TAG],
+  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER, CONTAINER_TAG, ACCESSIBLE_MODAL],
   events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,
   designDefaults: { size: [200, 100] },
@@ -149,6 +157,7 @@ export const StackMeta = {
     HREF,
     DIVIDER,
     CONTAINER_TAG,
+    ACCESSIBLE_MODAL,
   ],
   events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,

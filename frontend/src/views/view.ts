@@ -3,7 +3,7 @@
  * accessor decorator, the generated base factory `createViewBase`, element handles, and the live-view
  * registry behind HMR (plan swap for a `.kbview` edit, prototype swap for a code-behind edit).
  */
-import type { ComponentType } from 'react'
+import type { ComponentType, FunctionComponent } from 'react'
 
 import { resolveResource, type ResourceArgs } from './resolve'
 import { VIEWS_ABI, type ViewPlan } from './plan'
@@ -124,6 +124,9 @@ function defineHandles(vm: View<object>): void {
   }
 }
 
+/** The memos of `View.memo`, per view instance (outside the instance: a prototype swap keeps them). */
+const memos = new WeakMap<object, Map<string, { deps: unknown[]; value: unknown }>>()
+
 /**
  * Base of every view's code-behind (through its generated `ViewBase`). `P` is the root's `x:Props`.
  */
@@ -171,6 +174,21 @@ export abstract class View<P extends object = object> {
     return resolveResource(key, set, args)
   }
 
+  /**
+   * The value `compute()` returns, computed again only when one of `deps` changed (`Object.is`) since the last call
+   * with this `key`: what a getter returning an object or a list uses, so that reading it twice gives the same object
+   * (a new array on every read would re-render without end). `get rows() { return this.memo('rows', [this.items],
+   * () => this.items.map(…)) }`.
+   */
+  protected memo<T>(key: string, deps: readonly unknown[], compute: () => T): T {
+    const store = (memos.get(this) ?? memos.set(this, new Map()).get(this))!
+    const last = store.get(key)
+    if (last && last.deps.length === deps.length && last.deps.every((d, k) => Object.is(d, deps[k]))) return last.value as T
+    const value = compute()
+    store.set(key, { deps: [...deps], value })
+    return value
+  }
+
   /** Marks the view as changed (after mutating a `@bind` object in place). */
   invalidate(): void {
     notify(this[KB])
@@ -178,7 +196,7 @@ export abstract class View<P extends object = object> {
 
   /** The view as a React component (`export default MyView.component()`). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static component<T extends View<any>>(this: abstract new () => T): ComponentType<T['props']> {
+  static component<T extends View<any>>(this: abstract new () => T): FunctionComponent<T['props']> {
     const cls = this as unknown as ViewClass
     const cell = cls[CELL]
     if (!cell) throw new Error('[views] component() must be called on a class extending a generated ViewBase')
@@ -194,7 +212,7 @@ export abstract class View<P extends object = object> {
       }
     }
     cell.latest = cls
-    return componentFor(cell, cls) as ComponentType<T['props']>
+    return componentFor(cell, cls) as FunctionComponent<T['props']>
   }
 }
 

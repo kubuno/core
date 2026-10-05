@@ -8,8 +8,12 @@ under the published version number.
 
 ### Added
 
+- **`View.memo(key, deps, compute)`** for getters returning an object or a list: the same object while `deps` are
+  unchanged, so a binding reading the getter twice sees no change (a new array on every read would re-render without
+  end).
 - **Containers keep their HTML element.** `Panel` and `Stack` take `HtmlTag` (`section`, `nav`, `form`, `ul` / `li`…)
-  and a form raises `OnSubmit`; any element takes `AccessibleHidden` (`aria-hidden`). `ReactHost` is registered for
+  and a form raises `OnSubmit`, a dialog container takes `AccessibleModal` (`aria-modal`); any element takes
+  `AccessibleHidden` (`aria-hidden`). `ReactHost` is registered for
   interpreted plans (the designer).
 - **`{Res}` arguments and plurals.** A plan's `{Res}` may carry arguments (`{Res files, Count={Binding n}, Name=Kim}`):
   the host's resolver receives them (`setResourceResolver((key, set, args) => …)`, `interpolationOptions(args)` turns
@@ -43,6 +47,11 @@ under the published version number.
   in the desktop designer.
 - **Design mode can be switched on and off on a live view**: its elements are marked for the designer again
   (or no longer) without the view losing its state.
+
+### Changed
+
+- **`View.component()` is typed as a function component** (it always was one): a view without props now fits a slot
+  expecting a component with props, as a function component does.
 
 ### Fixed
 

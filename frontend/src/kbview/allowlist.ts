@@ -159,6 +159,7 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   ...(['Stack', 'Panel'] as const).flatMap((element): AllowEntry[] => [
     { kind: 'property-web-only', element, member: 'HtmlTag', reason: 'Web: the HTML element of a container (section, nav, form, list and item…), which screen readers announce. Desktop containers expose their role through AccessibleRole.' },
     { kind: 'event-web-only', element, member: 'OnSubmit', reason: 'Web: a container that is a form (HtmlTag="Form") is submitted by Enter or a submit button. WinForms has AcceptButton on the form instead.' },
+    { kind: 'property-web-only', element, member: 'AccessibleModal', reason: 'Web aria-modal: a dialog drawn inside the page keeps screen readers in it. Desktop dialogs are windows, modal by the window manager.' },
   ]),
   { kind: 'property-web-only', element: '*', level: 'Control', member: 'AccessibleHidden', reason: 'Web aria-hidden: an element hidden from screen readers (a decorative backdrop). Desktop controls leave the accessibility tree with AccessibleRole None.' },
   ...(['InputType', 'AutoComplete'] as const).map((member): AllowEntry => ({ kind: 'property-web-only', element: 'TextField', member, reason: 'Web: the input type (password, email… — the masked field and the phone keyboards) and the browser\'s autofill token. The desktop masks with UseSystemPasswordChar (not on the web yet).' })),

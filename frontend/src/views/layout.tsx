@@ -60,6 +60,8 @@ interface ContainerBase {
   dividerColor?: string
   /** Web `HtmlTag`: the HTML element of the container (a `section`, a `form`, a list…); `div` by default. */
   as?: string
+  /** Web `AccessibleModal`: `aria-modal` (a dialog that keeps the reader inside it). */
+  'aria-modal'?: boolean
   /** @internal — given by the renderer to every element of `@kubuno/views`. */
   __view?: Internals
   /** @internal */
@@ -102,6 +104,7 @@ function box(p: ContainerBase, layout: CSSProperties, extra: Record<string, unkn
     style: { ...layout, ...own, ...style },
     tabIndex,
     'aria-label': p['aria-label'],
+    'aria-modal': p['aria-modal'] || undefined,
     ...extra,
   }
   if (isButton) {
