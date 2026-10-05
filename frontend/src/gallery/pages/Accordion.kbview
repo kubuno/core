@@ -1,0 +1,15 @@
+<!-- Accordion: AccordionSection children; Open bound two-way on the first, literal on the second; OnToggled. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12" MaximumSize="560, 0">
+  <Accordion>
+    <AccordionSection Header="Bound: Open two-way" Open="{Binding first, Mode=TwoWay}" OnToggled="section_toggled">
+      <Label Text="Expanded from the code-behind's value." Overflow="Wrap"/>
+    </AccordionSection>
+    <AccordionSection Header="Literal: Open=true" Open="true" OnToggled="section_toggled">
+      <Label Text="Open when the page loads." Overflow="Wrap"/>
+    </AccordionSection>
+    <AccordionSection Header="Disabled" Disabled="true">
+      <Label Text="Never shown."/>
+    </AccordionSection>
+  </Accordion>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

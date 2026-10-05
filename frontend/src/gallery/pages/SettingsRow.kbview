@@ -1,0 +1,23 @@
+<!-- SettingsRow: the name and help line beside the control (stacked on a phone), a line between rows. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="0" MaximumSize="880, 0">
+  <SettingsRow Label="Language" Description="The language of the menus and messages.">
+    <Dropdown SelectedValue="fr" Width="220">
+      <Option Value="fr" Label="Français"/>
+      <Option Value="en" Label="English"/>
+      <Option Value="ar" Label="العربية"/>
+    </Dropdown>
+  </SettingsRow>
+  <SettingsRow Label="Start page">
+    <RadioGroup SelectedValue="recent">
+      <Option Value="recent" Label="Recent files"/>
+      <Option Value="home" Label="Home folder"/>
+      <Option Value="starred" Label="Starred"/>
+    </RadioGroup>
+  </SettingsRow>
+  <SettingsRow Label="Thumbnails" Description="Show previews of images and documents in the lists.">
+    <Switch On="true"/>
+  </SettingsRow>
+  <SettingsRow Label="Always stacked" Orientation="Vertical" Description="Orientation Vertical keeps the name above the control.">
+    <TextField Placeholder="A full-width field"/>
+  </SettingsRow>
+</Stack>

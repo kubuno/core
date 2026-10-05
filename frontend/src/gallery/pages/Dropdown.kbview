@@ -1,0 +1,10 @@
+<!-- Dropdown: Option children or ItemsSource, two-way SelectedValue, the ghost variant. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12" Width="280">
+  <Dropdown SelectedValue="{Binding sort, Mode=TwoWay}" AccessibleDescription="gallery-click">
+    <Option Value="name" Label="Name"/>
+    <Option Value="modified" Label="Last modified"/>
+    <Option Value="size" Label="Size"/>
+  </Dropdown>
+  <Dropdown SelectedValue="{Binding sort, Mode=TwoWay}" ItemsSource="{Binding sorts}" DisplayMember="text" ValueMember="key" Variant="Ghost"/>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

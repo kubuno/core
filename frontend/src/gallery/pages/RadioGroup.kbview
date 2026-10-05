@@ -1,0 +1,14 @@
+<!-- RadioGroup: Option children or ItemsSource, vertical or horizontal, two-way SelectedValue, arrow keys. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <RadioGroup x:Name="density" SelectedValue="{Binding size, Mode=TwoWay}" AccessibleName="Density">
+    <Option Value="compact" Label="Compact"/>
+    <Option Value="comfortable" Label="Comfortable"/>
+    <Option Value="spacious" Label="Spacious"/>
+  </RadioGroup>
+  <Label Text="{Binding chosen}" Role="Meta" ForeColor="TextSecondary"/>
+  <RadioGroup Orientation="Horizontal" SelectedValue="{Binding size, Mode=TwoWay}" ItemsSource="{Binding sizes}" DisplayMember="name" ValueMember="id"/>
+  <RadioGroup SelectedValue="b" Enabled="false">
+    <Option Value="a" Label="Disabled group"/>
+    <Option Value="b" Label="Second"/>
+  </RadioGroup>
+</Stack>

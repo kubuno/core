@@ -1,0 +1,22 @@
+<!-- TableLayoutPanel: a form grid (AutoSize label column, Percent field column), spans, cell lines, more children than cells. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="20">
+  <TableLayoutPanel ColumnCount="2" RowCount="3" ColumnStyles="AutoSize; Percent 100" CellSpacing="12" MaximumSize="640, 0">
+    <Label Text="Name" Anchor="Left" TextAlign="MiddleLeft"/>
+    <TextField Placeholder="Camille Martin" Anchor="Left, Right"/>
+    <Label Text="E-mail address" Anchor="Left"/>
+    <TextField Placeholder="camille@example.org" Anchor="Left, Right"/>
+    <Stack Direction="LeftToRight" Justify="End" TableLayoutPanel.Column="0" TableLayoutPanel.ColumnSpan="2" Anchor="Left, Right">
+      <Button Text="Cancel" Variant="Secondary"/>
+      <Button Text="Save"/>
+    </Stack>
+  </TableLayoutPanel>
+  <TableLayoutPanel ColumnCount="3" RowCount="2" ColumnStyles="Absolute 120; Percent 50; Percent 50" CellBorderStyle="Single">
+    <Label Text="Absolute 120" Padding="8, 6, 8, 6"/>
+    <Label Text="Percent 50" Padding="8, 6, 8, 6"/>
+    <Label Text="Percent 50" Padding="8, 6, 8, 6"/>
+    <Label Text="RowSpan 2" Padding="8, 6, 8, 6" TableLayoutPanel.RowSpan="2"/>
+    <Label Text="Cell" Padding="8, 6, 8, 6"/>
+    <Label Text="Cell" Padding="8, 6, 8, 6"/>
+    <Label Text="GrowStyle AddRows: a third row" Padding="8, 6, 8, 6" TableLayoutPanel.ColumnSpan="2"/>
+  </TableLayoutPanel>
+</Stack>

@@ -1,0 +1,8 @@
+<!-- PictureBox: the SizeMode values on a 160 × 100 box, rounded corners, a border, alternative text. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Direction="LeftToRight" Gap="16" WrapContents="true">
+  <Stack Gap="4"><PictureBox Image="app-logo.png" SizeMode="Normal" Width="160" Height="100" BorderStyle="FixedSingle"/><Label Text="Normal" Role="Meta"/></Stack>
+  <Stack Gap="4"><PictureBox Image="app-logo.png" SizeMode="Stretch" Width="160" Height="100" BorderStyle="FixedSingle"/><Label Text="Stretch" Role="Meta"/></Stack>
+  <Stack Gap="4"><PictureBox Image="app-logo.png" SizeMode="Zoom" Width="160" Height="100" BorderStyle="FixedSingle"/><Label Text="Zoom" Role="Meta"/></Stack>
+  <Stack Gap="4"><PictureBox Image="app-logo.png" SizeMode="Center" Width="160" Height="100" BorderStyle="FixedSingle"/><Label Text="Center" Role="Meta"/></Stack>
+  <Stack Gap="4"><PictureBox Image="app-logo.png" SizeMode="Cover" Width="160" Height="100" CornerRadius="12" AccessibleName="Kubuno logo"/><Label Text="Cover, radius 12, alt text" Role="Meta"/></Stack>
+</Stack>

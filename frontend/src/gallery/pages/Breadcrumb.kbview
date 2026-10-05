@@ -1,0 +1,13 @@
+<!-- Breadcrumb: BreadcrumbItem children → the @ui trail; OnClick per segment; the large size. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12">
+  <Breadcrumb>
+    <BreadcrumbItem Text="My drive" Icon="HardDrive" OnClick="crumb_click"/>
+    <BreadcrumbItem Text="Projects" OnClick="crumb_click"/>
+    <BreadcrumbItem Text="2026"/>
+  </Breadcrumb>
+  <Breadcrumb Size="Lg">
+    <BreadcrumbItem Text="Settings" OnClick="crumb_click"/>
+    <BreadcrumbItem Text="Appearance"/>
+  </Breadcrumb>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

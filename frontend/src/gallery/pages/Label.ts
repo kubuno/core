@@ -1,6 +1,6 @@
 import { ViewBase } from './Label.kbview'
 
 /** Gallery page: Label. */
-export class LabelPage extends ViewBase {}
+export class Label extends ViewBase {}
 
-export default LabelPage.component()
+export default Label.component()

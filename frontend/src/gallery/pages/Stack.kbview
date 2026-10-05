@@ -1,0 +1,31 @@
+<!-- Stack: directions, gap, cross alignment, justification, wrapping, Stack.Fill, lines between children. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <Stack Direction="LeftToRight" Gap="8" BorderBrush="Border" CornerRadius="8" Padding="8, 8, 8, 8">
+    <Button Text="One" Variant="Secondary"/>
+    <Button Text="Two" Variant="Secondary"/>
+    <TextField Placeholder="Stack.Fill takes the rest" Stack.Fill="true"/>
+    <Button Text="End"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Justify="SpaceBetween" CrossAlign="Center" BorderBrush="Border" CornerRadius="8" Padding="12, 8, 12, 8">
+    <Label Text="Justify SpaceBetween" FontWeight="SemiBold"/>
+    <IconButton Icon="Pencil" Diameter="32" Glyph="16"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="8" WrapContents="true">
+    <Badge Text="Wrap"/><Badge Text="contents"/><Badge Text="onto"/><Badge Text="several"/><Badge Text="lines"/>
+    <Badge Text="when"/><Badge Text="the"/><Badge Text="row"/><Badge Text="is"/><Badge Text="too"/><Badge Text="narrow"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="0" DividerColor="Border" BorderBrush="Border" CornerRadius="8">
+    <Label Text="DividerColor" Padding="12, 8, 12, 8"/>
+    <Label Text="across" Padding="12, 8, 12, 8"/>
+    <Label Text="a row" Padding="12, 8, 12, 8"/>
+  </Stack>
+  <Stack Gap="0" DividerColor="Border" BorderBrush="Border" CornerRadius="8" Width="280">
+    <Label Text="DividerColor down" Padding="12, 8, 12, 8"/>
+    <Label Text="a column" Padding="12, 8, 12, 8"/>
+    <Label Text="of rows" Padding="12, 8, 12, 8"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="8" CrossAlign="End" Height="64" BorderBrush="Border" CornerRadius="8" Padding="8, 8, 8, 8">
+    <Button Text="CrossAlign End" Size="Sm"/>
+    <Button Text="Taller" Size="Lg" Variant="Secondary"/>
+  </Stack>
+</Stack>

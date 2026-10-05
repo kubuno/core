@@ -72,7 +72,7 @@ export const MenuItemMeta = {
       to: { runtime: 'visible' } },
     { name: 'Checked', kind: 'Bool', default: 'false', category: 'Appearance', bindable: true,
       doc: 'Shows a check mark before the command.', docFr: 'Affiche une coche devant la commande.',
-      to: { prop: 'checked' } },
+      to: { prop: 'checked', change: 'OnCheckedChanged' } },
     { name: 'CheckOnClick', kind: 'Bool', default: 'false', category: 'Behavior',
       doc: 'Choosing the command toggles its check mark.', docFr: 'Choisir la commande inverse sa coche.',
       to: { runtime: 'item-state' } },

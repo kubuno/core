@@ -1,0 +1,9 @@
+<!-- Tabs: TabItem children → the @ui tab strip; the selected tab's content after it; two-way SelectedIndex. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12">
+  <Tabs SelectedIndex="{Binding tab, Mode=TwoWay}" OnSelectionChanged="tabs_selection_changed">
+    <TabItem Header="General" Icon="Settings"><Label Text="The General tab's content." Padding="0, 8, 0, 0"/></TabItem>
+    <TabItem Header="Sharing" Icon="Share2"><Label Text="The Sharing tab's content." Padding="0, 8, 0, 0"/></TabItem>
+    <TabItem Header="Advanced" Icon="SlidersHorizontal"><Label Text="The Advanced tab's content." Padding="0, 8, 0, 0"/></TabItem>
+  </Tabs>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

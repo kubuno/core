@@ -1,0 +1,15 @@
+<!-- Stepper: Step children → the @ui stepper; CurrentIndex bound; OnStepSelected; vertical. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="20">
+  <Stepper CurrentIndex="{Binding step}" AllowForward="true" OnStepSelected="step_selected">
+    <Step Label="Account" Description="Name and address"/>
+    <Step Label="Storage"/>
+    <Step Label="Modules" Optional="true"/>
+    <Step Label="Finish"/>
+  </Stepper>
+  <Stepper Orientation="Vertical" CurrentIndex="1">
+    <Step Label="Download" Status="Complete"/>
+    <Step Label="Install" Description="In progress"/>
+    <Step Label="Check" Status="Error"/>
+  </Stepper>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

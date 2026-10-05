@@ -1,0 +1,26 @@
+<!--
+  ContextMenu: MenuItem children (an icon, a shortcut, a sub-menu, a header, a separator, CheckOnClick, a RadioGroup)
+  then commands from ItemsSource (OnItemClicked); opened by DropDownMenu on a button or ContextMenu on right click.
+-->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12" CrossAlign="Start">
+  <ContextMenu x:Name="menu" ItemsSource="{Binding extra}" OnItemClicked="menu_item_clicked">
+    <MenuItem Text="Open" Icon="FolderOpen" ShortcutKeys="Enter" OnClick="open_click"/>
+    <MenuItem Text="Share" Icon="Share2">
+      <MenuItem Text="Copy link" OnClick="open_click"/>
+      <MenuItem Text="Invite people" OnClick="open_click"/>
+    </MenuItem>
+    <MenuItem Kind="Separator"/>
+    <MenuItem Kind="Header" Text="View"/>
+    <MenuItem Text="Show hidden files" CheckOnClick="true" Checked="{Binding hidden, Mode=TwoWay}" OnCheckedChanged="checked_changed"/>
+    <MenuItem Text="List" RadioGroup="layout" Checked="true" OnCheckedChanged="checked_changed"/>
+    <MenuItem Text="Grid" RadioGroup="layout" OnCheckedChanged="checked_changed"/>
+    <MenuItem Text="Not shown" Visible="false"/>
+    <MenuItem Kind="Separator"/>
+    <MenuItem Text="Delete" Icon="Trash2" Danger="true" OnClick="open_click"/>
+  </ContextMenu>
+  <Button Text="Open the menu" Icon="ChevronDown" DropDownMenu="menu" AccessibleDescription="gallery-click"/>
+  <Panel ContextMenu="menu" Surface="Well" CornerRadius="8" Padding="16, 24, 16, 24" Width="280">
+    <Label Text="Right-click here" TextAlign="MiddleCenter"/>
+  </Panel>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary" Overflow="Wrap"/>
+</Stack>
