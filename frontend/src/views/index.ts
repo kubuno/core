@@ -35,8 +35,10 @@ export {
   resolveComponent,
   setIconResolver,
   setResourceResolver,
+  setTranslator,
   interpolationOptions,
   type ResourceArgs,
+  type Translator,
   invalidateResources,
 } from './resolve'
 export type {

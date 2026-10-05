@@ -1,0 +1,74 @@
+/**
+ * Runtime behaviours added for the bulk migration of the core screens (WEB-VIEWS §21): nested object fields (a
+ * window's footer), the host's translator for `@ui` elements (`HostStrings`), and hooks returning a new object on
+ * every render.
+ */
+import { act, cleanup, render, screen } from '@testing-library/react'
+import { createElement, type ReactNode } from 'react'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { KbView, createViewBase, registerElements, setTranslator, type ViewPlan } from './index'
+
+afterEach(() => cleanup())
+
+interface Footer { confirm?: { label?: string; disabled?: boolean; onClick?: () => void }; cancel?: { label?: string } }
+let lastFooter: Footer | undefined
+let renders = 0
+function Win(props: { actions?: Footer; t?: (k: string) => string; children?: ReactNode }): ReactNode {
+  renders++
+  lastFooter = props.actions
+  return createElement('div', { 'data-close': props.t ? props.t('ui.close') : 'Close' },
+    createElement('button', { onClick: props.actions?.confirm?.onClick, disabled: props.actions?.confirm?.disabled }, props.actions?.confirm?.label),
+    props.children)
+}
+registerElements('bulk-ui', { Win })
+
+const plan: ViewPlan = {
+  abi: 1, file: 'test/Bulk.kbview', kind: 'view', names: {}, handlers: ['confirm'],
+  root: {
+    id: '', el: 'Win', at: [1, 1], m: 'bulk-ui', x: 'Win', content: 'children',
+    props: [
+      { n: 'ConfirmText', to: { prop: 'actions', field: 'confirm.label' }, kind: 'String', at: [1, 6], v: 'Save' },
+      { n: 'ConfirmEnabled', to: { prop: 'actions', field: 'confirm.disabled', convert: 'invert' }, kind: 'Bool', at: [1, 20], b: { path: 'ready', mode: 'OneWay', at: [1, 30] } },
+      { n: 'CancelText', to: { prop: 'actions', field: 'cancel.label' }, kind: 'String', at: [1, 40], v: 'No' },
+      { n: 'HostStrings', to: { prop: 't', convert: 'host-t' }, kind: 'Bool', at: [1, 50], v: true },
+    ],
+    events: [{ n: 'OnConfirm', h: 'confirm', from: { prop: 'actions', field: 'confirm.onClick', args: 'none' }, args_type: 'EventArgs', at: [1, 60] }],
+  },
+}
+
+describe('views runtime — bulk migration additions', () => {
+  it('builds nested object props field by field, events included', async () => {
+    setTranslator((k) => (k === 'ui.close' ? 'Fermer' : k))
+    const Base = createViewBase(plan)
+    let confirmed = 0
+    class V extends (Base as unknown as new () => Record<string, unknown>) {
+      ready = false
+      confirm(): void { confirmed++ }
+    }
+    render(createElement(KbView, { view: V as never }))
+    expect(lastFooter).toMatchObject({ confirm: { label: 'Save', disabled: true }, cancel: { label: 'No' } })
+    expect(typeof lastFooter?.confirm?.onClick).toBe('function')
+    await act(async () => lastFooter?.confirm?.onClick?.())
+    expect(confirmed).toBe(1)
+    // HostStrings: the host's translator as `t`.
+    expect(screen.getByText('Save').parentElement?.getAttribute('data-close')).toBe('Fermer')
+    setTranslator(undefined)
+  })
+
+  it('does not render the view again and again when a hook gives a new object on every render', async () => {
+    const Base = createViewBase({ ...plan, file: 'test/Loop.kbview' })
+    class V extends (Base as unknown as new () => Record<string, unknown> & { publish(v: Record<string, unknown>): void }) {
+      ready = true
+      stepper?: { next: () => void }
+      confirm(): void {}
+      use(): void {
+        // A hook result with a new function every time (`useStepper`): published, then read by the elements.
+        this.publish({ stepper: { next: () => {} } })
+      }
+    }
+    renders = 0
+    await act(async () => { render(createElement(KbView, { view: V as never })) })
+    expect(renders).toBeLessThan(5)
+  })
+})

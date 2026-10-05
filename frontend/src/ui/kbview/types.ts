@@ -77,6 +77,8 @@ export type Converter =
   | 'items-source'
   /** `items-source`, plus each item's `Icon` name made an icon element (`Sidebar` rows from a list). */
   | 'items-source-icons'
+  /** `true` → the host's translator (`setTranslator`) as the element's `t`: its own strings from the host's catalogue. */
+  | 'host-t'
 
 /**
  * How a `.kbview` property reaches the component when it is not a plain React prop: the views
@@ -203,11 +205,24 @@ export type PropToProp<P> = {
   }
 }[KeysOfUnion<P>]
 
-/** A property written to one field of an object prop (`ActionLabel` → `action.label`). */
+/** The object members of a field's type (`Partial<WindowAction> | false` → `Partial<WindowAction>`), functions and arrays left out. */
+type ObjectPart<V> = Exclude<Extract<NonNullable<V>, object>, readonly unknown[] | ((...args: never[]) => unknown)>
+
+/** Dotted paths one level into an object type (`confirm.label` of a window's `actions`). */
+export type NestedKeys<T> = {
+  [K in KeysOfUnion<T>]-?: [ObjectPart<ValueOfUnion<T, K>>] extends [never] ? never : `${K}.${KeysOfUnion<ObjectPart<ValueOfUnion<T, K>>>}`
+}[KeysOfUnion<T>]
+
+/** Dotted paths one level into an object type that end on a callback (`confirm.onClick`). */
+export type NestedCallbackKeys<T> = {
+  [K in KeysOfUnion<T>]-?: [ObjectPart<ValueOfUnion<T, K>>] extends [never] ? never : `${K}.${CallbackKeys<ObjectPart<ValueOfUnion<T, K>>>}`
+}[KeysOfUnion<T>]
+
+/** A property written to one field of an object prop (`ActionLabel` → `action.label`), or to a field of a field (`ConfirmText` → `actions.confirm.label`). */
 export type PropToField<P> = {
   [K in ObjectKeys<P>]: {
     readonly prop: K
-    readonly field: KeysOfUnion<NonNullable<P[K]>>
+    readonly field: KeysOfUnion<NonNullable<P[K]>> | NestedKeys<NonNullable<P[K]>>
     readonly convert?: Converter
     /** `.kbview` enum value → the field's value. */
     readonly values?: Readonly<Record<string, string | number | boolean | null>>
@@ -228,7 +243,7 @@ export type EventFromProp<P> =
   | {
       [K in ObjectKeys<P>]: {
         readonly prop: K
-        readonly field: CallbackKeys<NonNullable<P[K]>>
+        readonly field: CallbackKeys<NonNullable<P[K]>> | NestedCallbackKeys<NonNullable<P[K]>>
         readonly args: ArgsAdapter
       }
     }[ObjectKeys<P>]

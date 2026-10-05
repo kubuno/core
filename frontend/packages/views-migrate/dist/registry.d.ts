@@ -44,7 +44,25 @@ export interface ElementInfo {
     defaults: Map<string, string>;
     /** Properties taking an object or a list (registry editor `object` / `list`), not a text. */
     objectProps: Set<string>;
+    /**
+     * React props fed field by field (`action={{ label, onClick }}` → `ActionLabel` + `OnAction`): React prop → field →
+     * the property or event it is.
+     */
+    fields: Map<string, Map<string, FieldTarget>>;
+    /** React props holding elements written as property elements (`actions` → `<Card.Actions>`): React prop → property. */
+    slots: Map<string, string>;
 }
+/** One field of a React object prop: a `.kbview` property or event. */
+export type FieldTarget = {
+    kind: 'prop';
+    name: string;
+    values?: Map<string, string>;
+    convert?: string;
+} | {
+    kind: 'event';
+    name: string;
+    args?: string;
+};
 export declare class Registry {
     private readonly byExport;
     private readonly byName;

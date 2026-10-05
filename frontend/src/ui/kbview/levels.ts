@@ -429,3 +429,28 @@ export const INHERITED_LEVELS: Readonly<Record<string, InheritedLevel>> = {
 export const WEB_ONLY_INHERITED = new Set([
   'Class', 'OnUnload', 'HoverBackColor', 'PressedBackColor', 'CornerRadius', 'BorderBrush', 'BorderThickness', 'Elevation',
 ])
+
+/**
+ * `HostStrings` — web only: the element's own strings (a close button's name, a default « Cancel », a table's
+ * pager) come from the host's catalogue instead of the English defaults of `@ui`: the views runtime gives the
+ * component the host's translator as its `t` (what a TSX screen does with `t={t}`). Spread into the elements
+ * whose component takes a `t`.
+ */
+export const HOST_STRINGS = {
+  name: 'HostStrings', kind: 'Bool', default: 'false', category: 'Behavior', webOnly: true,
+  doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.",
+  docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.",
+  to: { prop: 't', convert: 'host-t' },
+} as const
+
+/**
+ * `FieldClass` — web only: Tailwind classes of the field itself (the `<input>` / `<textarea>`), where the `@ui`
+ * component puts its `className` (`Class` styles the element's root, around the label and the help line). Tolerated
+ * during the migration like `Class`.
+ */
+export const FIELD_CLASS = {
+  name: 'FieldClass', kind: 'String', default: '', category: 'Appearance', webOnly: true,
+  doc: 'Web only: style classes of the text box itself (Class styles the whole control, label included).',
+  docFr: "Web uniquement : classes de style de la zone de saisie elle-même (Class s'applique au contrôle entier, libellé compris).",
+  to: { prop: 'className' },
+} as const

@@ -6,6 +6,17 @@ under the published version number.
 
 ## [Unreleased]
 
+### Fixed
+
+- A view no longer renders again because its own hooks published new values during its render (only its elements are
+  refreshed): a hook returning a new object on every render looped without end. `ReactHost` shows nothing, instead
+  of throwing, when the designer's sample data stand in for its component or props.
+
+### Added
+
+- **`setTranslator(t)`** (host): the translator an `@ui` element receives as `t` when its view sets `HostStrings`;
+  the `host-t` converter. Object props are built field by field along dotted paths (`actions` + `confirm.label`).
+
 ## [0.1.2] - 2026-10-05
 
 ### Added

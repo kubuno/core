@@ -13,6 +13,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 import { openProject } from './project.js'
 import { migrateFile, rewriteImporters, targetComponent, type MigrationResult } from './migrate.js'
+import { splitFile } from './split.js'
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const flag = (n: string): string | undefined => {
@@ -25,13 +26,41 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   const component_ = flag('--component')
   const outDir = flag('--out')
   const skipNext = new Set(['--project', '--report', '--component', '--out'])
-  const files = argv.filter((a, i) => !a.startsWith('--') && !skipNext.has(argv[i - 1] ?? '')).map((f) => resolve(f))
+  const split = argv.includes('--split')
+  let files = argv.filter((a, i) => !a.startsWith('--') && !skipNext.has(argv[i - 1] ?? '')).map((f) => resolve(f))
   if (!files.length) {
-    console.error('usage: kbview-migrate [--project <dir>] [--write] [--report <file.json>] [--component <Name>] <file.tsx>…')
+    console.error('usage: kbview-migrate [--project <dir>] [--write] [--split] [--report <file.json>] [--component <Name>] <file.tsx>…')
     return 2
   }
   const ctx = openProject(root, files)
   const results: MigrationResult[] = []
+  // --split: the files exporting several components are cut into one file per component first (in memory, then on
+  // disk with --write); the new files join the batch.
+  const splitWrites: Record<string, string> = {}
+  const splitDeletes: string[] = []
+  if (split) {
+    const next: string[] = []
+    for (const f of files) {
+      const sf = ctx.project.getSourceFile(f)
+      const s = sf && splitFile(ctx.config, sf)
+      if (!s) {
+        next.push(f)
+        continue
+      }
+      for (const [p, text] of Object.entries(s.created)) {
+        ctx.project.createSourceFile(p, text, { overwrite: true })
+        splitWrites[p] = text
+        next.push(p)
+      }
+      Object.assign(splitWrites, s.edits)
+      splitDeletes.push(...s.deleted)
+      if (s.deleted.some((d) => resolve(d) === resolve(f))) ctx.project.getSourceFile(f)?.delete()
+      else next.push(f)
+      console.log(`SPLIT     ${relative(root, f)} → ${s.moved.map((x) => relative(root, x.file)).join(', ')}`)
+    }
+    files = next
+  }
+  const same = (a: string, b: string): boolean => resolve(a) === resolve(b)
   // The importers of every component of the batch switch to its default export first (see rewriteImporters).
   const targets = files.flatMap((f) => {
     const sf = ctx.project.getSourceFile(f)
@@ -67,6 +96,20 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       for (const p of r.deletes) rmSync(p, { force: true })
     }
   }
+  // The split files and their importers (before the importers' own conversion edits, which win).
+  for (const [p, text] of Object.entries(splitWrites)) {
+    if (Object.keys(importerEdits).some((q) => same(q, p)) || results.some((r) => r.deletes.some((q) => same(q, p)) || Object.keys(r.outputs).some((q) => same(q, p)))) continue
+    if (write) {
+      mkdirSync(dirname(p), { recursive: true })
+      writeFileSync(p, text)
+    }
+    if (outDir) {
+      const target = join(outDir, relative(root, p))
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, text)
+    }
+  }
+  if (write) for (const p of splitDeletes) rmSync(p, { force: true })
   // The importers of the converted components (outside the batch).
   for (const [p, text] of Object.entries(importerEdits)) {
     if (write) writeFileSync(p, text)

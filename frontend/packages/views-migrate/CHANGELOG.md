@@ -6,6 +6,30 @@ under the published version number.
 
 ## [Unreleased]
 
+### Fixed
+
+- Code-behinds that did not type-check: a binding path through a value that can be null (now a guarded getter); a
+  template row whose parameter is called `key`; a hook reading what another hook gave (both now in `useHooks()`, read
+  through local constants so the TSX's narrowing still applies); functions declared after an early return and
+  handlers of elements shown under a condition (they start with the same conditions); a nullable value read inside a
+  callback; an unreachable `?? ''`; an event passed to a function that takes none; a part's helper using another
+  helper; an exported helper of the screen dropped. The codemod's row-guard regular expressions held backspace
+  characters instead of `\b` (template conditions leaked into page getters).
+- The code-behind was deleted right after being written when it was a `.tsx` (Windows paths), and importers using
+  the name of a component also exported by default were not switched to the view.
+
+### Added
+
+- **`--split`: a file exporting several screens is cut into one file per screen before the conversion** (each then
+  becomes its own view): the helpers only one screen uses move with it, the shared ones stay exported, and the
+  project's importers are switched to the new files.
+- New conversions: object props fed field by field, nested ones included (`action={{ label, onClick }}` →
+  `ActionLabel` + `OnAction`, a window's `actions` → `ConfirmText` / `OnConfirm` / `CancelText`…); elements
+  given as props written as property elements (`<Card.Actions>`); `t={t}` → `HostStrings` (left out where it changes
+  nothing); `@ui/<Component>` imports read as `@ui`; a component with spread props rendered by a ReactHost directly
+  (no part); an icon prop's `size` → `IconSize`; a field's `className` → `FieldClass`; a boolean for an enum
+  property (`indeterminate={some}` → `CheckState`) through a lookup getter.
+
 ## [0.1.0] - 2026-10-05
 
 ### Added

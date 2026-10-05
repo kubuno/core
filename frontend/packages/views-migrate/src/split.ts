@@ -1,0 +1,230 @@
+/**
+ * The split pre-pass (`kbview-migrate --split`): a file exporting several screens (`ApiTokenForms.tsx` exporting
+ * `NewTokenBanner` and `CreateTokenForm`) is cut into one file per exported component BEFORE the conversion, so each
+ * becomes a view of its own (one `.kbview` per component — what the designer opens). A pure TSX refactor, nothing is
+ * converted here:
+ *
+ * - every exported component other than the one named like the file moves to `<Component>.tsx` next to it, with the
+ *   imports it uses (same specifiers: same folder);
+ * - a top-level helper it uses (a constant, a function, a type) moves with it when nothing else of the file uses it,
+ *   else it stays, exported, and the new file imports it;
+ * - another component of the file it uses: imported from its new file (split too), or from the old one;
+ * - the old file imports the component back when it still uses it; the project's importers of the component import
+ *   it from its new file.
+ */
+import { basename } from 'node:path'
+
+import { Node, type ImportDeclaration, type SourceFile, type Statement } from 'ts-morph'
+
+import { componentsOf, type MigrateConfig } from './migrate.js'
+
+export interface SplitResult {
+  /** The file split. */
+  file: string
+  /** New files (path → text), one per component moved out. */
+  created: Record<string, string>
+  /** Files changed (path → text): the file split, and the importers of the moved components. */
+  edits: Record<string, string>
+  /** The file split, when nothing but imports is left in it. */
+  deleted: string[]
+  /** The components moved out, by new file. */
+  moved: Array<{ component: string; file: string }>
+}
+
+/** The top-level statement of `sf` declaring `node` (or undefined). */
+function topStatement(sf: SourceFile, node: Node): Statement | undefined {
+  let n: Node | undefined = node
+  while (n && n.getParent() !== sf) n = n.getParent()
+  return n as Statement | undefined
+}
+
+function declaredNamesOf(st: Statement): string[] {
+  if (Node.isVariableStatement(st)) return st.getDeclarations().map((d) => d.getName())
+  if (Node.isFunctionDeclaration(st) || Node.isClassDeclaration(st) || Node.isInterfaceDeclaration(st) || Node.isTypeAliasDeclaration(st) || Node.isEnumDeclaration(st)) {
+    const n = st.getName()
+    return n ? [n] : []
+  }
+  return []
+}
+
+function isExported(st: Statement): boolean {
+  return Node.isExportable(st) && st.isExported()
+}
+
+/**
+ * What a statement refers to among the file's own top-level declarations and imports: names of top-level
+ * statements, and import specifiers (by local name).
+ */
+function referencesOf(sf: SourceFile, st: Node): { statements: Set<Statement>; imports: Set<string> } {
+  const statements = new Set<Statement>()
+  const imports = new Set<string>()
+  st.forEachDescendant((d) => {
+    if (!Node.isIdentifier(d)) return
+    const sym = d.getSymbol()
+    for (const decl of sym?.getDeclarations() ?? []) {
+      if (decl.getSourceFile() !== sf) continue
+      if (Node.isImportSpecifier(decl) || Node.isImportClause(decl) || Node.isNamespaceImport(decl)) {
+        imports.add(d.getText())
+        continue
+      }
+      const top = topStatement(sf, decl)
+      if (top && top !== st && !Node.isImportDeclaration(top)) statements.add(top)
+    }
+  })
+  return { statements, imports }
+}
+
+/** The import lines of `sf` restricted to the local names in `used` (specifiers rewritten by `spec`). */
+function importLines(sf: SourceFile, used: ReadonlySet<string>, spec: (s: string) => string = (s) => s): string[] {
+  const out: string[] = []
+  for (const imp of sf.getImportDeclarations()) {
+    const named = imp.getNamedImports().filter((n) => used.has(n.getAliasNode()?.getText() ?? n.getName()))
+    const def = imp.getDefaultImport()
+    const ns = imp.getNamespaceImport()
+    const parts: string[] = []
+    if (def && used.has(def.getText())) parts.push(def.getText())
+    if (ns && used.has(ns.getText())) parts.push(`* as ${ns.getText()}`)
+    if (named.length) parts.push(`{ ${named.map((n) => n.getText()).join(', ')} }`)
+    if (parts.length) out.push(`import ${imp.isTypeOnly() ? 'type ' : ''}${parts.join(', ')} from ${JSON.stringify(spec(imp.getModuleSpecifierValue()))}`)
+  }
+  return out
+}
+
+/** Replaces the last path segment of a module specifier (`./ApiTokenForms` → `./NewTokenBanner`). */
+function sibling(specifier: string, from: string, to: string): string | undefined {
+  const m = new RegExp(`(^|/)${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\.tsx?)?$`).exec(specifier)
+  if (!m) return undefined
+  return specifier.slice(0, m.index) + m[1] + to
+}
+
+/** Adds an import line after the file's last import, as written (the project's style: single quotes, no semicolon). */
+function addImport(sf: SourceFile, line: string): void {
+  const imports = sf.getImportDeclarations()
+  const at = imports.length ? imports[imports.length - 1].getEnd() : 0
+  sf.insertText(at, imports.length ? `
+${line}` : `${line}
+`)
+}
+
+export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | undefined {
+  const file = sf.getFilePath()
+  const stem = basename(file).replace(/\.tsx?$/, '')
+  const exported = componentsOf(sf).filter((c) => c.exportedAt)
+  if (exported.length < 2) return undefined
+  const toMove = exported.filter((c) => c.name !== stem && c.exported === 'named')
+  if (!toMove.length) return undefined
+  // ts-morph paths (forward slashes on every OS).
+  const dir = file.slice(0, file.lastIndexOf('/'))
+  const movedNames = new Set(toMove.map((c) => c.name))
+  const stmtOf = new Map(toMove.map((c) => [c.name, topStatement(sf, c.fn as unknown as Node)!] as const))
+  const created: Record<string, string> = {}
+  const edits: Record<string, string> = {}
+  const result: SplitResult = { file, created, edits, deleted: [], moved: [] }
+
+  // Who uses what: every top-level statement's references, to know which helpers only one moved component uses.
+  const allStatements = sf.getStatements().filter((s) => !Node.isImportDeclaration(s))
+  const refs = new Map(allStatements.map((s) => [s, referencesOf(sf, s)] as const))
+  const usersOf = (st: Statement): Statement[] => allStatements.filter((s) => s !== st && refs.get(s)!.statements.has(st))
+
+  // A helper moves with a component when every statement using it moves with that same component.
+  const movedWith = new Map<Statement, string>()
+  for (const c of toMove) {
+    const own = stmtOf.get(c.name)!
+    const queue = [...refs.get(own)!.statements]
+    while (queue.length) {
+      const h = queue.shift()!
+      if (movedWith.has(h) || [...stmtOf.values()].includes(h)) continue
+      if (componentsOf(sf).some((x) => topStatement(sf, x.fn as unknown as Node) === h)) continue // components never move as helpers
+      if (isExported(h)) continue
+      const users = usersOf(h)
+      if (users.every((u) => u === own || movedWith.get(u) === c.name)) {
+        movedWith.set(h, c.name)
+        queue.push(...refs.get(h)!.statements)
+      }
+    }
+  }
+
+  const toExport = new Set<Statement>()
+  const texts: Record<string, string> = {}
+  for (const c of toMove) {
+    const own = stmtOf.get(c.name)!
+    const mine = allStatements.filter((s) => s === own || movedWith.get(s) === c.name)
+    const usedImports = new Set<string>()
+    const fromOld = new Set<string>()
+    const fromSplit = new Map<string, string>()
+    for (const s of mine) {
+      const r = refs.get(s)!
+      for (const i of r.imports) usedImports.add(i)
+      for (const t of r.statements) {
+        if (mine.includes(t)) continue
+        const names = declaredNamesOf(t)
+        const other = names.find((n) => movedNames.has(n))
+        if (other) fromSplit.set(other, other)
+        else {
+          // A type is imported as one (`verbatimModuleSyntax`).
+          const typeOnly = Node.isInterfaceDeclaration(t) || Node.isTypeAliasDeclaration(t)
+          for (const n of names) fromOld.add(typeOnly ? `type ${n}` : n)
+          if (!isExported(t)) toExport.add(t)
+        }
+      }
+    }
+    const lines = importLines(sf, usedImports)
+    if (fromOld.size) lines.push(`import { ${[...fromOld].join(', ')} } from './${stem}'`)
+    for (const n of fromSplit.keys()) lines.push(`import { ${n} } from './${n}'`)
+    const body = mine.map((s) => s.getFullText().replace(/^\s*\n/, '')).join('\n\n')
+    texts[c.name] = `${lines.join('\n')}\n\n${body.trim()}\n`
+    result.moved.push({ component: c.name, file: `${dir}/${c.name}.tsx` })
+  }
+
+  // The old file: the moved statements out, the helpers they share exported, the moved components imported back.
+  for (const st of toExport) if (Node.isExportable(st)) st.setIsExported(true)
+  const removed = allStatements.filter((s) => [...stmtOf.values()].includes(s) || movedWith.has(s))
+  const usedBack = new Set<string>()
+  for (const s of allStatements) {
+    if (removed.includes(s)) continue
+    for (const t of refs.get(s)!.statements) for (const n of declaredNamesOf(t)) if (movedNames.has(n)) usedBack.add(n)
+  }
+  // Their leading comments go with them (ts-morph leaves a comment separated by a blank line behind).
+  const comments = removed.flatMap((s) => s.getLeadingCommentRanges().map((r) => r.getText()))
+  for (const s of removed) s.remove()
+  let rest = sf.getFullText()
+  for (const c of comments) {
+    const at = rest.indexOf(c)
+    if (at >= 0) rest = rest.slice(0, at) + rest.slice(at + c.length).replace(/^[ \t]*\r?\n/, '')
+  }
+  if (rest !== sf.getFullText()) sf.replaceWithText(rest)
+  // Imports nothing uses any more.
+  for (const imp of sf.getImportDeclarations()) {
+    for (const n of imp.getNamedImports()) {
+      const local = n.getAliasNode() ?? n.getNameNode()
+      if (!Node.isIdentifier(local) || local.findReferencesAsNodes().every((r) => r.getSourceFile() !== sf || r === local)) n.remove()
+    }
+    const def = imp.getDefaultImport()
+    if (def && def.findReferencesAsNodes().every((r) => r.getSourceFile() !== sf || r === def)) imp.removeDefaultImport()
+    if (!imp.getNamedImports().length && !imp.getDefaultImport() && !imp.getNamespaceImport() && imp.getImportClause()) imp.remove()
+  }
+  for (const n of usedBack) addImport(sf, `import { ${n} } from './${n}'`)
+
+  // The project's importers of the moved components.
+  for (const other of cfg.project.getSourceFiles()) {
+    if (other === sf) continue
+    const lines: string[] = []
+    for (const imp of [...other.getImportDeclarations()] as ImportDeclaration[]) {
+      if (imp.getModuleSpecifierSourceFile() !== sf) continue
+      for (const n of imp.getNamedImports()) {
+        if (!movedNames.has(n.getName())) continue
+        const spec = sibling(imp.getModuleSpecifierValue(), stem, n.getName())
+        if (!spec) continue
+        lines.push(`import ${imp.isTypeOnly() ? 'type ' : ''}{ ${n.getText()} } from '${spec}'`)
+        n.remove()
+      }
+      if (!imp.getNamedImports().length && !imp.getDefaultImport() && !imp.getNamespaceImport()) imp.remove()
+    }
+    for (const line of lines) addImport(other, line)
+    if (lines.length) edits[other.getFilePath()] = other.getFullText()
+  }
+  if (sf.getStatements().every((st) => Node.isImportDeclaration(st))) result.deleted.push(file)
+  else edits[file] = sf.getFullText()
+  for (const c of toMove) created[`${dir}/${c.name}.tsx`] = texts[c.name]
+  return result
+}

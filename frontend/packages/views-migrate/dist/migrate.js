@@ -20,7 +20,7 @@
  * `<input>`, an unmapped prop…) is cut out as a part — a component in `X.parts.tsx` rendered through
  * `<ReactHost Component=… Props=…/>` — so the screen still renders the same; each cut is a reason in the report.
  */
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { Node, ts } from 'ts-morph';
 import { isSafeLiteral, cleanJsxText, decodeEntities } from './jsxtext.js';
 import { mapContainerClasses, mapLabelClasses, mapStackClasses, mapStaticStyle } from './classes.js';
@@ -246,6 +246,8 @@ class Migration {
                 if (!l)
                     return;
                 let text;
+                if (opts.bare?.has(l))
+                    return;
                 if (opts.inUse && (l.kind === 'hook-data' || l.kind === 'hook-fn' || l.kind === 'translate') && (!opts.localNames || opts.localNames.has(l.name)))
                     return;
                 switch (l.kind) {
@@ -498,7 +500,7 @@ export function migrateFile(cfg, sf, wanted) {
         result.outputs = out.outputs;
         result.edits = out.edits;
         // The .tsx goes, unless the code-behind took its very name (a code-behind with JSX is a .tsx).
-        result.deletes = out.outputs[file] === undefined ? [file] : [];
+        result.deletes = Object.keys(out.outputs).some((p) => resolve(p) === resolve(file)) ? [] : [file];
     }
     catch (e) {
         result.reasons.push(...m.reasons, `stopped: ${e.message}`);
@@ -718,7 +720,7 @@ function convert(m, target) {
     const branchConds = branches.map((b) => m.rewrite(b.cond));
     const guardsOf = (decl) => {
         let st = decl;
-        while (st && !ts.isVariableStatement(st))
+        while (st && !ts.isVariableStatement(st) && !(ts.isFunctionDeclaration(st) && st.parent === body))
             st = st.parent;
         const n = st ? branchesBefore.get(st) ?? 0 : 0;
         return n ? branchConds.slice(0, n).map((c) => `!(${c})`) : undefined;
@@ -764,7 +766,20 @@ function convert(m, target) {
                 continue;
             const params = f.parameters.map((p) => m.rewrite(p)).join(', ');
             const isAsync = !!f.modifiers?.some((x) => x.kind === ts.SyntaxKind.AsyncKeyword);
-            const b = ts.isBlock(f.body) ? m.rewrite(f.body) : `{\n    return ${m.rewrite(f.body)}\n  }`;
+            // A function declared after an early return existed only when it did not return: its body starts with the same
+            // conditions (what the TSX narrowed — `data` after `if (!data) return …` — stays narrowed).
+            const guards = guardsOf(d);
+            // A value the body reads inside a callback, nullable by its declaration: read through a local constant (the
+            // narrowing of `this.x` stops at a callback, a constant's does not — as in the TSX).
+            const paramNames = new Set(f.parameters.map((p) => p.name.getText()));
+            const bare = new Set([...nestedNullables(m, f.body)].filter((x) => !paramNames.has(x.name)));
+            const prelude = [
+                ...(guards?.length ? [`    if (${guards.map((g) => `!(${g})`).join(' || ')}) return undefined as never`] : []),
+                ...[...bare].map((x) => `    const ${x.name} = ${refText(m, x)}`),
+            ];
+            let b = ts.isBlock(f.body) ? m.rewrite(f.body, { bare }) : `{\n    return ${m.rewrite(f.body, { bare })}\n  }`;
+            if (prelude.length)
+                b = b.replace(/^\{/, `{\n${prelude.join('\n')}`);
             const typeParams = f.typeParameters?.length ? `<${f.typeParameters.map((t) => m.rewrite(t)).join(', ')}>` : undefined;
             m.methods.push({ name: l.member, params, body: b, async: isAsync, typeParams });
         }
@@ -858,8 +873,35 @@ function binding(m, node, text, ctx, base) {
         ctx.row.fields.set(name, guards.length ? `(${guards.map((g) => `(${g})`).join(' && ')}) ? (${text}) : undefined` : text);
         return `{Binding ${name}}`;
     }
-    const g = m.getter(snake(base) || 'value', text, { memo: m.isObjectValue(node), guards: (ctx.guards ?? []).filter((c) => !/__row/.test(c)) });
+    const g = m.getter(snake(base) || 'value', text, { memo: m.isObjectValue(node), guards: (ctx.guards ?? []).filter((c) => !/\b__row\b/.test(c)) });
     return `{Binding ${g}}`;
+}
+/**
+ * Whether reading `a.b.c` goes through a value its declared type allows to be null (`status` of `status.remaining`
+ * under `status && …`): the TSX read it narrowed; a binding path is typed from the declarations, so it would not
+ * type-check — such a path is read by a (guarded) getter instead.
+ */
+function throughNullable(m, e) {
+    let x = skipParens(e);
+    const inner = [];
+    while (ts.isPropertyAccessExpression(x)) {
+        inner.push(x.expression);
+        x = skipParens(x.expression);
+    }
+    const declaredNullable = (n) => {
+        const sym = ts.isPropertyAccessExpression(n) ? m.checker.getSymbolAtLocation(n.name) : m.checker.getSymbolAtLocation(n);
+        if (!sym)
+            return false;
+        let t;
+        try {
+            t = m.checker.getTypeOfSymbol(sym);
+        }
+        catch {
+            return false;
+        }
+        return (t.isUnion() ? t.types : [t]).some((p) => !!(p.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void)));
+    };
+    return inner.some((n) => declaredNullable(skipParens(n)));
 }
 /** `a.b.c` relative to the view (a field) or the row (a template parameter), when `e` is such a plain path. */
 function pathOf(m, e, ctx) {
@@ -870,6 +912,8 @@ function pathOf(m, e, ctx) {
         x = skipParens(x.expression);
     }
     if (!ts.isIdentifier(x))
+        return undefined;
+    if (segs.length && throughNullable(m, e))
         return undefined;
     if (ctx.rows) {
         const r = m.rowParamOf(x, ctx.rows);
@@ -1113,7 +1157,21 @@ function textValue(m, children, ctx, base) {
         return valueOf(m, p.expr, ctx, base, 'text');
     }
     // Several runs: one string built by a getter (the `{Res}` parts read through `this.t`).
-    const pieces = parts.map((p) => (p.text !== undefined ? JSON.stringify(p.text) : `String(${resText(m, p.expr, ctx) ?? m.rewrite(p.expr, { rows: ctx.rows })} ?? '')`));
+    // `?? ''` only after a value that can be null or undefined (React prints nothing for them; TypeScript refuses an
+    // unreachable `??`).
+    const nullable = (e) => {
+        const t = m.checker.getTypeAtLocation(e);
+        return (t.isUnion() ? t.types : [t]).some((x) => !!(x.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Any | ts.TypeFlags.Unknown)));
+    };
+    const pieces = parts.map((p) => {
+        if (p.text !== undefined)
+            return JSON.stringify(p.text);
+        const res = resText(m, p.expr, ctx);
+        if (res)
+            return res;
+        const v = m.rewrite(p.expr, { rows: ctx.rows });
+        return nullable(p.expr) ? `String(${v} ?? '')` : `String(${v})`;
+    });
     return binding(m, children[0], pieces.join(' + '), ctx, base);
 }
 /** `t('k', …)` as an expression of the class (`this.tr('k', …)`), keeping i18next's behaviour. */
@@ -1167,8 +1225,13 @@ function convertElementOrThrow(m, e, ctx) {
     const tag = tagName(e);
     const tagText = tag.getText();
     const attrs = attributesOf(e);
-    if (attrs.properties.some((p) => ts.isJsxSpreadAttribute(p)))
+    if (attrs.properties.some((p) => ts.isJsxSpreadAttribute(p))) {
+        // A component given spread props (`<ConfirmDialog {...confirmState} onConfirm={…}/>`): a ReactHost rendering it
+        // with the same props object (an HTML element with spread props stays a part).
+        if (ts.isIdentifier(tag) && /^[A-Z]/.test(tag.text))
+            return hostComponent(m, e, ctx, `<${tagText} {...spread}> (spread props)`);
         throw new NeedsPart(`<${tagText} {...spread}> (spread props)`);
+    }
     // Intrinsic elements.
     if (ts.isIdentifier(tag) && /^[a-z]/.test(tag.text))
         return intrinsic(m, e, tag.text, ctx);
@@ -1200,7 +1263,10 @@ function importOf(m, tag) {
         return undefined;
     if (ts.isImportSpecifier(d)) {
         const decl = d.parent.parent.parent;
-        const module = decl.moduleSpecifier.text;
+        let module = decl.moduleSpecifier.text;
+        // `import { FloatingWindow } from '@ui/FloatingWindow'`: the same export as `@ui`'s.
+        if (/^@ui\/[\w-]+$/.test(module))
+            module = '@ui';
         return { module, name: (d.propertyName ?? d.name).text };
     }
     if (ts.isImportClause(d)) {
@@ -1295,7 +1361,10 @@ function handler(m, expr, ctx, node, event, from = {}) {
     m.viewsTypes.add('EventArgs');
     const x = skipParens(expr);
     const base = `${snake(node.attrs.find((a) => a.name === 'x:Name')?.value ?? node.el)}_${snake(event.replace(/^On/, ''))}`;
-    const rowDestructure = ctx.row ? rowPrelude(ctx, x.getText()) : '';
+    // The template's row as locals, then the conditions the element is shown under (the event only fires then: the
+    // TSX handler read the values those conditions narrowed).
+    const rowDestructure = (ctx.row ? rowPrelude(ctx, x.getText()) : '') + guardPrelude(ctx);
+    const preArgs = /\bargs\b/.test(rowDestructure);
     // What the TSX handler received: the DOM event of an HTML element, the value of a value callback, else the
     // component's (React) event.
     const received = from.args === 'value' ? 'args.value' : 'args.native';
@@ -1319,7 +1388,7 @@ function handler(m, expr, ctx, node, event, from = {}) {
             const name = m.member(base);
             const callee = l.kind === 'prop' ? `this.props.${l.member}?.` : l.kind === 'setter' ? `this.${refText(m, l).replace(/\.bind\(this\)$/, '')}` : `this.${l.member}`;
             const takes = arity(m, x) > 0;
-            m.methods.push({ name, params: params(takes || !!rowDestructure), body: `{\n${rowDestructure}    ${callee}(${takes ? `${received} as never` : ''})\n  }`, async: false });
+            m.methods.push({ name, params: params(takes || preArgs), body: `{\n${rowDestructure}    ${callee}(${takes ? `${received} as never` : ''})\n  }`, async: false });
             return name;
         }
     }
@@ -1339,13 +1408,15 @@ function handler(m, expr, ctx, node, event, from = {}) {
         }
         const inner = m.rewrite(x.body, { rows: rowParamsAsLocals(ctx, new Map(ctx.rows ?? [])) });
         const body = ts.isBlock(x.body) ? `{\n${prelude}${inner.replace(/^\{\n?/, '')}` : `{\n${prelude}    ${needsReturn(x.body) ? 'return ' : ''}${inner}\n  }`;
-        m.methods.push({ name, params: params(!!p || !!rowDestructure), body, async: isAsync });
+        m.methods.push({ name, params: params(!!p || preArgs), body, async: isAsync });
         return name;
     }
     // Any other expression (a call returning a handler…): evaluate it and call the result.
     const name = m.member(base);
     const fnText = m.rewrite(x, { rows: rowParamsAsLocals(ctx, new Map(ctx.rows ?? [])) });
-    m.methods.push({ name, params: params(true), body: `{\n${rowDestructure}    return (${fnText})?.(${received} as never)\n  }`, async: false });
+    // The event is passed on only to a function that takes it (`onClick={stepper.prev}`, a function of no parameter).
+    const takes = arity(m, x) > 0;
+    m.methods.push({ name, params: params(takes || preArgs), body: `{\n${rowDestructure}    return (${fnText})?.(${takes ? `${received} as never` : ''})\n  }`, async: false });
     return name;
 }
 /** TypeScript's type of `node` when it can be written in the code-behind without an import (primitives, DOM, React). */
@@ -1378,6 +1449,20 @@ function methodFn(l) {
     if (ts.isFunctionDeclaration(l.decl))
         return l.decl;
     return undefined;
+}
+/**
+ * `if (!(cond)) return`: the conditions an element is shown under, at the start of its handlers (a row's own
+ * conditions read through `args.row`).
+ */
+function guardPrelude(ctx) {
+    const guards = ctx.guards ?? [];
+    if (!guards.length)
+        return '';
+    const ROW = new RegExp('\\b__row\\.', 'g');
+    const text = guards.map((g) => (ctx.row ? g.replace(ROW, `(args.row as RowOf_${ctx.row.getter}).`) : g));
+    if (text.some((g) => /\b__row\b/.test(g)))
+        return '';
+    return `    if (${text.map((g) => `!(${g})`).join(' || ')}) return undefined as never\n`;
 }
 /** In a handler of a template: `const { theme, i } = args.row as Row` — the template's parameters, as locals again. */
 function rowPrelude(ctx, body) {
@@ -1665,6 +1750,93 @@ function component(m, e, info, ctx) {
         h.done.add(prop);
         h.done.add(ev[0]);
     }
+    // Object props fed field by field (`action={{ label: t('x'), onClick: go }}` → `ActionLabel` + `OnAction`).
+    for (const [prop, fields] of info.fields) {
+        const a = jsxAttr(e, prop);
+        if (!a)
+            continue;
+        const init = a.initializer;
+        const obj = init && ts.isJsxExpression(init) && init.expression ? skipParens(init.expression) : undefined;
+        if (!obj || !ts.isObjectLiteralExpression(obj))
+            throw new NeedsPart(`<${info.name}> ${prop}: an object prop that is not an object literal`);
+        // The fields, flattened to dotted paths (`actions={{ confirm: { label } }}` → `confirm.label`).
+        const flat = [];
+        const walk = (o, prefix) => {
+            for (const f of o.properties) {
+                let key;
+                let value;
+                if (ts.isPropertyAssignment(f) && (ts.isIdentifier(f.name) || ts.isStringLiteral(f.name))) {
+                    key = prefix + f.name.text;
+                    value = f.initializer;
+                }
+                else if (ts.isShorthandPropertyAssignment(f)) {
+                    key = prefix + f.name.text;
+                    value = f.name;
+                }
+                else
+                    throw new NeedsPart(`<${info.name}> ${prop}: a field the codemod cannot read`);
+                const inner = skipParens(value);
+                if (!fields.has(key) && ts.isObjectLiteralExpression(inner) && [...fields.keys()].some((k) => k.startsWith(key + '.')))
+                    walk(inner, key + '.');
+                else
+                    flat.push({ key, value });
+            }
+        };
+        walk(obj, '');
+        for (const { key, value } of flat) {
+            const target = fields.get(key);
+            if (!target)
+                throw new NeedsPart(`<${info.name}> ${prop}.${key}: no .kbview property`);
+            if (target.kind === 'event') {
+                attr(h.node, target.name, handler(m, value, ctx, h.node, target.name, { args: target.args }));
+                continue;
+            }
+            const x = skipParens(value);
+            let v;
+            if ((ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) && target.values)
+                v = target.values.get(x.text) ?? x.text;
+            else if (target.convert === 'invert')
+                v = invertExpr(m, value, ctx, nameFor(value, 'enabled_unless'));
+            else if (target.convert)
+                throw new NeedsPart(`<${info.name}> ${prop}.${key}: a value the property converts (${target.convert})`);
+            else if (!isTextValue(m, x))
+                throw new NeedsPart(`<${info.name}> ${prop}.${key}: an object value for a text property`);
+            else
+                v = valueOf(m, value, ctx, target.name, kindOfProp(info, target.name));
+            attr(h.node, target.name, v);
+        }
+        h.done.add(prop);
+    }
+    // Props holding elements that the element shows in a place of its own (`<Card actions={<Button…/>}>`): property
+    // elements (`<Card.Actions><Button…/></Card.Actions>`), their content converted like children.
+    const slotNodes = [];
+    for (const [prop, propName] of info.slots) {
+        const a = jsxAttr(e, prop);
+        if (!a)
+            continue;
+        const v = a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression ? skipParens(a.initializer.expression) : undefined;
+        if (!v || !(isJsxLike(v) || (ts.isBinaryExpression(v) && v.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken && isJsxLike(v.right)))) {
+            throw new NeedsPart(`<${info.name}> ${prop}: elements held in an expression`);
+        }
+        const content = convertBranch(m, v, ctx);
+        if (content.length)
+            slotNodes.push({ el: `${info.name}.${propName}`, attrs: [], children: content });
+        h.done.add(prop);
+    }
+    // `t={t}` given to an `@ui` element only for strings it shows in a case the element is not in (a Callout without
+    // its close button, an EmptyState without its documentation link): it changes nothing, it is left out.
+    const tAttr = jsxAttr(e, 't');
+    if (tAttr && translatorUnused(info.name, e))
+        h.done.add('t');
+    else if (tAttr && info.props.get('t')?.convert === 'host-t') {
+        // `t={t}` with the screen's own `t` (the host's default namespace): `HostStrings`, the runtime passes the same.
+        const x = tAttr.initializer && ts.isJsxExpression(tAttr.initializer) && tAttr.initializer.expression ? skipParens(tAttr.initializer.expression) : undefined;
+        const l = x && ts.isIdentifier(x) ? m.localOf(x) : undefined;
+        if (l?.kind !== 'translate' || (l.ns !== undefined && l.ns !== m.cfg.defaultNs))
+            throw new NeedsPart(`<${info.name}> t: a translator other than the screen's own`);
+        attr(h.node, info.props.get('t').name, 'true');
+        h.done.add('t');
+    }
     for (const p of attributesOf(e).properties) {
         if (ts.isJsxAttribute(p) && h.done.has(p.name.getText()))
             continue;
@@ -1697,11 +1869,33 @@ function component(m, e, info, ctx) {
                     if (!name)
                         throw new NeedsPart(`<${info.name} ${name ?? target.name}>: an icon that is not a Lucide icon`);
                     value = name;
+                    // `icon={<RefreshCw size={14}/>}`: its size is the element's `IconSize` (its own default otherwise).
+                    if (ts.isJsxSelfClosingElement(x)) {
+                        for (const a of x.attributes.properties) {
+                            if (!ts.isJsxAttribute(a))
+                                throw new NeedsPart(`<${info.name} ${target.name}>: an icon with spread props`);
+                            const an = a.name.getText();
+                            if (an === 'size') {
+                                const sz = staticString(a) ?? (a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression && ts.isNumericLiteral(skipParens(a.initializer.expression)) ? skipParens(a.initializer.expression).text : undefined);
+                                if (sz === undefined || !info.propertyNames.has('IconSize'))
+                                    throw new NeedsPart(`<${info.name} ${target.name}>: an icon size the element cannot take`);
+                                attr(h.node, 'IconSize', sz);
+                            }
+                            else if (an !== 'aria-hidden' && an !== 'key')
+                                throw new NeedsPart(`<${info.name} ${target.name}>: an icon with ${an}`);
+                        }
+                    }
                 }
                 else if (target.convert && target.convert !== 'items-source' && !isTextValue(m, x))
                     throw new NeedsPart(`<${info.name}> ${p.name.getText()}: a value the property converts (${target.convert})`);
                 else if (!info.objectProps.has(target.name) && target.convert !== 'items-source' && !isTextValue(m, x) && !(ts.isArrowFunction(x) || ts.isFunctionExpression(x)))
                     throw new NeedsPart(`<${info.name}> ${p.name.getText()}: an object value for a text property`);
+                else if (target.values && !isStringValued(m, x)) {
+                    // A boolean or a number for an enum property (`indeterminate={some}` → `CheckState`): its `.kbview` value,
+                    // looked up by a getter (the runtime maps `.kbview` names, a raw `true` would reach the component as text).
+                    const table = JSON.stringify(Object.fromEntries(target.values));
+                    value = binding(m, x, `(${table} as Record<string, string>)[String(${m.rewrite(x, { rows: ctx.rows })})]`, ctx, target.name);
+                }
                 else
                     value = valueOf(m, expr, ctx, target.name, kindOfProp(info, target.name));
             }
@@ -1721,7 +1915,7 @@ function component(m, e, info, ctx) {
     if (left.length)
         throw new NeedsPart(`<${info.name}> ${left.join(', ')}: no .kbview property`);
     const cls = jsxAttr(e, 'className');
-    if (cls) {
+    if (cls && !h.done.has('className')) {
         const c = classValue(cls);
         if (c === undefined)
             throw new NeedsPart(`<${info.name}> with a computed className`);
@@ -1742,8 +1936,28 @@ function component(m, e, info, ctx) {
         else
             throw new NeedsPart(`<${info.name}> with element children`);
     }
+    if (slotNodes.length)
+        h.node.children = [...slotNodes, ...h.node.children];
     m.stats.mapped++;
     return h.node;
+}
+/**
+ * Whether an `@ui` element's `t` prop is read by nothing it renders here: `Callout` translates only its close button
+ * (`dismissible`), `EmptyState` only the default label of its documentation link (`docHref` without `docLabel`).
+ */
+function translatorUnused(element, e) {
+    const off = (name) => {
+        const a = jsxAttr(e, name);
+        if (!a)
+            return true;
+        const v = a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression ? skipParens(a.initializer.expression) : undefined;
+        return !!v && (v.kind === ts.SyntaxKind.FalseKeyword || v.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(v) && v.text === 'undefined'));
+    };
+    switch (element) {
+        case 'Callout': return off('dismissible');
+        case 'EmptyState': return off('docHref') || !off('docLabel');
+        default: return false;
+    }
 }
 function kindOfProp(info, name) {
     const d = info.defaults.get(name);
@@ -1819,9 +2033,14 @@ function buildRepeater(m, list, cb, locals, el, ctx, call) {
     const own = fieldLines.filter((l) => !locals.some((s) => s.declarationList.declarations.some((d) => l.startsWith(d.name.getText() + ':'))));
     const objectFields = [p0, ...(idx ? [idx] : []), ...locals.flatMap((s) => s.declarationList.declarations.map((d) => d.name.getText())), ...own];
     if (keyExpr) {
-        // The row object carries its key (`ItemKey` names a field of the row).
-        objectFields.push(`key: ${m.rewrite(keyExpr, { rows: new Map(ctx.rows ?? []) })}`);
-        attr(rep, 'ItemKey', 'key');
+        // The row object carries its key (`ItemKey` names a field of the row) — under another name when a parameter or a
+        // local of the template is called `key`.
+        const taken = new Set(objectFields.map((f) => f.split(':')[0].trim()));
+        let keyField = 'key';
+        for (let k = 2; taken.has(keyField); k++)
+            keyField = k === 2 ? 'rowKey' : `rowKey${k}`;
+        objectFields.push(`${keyField}: ${m.rewrite(keyExpr, { rows: new Map(ctx.rows ?? []) })}`);
+        attr(rep, 'ItemKey', keyField);
     }
     const mapper = `(${[p0, idx].filter(Boolean).join(', ')}) => {${localDecls.map((d) => `\n      ${d}`).join('')}\n      return { ${objectFields.join(', ')} }\n    }`;
     const body = `${listText}.map(${mapper})`;
@@ -1872,12 +2091,45 @@ function part(m, node, ctx, why) {
     const n = { el: 'ReactHost', attrs: [], children: [], comment: `TODO(views-migrate): ${why}` };
     // Under a condition, the component is guarded like its props: a ReactHost renders nothing while the condition fails
     // (the designer shows hidden elements; their props getters give nothing then).
-    const partGuards = props.length ? (ctx.guards ?? []).filter((c) => !/__row/.test(c)) : [];
+    const partGuards = props.length ? (ctx.guards ?? []).filter((c) => !/\b__row\b/.test(c)) : [];
     m.getters.push({ name, body: `__parts.${name}`, memo: false, doc: `A part of the screen still written in React (${why}).`, guards: partGuards.length ? partGuards : undefined });
     attr(n, 'Component', `{Binding ${name}}`);
     if (value)
         attr(n, 'Props', value);
     return n;
+}
+/**
+ * The component's values a function body reads inside a nested function (a callback, a `.then`) whose declared type
+ * allows null or undefined: the TSX narrowed them as constants; the class reads them through local constants too.
+ */
+function nestedNullables(m, body) {
+    const out = new Set();
+    const visit = (n, depth) => {
+        if (n !== body && ts.isFunctionLike(n)) {
+            ts.forEachChild(n, (c) => visit(c, depth + 1));
+            return;
+        }
+        if (ts.isIdentifier(n) && depth > 0) {
+            const p = n.parent;
+            const isName = (ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAssignment(p) && p.name === n) || (ts.isBindingElement(p) && p.propertyName === n) || ts.isJsxAttribute(p);
+            const l = isName ? undefined : m.localOf(n);
+            if (l && (l.kind === 'state' || l.kind === 'hook-data' || l.kind === 'derived' || l.kind === 'prop') && !out.has(l)) {
+                const sym = m.checker.getSymbolAtLocation(n);
+                let t;
+                try {
+                    t = sym ? m.checker.getTypeOfSymbol(sym) : undefined;
+                }
+                catch {
+                    t = undefined;
+                }
+                if (t && (t.isUnion() ? t.types : [t]).some((x) => !!(x.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined))))
+                    out.add(l);
+            }
+        }
+        ts.forEachChild(n, (c) => visit(c, depth));
+    };
+    visit(body, 0);
+    return out;
 }
 /** How a component-scope name is reached from the class (a part's prop, a row field). */
 function refText(m, l) {
@@ -1909,6 +2161,10 @@ function hostComponent(m, e, ctx, why) {
     m.reason(why);
     const entries = [];
     for (const p of attributesOf(e).properties) {
+        if (ts.isJsxSpreadAttribute(p)) {
+            entries.push(`...${m.rewrite(p.expression, { rows: ctx.rows })}`);
+            continue;
+        }
         if (!ts.isJsxAttribute(p))
             throw new NeedsPart(why);
         const name = p.name.getText();
@@ -2001,14 +2257,13 @@ function codeBehind(m, target, xmlText) {
             effects.push(st.getText());
             continue;
         }
-        helpers.push({ names, text: st.getText() });
+        // An exported helper is part of the module's API (other files import it): always kept.
+        helpers.push({ names, text: st.getText(), exported: Node.isExportable(st) && st.isExported() });
     }
     const cls = [];
     cls.push(`export class ${m.stem} extends ViewBase {`);
     // The hooks run in `useHooks()`; what they give is typed from it (`<X>Hooks['name']`): no type to import.
     const hookLocals = [...m.locals.values()].filter((l) => l.kind === 'hook-data' || l.kind === 'hook-fn' || l.kind === 'translate');
-    const reads = [xmlText, ...m.getters.map((g) => g.body), ...m.methods.map((x) => x.body)].join('\n');
-    const used = hookLocals.filter((l) => new RegExp('(this\\.|Binding |[^\\w$])' + l.member + '(?![\\w$])').test(reads));
     const members = [];
     for (const l of m.locals.values()) {
         if (l.kind === 'state')
@@ -2016,12 +2271,29 @@ function codeBehind(m, target, xmlText) {
     }
     // The hooks split in two, in that order (a stable order for React): the ones that read nothing of the class (stores,
     // translations, queries on constants) in `useStores()`, then the ones reading its members (a state initialised from a
-    // getter, an effect) in `useHooks()`. The first ones' results land in the fields before the second ones run (their
-    // getters read fresh values), and each method types its fields (`XStores['user']`, `XHooks['n']`) without one type
-    // depending on itself.
+    // getter, an effect) — or what such a hook gave — in `useHooks()`. The first ones' results land in the fields before
+    // the second ones run (their getters read fresh values), and each method types its fields (`XStores['user']`,
+    // `XHooks['n']`) without one type depending on itself.
     const indep = [];
     const dep = [];
-    m.useBody.forEach((s, k) => (/\bthis\./.test(s) ? dep : indep).push(k));
+    const depNames = new Set();
+    m.useBody.forEach((s, k) => {
+        const isDep = /\bthis\./.test(s) || [...depNames].some((n) => mentions(n, s));
+        (isDep ? dep : indep).push(k);
+        if (isDep)
+            for (const n of m.useNames[k] ?? [])
+                depNames.add(n);
+    });
+    // In useHooks(), what useStores() gave is read through local constants (`const data = this.data`), as the TSX's
+    // closures read its constants: a narrowing (`if (!data) return`) holds inside the callbacks too.
+    const storesNames = new Set(indep.flatMap((k) => m.useNames[k] ?? []));
+    const hooksNames = new Set(dep.flatMap((k) => m.useNames[k] ?? []));
+    const hooksText = (k) => m.useStmts[k].transform(m.rewrite(m.useStmts[k].node, { inUse: true, localNames: new Set([...hooksNames, ...storesNames]) }));
+    // Which of them it reads (the checker's references: a callback parameter of the same name is not one).
+    const asFields = dep.map((k) => m.rewrite(m.useStmts[k].node, { inUse: true, localNames: hooksNames })).join('\n');
+    const storesInHooks = hookLocals.filter((l) => storesNames.has(l.name) && new RegExp(`this\\.${l.member}(?![\\w$])`).test(asFields));
+    const reads = [xmlText, ...m.getters.map((g) => g.body), ...m.methods.map((x) => x.body)].join('\n');
+    const used = hookLocals.filter((l) => new RegExp('(this\\.|Binding |[^\\w$])' + l.member + '(?![\\w$])').test(reads) || storesInHooks.includes(l));
     const groupOf = new Map();
     for (const k of indep)
         for (const n of m.useNames[k] ?? [])
@@ -2038,17 +2310,22 @@ function codeBehind(m, target, xmlText) {
         members.push(`  navigate!: ReturnType<typeof useNavigate>`);
     if (members.length)
         cls.push(...members, '');
-    const indent = (s) => s.split('\n').map((l) => '    ' + l.trimStart()).join('\n');
+    // A statement keeps its own indentation, moved from its column in the TSX to the method's.
+    const indent = (s, k) => {
+        const node = m.useStmts[k].node;
+        const text = node.getSourceFile().text;
+        const col = node.getStart() - (text.lastIndexOf('\n', node.getStart()) + 1);
+        return s.split('\n').map((l, i) => '    ' + (i === 0 ? l.trimStart() : l.replace(new RegExp(`^ {0,${col}}`), ''))).join('\n');
+    };
     const groups = [
         { method: 'useStores', ks: indep, doc: `The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them.` },
         { method: 'useHooks', ks: dep, doc: `The screen's hooks that read its members (run after the fields of \`useStores()\` are set).` },
     ].filter((g) => g.ks.length);
     for (const g of groups) {
         const names = g.ks.flatMap((k) => m.useNames[k] ?? []);
-        // In useHooks(), the names useStores() declared are fields (`this.user`): written again with only its own names local.
-        const own = new Set(names);
-        const text = (k) => (g.method === 'useHooks' ? m.useStmts[k].transform(m.rewrite(m.useStmts[k].node, { inUse: true, localNames: own })) : m.useBody[k]);
-        cls.push(`  /** ${g.doc} React's rules apply: \`use()\` runs them on every render. */`, `  ${g.method}() {`, ...g.ks.map((k) => indent(text(k))));
+        const text = (k) => (g.method === 'useHooks' ? hooksText(k) : m.useBody[k]);
+        const aliases = g.method === 'useHooks' ? storesInHooks.map((l) => `    const ${l.name} = this.${l.member}`) : [];
+        cls.push(`  /** ${g.doc} React's rules apply: \`use()\` runs them on every render. */`, `  ${g.method}() {`, ...aliases, ...g.ks.map((k) => indent(text(k), k)));
         cls.push(`    return { ${names.join(', ')} }`, '  }', '');
     }
     if (groups.length || m.needsNavigate) {
@@ -2100,7 +2377,7 @@ function codeBehind(m, target, xmlText) {
         cls.push(...effects.flatMap((e) => [e, '']));
     // Helpers the class uses (and the helpers those use), in file order.
     let code = body.join('\n') + cls.join('\n');
-    const keep = new Set();
+    const keep = new Set(helpers.flatMap((h, k) => (h.exported ? [k] : [])));
     for (let changed = true; changed;) {
         changed = false;
         const all = code + helpers.filter((_, k) => keep.has(k)).map((h) => h.text).join('\n');
@@ -2149,7 +2426,9 @@ function partsFile(m) {
     let text = body.join('\n');
     // The other statements of the file the parts use (types, constants, helpers), then the imports they need.
     const uses = (name, t) => mentions(name, t);
-    const helpers = [];
+    // Every statement the parts use, and what those use in turn (`const QRCode = resolveQRCode(…)` needs
+    // `resolveQRCode`), in file order.
+    const candidates = [];
     for (const st of m.sf.getStatements()) {
         if (Node.isImportDeclaration(st) || Node.isExportAssignment(st))
             continue;
@@ -2158,9 +2437,20 @@ function partsFile(m) {
         if (Node.isVariableStatement(st) && st.getDeclarations().some((d) => d.getName() === m.name || m.localComponents.has(d.getName())))
             continue;
         const names = Node.isVariableStatement(st) ? st.getDeclarations().map((d) => d.getName()) : 'getName' in st && typeof st.getName === 'function' ? [st.getName() ?? ''] : [];
-        if (names.some((n) => n && uses(n, text)))
-            helpers.push(st.getText().replace(/^export\s+/, ''));
+        candidates.push({ names, text: st.getText().replace(/^export\s+/, '') });
     }
+    const kept = new Set();
+    for (let changed = true; changed;) {
+        changed = false;
+        const all = text + '\n' + [...kept].map((k) => candidates[k].text).join('\n');
+        candidates.forEach((c, k) => {
+            if (!kept.has(k) && c.names.some((n) => n && uses(n, all))) {
+                kept.add(k);
+                changed = true;
+            }
+        });
+    }
+    const helpers = candidates.filter((_, k) => kept.has(k)).map((c) => c.text);
     if (helpers.length)
         text = helpers.join('\n\n') + '\n' + text;
     const imports = [];
@@ -2202,7 +2492,8 @@ export function rewriteImporters(cfg, targets) {
     const changed = new Set();
     for (const { sf, component } of targets) {
         const comp = componentsOf(sf).find((c) => c.name === component);
-        if (!comp || comp.exported === 'default' || comp.exported === 'both')
+        // Exported both ways: the importers using the name switch too (the name is now the code-behind class).
+        if (!comp || comp.exported === 'default')
             continue;
         const noExt = sf.getFilePath().replace(/\.tsx?$/, '');
         for (const other of cfg.project.getSourceFiles()) {
@@ -2297,6 +2588,11 @@ function convertChildren(m, children, ctx, flexBox) {
 function isListOrCondition(e) {
     const x = skipParens(e);
     return ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === 'map';
+}
+/** Whether an expression's value is a string (or a string literal union). */
+function isStringValued(m, e) {
+    const t = m.checker.getTypeAtLocation(e);
+    return (t.isUnion() ? t.types : [t]).every((p) => !!(p.flags & (ts.TypeFlags.StringLike | ts.TypeFlags.Null | ts.TypeFlags.Undefined)));
 }
 /** Whether an expression's value is text (a string, a number, a boolean React prints nothing for). */
 function isTextValue(m, e) {

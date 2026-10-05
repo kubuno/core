@@ -13,6 +13,7 @@ import type { DatePicker } from '../DatePicker'
 import type { ColorField } from '../ColorField'
 import type { GradientField } from '../GradientPicker'
 import type { AlternateBinding, ElementMeta } from './types.ts'
+import { FIELD_CLASS, HOST_STRINGS } from './levels.ts'
 
 // Web-only field chrome shared by the `@ui` form fields (label above, hint or error below).
 const FIELD_LABEL = {
@@ -102,6 +103,7 @@ export const TextFieldMeta = {
   children: 'None',
   defaultEvent: 'OnTextChanged',
   properties: [
+    FIELD_CLASS,
     { name: 'Text', kind: 'String', default: '', category: 'Appearance',
       doc: 'Text in the field.', docFr: 'Texte contenu dans le champ.',
       to: { prop: 'value', change: 'OnTextChanged' } },
@@ -154,6 +156,7 @@ export const TextAreaMeta = {
   children: 'None',
   defaultEvent: 'OnTextChanged',
   properties: [
+    FIELD_CLASS,
     { name: 'Text', kind: 'String', default: '', category: 'Appearance',
       doc: 'Text in the field.', docFr: 'Texte contenu dans le champ.',
       to: { prop: 'value', change: 'OnTextChanged' } },
@@ -227,6 +230,7 @@ export const ComboBoxMeta = {
     { name: 'Placeholder', kind: 'String', default: '', category: 'Appearance', localizable: true, webOnly: true,
       doc: 'Web only: text shown when nothing is selected.', docFr: "Web uniquement : texte affiché quand rien n'est sélectionné.",
       to: { prop: 'placeholder' } },
+    HOST_STRINGS,
   ],
   events: [
     { ...SELECTED_VALUE_CHANGED, from: { prop: 'onChange', args: 'value' } },

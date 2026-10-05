@@ -22,13 +22,31 @@ export class Registry {
         const w = c.web;
         const props = new Map();
         const events = new Map();
+        const fields = new Map();
+        const fieldOf = (prop) => {
+            let f = fields.get(prop);
+            if (!f)
+                fields.set(prop, (f = new Map()));
+            return f;
+        };
         for (const [name, t] of Object.entries(w?.prop_map ?? {})) {
+            if (t.prop && t.field) {
+                const values = t.values ? new Map([...Object.entries(t.values)].reverse().map(([k, v]) => [String(v), k])) : undefined;
+                if (!fieldOf(t.prop).has(t.field))
+                    fieldOf(t.prop).set(t.field, { kind: 'prop', name, values, convert: t.convert });
+                continue;
+            }
             if (!t.prop || props.has(t.prop))
                 continue;
-            const values = t.values ? new Map(Object.entries(t.values).map(([k, v]) => [String(v), k])) : undefined;
+            const values = t.values ? new Map([...Object.entries(t.values)].reverse().map(([k, v]) => [String(v), k])) : undefined;
             props.set(t.prop, { name, values, convert: t.convert, change: t.change });
         }
         for (const [name, s] of Object.entries(w?.event_map ?? {})) {
+            if (s.prop && s.field) {
+                if (!fieldOf(s.prop).has(s.field))
+                    fieldOf(s.prop).set(s.field, { kind: 'event', name, args: s.args });
+                continue;
+            }
             if (s.prop && !events.has(s.prop))
                 events.set(s.prop, { name, args: s.args });
         }
@@ -48,6 +66,8 @@ export class Registry {
             eventNames: new Set((c.events ?? []).map((e) => e.name)),
             defaults,
             objectProps: new Set((c.properties ?? []).filter((p) => p.editor === 'object' || p.editor === 'list').map((p) => p.name)),
+            fields,
+            slots: new Map(Object.entries(w?.slots ?? {}).map(([prop, react]) => [react, prop])),
         };
         this.byName.set(c.name, info);
         if (w?.module && w.export) {

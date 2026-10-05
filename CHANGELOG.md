@@ -11,6 +11,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Dialog footers, banners and host strings in web views.** A view's `FloatingWindow` can now describe its footer
+  (confirm and cancel buttons, their text, whether they can be clicked, a working state, a destructive action) and hold
+  a banner or title-bar buttons as property elements; the `@ui` elements that carry their own texts (a close button's
+  name, a default « Cancel », a stepper's or a table's labels) can take them in the user's language from the
+  application's strings (`HostStrings`), and the text fields can style their input box (`FieldClass`) — so dialogs
+  and forms move to views without changing what they show or what screen readers announce.
 - **Four more text sizes for views, the same on the web and the desktop**: badge (10 px), caption (11 px), subtitle
   (16 px) and display (24 px). The launcher's « Favorites » title and the account panel's greeting, unread counts and
   account pills use them instead of fixed sizes (checked identical, light and dark, three languages, desktop and phone).
@@ -60,6 +66,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **A web view whose screen uses a hook returning a new object on every render no longer freezes the page** (the
+  « Download my data » settings re-rendered without end once moved to a view): values a view's hooks give during its
+  own render now refresh its elements without rendering the view again.
+- **A view shown in the Visual Studio designer with a part still in React inside a list** displays it empty instead
+  of failing the whole view (the designer's sample texts were handed to the part as its component and props).
 - **The app launcher and the account panel are readable in the dark theme.** Their ground stayed light under
   the dark theme's light text; it now follows the theme (a new theme colour, `--color-panel-bg`, defaulting to
   the search field's ground — the Numix theme keeps its light panels). The Visual Studio designer shows them

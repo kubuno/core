@@ -13,7 +13,7 @@ import type { Stepper, StepDef } from '../Stepper'
 import type { FloatingWindow } from '../FloatingWindow'
 import type { AnchoredPopover } from '../AnchoredPopover'
 import type { ElementMeta } from './types.ts'
-import { ICON_PROPERTIES } from './levels.ts'
+import { HOST_STRINGS, ICON_PROPERTIES } from './levels.ts'
 
 const CONTAINER_CHAIN = ['ContainerBase', 'ScrollableControl', 'Control', 'Component'] as const
 
@@ -78,6 +78,7 @@ export const TabsMeta = {
     { name: 'Size', kind: { Enum: ['Sm', 'Md'] }, default: 'Md', category: 'Appearance', webOnly: true,
       doc: 'Web only: size of the tabs.', docFr: 'Web uniquement : taille des onglets.',
       to: { prop: 'size', values: { Sm: 'sm', Md: 'md' } } },
+    HOST_STRINGS,
   ],
   events: [
     { name: 'OnSelectionChanged', category: 'Behavior', args: 'ValueChangedEventArgs',
@@ -221,6 +222,7 @@ export const StepperMeta = {
     { name: 'AllowForward', kind: 'Bool', default: 'false', category: 'Behavior',
       doc: 'Lets the user click a step after the current one.', docFr: "Permet de cliquer sur une étape située après l'étape en cours.",
       to: { prop: 'allowForward' } },
+    HOST_STRINGS,
   ],
   events: [
     { name: 'OnStepSelected', category: 'Behavior', args: 'ValueChangedEventArgs',
@@ -288,15 +290,56 @@ export const FloatingWindowMeta = {
     { name: 'ShowClose', kind: 'Bool', default: 'true', category: 'Behavior',
       doc: 'Shows the close button of the title bar.', docFr: 'Affiche le bouton Fermer de la barre de titre.',
       to: { prop: 'showClose' } },
+    // The footer (`actions`): the confirm button on the left, the cancel button on the right. A window without any
+    // of these has no footer.
+    { name: 'ConfirmText', kind: 'String', default: '', category: 'Appearance', localizable: true, webOnly: true,
+      doc: "Web only: text of the footer's confirm button (the action the window is for). Leave empty for none.",
+      docFr: "Web uniquement : texte du bouton de confirmation du pied de fenêtre (l'action pour laquelle la fenêtre existe). Laisser vide pour aucun.",
+      to: { prop: 'actions', field: 'confirm.label' } },
+    { name: 'ConfirmEnabled', kind: 'Bool', default: 'true', category: 'Behavior', webOnly: true,
+      doc: 'Web only: whether the confirm button can be clicked.', docFr: 'Web uniquement : indique si le bouton de confirmation peut être cliqué.',
+      to: { prop: 'actions', field: 'confirm.disabled', convert: 'invert' } },
+    { name: 'ConfirmBusy', kind: 'Bool', default: 'false', category: 'Behavior', webOnly: true,
+      doc: 'Web only: shows the confirm button as working (a spinner).', docFr: 'Web uniquement : affiche le bouton de confirmation comme en cours (un indicateur).',
+      to: { prop: 'actions', field: 'confirm.loading' } },
+    { name: 'ConfirmDanger', kind: 'Bool', default: 'false', category: 'Appearance', webOnly: true,
+      doc: 'Web only: the confirm action is destructive (its text turns red).', docFr: "Web uniquement : l'action de confirmation est destructrice (son texte passe en rouge).",
+      to: { prop: 'actions', field: 'confirm.danger' } },
+    { name: 'ConfirmFocused', kind: 'Bool', default: 'false', category: 'Behavior', webOnly: true,
+      doc: 'Web only: the confirm button has the focus when the window opens (Enter confirms).', docFr: "Web uniquement : le bouton de confirmation a le focus à l'ouverture (Entrée confirme).",
+      to: { prop: 'actions', field: 'confirm.autoFocus' } },
+    { name: 'CancelText', kind: 'String', default: '', category: 'Appearance', localizable: true, webOnly: true,
+      doc: "Web only: text of the footer's cancel button. Leave empty for the default (Cancel).",
+      docFr: 'Web uniquement : texte du bouton Annuler du pied de fenêtre. Laisser vide pour le texte par défaut (Annuler).',
+      to: { prop: 'actions', field: 'cancel.label' } },
+    { name: 'CancelEnabled', kind: 'Bool', default: 'true', category: 'Behavior', webOnly: true,
+      doc: 'Web only: whether the cancel button can be clicked.', docFr: 'Web uniquement : indique si le bouton Annuler peut être cliqué.',
+      to: { prop: 'actions', field: 'cancel.disabled', convert: 'invert' } },
+    HOST_STRINGS,
+    // Property elements: content slots, not attributes.
+    { name: 'Banner', kind: 'String', default: '', category: 'Appearance', serialization: 'Content', browsable: false, webOnly: true,
+      doc: 'Web only: what the window says about itself (a refused save), between the title band and the content, outside the scrolling area; written as a <FloatingWindow.Banner> property element.',
+      docFr: "Web uniquement : ce que la fenêtre dit d'elle-même (un enregistrement refusé), entre la barre de titre et le contenu, hors de la zone qui défile ; écrit dans un élément de propriété <FloatingWindow.Banner>.",
+      to: { prop: 'banner' } },
+    { name: 'TitleActions', kind: 'String', default: '', category: 'Appearance', serialization: 'Content', browsable: false, webOnly: true,
+      doc: 'Web only: buttons of the title band, before the close button; written as a <FloatingWindow.TitleActions> property element.',
+      docFr: 'Web uniquement : boutons de la barre de titre, avant le bouton Fermer ; écrits dans un élément de propriété <FloatingWindow.TitleActions>.',
+      to: { prop: 'titleActions' } },
   ],
   events: [
     { name: 'OnClose', category: 'Action', args: 'EventArgs',
       doc: 'Occurs when the close button of the window is clicked.', docFr: 'Se produit quand on clique sur le bouton Fermer de la fenêtre.',
       from: { prop: 'onClose', args: 'none' } },
+    { name: 'OnConfirm', category: 'Action', args: 'EventArgs',
+      doc: "Web only: occurs when the footer's confirm button is clicked.", docFr: 'Web uniquement : se produit quand on clique sur le bouton de confirmation du pied de fenêtre.',
+      from: { prop: 'actions', field: 'confirm.onClick', args: 'none' } },
+    { name: 'OnCancel', category: 'Action', args: 'EventArgs',
+      doc: "Web only: occurs when the footer's cancel button is clicked (without a handler, it closes the window).", docFr: 'Web uniquement : se produit quand on clique sur le bouton Annuler du pied de fenêtre (sans gestionnaire, il ferme la fenêtre).',
+      from: { prop: 'actions', field: 'cancel.onClick', args: 'none' } },
   ],
   inheritedMap: { Width: { prop: 'defaultWidth' }, Height: { prop: 'defaultHeight' } },
   designDefaults: { attributes: { Title: 'Fenêtre' }, size: [560, 360] },
-  web: { module: '@ui', export: 'FloatingWindow', domRoot: 'portal', content: 'children' },
+  web: { module: '@ui', export: 'FloatingWindow', domRoot: 'portal', content: 'children', slots: { Banner: 'banner', TitleActions: 'titleActions' } },
 } as const satisfies ElementMeta<ComponentProps<typeof FloatingWindow>>
 
 export const PopoverMeta = {

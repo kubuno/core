@@ -10,7 +10,7 @@ import type { Separator } from '../Separator'
 import type { Callout } from '../Callout'
 import type { EmptyState } from '../EmptyState'
 import type { ElementMeta } from './types.ts'
-import { ICON_PROPERTIES } from './levels.ts'
+import { HOST_STRINGS, ICON_PROPERTIES } from './levels.ts'
 
 export const BadgeMeta = {
   name: 'Badge',
@@ -91,6 +91,7 @@ export const ProgressBarMeta = {
       to: { prop: 'variant', values: { Auto: 'auto', Primary: 'primary', Success: 'success', Warning: 'warning', Danger: 'danger' } } },
     { name: 'Size', kind: { Enum: ['Sm', 'Md'] }, default: 'Md', category: 'Appearance',
       doc: 'Thickness of the bar.', docFr: 'Épaisseur de la barre.', to: { prop: 'size', values: { Sm: 'sm', Md: 'md' } } },
+    HOST_STRINGS,
   ],
   events: [],
   designDefaults: { size: [200, 24] },
@@ -143,6 +144,7 @@ export const CalloutMeta = {
       doc: 'Text of an action button in the banner. Leave empty for none.',
       docFr: "Texte d'un bouton d'action dans le bandeau. Laisser vide pour aucun bouton.",
       to: { prop: 'action', field: 'label' } },
+    HOST_STRINGS,
   ],
   events: [
     { name: 'OnAction', category: 'Action', args: 'EventArgs',
@@ -190,6 +192,7 @@ export const EmptyStateMeta = {
       docFr: "Texte du bouton d'action secondaire. Laisser vide pour aucun bouton.",
       to: { prop: 'secondaryAction', field: 'label' } },
     ...ICON_PROPERTIES,
+    HOST_STRINGS,
   ],
   events: [
     { name: 'OnAction', category: 'Action', args: 'EventArgs',

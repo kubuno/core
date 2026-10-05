@@ -98,7 +98,11 @@ export function Mutation({ run, invalidates, __view, __id }: { run?: (args: unkn
 
 /** `<ReactHost Component="{Binding editor}" Props="{Binding editorProps}"/>`: any React component. */
 export function ReactHost({ component, props }: { component?: ComponentType<Record<string, unknown>>; props?: Record<string, unknown> }): ReactNode {
-  return component ? createElement(component, props ?? {}) : null
+  // In the designer, a template's bindings hold sample texts (`part2_props 1`), not a component and its props: the
+  // element then shows nothing rather than failing the whole view.
+  const isComponent = typeof component === 'function' || (typeof component === 'object' && component !== null)
+  if (!isComponent) return null
+  return createElement(component, props !== null && typeof props === 'object' ? props : {})
 }
 
 /** Element metadata of a custom control (the web counterpart of `#[derive(Component)]`, EVENTS.md §4.3). */

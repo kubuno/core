@@ -10,6 +10,7 @@ import type { Toggle } from '../Toggle'
 import type { RangeSlider } from '../RangeSlider'
 import type { NumberInput } from '../NumberInput'
 import type { ElementMeta } from './types.ts'
+import { FIELD_CLASS } from './levels.ts'
 
 const SECONDARY_TEXT = {
   doc: 'Secondary text displayed under the label.',
@@ -157,6 +158,7 @@ export const NumericFieldMeta = {
   children: 'None',
   defaultEvent: 'OnValueChanged',
   properties: [
+    FIELD_CLASS,
     { name: 'Minimum', kind: 'F32', default: '0', category: 'Data', aliases: ['Min'],
       doc: 'Lowest value.', docFr: 'Valeur minimale.', to: { prop: 'min' } },
     { name: 'Maximum', kind: 'F32', default: '100', category: 'Data', aliases: ['Max'],

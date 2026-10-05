@@ -24,8 +24,8 @@ import {
 import { UNSET, readBinding, writeBinding, type Scope } from './binding'
 import { applyArgs, makeArgs, type ArgsContext } from './events'
 import type { IconValue, PlanEvent, PlanNode, PlanProp, PlanResArg, ViewPlan } from './plan'
-import { onResourcesChanged, resolveComponent, resolveIcon, resolveResource, resourcesVersion } from './resolve'
-import { CELL, KB, handleFor, notify, setComponentFactory, setLive, type Cell, type Internals, type View, type ViewClass } from './view'
+import { hostTranslator, onResourcesChanged, resolveComponent, resolveIcon, resolveResource, resourcesVersion } from './resolve'
+import { CELL, KB, handleFor, notify, notifyElements, setComponentFactory, setLive, type Cell, type Internals, type View, type ViewClass } from './view'
 import { ELEVATIONS, HOVER_CLASS, PRESSED_CLASS, ensureViewStyles, tokenColor } from './style'
 
 type Props = Record<string, unknown>
@@ -253,11 +253,36 @@ function dispatch(i: Internals, node: PlanNode, e: PlanEvent, raw: readonly unkn
 
 /** Adds a callback to a React prop (or an object prop's field), composing with one already there. */
 function addCallback(props: Props, prop: string, field: string | undefined, cb: (...a: unknown[]) => void): void {
-  const target: Props = field ? { ...((props[prop] as Props | undefined) ?? {}) } : props
-  const key = field ?? prop
-  const prev = target[key] as ((...a: unknown[]) => void) | undefined
-  target[key] = prev ? (...a: unknown[]) => { prev(...a); cb(...a) } : cb
-  if (field) props[prop] = target
+  const prev = (field ? getField(props[prop], field) : props[prop]) as ((...a: unknown[]) => void) | undefined
+  const fn = prev ? (...a: unknown[]) => { prev(...a); cb(...a) } : cb
+  if (field) setField(props, prop, field, fn)
+  else props[prop] = fn
+}
+
+/** The value at a field path (`label`, `confirm.label`) of an object prop. */
+function getField(obj: unknown, field: string): unknown {
+  let o = obj
+  for (const k of field.split('.')) {
+    if (o === null || typeof o !== 'object') return undefined
+    o = (o as Props)[k]
+  }
+  return o
+}
+
+/**
+ * Sets a field of an object prop, copying the objects along a dotted path (`actions` + `confirm.label` →
+ * `actions.confirm.label`): a window's footer is described by nested objects, each field its own property.
+ */
+function setField(props: Props, prop: string, field: string, value: unknown): void {
+  const keys = field.split('.')
+  const root: Props = { ...((props[prop] as Props | undefined) ?? {}) }
+  let o = root
+  for (const k of keys.slice(0, -1)) {
+    const next = o[k]
+    o = o[k] = next !== null && typeof next === 'object' ? { ...(next as Props) } : {}
+  }
+  o[keys[keys.length - 1]] = value
+  props[prop] = root
 }
 
 interface Built {
@@ -383,6 +408,8 @@ function build(
       case 'invert': return !v
       case 'method': { const vm = i.vm as unknown as Record<string, unknown>; const name = String(v); return (...a: unknown[]) => (vm[name] as ((...x: unknown[]) => unknown) | undefined)?.apply(vm, a) }
       case 'null-when-false': return v === false ? null : UNSET
+      // `HostStrings`: the host's translator as the element's `t` (its own strings from the host's catalogue).
+      case 'host-t': return v === true || v === 'true' ? hostTranslator() ?? UNSET : UNSET
       case 'icon-node': { const C = iconComponent(v); return C ? createElement(C, iconOpts()) : UNSET }
       case 'icon-component': return iconComponent(v) ?? UNSET
       case 'equals-value': { const own = byName('Value'); return own !== UNSET && String(v) === String(own) }
@@ -436,7 +463,7 @@ function build(
     if (!t.prop) continue
     const c = convert(t.convert, v)
     if (c === UNSET) continue
-    if (t.field) props[t.prop] = { ...((props[t.prop] as Props | undefined) ?? {}), [t.field]: c }
+    if (t.field) setField(props, t.prop, t.field, c)
     else props[t.prop] = c
   }
 
@@ -815,7 +842,7 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
       return v === UNSET ? undefined : v
     }
   }
-  useSyncExternalStore(i.subscribe, () => i.version, () => i.version)
+  useSyncExternalStore(i.subscribe, () => i.rootVersion, () => i.rootVersion)
   useEffect(() => onResourcesChanged(() => notify(i)), [i])
   i.deferred = true
   try {
@@ -827,7 +854,7 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
   useLayoutEffect(() => {
     if (i.pending) {
       i.pending = false
-      notify(i)
+      notifyElements(i)
     }
   })
   const plan = i.cell.plan

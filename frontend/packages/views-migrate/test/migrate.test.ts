@@ -34,7 +34,8 @@ describe('kbview-migrate on a sample screen', () => {
     expect(result.status).toBe('partial')
     expect(result.reasons).toEqual(['<Badge> is no .kbview element (a local or dynamic component)'])
     expect(result.stats.parts).toBe(2)
-    expect(result.deletes).toEqual([SAMPLE])
+    // ts-morph paths use forward slashes on every OS.
+    expect(result.deletes.map((p) => p.split('\\').join('/'))).toEqual([SAMPLE.split('\\').join('/')])
     const s = summary(FRONTEND, [result])
     expect(s.partial).toBe(1)
     expect(s.elementsMapped).toBeGreaterThan(10)

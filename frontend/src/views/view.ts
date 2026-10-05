@@ -15,6 +15,11 @@ export interface Internals {
   readonly cell: Cell
   readonly scope: Scope
   version: number
+  /**
+   * What the view root re-renders on (its hooks run again): every notification but the ones flushed after its own
+   * render, which reach the elements only.
+   */
+  rootVersion: number
   readonly listeners: Set<() => void>
   readonly subscribe: (listener: () => void) => () => void
   /** `@bind` storage (kept on the instance, not in the class's private slots, so a prototype swap keeps it). */
@@ -69,6 +74,17 @@ export function notify(i: Internals): void {
     i.pending = true
     return
   }
+  i.version++
+  i.rootVersion++
+  for (const l of [...i.listeners]) l()
+}
+
+/**
+ * Tells the elements of a view that values changed during the root's own render (hooks published new values, new
+ * props): they recompute what they read; the root, which has just rendered with those values, does not render again
+ * (a hook returning a new object on every render would otherwise re-render the view without end).
+ */
+export function notifyElements(i: Internals): void {
   i.version++
   for (const l of [...i.listeners]) l()
 }
@@ -160,6 +176,7 @@ export abstract class View<P extends object = object> {
       cell,
       scope: { vm: this as unknown as Scope['vm'] },
       version: 0,
+      rootVersion: 0,
       listeners,
       subscribe: (l) => {
         listeners.add(l)

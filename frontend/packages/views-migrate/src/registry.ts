@@ -36,6 +36,7 @@ interface RegistryComponent {
     prop_map?: Record<string, PropTarget>
     event_map?: Record<string, EventSource>
     content?: string | null
+    slots?: Record<string, string> | null
     alternates?: Array<{ module: string; export: string; when?: Record<string, string> }>
   } | null
 }
@@ -61,7 +62,19 @@ export interface ElementInfo {
   defaults: Map<string, string>
   /** Properties taking an object or a list (registry editor `object` / `list`), not a text. */
   objectProps: Set<string>
+  /**
+   * React props fed field by field (`action={{ label, onClick }}` → `ActionLabel` + `OnAction`): React prop → field →
+   * the property or event it is.
+   */
+  fields: Map<string, Map<string, FieldTarget>>
+  /** React props holding elements written as property elements (`actions` → `<Card.Actions>`): React prop → property. */
+  slots: Map<string, string>
 }
+
+/** One field of a React object prop: a `.kbview` property or event. */
+export type FieldTarget =
+  | { kind: 'prop'; name: string; values?: Map<string, string>; convert?: string }
+  | { kind: 'event'; name: string; args?: string }
 
 export class Registry {
   private readonly byExport = new Map<string, ElementInfo>()
@@ -81,12 +94,27 @@ export class Registry {
     const w = c.web
     const props = new Map<string, { name: string; values?: Map<string, string>; convert?: string; change?: string }>()
     const events = new Map<string, { name: string; args?: string }>()
+    const fields = new Map<string, Map<string, FieldTarget>>()
+    const fieldOf = (prop: string): Map<string, FieldTarget> => {
+      let f = fields.get(prop)
+      if (!f) fields.set(prop, (f = new Map()))
+      return f
+    }
     for (const [name, t] of Object.entries(w?.prop_map ?? {})) {
+      if (t.prop && t.field) {
+        const values = t.values ? new Map([...Object.entries(t.values)].reverse().map(([k, v]) => [String(v), k])) : undefined
+        if (!fieldOf(t.prop).has(t.field)) fieldOf(t.prop).set(t.field, { kind: 'prop', name, values, convert: t.convert })
+        continue
+      }
       if (!t.prop || props.has(t.prop)) continue
-      const values = t.values ? new Map(Object.entries(t.values).map(([k, v]) => [String(v), k])) : undefined
+      const values = t.values ? new Map([...Object.entries(t.values)].reverse().map(([k, v]) => [String(v), k])) : undefined
       props.set(t.prop, { name, values, convert: t.convert, change: t.change })
     }
     for (const [name, s] of Object.entries(w?.event_map ?? {})) {
+      if (s.prop && s.field) {
+        if (!fieldOf(s.prop).has(s.field)) fieldOf(s.prop).set(s.field, { kind: 'event', name, args: s.args })
+        continue
+      }
       if (s.prop && !events.has(s.prop)) events.set(s.prop, { name, args: s.args })
     }
     const defaults = new Map<string, string>()
@@ -103,6 +131,8 @@ export class Registry {
       eventNames: new Set((c.events ?? []).map((e) => e.name)),
       defaults,
       objectProps: new Set((c.properties ?? []).filter((p) => p.editor === 'object' || p.editor === 'list').map((p) => p.name)),
+      fields,
+      slots: new Map(Object.entries(w?.slots ?? {}).map(([prop, react]) => [react, prop])),
     }
     this.byName.set(c.name, info)
     if (w?.module && w.export) {

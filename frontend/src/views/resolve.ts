@@ -71,6 +71,38 @@ export function interpolationOptions(args: ResourceArgs): Record<string, unknown
   return out
 }
 
+/** The host's i18next `t` (default namespace), for `@ui` elements given their strings by the host (`HostStrings`). */
+export type Translator = (key: string, options?: Record<string, unknown>) => string
+
+let translatorImpl: Translator | undefined
+let translatorAt = -1
+let translatorFn: Translator | undefined
+
+/**
+ * Sets the host's translator: what an `@ui` element receives as its `t` prop when its view sets `HostStrings`
+ * (the strings it carries itself — a close button's name, a default « Cancel » — then come from the host's
+ * catalogue, as when a TSX screen passes its own `t`).
+ */
+export function setTranslator(t: Translator | undefined): void {
+  translatorImpl = t
+  translatorAt = -1
+  invalidateResources()
+}
+
+/**
+ * The host's translator, a new function after every language change (an element given it re-renders, as with
+ * a `t` from `useTranslation`); `undefined` when the host set none (the element keeps its English defaults).
+ */
+export function hostTranslator(): Translator | undefined {
+  if (!translatorImpl) return undefined
+  if (translatorAt !== resourceVersion) {
+    const impl = translatorImpl
+    translatorFn = (key, options) => impl(key, options)
+    translatorAt = resourceVersion
+  }
+  return translatorFn
+}
+
 const resourceListeners = new Set<() => void>()
 
 export function invalidateResources(): void {

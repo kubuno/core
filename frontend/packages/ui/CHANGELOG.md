@@ -6,6 +6,15 @@ under the published version number.
 
 ## [Unreleased]
 
+### Added
+
+- **Registry**: `FloatingWindow` gains its footer (`ConfirmText`, `ConfirmEnabled`, `ConfirmBusy`, `ConfirmDanger`,
+  `ConfirmFocused`, `CancelText`, `CancelEnabled`, events `OnConfirm` / `OnCancel`, written to `actions.confirm` /
+  `actions.cancel`) and the `Banner` / `TitleActions` property elements; `HostStrings` on `Callout`, `EmptyState`,
+  `FloatingWindow`, `Tabs`, `Stepper`, `ComboBox` and `ProgressBar` (the host's translator as `t`); `FieldClass` on
+  `TextField`, `TextArea` and `NumericField` (the classes of the input box). Element metadata accept dotted fields
+  (`confirm.label`).
+
 ## [0.1.15] - 2026-10-05
 
 ### Added
