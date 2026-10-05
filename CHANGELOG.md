@@ -38,6 +38,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The navigation labels live in `.kbres` files** (`core/i18n/nav.kbres` and one per language), the format of the
+  desktop applications, compiled to the same translations as before (checked identical in the 13 languages).
 - **The account panel and the app launcher are built from those elements.** They no longer carry their own
   style classes for hover backgrounds, rounded cards, outlines and text weights; they look the same as before.
   In right-to-left languages the panel's close and camera buttons now sit on the reading direction's end side

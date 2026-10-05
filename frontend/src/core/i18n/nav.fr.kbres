@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">Accueil</String>
+  <String Name="drive">Mes fichiers</String>
+  <String Name="drive-shared">Partagés avec moi</String>
+  <String Name="drive-recent">Récents</String>
+  <String Name="drive-starred">Suivis</String>
+  <String Name="drive-trash">Corbeille</String>
+  <String Name="photos-albums">Albums</String>
+  <String Name="photos-starred">Favoris</String>
+  <String Name="photos-trash">Corbeille</String>
+  <String Name="office-recent">Récents</String>
+  <String Name="office-starred">Favoris</String>
+  <String Name="office-templates">Modèles</String>
+  <String Name="office-spreadsheets">Tableurs</String>
+  <String Name="office-diagrams">Diagrammes</String>
+  <String Name="office-presentations">Présentations</String>
+  <String Name="office-projects">Projets</String>
+  <String Name="office-trash">Corbeille</String>
+  <String Name="chat">Messages</String>
+  <String Name="calendar">Agenda</String>
+  <String Name="calendar-new-event">Planification</String>
+  <String Name="notes-notebooks">Notebooks</String>
+  <String Name="notes-archive">Archivées</String>
+  <String Name="notes-trash">Corbeille</String>
+  <String Name="forms">Formulaires</String>
+  <String Name="mail-inbox">Boîte de réception</String>
+  <String Name="mail-sent">Envoyés</String>
+  <String Name="mail-drafts">Brouillons</String>
+  <String Name="mail-starred">Suivis</String>
+  <String Name="mail-trash">Corbeille</String>
+  <String Name="paintsharp-trash">Corbeille</String>
+  <String Name="photos">Photos</String>
+  <String Name="contacts">Contacts</String>
+  <String Name="notes">Notes</String>
+</Resources>

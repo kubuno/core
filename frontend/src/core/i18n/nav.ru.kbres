@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">Главная</String>
+  <String Name="drive">Мои файлы</String>
+  <String Name="drive-shared">Доступные мне</String>
+  <String Name="drive-recent">Недавние</String>
+  <String Name="drive-starred">Избранные</String>
+  <String Name="drive-trash">Корзина</String>
+  <String Name="photos-albums">Альбомы</String>
+  <String Name="photos-starred">Избранное</String>
+  <String Name="photos-trash">Корзина</String>
+  <String Name="office-recent">Недавние</String>
+  <String Name="office-starred">Избранное</String>
+  <String Name="office-templates">Шаблоны</String>
+  <String Name="office-spreadsheets">Таблицы</String>
+  <String Name="office-diagrams">Диаграммы</String>
+  <String Name="office-presentations">Презентации</String>
+  <String Name="office-projects">Проекты</String>
+  <String Name="office-trash">Корзина</String>
+  <String Name="chat">Сообщения</String>
+  <String Name="calendar">Календарь</String>
+  <String Name="calendar-new-event">Планирование</String>
+  <String Name="notes-notebooks">Блокноты</String>
+  <String Name="notes-archive">Архив</String>
+  <String Name="notes-trash">Корзина</String>
+  <String Name="forms">Формы</String>
+  <String Name="mail-inbox">Входящие</String>
+  <String Name="mail-sent">Отправленные</String>
+  <String Name="mail-drafts">Черновики</String>
+  <String Name="mail-starred">Избранные</String>
+  <String Name="mail-trash">Корзина</String>
+  <String Name="paintsharp-trash">Корзина</String>
+  <String Name="photos">Фото</String>
+  <String Name="contacts">Контакты</String>
+  <String Name="notes">Заметки</String>
+</Resources>

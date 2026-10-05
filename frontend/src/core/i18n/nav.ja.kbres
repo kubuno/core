@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">ホーム</String>
+  <String Name="drive">マイファイル</String>
+  <String Name="drive-shared">共有アイテム</String>
+  <String Name="drive-recent">最近</String>
+  <String Name="drive-starred">スター付き</String>
+  <String Name="drive-trash">ゴミ箱</String>
+  <String Name="photos-albums">アルバム</String>
+  <String Name="photos-starred">お気に入り</String>
+  <String Name="photos-trash">ゴミ箱</String>
+  <String Name="office-recent">最近</String>
+  <String Name="office-starred">お気に入り</String>
+  <String Name="office-templates">テンプレート</String>
+  <String Name="office-spreadsheets">スプレッドシート</String>
+  <String Name="office-diagrams">ダイアグラム</String>
+  <String Name="office-presentations">プレゼンテーション</String>
+  <String Name="office-projects">プロジェクト</String>
+  <String Name="office-trash">ゴミ箱</String>
+  <String Name="chat">メッセージ</String>
+  <String Name="calendar">カレンダー</String>
+  <String Name="calendar-new-event">スケジュール</String>
+  <String Name="notes-notebooks">ノートブック</String>
+  <String Name="notes-archive">アーカイブ済み</String>
+  <String Name="notes-trash">ゴミ箱</String>
+  <String Name="forms">フォーム</String>
+  <String Name="mail-inbox">受信トレイ</String>
+  <String Name="mail-sent">送信済み</String>
+  <String Name="mail-drafts">下書き</String>
+  <String Name="mail-starred">スター付き</String>
+  <String Name="mail-trash">ゴミ箱</String>
+  <String Name="paintsharp-trash">ゴミ箱</String>
+  <String Name="photos">写真</String>
+  <String Name="contacts">連絡先</String>
+  <String Name="notes">メモ</String>
+</Resources>

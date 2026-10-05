@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">主页</String>
+  <String Name="drive">我的文件</String>
+  <String Name="drive-shared">与我共享</String>
+  <String Name="drive-recent">最近</String>
+  <String Name="drive-starred">已加星标</String>
+  <String Name="drive-trash">回收站</String>
+  <String Name="photos-albums">相册</String>
+  <String Name="photos-starred">收藏</String>
+  <String Name="photos-trash">回收站</String>
+  <String Name="office-recent">最近</String>
+  <String Name="office-starred">收藏</String>
+  <String Name="office-templates">模板</String>
+  <String Name="office-spreadsheets">电子表格</String>
+  <String Name="office-diagrams">图表</String>
+  <String Name="office-presentations">演示文稿</String>
+  <String Name="office-projects">项目</String>
+  <String Name="office-trash">回收站</String>
+  <String Name="chat">消息</String>
+  <String Name="calendar">日历</String>
+  <String Name="calendar-new-event">日程安排</String>
+  <String Name="notes-notebooks">笔记本</String>
+  <String Name="notes-archive">已归档</String>
+  <String Name="notes-trash">回收站</String>
+  <String Name="forms">表单</String>
+  <String Name="mail-inbox">收件箱</String>
+  <String Name="mail-sent">已发送</String>
+  <String Name="mail-drafts">草稿</String>
+  <String Name="mail-starred">已加星标</String>
+  <String Name="mail-trash">回收站</String>
+  <String Name="paintsharp-trash">回收站</String>
+  <String Name="photos">照片</String>
+  <String Name="contacts">联系人</String>
+  <String Name="notes">笔记</String>
+</Resources>

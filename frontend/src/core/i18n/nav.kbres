@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1" Culture="en">
+  <String Name="home">Home</String>
+  <String Name="drive">My files</String>
+  <String Name="drive-shared">Shared with me</String>
+  <String Name="drive-recent">Recent</String>
+  <String Name="drive-starred">Starred</String>
+  <String Name="drive-trash">Trash</String>
+  <String Name="photos-albums">Albums</String>
+  <String Name="photos-starred">Favorites</String>
+  <String Name="photos-trash">Trash</String>
+  <String Name="office-recent">Recent</String>
+  <String Name="office-starred">Favorites</String>
+  <String Name="office-templates">Templates</String>
+  <String Name="office-spreadsheets">Spreadsheets</String>
+  <String Name="office-diagrams">Diagrams</String>
+  <String Name="office-presentations">Presentations</String>
+  <String Name="office-projects">Projects</String>
+  <String Name="office-trash">Trash</String>
+  <String Name="chat">Messages</String>
+  <String Name="calendar">Calendar</String>
+  <String Name="calendar-new-event">Scheduling</String>
+  <String Name="notes-notebooks">Notebooks</String>
+  <String Name="notes-archive">Archived</String>
+  <String Name="notes-trash">Trash</String>
+  <String Name="forms">Forms</String>
+  <String Name="mail-inbox">Inbox</String>
+  <String Name="mail-sent">Sent</String>
+  <String Name="mail-drafts">Drafts</String>
+  <String Name="mail-starred">Starred</String>
+  <String Name="mail-trash">Trash</String>
+  <String Name="paintsharp-trash">Trash</String>
+  <String Name="photos">Photos</String>
+  <String Name="contacts">Contacts</String>
+  <String Name="notes">Notes</String>
+</Resources>

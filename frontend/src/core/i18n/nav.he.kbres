@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">בית</String>
+  <String Name="drive">הקבצים שלי</String>
+  <String Name="drive-shared">משותף איתי</String>
+  <String Name="drive-recent">אחרונים</String>
+  <String Name="drive-starred">מסומנים</String>
+  <String Name="drive-trash">אשפה</String>
+  <String Name="photos-albums">אלבומים</String>
+  <String Name="photos-starred">מועדפים</String>
+  <String Name="photos-trash">אשפה</String>
+  <String Name="office-recent">אחרונים</String>
+  <String Name="office-starred">מועדפים</String>
+  <String Name="office-templates">תבניות</String>
+  <String Name="office-spreadsheets">גיליונות</String>
+  <String Name="office-diagrams">תרשימים</String>
+  <String Name="office-presentations">מצגות</String>
+  <String Name="office-projects">פרויקטים</String>
+  <String Name="office-trash">אשפה</String>
+  <String Name="chat">הודעות</String>
+  <String Name="calendar">יומן</String>
+  <String Name="calendar-new-event">תזמון</String>
+  <String Name="notes-notebooks">מחברות</String>
+  <String Name="notes-archive">בארכיון</String>
+  <String Name="notes-trash">אשפה</String>
+  <String Name="forms">טפסים</String>
+  <String Name="mail-inbox">דואר נכנס</String>
+  <String Name="mail-sent">נשלחו</String>
+  <String Name="mail-drafts">טיוטות</String>
+  <String Name="mail-starred">מסומנים</String>
+  <String Name="mail-trash">אשפה</String>
+  <String Name="paintsharp-trash">אשפה</String>
+  <String Name="photos">תמונות</String>
+  <String Name="contacts">אנשי קשר</String>
+  <String Name="notes">פתקים</String>
+</Resources>

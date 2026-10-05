@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">Αρχική</String>
+  <String Name="drive">Τα αρχεία μου</String>
+  <String Name="drive-shared">Κοινόχρηστα</String>
+  <String Name="drive-recent">Πρόσφατα</String>
+  <String Name="drive-starred">Με αστέρι</String>
+  <String Name="drive-trash">Κάδος</String>
+  <String Name="photos-albums">Άλμπουμ</String>
+  <String Name="photos-starred">Αγαπημένα</String>
+  <String Name="photos-trash">Κάδος</String>
+  <String Name="office-recent">Πρόσφατα</String>
+  <String Name="office-starred">Αγαπημένα</String>
+  <String Name="office-templates">Πρότυπα</String>
+  <String Name="office-spreadsheets">Υπολογιστικά φύλλα</String>
+  <String Name="office-diagrams">Διαγράμματα</String>
+  <String Name="office-presentations">Παρουσιάσεις</String>
+  <String Name="office-projects">Έργα</String>
+  <String Name="office-trash">Κάδος</String>
+  <String Name="chat">Μηνύματα</String>
+  <String Name="calendar">Ημερολόγιο</String>
+  <String Name="calendar-new-event">Προγραμματισμός</String>
+  <String Name="notes-notebooks">Σημειωματάρια</String>
+  <String Name="notes-archive">Αρχειοθετημένα</String>
+  <String Name="notes-trash">Κάδος</String>
+  <String Name="forms">Φόρμες</String>
+  <String Name="mail-inbox">Εισερχόμενα</String>
+  <String Name="mail-sent">Απεσταλμένα</String>
+  <String Name="mail-drafts">Πρόχειρα</String>
+  <String Name="mail-starred">Με αστέρι</String>
+  <String Name="mail-trash">Κάδος</String>
+  <String Name="paintsharp-trash">Κάδος</String>
+  <String Name="photos">Φωτογραφίες</String>
+  <String Name="contacts">Επαφές</String>
+  <String Name="notes">Σημειώσεις</String>
+</Resources>

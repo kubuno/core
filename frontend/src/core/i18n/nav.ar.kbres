@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">الرئيسية</String>
+  <String Name="drive">ملفاتي</String>
+  <String Name="drive-shared">المشاركة معي</String>
+  <String Name="drive-recent">الأخيرة</String>
+  <String Name="drive-starred">المميزة</String>
+  <String Name="drive-trash">المهملات</String>
+  <String Name="photos-albums">الألبومات</String>
+  <String Name="photos-starred">المفضلة</String>
+  <String Name="photos-trash">المهملات</String>
+  <String Name="office-recent">الأخيرة</String>
+  <String Name="office-starred">المفضلة</String>
+  <String Name="office-templates">القوالب</String>
+  <String Name="office-spreadsheets">جداول البيانات</String>
+  <String Name="office-diagrams">المخططات</String>
+  <String Name="office-presentations">العروض التقديمية</String>
+  <String Name="office-projects">المشاريع</String>
+  <String Name="office-trash">المهملات</String>
+  <String Name="chat">الرسائل</String>
+  <String Name="calendar">التقويم</String>
+  <String Name="calendar-new-event">الجدولة</String>
+  <String Name="notes-notebooks">الدفاتر</String>
+  <String Name="notes-archive">المؤرشفة</String>
+  <String Name="notes-trash">المهملات</String>
+  <String Name="forms">النماذج</String>
+  <String Name="mail-inbox">البريد الوارد</String>
+  <String Name="mail-sent">المرسلة</String>
+  <String Name="mail-drafts">المسودات</String>
+  <String Name="mail-starred">المميزة</String>
+  <String Name="mail-trash">المهملات</String>
+  <String Name="paintsharp-trash">المهملات</String>
+  <String Name="photos">الصور</String>
+  <String Name="contacts">جهات الاتصال</String>
+  <String Name="notes">الملاحظات</String>
+</Resources>

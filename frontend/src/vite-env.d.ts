@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference path="../packages/views-compiler/client.d.ts" />
 
 // Injected by Vite `define` from package.json + git (see vite.config.ts).
 

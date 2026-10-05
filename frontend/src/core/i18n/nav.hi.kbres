@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Version="1">
+  <String Name="home">होम</String>
+  <String Name="drive">मेरी फ़ाइलें</String>
+  <String Name="drive-shared">मेरे साथ साझा</String>
+  <String Name="drive-recent">हाल के</String>
+  <String Name="drive-starred">तारांकित</String>
+  <String Name="drive-trash">कचरा</String>
+  <String Name="photos-albums">एल्बम</String>
+  <String Name="photos-starred">पसंदीदा</String>
+  <String Name="photos-trash">कचरा</String>
+  <String Name="office-recent">हाल के</String>
+  <String Name="office-starred">पसंदीदा</String>
+  <String Name="office-templates">टेम्पलेट</String>
+  <String Name="office-spreadsheets">स्प्रेडशीट</String>
+  <String Name="office-diagrams">आरेख</String>
+  <String Name="office-presentations">प्रस्तुतियाँ</String>
+  <String Name="office-projects">परियोजनाएँ</String>
+  <String Name="office-trash">कचरा</String>
+  <String Name="chat">संदेश</String>
+  <String Name="calendar">कैलेंडर</String>
+  <String Name="calendar-new-event">शेड्यूलिंग</String>
+  <String Name="notes-notebooks">नोटबुक</String>
+  <String Name="notes-archive">संग्रहित</String>
+  <String Name="notes-trash">कचरा</String>
+  <String Name="forms">फ़ॉर्म</String>
+  <String Name="mail-inbox">इनबॉक्स</String>
+  <String Name="mail-sent">भेजे गए</String>
+  <String Name="mail-drafts">ड्राफ़्ट</String>
+  <String Name="mail-starred">तारांकित</String>
+  <String Name="mail-trash">कचरा</String>
+  <String Name="paintsharp-trash">कचरा</String>
+  <String Name="photos">फ़ोटो</String>
+  <String Name="contacts">संपर्क</String>
+  <String Name="notes">नोट्स</String>
+</Resources>
