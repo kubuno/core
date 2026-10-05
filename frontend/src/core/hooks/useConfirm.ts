@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import type { ConfirmOptions } from '@ui/ConfirmDialog'
 
-interface ConfirmState extends ConfirmOptions {
+export interface ConfirmState extends ConfirmOptions {
   resolve: (ok: boolean) => void
 }
 

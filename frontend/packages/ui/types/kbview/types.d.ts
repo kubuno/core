@@ -71,10 +71,10 @@ export type RuntimeTarget =
 /** `Enabled="false"` on a component without a `disabled` prop: the DOM root is made inert. */
  | 'enabled'
 /** `aria-label` / `aria-describedby` / `role` on the DOM root. */
- | 'aria-label' | 'aria-description' | 'aria-role'
+ | 'aria-label' | 'aria-description' | 'aria-role' | 'aria-hidden'
 /** `tabindex` on the DOM root (`TabIndex`, `TabStop`). */
  | 'tab-index' | 'tab-stop'
-/** Wraps the element in the `@ui` `Tooltip`. */
+/** The DOM root's `title` (the shell draws the Kubuno tooltip for it). */
  | 'tooltip'
 /** Opens the named `ContextMenu` (rendered with `MenuDropdown`) on right click / on click. */
  | 'context-menu' | 'drop-down-menu'
@@ -138,7 +138,7 @@ export type ArgsAdapter =
 /** A `PaintBox` paints: `PaintEventArgs` (the 2D context, the size in CSS px, the pixel ratio, the data). */
  | 'paint';
 /** The common events the runtime listens to on the DOM root (no React prop needed). */
-export type DomEvent = 'click' | 'dblclick' | 'auxclick' | 'mousedown' | 'mouseup' | 'mousemove' | 'mouseenter' | 'mouseleave' | 'mousehover' | 'wheel' | 'keydown' | 'keypress' | 'keyup' | 'focusin' | 'focus' | 'focusout' | 'blur' | 'resize' | 'drop' | 'dragenter' | 'dragover' | 'dragleave';
+export type DomEvent = 'click' | 'dblclick' | 'auxclick' | 'mousedown' | 'mouseup' | 'mousemove' | 'mouseenter' | 'mouseleave' | 'mousehover' | 'wheel' | 'keydown' | 'keypress' | 'keyup' | 'focusin' | 'focus' | 'focusout' | 'blur' | 'resize' | 'drop' | 'dragenter' | 'dragover' | 'dragleave' | 'submit';
 type StringKeys<P> = Extract<keyof P, string>;
 /** Keys of `P` whose (non-null) value is a function — the callback props. */
 export type CallbackKeys<P> = {

@@ -1,5 +1,5 @@
 import type { ConfirmOptions } from '@ui/ConfirmDialog';
-interface ConfirmState extends ConfirmOptions {
+export interface ConfirmState extends ConfirmOptions {
     resolve: (ok: boolean) => void;
 }
 export declare function useConfirm(): {
@@ -8,4 +8,3 @@ export declare function useConfirm(): {
     handleConfirm: () => void;
     handleCancel: () => void;
 };
-export {};

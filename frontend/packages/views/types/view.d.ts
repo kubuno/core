@@ -3,7 +3,8 @@
  * accessor decorator, the generated base factory `createViewBase`, element handles, and the live-view
  * registry behind HMR (plan swap for a `.kbview` edit, prototype swap for a code-behind edit).
  */
-import type { ComponentType } from 'react';
+import type { ComponentType, FunctionComponent } from 'react';
+import { type ResourceArgs } from './resolve';
 import { type ViewPlan } from './plan';
 import type { Scope } from './binding';
 /** The runtime state of one mounted view instance. */
@@ -74,12 +75,25 @@ export declare abstract class View<P extends object = object> {
     constructor();
     /** Runs on every render of the view; the only place React hooks are allowed. */
     use(): void;
-    /** A string of the view's resources (`{Res}`) in the current language. */
-    t(key: string, set?: string): string;
+    /** A string of the view's resources (`{Res}`) in the current language; `args` fill its `{{placeholders}}` and `Count` picks its plural form. */
+    t(key: string, set?: string, args?: ResourceArgs): string;
+    /**
+     * The value `compute()` returns, computed again only when one of `deps` changed (`Object.is`) since the last call
+     * with this `key`: what a getter returning an object or a list uses, so that reading it twice gives the same object
+     * (a new array on every read would re-render without end). `get rows() { return this.memo('rows', [this.items],
+     * () => this.items.map(…)) }`.
+     */
+    protected memo<T>(key: string, deps: readonly unknown[], compute: () => T): T;
+    /**
+     * Sets fields from what hooks gave this render (`this.publish({ user, items })` in `use()`), notifying the view only
+     * when one changed — compared shallowly, so a hook returning a fresh but equal object or list on every render does
+     * not re-render the view without end, as a `@bind` field (compared by identity) would.
+     */
+    protected publish(values: Readonly<Record<string, unknown>>): void;
     /** Marks the view as changed (after mutating a `@bind` object in place). */
     invalidate(): void;
     /** The view as a React component (`export default MyView.component()`). */
-    static component<T extends View<any>>(this: abstract new () => T): ComponentType<T['props']>;
+    static component<T extends View<any>>(this: abstract new () => T): FunctionComponent<T['props']>;
 }
 /** @internal — set by the renderer (keeps this module free of React rendering code). */
 export declare function setComponentFactory(f: (cell: Cell, cls: ViewClass) => ComponentType<object>): void;

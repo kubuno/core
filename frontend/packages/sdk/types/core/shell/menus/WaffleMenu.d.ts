@@ -59,5 +59,5 @@ export declare class WaffleMenu extends ViewBase {
     grid_tile_invoked(_sender: ElementHandle, e: ValueChangedEventArgs<string>): void;
     marketplace_click(_sender: ElementHandle): void;
 }
-declare const _default: import("react").ComponentType<Readonly<WaffleMenuProps>>;
+declare const _default: import("react").FunctionComponent<Readonly<WaffleMenuProps>>;
 export default _default;

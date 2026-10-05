@@ -161,6 +161,39 @@ export declare const TextFieldMeta: {
         readonly to: {
             readonly runtime: "component-variant";
         };
+    }, {
+        readonly name: "InputType";
+        readonly kind: {
+            readonly Enum: readonly ["Text", "Password", "Email", "Url", "Tel", "Search", "Number"];
+        };
+        readonly default: "Text";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the kind of text the field takes — Password masks it, Email / Url / Tel bring the matching keyboard on a phone.";
+        readonly docFr: "Web uniquement : le genre de texte du champ — Password le masque, Email / Url / Tel affichent le clavier adapté sur un téléphone.";
+        readonly to: {
+            readonly prop: "type";
+            readonly values: {
+                readonly Text: "text";
+                readonly Password: "password";
+                readonly Email: "email";
+                readonly Url: "url";
+                readonly Tel: "tel";
+                readonly Search: "search";
+                readonly Number: "number";
+            };
+        };
+    }, {
+        readonly name: "AutoComplete";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: what the browser may fill in the field (an HTML autocomplete token: current-password, new-password, email, off…).";
+        readonly docFr: "Web uniquement : ce que le navigateur peut remplir dans le champ (un jeton autocomplete HTML : current-password, new-password, email, off…).";
+        readonly to: {
+            readonly prop: "autoComplete";
+        };
     }];
     readonly events: readonly [{
         readonly name: "OnTextChanged";

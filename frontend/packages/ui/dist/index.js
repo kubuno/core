@@ -18681,7 +18681,11 @@ var Ss = {
 	Meta: "text-xs",
 	Body: "text-sm",
 	Heading: "text-[length:var(--kb-text-heading)]",
-	Title: "text-[length:var(--kb-text-title)]"
+	Title: "text-[length:var(--kb-text-title)]",
+	Badge: "text-[length:var(--kb-text-badge)]",
+	Caption: "text-[length:var(--kb-text-caption)]",
+	Subtitle: "text-base",
+	Display: "text-2xl"
 }, Cs = (e) => e?.endsWith("Center") ? "text-center" : e?.endsWith("Right") ? "text-end" : e ? "text-start" : void 0, ws = {
 	Ellipsis: "truncate",
 	Clip: "overflow-hidden whitespace-nowrap",
@@ -18691,38 +18695,38 @@ var Ss = {
 	Medium: "font-medium",
 	SemiBold: "font-semibold",
 	Bold: "font-bold"
-}, Es = /(^|\s)(text-(xs|sm|base|lg|xl|[2-9]xl)|text-\[\d)/, Ds = t.forwardRef(function({ text: e, role: t = "Body", textAlign: n, overflow: r = "Ellipsis", weight: i, fontStyle: a, ariaRole: o, className: s, children: c, ...l }, u) {
-	return /* @__PURE__ */ v("p", {
-		ref: u,
-		role: o,
-		className: [
-			s && Es.test(s) ? void 0 : Ss[t],
-			Cs(n),
-			ws[r],
-			i ? Ts[i] : void 0,
-			a === "Italic" ? "italic" : void 0,
-			s
-		].filter(Boolean).join(" ") || void 0,
-		...l,
-		children: e ?? c
-	});
+}, Es = /(^|\s)(text-(xs|sm|base|lg|xl|[2-9]xl)|text-\[\d)/, Ds = t.forwardRef(function({ text: e, role: n = "Body", textAlign: r, overflow: i = "Ellipsis", weight: a, fontStyle: o, ariaRole: s, as: c = "p", inheritSize: l, className: u, children: d, ...f }, p) {
+	let m = [
+		l || u && Es.test(u) ? void 0 : Ss[n],
+		Cs(r),
+		ws[i],
+		a ? Ts[a] : void 0,
+		o === "Italic" ? "italic" : void 0,
+		u
+	].filter(Boolean).join(" ");
+	return t.createElement(c, {
+		ref: p,
+		role: s,
+		className: m || void 0,
+		...f
+	}, e ?? d);
 });
 Ds.displayName = "Label";
-var Os = t.forwardRef(function({ text: e, role: t = "Body", weight: n, fontStyle: r, className: i, onClick: a, href: o, children: s, ...c }, l) {
+var Os = t.forwardRef(function({ text: e, role: t = "Body", weight: n, fontStyle: r, inheritSize: i, className: a, onClick: o, href: s, children: c, ...l }, u) {
 	return /* @__PURE__ */ v("a", {
-		ref: l,
-		href: o,
+		ref: u,
+		href: s,
 		className: [
-			i && Es.test(i) ? void 0 : Ss[t],
+			i || a && Es.test(a) ? void 0 : Ss[t],
 			n ? Ts[n] : void 0,
 			r === "Italic" ? "italic" : void 0,
-			i
+			a
 		].filter(Boolean).join(" ") || void 0,
 		onClick: (e) => {
-			o && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.preventDefault(), a?.(e);
+			s && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.preventDefault(), o?.(e);
 		},
-		...c,
-		children: e ?? s
+		...l,
+		children: e ?? c
 	});
 });
 Os.displayName = "LinkLabel";

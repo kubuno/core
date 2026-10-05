@@ -8,7 +8,7 @@ import { Slot } from '../slots/SlotRegistry'
 
 export type Tab = 'profile' | 'notifications' | 'themes' | 'clients' | 'security' | 'sessions' | 'api-tokens' | 'my-data'
 
-interface NavItem {
+export interface NavItem {
   id: Tab
   labelKey: string
   defaultLabel: string

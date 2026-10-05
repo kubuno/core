@@ -130,8 +130,24 @@ export declare const PanelMeta: {
         href?: string;
     }>, PropertyMeta<{
         dividerColor?: string;
+    }>, PropertyMeta<{
+        as?: string;
+    }>, PropertyMeta<{
+        'aria-modal'?: boolean;
+    }>, PropertyMeta<{
+        autoSize?: boolean;
     }>];
-    readonly events: readonly [];
+    readonly events: readonly [{
+        readonly name: "OnSubmit";
+        readonly category: "Action";
+        readonly args: "EventArgs";
+        readonly doc: "Web only: occurs when the form is submitted (HtmlTag=\"Form\": Enter in one of its fields, a button with ButtonType=\"Submit\"). The handler calls e.native.preventDefault() to stay on the page.";
+        readonly docFr: "Web uniquement : se produit quand le formulaire est envoyé (HtmlTag=\"Form\" : Entrée dans un de ses champs, un bouton ButtonType=\"Submit\"). Le gestionnaire appelle e.native.preventDefault() pour rester sur la page.";
+        readonly from: {
+            readonly dom: "submit";
+            readonly args: "dom";
+        };
+    }];
     readonly inheritedMap: {
         readonly Enabled: {
             readonly prop: "disabled";
@@ -303,8 +319,24 @@ export declare const StackMeta: {
         href?: string;
     }>, PropertyMeta<{
         dividerColor?: string;
+    }>, PropertyMeta<{
+        as?: string;
+    }>, PropertyMeta<{
+        'aria-modal'?: boolean;
+    }>, PropertyMeta<{
+        autoSize?: boolean;
     }>];
-    readonly events: readonly [];
+    readonly events: readonly [{
+        readonly name: "OnSubmit";
+        readonly category: "Action";
+        readonly args: "EventArgs";
+        readonly doc: "Web only: occurs when the form is submitted (HtmlTag=\"Form\": Enter in one of its fields, a button with ButtonType=\"Submit\"). The handler calls e.native.preventDefault() to stay on the page.";
+        readonly docFr: "Web uniquement : se produit quand le formulaire est envoyé (HtmlTag=\"Form\" : Entrée dans un de ses champs, un bouton ButtonType=\"Submit\"). Le gestionnaire appelle e.native.preventDefault() pour rester sur la page.";
+        readonly from: {
+            readonly dom: "submit";
+            readonly args: "dom";
+        };
+    }];
     readonly inheritedMap: {
         readonly Enabled: {
             readonly prop: "disabled";
@@ -624,6 +656,54 @@ export declare const RepeaterMeta: {
         readonly domRoot: "none";
         readonly content: "children";
         readonly template: true;
+    };
+};
+/**
+ * `ReactHost` (web only): any React component, rendered as it is — the migration's escape hatch for what is not a
+ * view yet (WEB-VIEWS §2.3): the codemod cuts such parts out with their values as `Props`.
+ */
+export declare const ReactHostMeta: {
+    readonly name: "ReactHost";
+    readonly doc: "Web only: renders a React component given by a binding (Component), with the props of another binding (Props). The migration keeps there what is not a view yet.";
+    readonly docFr: "Web uniquement : affiche un composant React donné par une liaison (Component), avec les props d'une autre liaison (Props). La migration y garde ce qui n'est pas encore une vue.";
+    readonly family: "data";
+    readonly baseChain: readonly ["ReactHost", "Control", "Component"];
+    readonly children: "None";
+    readonly defaultEvent: null;
+    readonly properties: readonly [{
+        readonly name: "Component";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Data";
+        readonly bindable: true;
+        readonly editor: "object";
+        readonly doc: "The React component rendered: a binding to a field or getter of the code-behind holding it.";
+        readonly docFr: "Le composant React affiché : une liaison vers un champ ou un accesseur du code-behind qui le contient.";
+        readonly to: {
+            readonly prop: "component";
+        };
+    }, {
+        readonly name: "Props";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Data";
+        readonly bindable: true;
+        readonly editor: "object";
+        readonly doc: "The props given to the component: a binding to an object (memoize it: a new object on every read re-renders the component).";
+        readonly docFr: "Les props données au composant : une liaison vers un objet (à mémoïser : un nouvel objet à chaque lecture redessine le composant).";
+        readonly to: {
+            readonly prop: "props";
+        };
+    }];
+    readonly events: readonly [];
+    readonly inheritedMap: {};
+    readonly designDefaults: {
+        readonly size: readonly [240, 120];
+    };
+    readonly web: {
+        readonly module: "@kubuno/views";
+        readonly export: "ReactHost";
+        readonly domRoot: "wrapper";
     };
 };
 export declare const TableLayoutPanelMeta: {

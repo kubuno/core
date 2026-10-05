@@ -33,6 +33,12 @@ interface ContainerBase {
     cornerRadius?: number;
     /** Web `DividerColor`: a line between two children (under each one but the last), in this colour. */
     dividerColor?: string;
+    /** Web `HtmlTag`: the HTML element of the container (a `section`, a `form`, a list…); `div` by default. */
+    as?: string;
+    /** Web `AccessibleModal`: `aria-modal` (a dialog that keeps the reader inside it). */
+    'aria-modal'?: boolean;
+    /** `AutoSize`: sized to its content (a push-button container like a native button) instead of filling its line. */
+    autoSize?: boolean;
     /** @internal — given by the renderer to every element of `@kubuno/views`. */
     __view?: Internals;
     /** @internal */

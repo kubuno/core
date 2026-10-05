@@ -11,6 +11,8 @@ type IconComponent = ComponentType<{
     color?: string;
     className?: string;
 }>;
+/** The values of a `{Res}`'s arguments, by the name written in the view (`Count`, `Name`). */
+export type ResourceArgs = Readonly<Record<string, unknown>>;
 /**
  * Registers the exports of a module under its specifier (`'@ui'`, `'@kubuno/sdk'`, a module's own
  * `'controls'`…), for plans that name components by module/export (interpreted plans, the designer).
@@ -25,8 +27,15 @@ export declare function resolveIcon(name: string): IconComponent | undefined;
  * Sets how `{Res key[, Source=set]}` resolves (the host passes i18next's `t`). Call
  * `invalidateResources()` when the language changes: every live view re-reads its strings.
  */
-export declare function setResourceResolver(resolve: (key: string, set?: string) => string): void;
-export declare function resolveResource(key: string, set?: string): string;
+export declare function setResourceResolver(resolve: (key: string, set?: string, args?: ResourceArgs) => string): void;
+export declare function resolveResource(key: string, set?: string, args?: ResourceArgs): string;
+/**
+ * The interpolation options of a `{Res}`'s arguments for i18next: each argument under its name as written and
+ * with its first letter lower-cased (`Count` fills `{{count}}` and selects the plural form, the way
+ * `t(key, { count })` does; `UserName` fills `{{userName}}`). A numeric text count becomes a number, so the plural
+ * rules apply to `Count="3"` too.
+ */
+export declare function interpolationOptions(args: ResourceArgs): Record<string, unknown>;
 export declare function invalidateResources(): void;
 /** @internal */
 export declare function onResourcesChanged(listener: () => void): () => void;

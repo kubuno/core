@@ -19,12 +19,12 @@ export declare const LabelMeta: {
     }, {
         readonly name: "Role";
         readonly kind: {
-            readonly Enum: readonly ["Micro", "Meta", "Body", "Heading", "Title"];
+            readonly Enum: readonly ["Micro", "Meta", "Body", "Heading", "Title", "Badge", "Caption", "Subtitle", "Display"];
         };
         readonly default: "Body";
         readonly category: "Appearance";
-        readonly doc: "Text style: small, caption, body, heading or title (the same sizes on the web and the desktop).";
-        readonly docFr: "Style du texte : petit, légende, corps, intertitre ou titre.";
+        readonly doc: "Text style: small, caption, body, heading or title, and the badge (10), caption (11), subtitle (16) and display (24) steps (the same sizes on the web and the desktop).";
+        readonly docFr: "Style du texte : petit, légende, corps, intertitre ou titre, et les paliers pastille (10), légende fine (11), sous-titre (16) et affichage (24).";
         readonly to: {
             readonly prop: "role";
             readonly values: {
@@ -33,6 +33,10 @@ export declare const LabelMeta: {
                 readonly Body: "Body";
                 readonly Heading: "Heading";
                 readonly Title: "Title";
+                readonly Badge: "Badge";
+                readonly Caption: "Caption";
+                readonly Subtitle: "Subtitle";
+                readonly Display: "Display";
             };
         };
     }, {
@@ -101,6 +105,47 @@ export declare const LabelMeta: {
                 readonly Italic: "Italic";
             };
         };
+    }, {
+        readonly name: "HtmlTag";
+        readonly kind: {
+            readonly Enum: readonly ["P", "Span", "Div", "H1", "H2", "H3", "H4", "H5", "H6", "Strong", "Em", "Small", "Label", "Code", "Li"];
+        };
+        readonly default: "P";
+        readonly category: "Accessibility";
+        readonly webOnly: true;
+        readonly doc: "Web only: the HTML element of the text — a paragraph, a heading level (H1–H6, announced as such by screen readers), an inline run (Span)…";
+        readonly docFr: "Web uniquement : l'élément HTML du texte — un paragraphe, un niveau de titre (H1–H6, annoncé comme tel par les lecteurs d'écran), un passage en ligne (Span)…";
+        readonly to: {
+            readonly prop: "as";
+            readonly values: {
+                readonly P: "p";
+                readonly Span: "span";
+                readonly Div: "div";
+                readonly H1: "h1";
+                readonly H2: "h2";
+                readonly H3: "h3";
+                readonly H4: "h4";
+                readonly H5: "h5";
+                readonly H6: "h6";
+                readonly Strong: "strong";
+                readonly Em: "em";
+                readonly Small: "small";
+                readonly Label: "label";
+                readonly Code: "code";
+                readonly Li: "li";
+            };
+        };
+    }, {
+        readonly name: "InheritFontSize";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: the text keeps its parent's font size instead of its role's (a run inside a sentence).";
+        readonly docFr: "Web uniquement : le texte garde la taille de police de son parent au lieu de celle de son rôle (un passage dans une phrase).";
+        readonly to: {
+            readonly prop: "inheritSize";
+        };
     }];
     readonly events: readonly [];
     readonly inheritedMap: {
@@ -147,12 +192,12 @@ export declare const LinkLabelMeta: {
     }, {
         readonly name: "Role";
         readonly kind: {
-            readonly Enum: readonly ["Micro", "Meta", "Body", "Heading", "Title"];
+            readonly Enum: readonly ["Micro", "Meta", "Body", "Heading", "Title", "Badge", "Caption", "Subtitle", "Display"];
         };
         readonly default: "Body";
         readonly category: "Appearance";
         readonly doc: "Text style: small, caption, body, heading or title.";
-        readonly docFr: "Style du texte : petit, légende, corps, intertitre ou titre.";
+        readonly docFr: "Style du texte : petit, légende, corps, intertitre ou titre, et les paliers pastille (10), légende fine (11), sous-titre (16) et affichage (24).";
         readonly to: {
             readonly prop: "role";
             readonly values: {
@@ -161,6 +206,10 @@ export declare const LinkLabelMeta: {
                 readonly Body: "Body";
                 readonly Heading: "Heading";
                 readonly Title: "Title";
+                readonly Badge: "Badge";
+                readonly Caption: "Caption";
+                readonly Subtitle: "Subtitle";
+                readonly Display: "Display";
             };
         };
     }, {
@@ -210,6 +259,17 @@ export declare const LinkLabelMeta: {
                 readonly Normal: "Normal";
                 readonly Italic: "Italic";
             };
+        };
+    }, {
+        readonly name: "InheritFontSize";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: the text keeps its parent's font size instead of its role's (a run inside a sentence).";
+        readonly docFr: "Web uniquement : le texte garde la taille de police de son parent au lieu de celle de son rôle (un passage dans une phrase).";
+        readonly to: {
+            readonly prop: "inheritSize";
         };
     }];
     readonly events: readonly [{

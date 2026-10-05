@@ -86,6 +86,24 @@ export declare const ButtonMeta: {
         readonly to: {
             readonly runtime: "drop-down-menu";
         };
+    }, {
+        readonly name: "ButtonType";
+        readonly kind: {
+            readonly Enum: readonly ["Button", "Submit", "Reset"];
+        };
+        readonly default: "Button";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: Submit sends the form the button is in (a container with HtmlTag=\"Form\", its OnSubmit); Reset clears it.";
+        readonly docFr: "Web uniquement : Submit envoie le formulaire qui contient le bouton (un conteneur HtmlTag=\"Form\", son OnSubmit) ; Reset le vide.";
+        readonly to: {
+            readonly prop: "type";
+            readonly values: {
+                readonly Button: "button";
+                readonly Submit: "submit";
+                readonly Reset: "reset";
+            };
+        };
     }, ...import("./types.ts").PropertyMeta<never>[]];
     readonly events: readonly [{
         readonly name: "OnClick";

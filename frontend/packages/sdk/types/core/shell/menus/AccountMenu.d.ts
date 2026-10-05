@@ -94,5 +94,5 @@ export declare class AccountMenu extends ViewBase {
     admin_click(_sender: ElementHandle): void;
     sign_out_click(_sender: ElementHandle): void;
 }
-declare const _default: import("react").ComponentType<Readonly<AccountMenuProps>>;
+declare const _default: import("react").FunctionComponent<Readonly<AccountMenuProps>>;
 export default _default;

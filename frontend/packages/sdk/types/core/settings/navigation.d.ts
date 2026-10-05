@@ -1,7 +1,7 @@
 import { type LucideIcon } from 'lucide-react';
 import { type MeFeatures } from '../store/authStore';
 export type Tab = 'profile' | 'notifications' | 'themes' | 'clients' | 'security' | 'sessions' | 'api-tokens' | 'my-data';
-interface NavItem {
+export interface NavItem {
     id: Tab;
     labelKey: string;
     defaultLabel: string;
@@ -31,4 +31,3 @@ export declare function useSettingsNav(): NavItem[];
  * it with a back row. Same URLs, so links and the desktop layout are untouched.
  */
 export declare function MobileSettingsIndex(): import("react").JSX.Element;
-export {};

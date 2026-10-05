@@ -52,6 +52,22 @@ export declare const WEB_TEXT_ROLES: {
         readonly token: "--kb-text-title";
         readonly size: 21.5;
     };
+    readonly Badge: {
+        readonly token: "--kb-text-badge";
+        readonly size: 10;
+    };
+    readonly Caption: {
+        readonly token: "--kb-text-caption";
+        readonly size: 11;
+    };
+    readonly Subtitle: {
+        readonly token: "--kb-text-subtitle";
+        readonly size: 16;
+    };
+    readonly Display: {
+        readonly token: "--kb-text-display";
+        readonly size: 24;
+    };
 };
 /** Page titles (`--kb-text-page`): not a Label role, the page header's own step. */
 export declare const WEB_PAGE_TITLE: {
