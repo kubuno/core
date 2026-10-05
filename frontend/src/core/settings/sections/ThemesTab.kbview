@@ -1,0 +1,18 @@
+<!-- ThemesTab — converted from ThemesTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="max-w-3xl">
+  <Label Text="{Res settings.themes_desc}" Overflow="Wrap" ForeColor="TextTertiary" Class="mb-5"/>
+  <Label Text="{Res settings.themes_loading}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_themes}"/>
+  <Panel Visible="{Binding show_not_themes}" Class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_themes}">
+      <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click">
+        <!-- TODO(views-migrate): <ThemePreview> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding ThemePreview}" Props="{Binding theme_preview_props}"/>
+        <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="SpaceBetween" Class="mt-2">
+          <Label HtmlTag="Span" Text="{Binding theme.name}" FontWeight="Medium" ForeColor="TextPrimary" Class="pr-1"/>
+          <Icon Name="Check" Size="14" Visible="{Binding isActive}" Class="text-primary shrink-0"/>
+        </Stack>
+        <Label HtmlTag="Span" Text="{Binding span_text}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary" Class="capitalize"/>
+      </Panel>
+    </Repeater>
+  </Panel>
+</Panel>

@@ -1,0 +1,16 @@
+<!-- ProfileTab — converted from ProfileTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel HtmlTag="Form" Class="max-w-4xl" OnSubmit="panel_submit">
+  <Panel Class="space-y-5">
+    <!-- TODO(views-migrate): <Section> is no .kbview element (./profileFields#Section) -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <Section> is no .kbview element (./profileFields#Section) -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    <!-- TODO(views-migrate): <Section> is no .kbview element (./profileFields#Section) -->
+    <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    <!-- TODO(views-migrate): <Section> is no .kbview element (./profileFields#Section) -->
+    <ReactHost Component="{Binding Part4}" Props="{Binding part2_props}"/>
+  </Panel>
+  <Panel Class="mt-6">
+    <Button ButtonType="Submit" Loading="{Binding busy}" Text="{Binding button_text}"/>
+  </Panel>
+</Panel>
