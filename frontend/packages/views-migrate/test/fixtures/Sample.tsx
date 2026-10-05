@@ -49,3 +49,6 @@ export function Sample({ title }: { title: string }) {
     </div>
   )
 }
+
+// A side effect of importing the screen: kept after the class.
+console.debug('sample loaded')

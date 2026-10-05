@@ -47,6 +47,7 @@ export class Registry {
             propertyNames: new Set([...(c.properties ?? []).map((p) => p.name), ...Object.keys(w?.prop_map ?? {})]),
             eventNames: new Set((c.events ?? []).map((e) => e.name)),
             defaults,
+            objectProps: new Set((c.properties ?? []).filter((p) => p.editor === 'object' || p.editor === 'list').map((p) => p.name)),
         };
         this.byName.set(c.name, info);
         if (w?.module && w.export) {

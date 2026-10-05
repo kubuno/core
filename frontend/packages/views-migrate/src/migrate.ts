@@ -1972,11 +1972,18 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   }
   // The file's other statements (types, constants, helpers): kept when the code-behind uses them (see below).
   const helpers: Array<{ names: string[]; text: string }> = []
+  // Statements declaring nothing (`Registry.register(…)` at the top level): side effects of importing the screen, kept
+  // whatever the class uses, after it (as in the TSX, where they follow the component).
+  const effects: string[] = []
   for (const st of sf.getStatements()) {
     if (Node.isImportDeclaration(st) || Node.isExportAssignment(st)) continue
     if (Node.isFunctionDeclaration(st) && (st.getName() === target.name || m.localComponents.has(st.getName() ?? ''))) continue
     if (Node.isVariableStatement(st) && st.getDeclarations().some((d) => d.getName() === target.name || m.localComponents.has(d.getName()))) continue
     const names = Node.isVariableStatement(st) ? st.getDeclarations().map((d) => d.getName()) : [((st as unknown as { getName?: () => string | undefined }).getName?.() ?? '')]
+    if (names.every((n) => !n)) {
+      effects.push(st.getText())
+      continue
+    }
     helpers.push({ names, text: st.getText() })
   }
   const cls: string[] = []
@@ -2056,6 +2063,7 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   if (rowTypes.length) cls.push('', ...rowTypes)
   for (const g of groups) cls.push('', `/** What \`${g.method}()\` gives (the types of the fields it fills). */`, `export type ${m.stem}${g.method === 'useStores' ? 'Stores' : 'Hooks'} = ReturnType<${m.stem}['${g.method}']>`)
   cls.push('', `export default ${m.stem}.component()`, '')
+  if (effects.length) cls.push(...effects.flatMap((e) => [e, '']))
   // Helpers the class uses (and the helpers those use), in file order.
   let code = body.join('\n') + cls.join('\n')
   const keep = new Set<number>()

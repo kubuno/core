@@ -42,6 +42,8 @@ export interface ElementInfo {
     eventNames: Set<string>;
     /** Default values of the properties (to leave out what equals the default). */
     defaults: Map<string, string>;
+    /** Properties taking an object or a list (registry editor `object` / `list`), not a text. */
+    objectProps: Set<string>;
 }
 export declare class Registry {
     private readonly byExport;

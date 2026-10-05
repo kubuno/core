@@ -21,3 +21,9 @@ under the published version number.
 - Hooks are split in `useStores()` (reading nothing of the class) and `useHooks()`; their results become plain fields
   published through `View.publish`, so a view sees them on its first render and does not re-render without end.
   Lists over a getter or a field (`items-source`) map to a `Repeater` too.
+
+### Fixed
+
+- A screen's top-level statements declaring nothing (a `Registry.register(…)` run when the file is imported) are
+  kept in the code-behind, after the class; they were dropped (the core notification settings lost their « Account and
+  security » activities).

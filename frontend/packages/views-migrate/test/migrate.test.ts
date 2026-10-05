@@ -87,6 +87,8 @@ describe('kbview-migrate on a sample screen', () => {
     // The code-behind is valid TypeScript (syntax).
     const out = ts.transpileModule(code, { reportDiagnostics: true, compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.Preserve } })
     expect(out.diagnostics ?? []).toEqual([])
+    // A top-level statement declaring nothing (a registration) is kept, after the class.
+    expect(code).toMatch(/export default Sample\.component\(\)\s+console\.debug\('sample loaded'\)/)
     expect(parts).toContain('export { Badge }')
   })
 })
