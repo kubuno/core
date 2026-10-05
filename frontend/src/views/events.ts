@@ -63,6 +63,16 @@ export interface ItemActivateEventArgs<T = unknown> extends EventArgs {
   readonly index: number
 }
 
+/** `PaintBox.OnPaint` (web): draw with `ctx`, in CSS pixels (the context is already scaled by `dpr`). */
+export interface PaintEventArgs extends EventArgs {
+  readonly ctx: CanvasRenderingContext2D
+  readonly width: number
+  readonly height: number
+  readonly dpr: number
+  /** The box's `PaintData`. */
+  readonly data?: unknown
+}
+
 const BUTTONS: readonly MouseButton[] = ['Left', 'Middle', 'Right']
 
 interface DomLike {
@@ -126,6 +136,11 @@ export function makeArgs(adapter: string, raw: readonly unknown[], ctx: ArgsCont
       return { native, e: { ...base, item: ctx.item, index: ctx.index ?? -1 } }
     case 'row':
       return { native, e: { ...base, item: raw[0], index: typeof raw[1] === 'number' ? raw[1] : -1 } }
+    case 'paint': {
+      // The PaintBox hands its prepared painter arguments (`preparePaint`); not a DOM event.
+      const p = (raw[0] ?? {}) as Record<string, unknown>
+      return { native: undefined, e: { native: undefined, ctx: p.ctx, width: p.width, height: p.height, dpr: p.dpr, data: p.data } }
+    }
     case 'sort':
       return { native, e: { ...base, value: (raw[0] as { columnId?: unknown } | undefined)?.columnId ?? raw[0] } }
     default:

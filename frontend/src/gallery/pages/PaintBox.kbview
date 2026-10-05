@@ -1,0 +1,9 @@
+<!-- PaintBox: a bar chart drawn by OnPaint from PaintData, in CSS pixels at any pixel ratio; the button changes the data. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12">
+  <PaintBox x:Name="chart" Height="180" PaintData="{Binding values}" AccessibleName="Weekly uploads" OnPaint="chart_paint"
+            BorderBrush="Border" CornerRadius="8" BackColor="Surface"/>
+  <Stack Direction="LeftToRight" Gap="8" CrossAlign="Center">
+    <Button Text="Shuffle" Variant="Secondary" Size="Sm" OnClick="shuffle_click"/>
+    <Label Text="{Binding paints}" Role="Meta" ForeColor="TextSecondary"/>
+  </Stack>
+</Stack>

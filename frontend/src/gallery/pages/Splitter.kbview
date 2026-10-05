@@ -1,0 +1,11 @@
+<!-- Splitter: side by side (two-way Distance) and one above the other; the bar is a focusable separator. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <Splitter AccessibleName="Folders and files" Distance="{Binding distance, Mode=TwoWay}" Height="160" BorderBrush="Border" CornerRadius="8">
+    <Panel Surface="Well" Padding="12, 12, 12, 12"><Label Text="First pane" Overflow="Wrap"/></Panel>
+    <Panel Surface="Card" Padding="12, 12, 12, 12"><Label Text="{Binding caption}" Overflow="Wrap"/></Panel>
+  </Splitter>
+  <Splitter Orientation="Horizontal" Distance="60" Height="180" BorderBrush="Border" CornerRadius="8" AccessibleName="Editor and output">
+    <Panel Surface="Card" Padding="12, 12, 12, 12"><Label Text="Top pane"/></Panel>
+    <Panel Surface="Well" Padding="12, 12, 12, 12"><Label Text="Bottom pane"/></Panel>
+  </Splitter>
+</Stack>

@@ -3,7 +3,7 @@ import { bind, type ElementHandle, type MouseEventArgs } from '@kubuno/views'
 import { ViewBase } from './Panel.kbview'
 
 /** Gallery page: Panel. */
-export class PanelPage extends ViewBase {
+export class Panel extends ViewBase {
   @bind accessor count = 0
 
   get clicks(): string {
@@ -15,4 +15,4 @@ export class PanelPage extends ViewBase {
   }
 }
 
-export default PanelPage.component()
+export default Panel.component()

@@ -360,6 +360,17 @@ function build(
           return dm !== UNSET || vmb !== UNSET ? { ...o, label: dm !== UNSET ? o[String(dm)] : o.label, value: vmb !== UNSET ? o[String(vmb)] : o.value } : o
         })
       }
+      // Rows from a list whose `Icon` field names a Kubuno icon (`Sidebar ItemsSource`): the name becomes the icon.
+      case 'items-source-icons': {
+        if (!Array.isArray(v)) return []
+        return v.map((it) => {
+          if (it === null || typeof it !== 'object') return { Text: String(it) }
+          const o = it as Props
+          const name = o.Icon ?? o.icon
+          const C = typeof name === 'string' ? iconComponent(name) : undefined
+          return C ? { ...o, Icon: createElement(C, { size: 20 }), icon: undefined } : o
+        })
+      }
       default: return v
     }
   }

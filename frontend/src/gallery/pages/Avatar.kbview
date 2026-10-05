@@ -1,0 +1,18 @@
+<!-- Avatar: initials, the accent tint, shapes, sizes and the presence dot. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <Stack Direction="LeftToRight" Gap="16" CrossAlign="Center" WrapContents="true">
+    <Avatar DisplayName="Camille Martin" AvatarSize="24"/>
+    <Avatar DisplayName="Camille Martin" AvatarSize="36"/>
+    <Avatar DisplayName="Camille Martin" AvatarSize="40" Tint="Accent"/>
+    <Avatar DisplayName="Camille Martin" AvatarSize="64" Shape="Rounded"/>
+    <Avatar DisplayName="Camille Martin" AvatarSize="96" Tint="Accent"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="16" CrossAlign="Center" WrapContents="true">
+    <Avatar DisplayName="Online Person" AvatarSize="40" Presence="Online"/>
+    <Avatar DisplayName="Away Person" AvatarSize="40" Presence="Away"/>
+    <Avatar DisplayName="Busy Person" AvatarSize="40" Presence="Busy"/>
+    <Avatar DisplayName="Offline Person" AvatarSize="40" Presence="Offline"/>
+    <Avatar DisplayName="Big Online" AvatarSize="96" Tint="Accent" Presence="Online"/>
+    <Avatar DisplayName="Small Busy" AvatarSize="24" Presence="{Binding presence}"/>
+  </Stack>
+</Stack>

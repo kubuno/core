@@ -1,0 +1,22 @@
+<!-- Popover: Placement, Alignment, PopupWidth, LightDismiss; OnOpened / OnClosed; Escape closes and gives the focus back. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16" CrossAlign="Start">
+  <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center">
+    <Button x:Name="opener" Text="Open below" AccessibleDescription="gallery-click" OnClick="opener_click"/>
+    <Button x:Name="right_opener" Text="Open on the right" Variant="Secondary" OnClick="right_click"/>
+  </Stack>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+  <Popover Target="opener" IsOpen="{Binding open, Mode=TwoWay}" Alignment="Center" PopupWidth="260" OnOpened="opened" OnClosed="closed">
+    <Panel Surface="Card" CornerRadius="12" Elevation="Lg" BorderBrush="Border" Padding="16, 12, 16, 12">
+      <Stack Gap="8">
+        <Label Text="Share the budget" Role="Heading" FontWeight="SemiBold"/>
+        <Label Text="Anyone with the link can view. Escape or a click outside closes this panel." Overflow="Wrap" ForeColor="TextSecondary"/>
+        <Button Text="Copy link" Size="Sm"/>
+      </Stack>
+    </Panel>
+  </Popover>
+  <Popover Target="right_opener" IsOpen="{Binding rightOpen, Mode=TwoWay}" Placement="Right" Alignment="Start">
+    <Panel Surface="Card" CornerRadius="8" Elevation="Md" BorderBrush="Border" Padding="12, 8, 12, 8">
+      <Label Text="On the right (flips when there is no room)"/>
+    </Panel>
+  </Popover>
+</Stack>

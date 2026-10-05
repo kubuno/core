@@ -19,6 +19,10 @@ import { ContextMenuMeta, MenuItemMeta, ToolTipMeta } from '../ui/kbview/compone
 import { DockAreaMeta, DockPanelMeta, WorkspaceShellMeta } from '../sdk/kbview/workspace.meta.ts'
 import { PanelMeta, RepeaterMeta, ScrollAreaMeta, StackMeta, TableLayoutPanelMeta, UserControlMeta } from '../ui/kbview/views.meta.ts'
 import { GroupBoxMeta, RadioGroupMeta, SettingsRowMeta } from '../ui/kbview/forms.meta.ts'
+import {
+  MaskedFieldMeta, PaintBoxMeta, SearchFieldMeta, SidebarItemMeta, SidebarMeta, SidebarSectionMeta, SplitterMeta, StatusBarMeta,
+  StatusLabelMeta, ToolbarItemMeta, ToolbarMeta,
+} from '../ui/kbview/navigation.meta.ts'
 import { AvatarMeta, IconMeta, LabelMeta, LinkLabelMeta, PictureBoxMeta } from '../ui/kbview/primitives.meta.ts'
 
 export const WEB_ELEMENTS: readonly AnyElementMeta[] = [
@@ -40,4 +44,7 @@ export const WEB_ELEMENTS: readonly AnyElementMeta[] = [
   DockAreaMeta, DockPanelMeta, WorkspaceShellMeta,
   // components
   ToolTipMeta, ContextMenuMeta, MenuItemMeta,
+  // navigation (WV-5b)
+  ToolbarItemMeta, ToolbarMeta, SidebarItemMeta, SidebarSectionMeta, SidebarMeta, StatusLabelMeta, StatusBarMeta, SplitterMeta,
+  SearchFieldMeta, MaskedFieldMeta, PaintBoxMeta,
 ]
