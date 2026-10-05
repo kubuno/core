@@ -1,0 +1,41 @@
+<!-- SettingsPage — converted from SettingsPage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <!-- TODO(views-migrate): <MobileSettingsIndex> is no .kbview element (./navigation#MobileSettingsIndex) -->
+  <ReactHost Component="{Binding MobileSettingsIndex}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="max-w-4xl">
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           ForeColor="TextPrimary"
+           Visible="{Binding isMobile}"
+           Class="flex items-center gap-2 -ml-1 mb-4 h-11 pr-3 pl-1 rounded-lg active:bg-surface-2 transition-colors"
+           OnClick="panel_click">
+      <Icon Name="ArrowLeft" Class="shrink-0"/>
+      <Label HtmlTag="Span" Text="{Binding span_text}" FontWeight="Medium" Class="text-lg"/>
+    </Panel>
+    <Label HtmlTag="H1"
+           Text="{Binding h1_text}"
+           FontWeight="Medium"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           Visible="{Binding show_not_is_mobile}"
+           Class="text-xl mb-6"/>
+    <!-- TODO(views-migrate): <ProfileTab> is no .kbview element (./sections/ProfileTab#default) -->
+    <ReactHost Component="{Binding ProfileTab}" Visible="{Binding show_tab_profile}"/>
+    <!-- TODO(views-migrate): <NotificationsTab> is no .kbview element (./sections/NotificationsTab#default) -->
+    <ReactHost Component="{Binding NotificationsTab}" Visible="{Binding show_tab_notifications}"/>
+    <!-- TODO(views-migrate): <ThemesTab> is no .kbview element (./sections/ThemesTab#default) -->
+    <ReactHost Component="{Binding ThemesTab}" Visible="{Binding show_tab_themes}"/>
+    <!-- TODO(views-migrate): <ClientsTab> is no .kbview element (./sections/ClientsTab#default) -->
+    <ReactHost Component="{Binding ClientsTab}" Visible="{Binding show_tab_clients}"/>
+    <!-- TODO(views-migrate): <SecurityTab> is no .kbview element (./sections/SecurityTab#default) -->
+    <ReactHost Component="{Binding SecurityTab}" Visible="{Binding show_tab_security}"/>
+    <!-- TODO(views-migrate): <SessionsTab> is no .kbview element (./sections/SessionsTab#default) -->
+    <ReactHost Component="{Binding SessionsTab}" Visible="{Binding show_tab_sessions}"/>
+    <!-- TODO(views-migrate): <ApiTokensTab> is no .kbview element (./sections/ApiTokensTab#ApiTokensTab) -->
+    <ReactHost Component="{Binding ApiTokensTab}" Visible="{Binding show_tab_api_tokens}"/>
+    <!-- TODO(views-migrate): <MyDataTab> is no .kbview element (./sections/my-data/MyDataTab#MyDataTab) -->
+    <ReactHost Component="{Binding MyDataTab}" Visible="{Binding show_tab_my_data}"/>
+    <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+    <ReactHost Component="{Binding Slot}" Props="{Binding slot_props}" Visible="{Binding show_is_mobile}"/>
+  </Panel>
+</Panel>

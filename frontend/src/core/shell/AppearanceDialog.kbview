@@ -1,0 +1,50 @@
+<!-- AppearanceDialog — converted from AppearanceDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="AppearanceDialogProps"
+       Direction="LeftToRight"
+       Gap="0"
+       CrossAlign="Center"
+       Justify="Center"
+       Class="fixed inset-0 z-[9998] p-4"
+       OnMouseDown="stack_mouse_down">
+  <Panel AccessibleHidden="true" Class="absolute inset-0 bg-black/30"/>
+  <Panel BackColor="Background"
+         AccessibleRole="Dialog"
+         AccessibleModal="true"
+         AccessibleName="{Res appearance.title}"
+         Class="relative w-full max-w-[640px] rounded-2xl p-6 shadow-2xl"
+         OnMouseDown="panel_mouse_down">
+    <Label HtmlTag="H2" Text="{Res appearance.title}" FontWeight="Regular" Overflow="Wrap" ForeColor="TextPrimary" Class="text-lg mb-5"/>
+    <Panel Class="grid grid-cols-3 gap-4 mb-6">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_modes}">
+        <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click">
+          <!-- TODO(views-migrate): <ModeMock> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding ModeMock}" Props="{Binding mode_mock_props}"/>
+          <Stack Direction="LeftToRight" CrossAlign="Center" Class="mt-2 px-1">
+            <Panel HtmlTag="Span" Class="{Binding span_class}">
+              <Panel HtmlTag="Span" BackColor="Primary" Visible="{Binding active}" Class="w-2 h-2 rounded-full"/>
+            </Panel>
+            <Label HtmlTag="Span" Text="{Binding m.label}" Role="Meta" Overflow="Wrap" ForeColor="TextPrimary" Class="leading-tight"/>
+          </Stack>
+        </Panel>
+      </Repeater>
+    </Panel>
+    <Panel HtmlTag="Label" BackColor="Surface2" Class="block rounded-lg px-4 py-2.5 mb-3">
+      <Label HtmlTag="Span" Text="{Res appearance.scheme}" Overflow="Wrap" ForeColor="TextSecondary" Class="block text-[11px] mb-1"/>
+      <!-- TODO(views-migrate): <Dropdown> width, height: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Panel>
+    <Panel HtmlTag="Label" BackColor="Surface2" Class="block rounded-lg px-4 py-2.5">
+      <Label HtmlTag="Span" Text="{Res appearance.density}" Overflow="Wrap" ForeColor="TextSecondary" Class="block text-[11px] mb-1"/>
+      <!-- TODO(views-migrate): <Dropdown> width, height: no .kbview property -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Panel>
+    <Stack Direction="LeftToRight" Gap="0" Justify="End" Class="mt-6">
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             Class="text-sm font-medium text-primary hover:text-primary-hover px-2 py-1"
+             OnClick="panel_click2">
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res common.done}"/>
+      </Panel>
+    </Stack>
+  </Panel>
+</Stack>
