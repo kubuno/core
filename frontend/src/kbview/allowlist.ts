@@ -6,6 +6,7 @@
  * add an entry with a reason). Entries tagged "WV-…" name the lot that is expected to close them.
  */
 import type { AllowEntry } from './conformance.ts'
+import { NAV_ALLOWLIST } from './allowlist.nav.ts'
 
 const WINDOW_CHROME = 'Window chrome and window behaviour (title bar, caption buttons, backdrop, taskbar, MDI, opacity…): a web view is a page or a dialog inside the host shell, never a top-level window. The web keeps Title only.'
 const NOT_YET = (lot: string, what: string) => `Not implemented by the @ui component yet (${lot}): ${what}`
@@ -87,11 +88,6 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'property-missing-on-web', element: 'Breadcrumb', member: 'RootChevron', reason: NOT_YET('WV-5a', 'room for a home icon before the first segment (the web uses BreadcrumbItem Icon).') },
   { kind: 'property-web-only', element: 'Breadcrumb', member: 'Size', reason: 'Web trail scale (Lg = page heading). Proposed for the desktop.' },
   { kind: 'property-web-only', element: 'FloatingWindow', member: 'Resizable', reason: 'The web FloatingWindow can be resizable. Proposed for the desktop.' },
-  { kind: 'property-missing-on-web', element: 'Popover', member: 'Placement', reason: NOT_YET('WV-5b', 'AnchoredPopover opens below its anchor only.') },
-  { kind: 'property-missing-on-web', element: 'Popover', member: 'PopupWidth', reason: NOT_YET('WV-5b', 'the popover sizes to its content.') },
-  { kind: 'property-missing-on-web', element: 'Popover', member: 'PopupHeight', reason: NOT_YET('WV-5b', 'the popover sizes to its content.') },
-  { kind: 'property-missing-on-web', element: 'Popover', member: 'LightDismiss', reason: NOT_YET('WV-5b', 'AnchoredPopover always closes on an outside click or Escape.') },
-  { kind: 'event-missing-on-web', element: 'Popover', member: 'OnOpened', reason: NOT_YET('WV-5b', 'AnchoredPopover reports closing only.') },
   { kind: 'property-missing-on-web', element: 'DataTable', member: 'SelectedIndex', reason: 'The web DataTable selects several rows by id (Selectable, selectedIds); a single selected index is aligned in WV-5b ("DataTable alignment").' },
   { kind: 'event-missing-on-web', element: 'DataTable', member: 'OnSelectionChanged', reason: 'See SelectedIndex (WV-5b).' },
   { kind: 'event-missing-on-web', element: 'DataTable', member: 'OnRowActivated', reason: 'The web DataTable reports a single click on a row (onRowClick); double-click activation is aligned in WV-5b.' },
@@ -132,7 +128,6 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'property-missing-on-web', element: 'Icon', member: 'IconScaling', reason: 'The web Icon draws Kubuno (Lucide) glyphs, which are square: no scaling mode.' },
   { kind: 'property-missing-on-web', element: 'Icon', member: 'IconColor', reason: 'See IconSize: the web Icon takes ForeColor.' },
   { kind: 'property-missing-on-web', element: 'Avatar', member: 'ImageData', reason: 'Image bytes from a Rust Shared<Vec<u8>>: a web photo is an address (Image).' },
-  { kind: 'property-missing-on-web', element: 'Avatar', member: 'Presence', reason: NOT_YET('WV-5b', 'the presence dot of the chat lists.') },
   { kind: 'element-mismatch', element: 'Repeater', member: 'default_event', reason: 'The desktop default event (OnItemClick) does not exist on the web yet: the web Repeater repeats a template inside its container, the clicks are the template\'s own (WV-5b list elements).' },
   { kind: 'property-missing-on-web', element: 'Repeater', member: 'ItemTemplate', reason: NOT_YET('WV-5b', 'the template is written inside the Repeater; a user control as template comes with the list elements.') },
   { kind: 'property-missing-on-web', element: 'Repeater', member: 'Orientation', reason: 'The web Repeater emits its items into its container, which lays them out (a Stack, a TableLayoutPanel): no layout of its own.' },
@@ -163,4 +158,6 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'element-web-only', element: 'RadioGroup', reason: 'New element (WEB-VIEWS §3): the radio list copied in 20 module repositories (desktop proposal: RadioButtons, XML_VIEWS §7). Web first; the desktop element comes with the desktop side of WV-5a.' },
   { kind: 'property-web-only', element: 'GroupBox', member: 'Description', reason: 'Web settings sections carry a help line under their title. Proposed for the desktop GroupBox.' },
   { kind: 'property-missing-on-web', element: 'PictureBox', member: 'ImageData', reason: 'Image bytes from a Rust Shared<Vec<u8>>: a web picture is an address (Image, a data: or blob: URL for bytes).' },
+  // ── WV-5b navigation elements ──
+  ...NAV_ALLOWLIST,
 ]

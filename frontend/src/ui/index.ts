@@ -67,6 +67,13 @@ import { GroupBox as BaseGroupBox } from './GroupBox'
 import { SettingsRow as BaseSettingsRow } from './SettingsRow'
 import { RadioGroup as BaseRadioGroup } from './RadioGroup'
 import { PictureBox as BasePictureBox } from './PictureBox'
+import { Toolbar as BaseToolbar } from './Toolbar'
+import { Sidebar as BaseSidebar } from './Sidebar'
+import { StatusBar as BaseStatusBar } from './StatusBar'
+import { Splitter as BaseSplitter } from './Splitter'
+import { SearchField as BaseSearchField } from './SearchField'
+import { MaskedField as BaseMaskedField } from './MaskedField'
+import { PaintBox as BasePaintBox } from './PaintBox'
 
 // Every visual primitive/complex component is themeable: a theme can replace its
 // markup and behaviour, and otherwise it renders its default ("Base")
@@ -140,6 +147,23 @@ export type { SettingsRowProps } from './SettingsRow'
 export type { RadioGroupProps, RadioOption } from './RadioGroup'
 export type { PictureBoxProps, PictureSizeMode } from './PictureBox'
 export type { TextWeight, TextStyle } from './Label'
+export const Toolbar = t('ui.Toolbar', BaseToolbar)
+export const Sidebar = t('ui.Sidebar', BaseSidebar)
+export const StatusBar = t('ui.StatusBar', BaseStatusBar)
+export const Splitter = t('ui.Splitter', BaseSplitter)
+export const SearchField = t('ui.SearchField', BaseSearchField)
+export const MaskedField = t('ui.MaskedField', BaseMaskedField)
+export const PaintBox = t('ui.PaintBox', BasePaintBox)
+export type { ToolbarProps, ToolbarItemDef } from './Toolbar'
+export type { SidebarProps, SidebarItemDef } from './Sidebar'
+export type { StatusBarProps, StatusLabelDef } from './StatusBar'
+export type { SplitterProps } from './Splitter'
+export type { SearchFieldProps } from './SearchField'
+export type { MaskedFieldProps, MaskSlot } from './MaskedField'
+export { parseMask, applyMask, maskPlaceholder } from './MaskedField'
+export type { PaintBoxProps, PaintArgs } from './PaintBox'
+export type { AvatarPresence } from './Avatar'
+export type { PopoverPlacement, PopoverAlign } from './AnchoredPopover'
 export { initialsOf } from './Avatar'
 export type { AvatarProps } from './Avatar'
 export type { LabelProps, LinkLabelProps, TextRole, TextAlign, TextOverflow } from './Label'

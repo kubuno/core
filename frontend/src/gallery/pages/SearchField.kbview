@@ -1,0 +1,7 @@
+<!-- SearchField: empty, filled (clear button), disabled; Escape clears, Enter raises OnSearch. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12" MaximumSize="480, 0">
+  <SearchField x:Name="search" Placeholder="Search in Drive" Text="{Binding query, Mode=TwoWay}" OnSearch="search_submitted"/>
+  <SearchField Placeholder="Search" Text="quarterly report"/>
+  <SearchField Placeholder="Disabled" Enabled="false"/>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

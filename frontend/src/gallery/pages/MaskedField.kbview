@@ -1,0 +1,8 @@
+<!-- MaskedField: a date, a phone number, a plate with letters; the Invalid state. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="12" MaximumSize="320, 0">
+  <MaskedField x:Name="date_field" Mask="00/00/0000" Text="{Binding date, Mode=TwoWay}" AccessibleName="Date"/>
+  <MaskedField Mask="+33 0 00 00 00 00" Text="+33 6 12 34" AccessibleName="Phone"/>
+  <MaskedField Mask="LL-000-LL" AccessibleName="Plate"/>
+  <MaskedField Mask="00/00/0000" Text="31/02" Invalid="true" AccessibleName="Invalid date"/>
+  <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

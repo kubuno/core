@@ -75,6 +75,8 @@ export type Converter =
   | 'workspace-theme'
   /** `ItemsSource` → the array prop, each bound item mapped through `DisplayMember`/`ValueMember`. */
   | 'items-source'
+  /** `items-source`, plus each item's `Icon` name made an icon element (`Sidebar` rows from a list). */
+  | 'items-source-icons'
 
 /**
  * How a `.kbview` property reaches the component when it is not a plain React prop: the views
@@ -149,6 +151,8 @@ export type ArgsAdapter =
   | 'sort'
   /** DOM events listened to on the element's root by the runtime (common events). */
   | 'dom'
+  /** A `PaintBox` paints: `PaintEventArgs` (the 2D context, the size in CSS px, the pixel ratio, the data). */
+  | 'paint'
 
 /** The common events the runtime listens to on the DOM root (no React prop needed). */
 export type DomEvent =
@@ -427,6 +431,7 @@ export const EVENT_ARGS = {
   ValueChangedEventArgs: { chain: ['ValueChangedEventArgs', 'EventArgs'], mutable: false, cancelable: false },
   ItemEventArgs: { chain: ['ItemEventArgs', 'EventArgs'], mutable: false, cancelable: false },
   ItemActivateEventArgs: { chain: ['ItemActivateEventArgs', 'EventArgs'], mutable: false, cancelable: false },
+  PaintEventArgs: { chain: ['PaintEventArgs', 'EventArgs'], mutable: false, cancelable: false },
 } as const satisfies Record<string, EventArgsInfo>
 
 export type EventArgsName = keyof typeof EVENT_ARGS

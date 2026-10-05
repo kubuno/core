@@ -1,0 +1,14 @@
+<!-- StatusBar: cells, separators, a spring cell pushing the rest to the end, clickable cells. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <StatusBar AccessibleName="Editor status" OnItemClicked="cell_clicked">
+    <StatusLabel Text="Ready"/>
+    <StatusLabel Text="-"/>
+    <StatusLabel Text="{Binding words}"/>
+    <StatusLabel Text="" Spring="true"/>
+    <StatusLabel Text="UTF-8" Clickable="true"/>
+    <StatusLabel Text="-"/>
+    <StatusLabel Text="French" Icon="Languages" IconSize="Small" Clickable="true"/>
+    <StatusLabel Text="Read only" Clickable="true" Enabled="false"/>
+  </StatusBar>
+  <Label Text="{Binding last}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

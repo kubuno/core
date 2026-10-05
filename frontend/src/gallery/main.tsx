@@ -11,9 +11,14 @@ import { createRoot } from 'react-dom/client'
 
 // The host's i18n: `@ui` components read their own strings from it, and it sets the document's direction.
 import i18n from '../core/i18n'
+// Icon names that reach the runtime as data (an `ItemsSource` row's `Icon`), as the shell resolves them (viewsHost).
+import { setIconResolver } from '@kubuno/views'
+import { findIcon } from '../core/utils/iconMap'
 
 import lightTheme from '../../../themes/kubuno-reference/theme.json?raw'
 import darkTheme from '../../../themes/kubuno-dark/theme.json?raw'
+
+setIconResolver((name) => findIcon(name) ?? undefined)
 
 const pages = import.meta.glob<ComponentType<object>>('./pages/*.ts', { import: 'default' })
 const names = Object.keys(pages).map((p) => p.replace(/^\.\/pages\/(.*)\.ts$/, '$1')).sort()

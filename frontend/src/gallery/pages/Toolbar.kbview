@@ -1,0 +1,17 @@
+<!-- Toolbar: icon and text commands, icon-only commands with a tooltip, a disabled one, a band; one tab stop, arrow keys. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="16">
+  <Toolbar AccessibleName="Formatting">
+    <ToolbarItem x:Name="bold" Icon="Bold" ToolTip="Bold" OnClick="item_click"/>
+    <ToolbarItem x:Name="italic" Icon="Italic" ToolTip="Italic" OnClick="item_click"/>
+    <ToolbarItem x:Name="underline" Icon="Underline" ToolTip="Underline" OnClick="item_click"/>
+    <ToolbarItem x:Name="link" Icon="Link" Text="Link" OnClick="item_click"/>
+    <ToolbarItem x:Name="clear" Icon="Eraser" Text="Clear" Enabled="false"/>
+  </Toolbar>
+  <Toolbar Band="true" AccessibleName="File">
+    <ToolbarItem x:Name="new_file" Icon="Plus" Text="New" OnClick="item_click"/>
+    <ToolbarItem x:Name="upload" Icon="Upload" Text="Upload" OnClick="item_click"/>
+    <ToolbarItem x:Name="share" Icon="Share2" Text="Share" OnClick="item_click"/>
+    <ToolbarItem x:Name="trash" Icon="Trash2" ToolTip="Delete" OnClick="item_click"/>
+  </Toolbar>
+  <Label Text="{Binding last}" Role="Meta" ForeColor="TextSecondary"/>
+</Stack>

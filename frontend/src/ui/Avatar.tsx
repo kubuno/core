@@ -18,8 +18,19 @@ export interface AvatarProps {
   shape?: 'circle' | 'rounded'
   /** Diameter in px. */
   size?: number
+  /** A dot at the bottom end corner: the person's availability. */
+  presence?: AvatarPresence
   className?: string
   style?: React.CSSProperties
+}
+
+export type AvatarPresence = 'none' | 'online' | 'away' | 'busy' | 'offline'
+
+const PRESENCE_COLOR: Readonly<Record<Exclude<AvatarPresence, 'none'>, string>> = {
+  online: 'var(--color-success)',
+  away: 'var(--color-warning)',
+  busy: 'var(--color-danger)',
+  offline: 'var(--color-border-strong)',
 }
 
 /** The initials' step for a diameter (the hand-written avatars of the shell: 96 → 2xl, 36–40 → sm, 24 → 10 px). */
@@ -34,6 +45,30 @@ function initialsClass(size: number, accent: boolean): string {
  * Radix Avatar: the initials show until the photo has loaded, and stay when it fails.
  */
 export const Avatar = React.forwardRef<HTMLSpanElement, AvatarProps>(function Avatar(
+  { displayName = '', initials, image, tint = 'auto', shape = 'circle', size = 36, presence = 'none', className, style },
+  ref,
+) {
+  if (presence !== 'none') {
+    // The dot sits outside the clipped disc: a wrapper carries the element's box, the disc fills it.
+    const dot = Math.min(16, Math.max(8, Math.round(size * 0.25)))
+    return (
+      <span ref={ref} className={['relative inline-flex shrink-0', className].filter(Boolean).join(' ')} style={{ width: size, height: size, ...style }}>
+        <AvatarDisc displayName={displayName} initials={initials} image={image} tint={tint} shape={shape} size={size} />
+        <span
+          role="img"
+          aria-label={presence}
+          className="absolute bottom-0 end-0 rounded-full"
+          style={{ width: dot, height: dot, background: PRESENCE_COLOR[presence], boxShadow: '0 0 0 2px var(--color-surface-0)' }}
+        />
+      </span>
+    )
+  }
+  return <AvatarDisc ref={ref} displayName={displayName} initials={initials} image={image} tint={tint} shape={shape} size={size} className={className} style={style} />
+})
+
+Avatar.displayName = 'Avatar'
+
+const AvatarDisc = React.forwardRef<HTMLSpanElement, Omit<AvatarProps, 'presence'>>(function AvatarDisc(
   { displayName = '', initials, image, tint = 'auto', shape = 'circle', size = 36, className, style },
   ref,
 ) {
@@ -55,4 +90,4 @@ export const Avatar = React.forwardRef<HTMLSpanElement, AvatarProps>(function Av
   )
 })
 
-Avatar.displayName = 'Avatar'
+AvatarDisc.displayName = 'AvatarDisc'

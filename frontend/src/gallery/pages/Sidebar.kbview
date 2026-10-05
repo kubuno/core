@@ -1,0 +1,26 @@
+<!-- Sidebar: rows, sections, a folding group, the active row (two-way SelectedItem), a disabled row; and the Compact rail. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Direction="LeftToRight" Gap="24" WrapContents="true" CrossAlign="Start">
+  <Stack Width="256" Gap="8">
+    <Sidebar AccessibleName="Drive" SelectedItem="{Binding selected, Mode=TwoWay}" OnItemInvoked="item_invoked" BackColor="Surface" CornerRadius="12">
+      <SidebarItem x:Name="home" Text="My drive" Icon="HardDrive"/>
+      <SidebarItem x:Name="shared" Text="Shared with me" Icon="Users"/>
+      <SidebarItem x:Name="recent" Text="Recent" Icon="Clock"/>
+      <SidebarSection Text="Labels"/>
+      <SidebarItem x:Name="projects" Text="Projects" Icon="Folder" Expanded="true">
+        <SidebarItem x:Name="alpha" Text="Alpha" Icon="FolderOpen"/>
+        <SidebarItem x:Name="beta" Text="Beta" Icon="FolderOpen"/>
+      </SidebarItem>
+      <SidebarItem x:Name="archive" Text="Archive (disabled)" Icon="Archive" Enabled="false"/>
+      <SidebarItem x:Name="trash" Text="Trash" Icon="Trash2"/>
+    </Sidebar>
+    <Label Text="{Binding status}" Role="Meta" ForeColor="TextSecondary"/>
+  </Stack>
+  <Sidebar AccessibleName="Rail" DisplayMode="Compact" SelectedItem="{Binding selected}" BackColor="Surface" CornerRadius="12">
+    <SidebarItem x:Name="home2" Key="home" Text="My drive" Icon="HardDrive"/>
+    <SidebarItem x:Name="shared2" Key="shared" Text="Shared with me" Icon="Users"/>
+    <SidebarItem x:Name="recent2" Key="recent" Text="Recent" Icon="Clock"/>
+    <SidebarSection Text="Labels"/>
+    <SidebarItem x:Name="trash2" Key="trash" Text="Trash" Icon="Trash2"/>
+  </Sidebar>
+  <Sidebar AccessibleName="From a list" ItemsSource="{Binding rows}" Width="220" BackColor="Surface" CornerRadius="12"/>
+</Stack>

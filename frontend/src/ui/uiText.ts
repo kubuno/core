@@ -18,6 +18,7 @@ export const UI_FALLBACK: Record<string, string> = {
   // Generic
   'ui.close':        'Close',
   'ui.cancel':       'Cancel',
+  'ui.clear':        'Clear',
   'ui.retry':        'Retry',
   'ui.learn_more':   'Learn more',
   'ui.more_actions': 'More actions',
