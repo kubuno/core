@@ -12,6 +12,8 @@ export interface Accordion extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -106,6 +108,8 @@ export interface Avatar extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -186,6 +190,8 @@ export interface Badge extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -258,6 +264,8 @@ export interface Breadcrumb extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -344,6 +352,8 @@ export interface Button extends ElementHandle {
   loading: boolean
   /** A ContextMenu of the view that a click opens below the button (a drop-down button). */
   dropDownMenu: string
+  /** Web only: Submit sends the form the button is in (a container with HtmlTag="Form", its OnSubmit); Reset clears it. */
+  buttonType: "Button" | "Submit" | "Reset"
   /** Size of the icon: Small (16), Medium (20), Large (24), XLarge (32), a number of pixels, or width, height. Leave empty for the control's own size. */
   iconSize: string
   /** How an image that is not square fills the icon's box: Fit shows all of it, Fill covers the box, Stretch fits it to the box exactly, None keeps its own size. */
@@ -356,6 +366,8 @@ export interface Button extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -438,6 +450,8 @@ export interface Callout extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -522,6 +536,8 @@ export interface Card extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -600,6 +616,8 @@ export interface CheckBox extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -682,6 +700,8 @@ export interface CheckedListBox extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -754,6 +774,8 @@ export interface ColorField extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -852,6 +874,8 @@ export interface ComboBox extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -956,6 +980,8 @@ export interface DataTable extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1040,6 +1066,8 @@ export interface DatePicker extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1116,6 +1144,8 @@ export interface DockArea extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1218,6 +1248,8 @@ export interface Dropdown extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1308,6 +1340,8 @@ export interface EmptyState extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1396,6 +1430,8 @@ export interface FloatingWindow extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1468,6 +1504,8 @@ export interface GradientField extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1544,6 +1582,8 @@ export interface GroupBox extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1618,6 +1658,8 @@ export interface Icon extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1704,6 +1746,8 @@ export interface IconButton extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1794,12 +1838,18 @@ export interface Label extends ElementHandle {
   fontWeight: "Default" | "Regular" | "Medium" | "SemiBold" | "Bold"
   /** Web only: upright or italic text. */
   fontStyle: "Normal" | "Italic"
+  /** Web only: the HTML element of the text — a paragraph, a heading level (H1–H6, announced as such by screen readers), an inline run (Span)… */
+  htmlTag: "P" | "Span" | "Div" | "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "Strong" | "Em" | "Small" | "Label" | "Code" | "Li"
+  /** Web only: the text keeps its parent's font size instead of its role's (a run inside a sentence). */
+  inheritFontSize: boolean
   /** Name that screen readers announce for the control. Leave empty to use its text. */
   accessibleName: string
   /** Description that screen readers announce for the control. */
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1874,12 +1924,16 @@ export interface LinkLabel extends ElementHandle {
   fontWeight: "Default" | "Regular" | "Medium" | "SemiBold" | "Bold"
   /** Web only: upright or italic text. */
   fontStyle: "Normal" | "Italic"
+  /** Web only: the text keeps its parent's font size instead of its role's (a run inside a sentence). */
+  inheritFontSize: boolean
   /** Name that screen readers announce for the control. Leave empty to use its text. */
   accessibleName: string
   /** Description that screen readers announce for the control. */
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -1964,6 +2018,8 @@ export interface ListBox extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2044,6 +2100,8 @@ export interface ListView extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2124,6 +2182,8 @@ export interface MaskedField extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2242,6 +2302,8 @@ export interface NumericField extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2322,6 +2384,8 @@ export interface PaintBox extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2400,6 +2464,8 @@ export interface PictureBox extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2482,6 +2548,8 @@ export interface Popover extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2566,6 +2634,8 @@ export interface ProgressBar extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2646,6 +2716,8 @@ export interface RadioButton extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2726,6 +2798,8 @@ export interface RadioGroup extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2804,6 +2878,8 @@ export interface SearchField extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2876,6 +2952,8 @@ export interface Separator extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -2954,6 +3032,8 @@ export interface SettingsRow extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3030,6 +3110,8 @@ export interface Sidebar extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3140,6 +3222,8 @@ export interface Slider extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3212,6 +3296,8 @@ export interface Spinner extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3286,6 +3372,8 @@ export interface Splitter extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3356,6 +3444,8 @@ export interface StatusBar extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3466,6 +3556,8 @@ export interface Stepper extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3544,6 +3636,8 @@ export interface Switch extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3628,6 +3722,8 @@ export interface Tabs extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3716,6 +3812,8 @@ export interface TextArea extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3798,6 +3896,10 @@ export interface TextField extends ElementHandle {
   rightIcon: string
   /** Web only: Standard (label above the box) or Outlined (floating label inside the box, the OutlinedField). */
   variant: "Standard" | "Outlined"
+  /** Web only: the kind of text the field takes — Password masks it, Email / Url / Tel bring the matching keyboard on a phone. */
+  inputType: "Text" | "Password" | "Email" | "Url" | "Tel" | "Search" | "Number"
+  /** Web only: what the browser may fill in the field (an HTML autocomplete token: current-password, new-password, email, off…). */
+  autoComplete: string
   /** Lets the text be selected and copied but not changed. */
   readOnly: boolean
   /** Largest number of characters that can be typed. */
@@ -3808,6 +3910,8 @@ export interface TextField extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3888,6 +3992,8 @@ export interface Toolbar extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -3984,6 +4090,8 @@ export interface TreeView extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
@@ -4080,6 +4188,8 @@ export interface WorkspaceShell extends ElementHandle {
   accessibleDescription: string
   /** Kind of element that screen readers announce. Default uses the control's own kind. */
   accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton"
+  /** Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere). */
+  accessibleHidden: boolean
   /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
   backColor: string
   /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */

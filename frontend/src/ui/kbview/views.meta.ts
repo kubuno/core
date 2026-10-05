@@ -5,7 +5,7 @@
  */
 import type { ComponentProps } from 'react'
 import type { Panel, ScrollArea, Stack, TableLayoutPanel, UserControl } from '../../views/layout'
-import type { Repeater } from '../../views/controls'
+import type { ReactHost, Repeater } from '../../views/controls'
 import type { ElementMeta, PropertyMeta } from './types.ts'
 
 const CONTAINER_CHAIN = ['ContainerBase', 'ScrollableControl', 'Control', 'Component'] as const
@@ -60,6 +60,23 @@ const DIVIDER: PropertyMeta<{ dividerColor?: string }> = {
   to: { prop: 'dividerColor' },
 }
 
+/** Web-only: the HTML element of a container (WV-11: a migrated screen keeps its sections, forms and lists — the accessibility tree reads them). */
+const CONTAINER_TAGS = ['Div', 'Section', 'Nav', 'Header', 'Footer', 'Main', 'Aside', 'Article', 'Form', 'Fieldset', 'Figure', 'Ul', 'Ol', 'Li', 'Label', 'Span', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'] as const
+const CONTAINER_TAG: PropertyMeta<{ as?: string }> = {
+  name: 'HtmlTag', kind: { Enum: CONTAINER_TAGS }, default: 'Div', category: 'Accessibility', webOnly: true,
+  doc: 'Web only: the HTML element of the container — a section, a navigation, a form (OnSubmit), a list and its items… Screen readers announce it.',
+  docFr: "Web uniquement : l'élément HTML du conteneur — une section, une navigation, un formulaire (OnSubmit), une liste et ses éléments… Les lecteurs d'écran l'annoncent.",
+  to: { prop: 'as', values: Object.fromEntries(CONTAINER_TAGS.map((t) => [t, t.toLowerCase()])) as Record<(typeof CONTAINER_TAGS)[number], string> },
+}
+
+/** Web-only: a container that is a form (`HtmlTag="Form"`) raises OnSubmit (Enter in one of its fields, a Submit button). */
+const ON_SUBMIT = {
+  name: 'OnSubmit', category: 'Action', args: 'EventArgs',
+  doc: 'Web only: occurs when the form is submitted (HtmlTag="Form": Enter in one of its fields, a button with ButtonType="Submit"). The handler calls e.native.preventDefault() to stay on the page.',
+  docFr: 'Web uniquement : se produit quand le formulaire est envoyé (HtmlTag="Form" : Entrée dans un de ses champs, un bouton ButtonType="Submit"). Le gestionnaire appelle e.native.preventDefault() pour rester sur la page.',
+  from: { dom: 'submit', args: 'dom' },
+} as const
+
 const DOCK_LAYOUT: PropertyMeta<{ layout?: 'Dock' | 'Absolute' }> = {
   name: 'Layout', kind: { Enum: ['Dock', 'Absolute'] }, default: 'Dock', category: 'Layout', webOnly: true,
   doc: 'Web: Dock lays the children out as bands (Dock), Absolute places them by X and Y (the desktop designer\'s free positioning).',
@@ -92,8 +109,8 @@ export const PanelMeta = {
   children: 'List',
   layoutKind: 'DockAnchor',
   defaultEvent: 'OnClick',
-  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER],
-  events: [],
+  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER, CONTAINER_TAG],
+  events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,
   designDefaults: { size: [200, 100] },
   web: { module: '@kubuno/views', export: 'Panel', domRoot: 'ref', content: 'children' },
@@ -131,8 +148,9 @@ export const StackMeta = {
       to: { prop: 'justify' } },
     HREF,
     DIVIDER,
+    CONTAINER_TAG,
   ],
-  events: [],
+  events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,
   designDefaults: { size: [200, 100] },
   web: { module: '@kubuno/views', export: 'Stack', domRoot: 'ref', content: 'children' },
@@ -196,6 +214,34 @@ export const RepeaterMeta = {
   designDefaults: { size: [240, 160] },
   web: { module: '@kubuno/views', export: 'Repeater', domRoot: 'none', content: 'children', template: true },
 } as const satisfies ElementMeta<ComponentProps<typeof Repeater>>
+
+/**
+ * `ReactHost` (web only): any React component, rendered as it is — the migration's escape hatch for what is not a
+ * view yet (WEB-VIEWS §2.3): the codemod cuts such parts out with their values as `Props`.
+ */
+export const ReactHostMeta = {
+  name: 'ReactHost',
+  doc: 'Web only: renders a React component given by a binding (Component), with the props of another binding (Props). The migration keeps there what is not a view yet.',
+  docFr: "Web uniquement : affiche un composant React donné par une liaison (Component), avec les props d'une autre liaison (Props). La migration y garde ce qui n'est pas encore une vue.",
+  family: 'data',
+  baseChain: ['ReactHost', 'Control', 'Component'],
+  children: 'None',
+  defaultEvent: null,
+  properties: [
+    { name: 'Component', kind: 'String', default: '', category: 'Data', bindable: true, editor: 'object',
+      doc: 'The React component rendered: a binding to a field or getter of the code-behind holding it.',
+      docFr: 'Le composant React affiché : une liaison vers un champ ou un accesseur du code-behind qui le contient.',
+      to: { prop: 'component' } },
+    { name: 'Props', kind: 'String', default: '', category: 'Data', bindable: true, editor: 'object',
+      doc: 'The props given to the component: a binding to an object (memoize it: a new object on every read re-renders the component).',
+      docFr: 'Les props données au composant : une liaison vers un objet (à mémoïser : un nouvel objet à chaque lecture redessine le composant).',
+      to: { prop: 'props' } },
+  ],
+  events: [],
+  inheritedMap: {},
+  designDefaults: { size: [240, 120] },
+  web: { module: '@kubuno/views', export: 'ReactHost', domRoot: 'wrapper' },
+} as const satisfies ElementMeta<ComponentProps<typeof ReactHost>>
 
 export const TableLayoutPanelMeta = {
   name: 'TableLayoutPanel',

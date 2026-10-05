@@ -58,6 +58,8 @@ interface ContainerBase {
   cornerRadius?: number
   /** Web `DividerColor`: a line between two children (under each one but the last), in this colour. */
   dividerColor?: string
+  /** Web `HtmlTag`: the HTML element of the container (a `section`, a `form`, a list…); `div` by default. */
+  as?: string
   /** @internal — given by the renderer to every element of `@kubuno/views`. */
   __view?: Internals
   /** @internal */
@@ -75,7 +77,7 @@ const DISABLED_OPACITY = 0.6
 function box(p: ContainerBase, layout: CSSProperties, extra: Record<string, unknown>, ref: Ref<HTMLElement>, divideAcross = false): ReactElement {
   const { className, style, disabled, tabIndex, role, href, onClick, surface, cornerRadius, dividerColor } = p
   const isButton = role === 'button' && !href
-  const tag = isButton ? 'button' : href ? 'a' : 'div'
+  const tag = isButton ? 'button' : href ? 'a' : (p.as ?? 'div')
   const own: CSSProperties = {}
   if (surface && surface !== 'None') own.backgroundColor = SURFACES[surface]
   if (cornerRadius !== undefined && Number.isFinite(cornerRadius) && cornerRadius > 0) {

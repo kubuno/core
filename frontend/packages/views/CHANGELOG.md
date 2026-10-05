@@ -8,6 +8,9 @@ under the published version number.
 
 ### Added
 
+- **Containers keep their HTML element.** `Panel` and `Stack` take `HtmlTag` (`section`, `nav`, `form`, `ul` / `li`…)
+  and a form raises `OnSubmit`; any element takes `AccessibleHidden` (`aria-hidden`). `ReactHost` is registered for
+  interpreted plans (the designer).
 - **`{Res}` arguments and plurals.** A plan's `{Res}` may carry arguments (`{Res files, Count={Binding n}, Name=Kim}`):
   the host's resolver receives them (`setResourceResolver((key, set, args) => …)`, `interpolationOptions(args)` turns
   them into i18next options: each name as written and with a lower-case first letter, `Count` as a number) and a

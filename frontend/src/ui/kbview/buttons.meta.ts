@@ -42,6 +42,10 @@ export const ButtonMeta = {
       doc: 'A ContextMenu of the view that a click opens below the button (a drop-down button).',
       docFr: "ContextMenu de la vue qu'un clic ouvre sous le bouton (bouton déroulant).",
       to: { runtime: 'drop-down-menu' } },
+    { name: 'ButtonType', kind: { Enum: ['Button', 'Submit', 'Reset'] }, default: 'Button', category: 'Behavior', webOnly: true,
+      doc: 'Web only: Submit sends the form the button is in (a container with HtmlTag="Form", its OnSubmit); Reset clears it.',
+      docFr: 'Web uniquement : Submit envoie le formulaire qui contient le bouton (un conteneur HtmlTag="Form", son OnSubmit) ; Reset le vide.',
+      to: { prop: 'type', values: { Button: 'button', Submit: 'submit', Reset: 'reset' } } },
     ...ICON_PROPERTIES,
   ],
   events: [

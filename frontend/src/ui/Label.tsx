@@ -49,7 +49,14 @@ export type TextStyle = 'Normal' | 'Italic'
 /** A size utility written by the caller wins over the role's step (migration: hand-written sizes). */
 const HAS_SIZE = /(^|\s)(text-(xs|sm|base|lg|xl|[2-9]xl)|text-\[\d)/
 
+/** The HTML element of a `Label` (web `HtmlTag`): a paragraph by default, a heading, an inline run… */
+export type TextTag = 'p' | 'span' | 'div' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'strong' | 'em' | 'small' | 'label' | 'code' | 'li'
+
 export interface LabelProps extends Omit<React.HTMLAttributes<HTMLParagraphElement>, 'role'> {
+  /** The element rendered (default `p`): the text's HTML semantics (a heading level, an inline run). */
+  as?: TextTag
+  /** No role size class: the text keeps its parent's font size (a run inside a sentence, a migrated screen's text without its own size). */
+  inheritSize?: boolean
   text?: React.ReactNode
   role?: TextRole
   textAlign?: TextAlign
@@ -66,11 +73,11 @@ export interface LabelProps extends Omit<React.HTMLAttributes<HTMLParagraphEleme
  * from theme tokens (`ForeColor`), sizes from the role.
  */
 export const Label = React.forwardRef<HTMLParagraphElement, LabelProps>(function Label(
-  { text, role = 'Body', textAlign, overflow = 'Ellipsis', weight, fontStyle, ariaRole, className, children, ...rest },
+  { text, role = 'Body', textAlign, overflow = 'Ellipsis', weight, fontStyle, ariaRole, as: Tag = 'p', inheritSize, className, children, ...rest },
   ref,
 ) {
   const cls = [
-    className && HAS_SIZE.test(className) ? undefined : TEXT_ROLE_CLASS[role],
+    inheritSize || (className && HAS_SIZE.test(className)) ? undefined : TEXT_ROLE_CLASS[role],
     ALIGN_CLASS(textAlign),
     OVERFLOW_CLASS[overflow],
     weight ? TEXT_WEIGHT_CLASS[weight] : undefined,
@@ -78,9 +85,8 @@ export const Label = React.forwardRef<HTMLParagraphElement, LabelProps>(function
     className,
   ].filter(Boolean).join(' ')
   return (
-    <p ref={ref} role={ariaRole} className={cls || undefined} {...rest}>
-      {text ?? children}
-    </p>
+    // createElement: the props of a paragraph fit every text tag (a heading, a span…).
+    React.createElement(Tag, { ref, role: ariaRole, className: cls || undefined, ...rest }, text ?? children)
   )
 })
 
@@ -89,6 +95,8 @@ Label.displayName = 'Label'
 export interface LinkLabelProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
   text?: React.ReactNode
   role?: TextRole
+  /** No role size class: the link keeps its parent's font size. */
+  inheritSize?: boolean
   weight?: TextWeight
   fontStyle?: TextStyle
 }
@@ -98,10 +106,10 @@ export interface LinkLabelProps extends React.AnchorHTMLAttributes<HTMLAnchorEle
  * decides where to go (SPA routing) — while a middle or modified click opens the address as any link does.
  */
 export const LinkLabel = React.forwardRef<HTMLAnchorElement, LinkLabelProps>(function LinkLabel(
-  { text, role = 'Body', weight, fontStyle, className, onClick, href, children, ...rest },
+  { text, role = 'Body', weight, fontStyle, inheritSize, className, onClick, href, children, ...rest },
   ref,
 ) {
-  const cls = [className && HAS_SIZE.test(className) ? undefined : TEXT_ROLE_CLASS[role], weight ? TEXT_WEIGHT_CLASS[weight] : undefined, fontStyle === 'Italic' ? 'italic' : undefined, className].filter(Boolean).join(' ')
+  const cls = [inheritSize || (className && HAS_SIZE.test(className)) ? undefined : TEXT_ROLE_CLASS[role], weight ? TEXT_WEIGHT_CLASS[weight] : undefined, fontStyle === 'Italic' ? 'italic' : undefined, className].filter(Boolean).join(' ')
   return (
     <a
       ref={ref}

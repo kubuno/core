@@ -11,6 +11,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Web views keep the page structure screen readers rely on.** A view can say that a text is a heading or an
+  inline run, that a container is a section, a navigation, a form or a list, that a backdrop is hidden from screen
+  readers, that a field is a password or an e-mail address and what the browser may fill in, and that a button
+  submits its form — so a screen moved to views reads exactly as before.
 - **Translations of web views in `.kbres` files, with counts and names in the text.** Screens built as views can
   keep their strings in `.kbres` resource files (one per language, the format of the desktop applications) as well
   as in the existing dictionaries, and a text can include a number or a name and take the right plural form for

@@ -8,6 +8,10 @@ under the published version number.
 
 ### Added
 
+- **`Label` keeps the HTML semantics of a text.** `as` renders it as a heading (`h1`–`h6`), an inline `span`, a
+  `strong`… instead of a paragraph, and `inheritSize` (also on `LinkLabel`) leaves out the role's size class so the
+  text keeps its parent's font size. The registry gains `Label HtmlTag` / `InheritFontSize`, `LinkLabel
+  InheritFontSize`, `TextField InputType` / `AutoComplete`, `Button ButtonType` and the `ReactHost` element.
 - **`GroupBox`, `SettingsRow`, `RadioGroup` and `PictureBox` components.** A titled group of settings with an
   optional help line; one settings row (the setting's name and help line in a 240 px column beside its control,
   stacked above it on a phone, a line between rows); a set of exclusive options built on `Radio`, one native

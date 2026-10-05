@@ -25,6 +25,21 @@ const FONT_STYLE = {
   to: { prop: 'fontStyle', values: { Normal: 'Normal', Italic: 'Italic' } },
 } as const
 
+/** Web-only: the HTML element of a text (WV-11, the migration keeps the screens' semantics: headings, inline runs). */
+const TEXT_TAGS = ['P', 'Span', 'Div', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'Strong', 'Em', 'Small', 'Label', 'Code', 'Li'] as const
+const HTML_TAG = {
+  name: 'HtmlTag', kind: { Enum: TEXT_TAGS }, default: 'P', category: 'Accessibility', webOnly: true,
+  doc: 'Web only: the HTML element of the text — a paragraph, a heading level (H1–H6, announced as such by screen readers), an inline run (Span)…',
+  docFr: "Web uniquement : l'élément HTML du texte — un paragraphe, un niveau de titre (H1–H6, annoncé comme tel par les lecteurs d'écran), un passage en ligne (Span)…",
+  to: { prop: 'as', values: { P: 'p', Span: 'span', Div: 'div', H1: 'h1', H2: 'h2', H3: 'h3', H4: 'h4', H5: 'h5', H6: 'h6', Strong: 'strong', Em: 'em', Small: 'small', Label: 'label', Code: 'code', Li: 'li' } },
+} as const
+const INHERIT_FONT_SIZE = {
+  name: 'InheritFontSize', kind: 'Bool', default: 'false', category: 'Appearance', webOnly: true,
+  doc: "Web only: the text keeps its parent's font size instead of its role's (a run inside a sentence).",
+  docFr: "Web uniquement : le texte garde la taille de police de son parent au lieu de celle de son rôle (un passage dans une phrase).",
+  to: { prop: 'inheritSize' },
+} as const
+
 export const LabelMeta = {
   name: 'Label',
   doc: 'A line or paragraph of text, in one of the shared typographic roles.',
@@ -50,6 +65,8 @@ export const LabelMeta = {
       to: { prop: 'overflow', values: { Ellipsis: 'Ellipsis', Clip: 'Clip', Wrap: 'Wrap' } } },
     FONT_WEIGHT,
     FONT_STYLE,
+    HTML_TAG,
+    INHERIT_FONT_SIZE,
   ],
   events: [],
   inheritedMap: { AccessibleName: { prop: 'aria-label' }, TabIndex: { prop: 'tabIndex' }, Class: { prop: 'className' } },
@@ -78,6 +95,7 @@ export const LinkLabelMeta = {
       to: { prop: 'href' } },
     FONT_WEIGHT,
     FONT_STYLE,
+    INHERIT_FONT_SIZE,
   ],
   events: [
     { name: 'OnClick', category: 'Action', args: 'MouseEventArgs',

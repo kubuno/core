@@ -49,6 +49,12 @@ export const CONTROL_PROPERTIES: readonly PropertyMeta<never>[] = [
     to: { runtime: 'aria-role' },
   },
   {
+    name: 'AccessibleHidden', kind: 'Bool', default: 'false', category: 'Accessibility', webOnly: true,
+    doc: 'Web only: hides the element and its children from screen readers (a decorative backdrop, a duplicate of a text read elsewhere).',
+    docFr: "Web uniquement : cache l'élément et ses enfants aux lecteurs d'écran (un voile décoratif, le doublon d'un texte lu ailleurs).",
+    to: { runtime: 'aria-hidden' },
+  },
+  {
     name: 'BackColor', kind: 'String', default: '', category: 'Appearance', editor: 'color', typeConverter: 'Color',
     doc: "Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's.",
     docFr: 'Couleur de fond : une couleur du thème (elle suit les thèmes clair et sombre) ou une couleur de votre choix. Laisser vide pour prendre celle du parent.',

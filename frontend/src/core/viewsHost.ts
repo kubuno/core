@@ -10,14 +10,14 @@ import i18n from 'i18next'
 
 import * as ui from '@ui'
 import { DockArea, WorkspaceShell } from './shell/workspace'
-import { Panel, Repeater, ScrollArea, Stack, TableLayoutPanel, UserControl, interpolationOptions, invalidateResources, registerElements, setIconResolver, setResourceResolver } from '@kubuno/views'
+import { Panel, ReactHost, Repeater, ScrollArea, Stack, TableLayoutPanel, UserControl, interpolationOptions, invalidateResources, registerElements, setIconResolver, setResourceResolver } from '@kubuno/views'
 
 import { findIcon } from './utils/iconMap'
 
 registerElements('@ui', ui as unknown as Record<string, unknown>)
 registerElements('@kubuno/sdk', { DockArea, WorkspaceShell })
 // The elements the runtime renders itself (layout containers, Repeater), for interpreted plans.
-registerElements('@kubuno/views', { Panel, Repeater, ScrollArea, Stack, TableLayoutPanel, UserControl })
+registerElements('@kubuno/views', { Panel, ReactHost, Repeater, ScrollArea, Stack, TableLayoutPanel, UserControl })
 setIconResolver((name) => findIcon(name) ?? undefined)
 // `{Res key, Count={Binding n}, Name=…}`: the arguments are i18next's interpolation options (`{{count}}`,
 // `{{name}}`) and `count` selects the plural form (`key_one`, `key_other`…), exactly as `t(key, { count })`.

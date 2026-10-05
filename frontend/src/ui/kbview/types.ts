@@ -88,7 +88,7 @@ export type RuntimeTarget =
   /** `Enabled="false"` on a component without a `disabled` prop: the DOM root is made inert. */
   | 'enabled'
   /** `aria-label` / `aria-describedby` / `role` on the DOM root. */
-  | 'aria-label' | 'aria-description' | 'aria-role'
+  | 'aria-label' | 'aria-description' | 'aria-role' | 'aria-hidden'
   /** `tabindex` on the DOM root (`TabIndex`, `TabStop`). */
   | 'tab-index' | 'tab-stop'
   /** Wraps the element in the `@ui` `Tooltip`. */
@@ -160,7 +160,7 @@ export type ArgsAdapter =
 export type DomEvent =
   | 'click' | 'dblclick' | 'auxclick' | 'mousedown' | 'mouseup' | 'mousemove' | 'mouseenter'
   | 'mouseleave' | 'mousehover' | 'wheel' | 'keydown' | 'keypress' | 'keyup' | 'focusin'
-  | 'focus' | 'focusout' | 'blur' | 'resize' | 'drop' | 'dragenter' | 'dragover' | 'dragleave'
+  | 'focus' | 'focusout' | 'blur' | 'resize' | 'drop' | 'dragenter' | 'dragover' | 'dragleave' | 'submit'
 
 // ── Type-level helpers: the compile-time link to the component's Props ──
 

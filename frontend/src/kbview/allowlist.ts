@@ -152,6 +152,17 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'element-web-only', element: 'RadioGroup', reason: 'New element (WEB-VIEWS §3): the radio list copied in 20 module repositories (desktop proposal: RadioButtons, XML_VIEWS §7). Web first; the desktop element comes with the desktop side of WV-5a.' },
   { kind: 'property-web-only', element: 'GroupBox', member: 'Description', reason: 'Web settings sections carry a help line under their title. Proposed for the desktop GroupBox.' },
   { kind: 'property-missing-on-web', element: 'PictureBox', member: 'ImageData', reason: 'Image bytes from a Rust Shared<Vec<u8>>: a web picture is an address (Image, a data: or blob: URL for bytes).' },
+  // ── WV-11: what migrated screens need to keep their HTML semantics (the accessibility tree is part of the parity check) ──
+  { kind: 'element-web-only', element: 'ReactHost', reason: 'The migration\'s escape hatch (WEB-VIEWS §2.3): a React component that is not a view yet, given by a binding. Web only: the desktop has no React.' },
+  { kind: 'property-web-only', element: 'Label', member: 'HtmlTag', reason: 'Web: the HTML element of a text — a heading level (h1–h6, read as a heading by screen readers), an inline run (span)… The desktop Label is a run of text drawn by the control; its accessibility role comes from AccessibleRole.' },
+  ...(['Label', 'LinkLabel'] as const).map((element): AllowEntry => ({ kind: 'property-web-only', element, member: 'InheritFontSize', reason: 'Web: a text keeps its parent\'s font size (a run inside a sentence) — CSS inheritance, which desktop controls do not have.' })),
+  ...(['Stack', 'Panel'] as const).flatMap((element): AllowEntry[] => [
+    { kind: 'property-web-only', element, member: 'HtmlTag', reason: 'Web: the HTML element of a container (section, nav, form, list and item…), which screen readers announce. Desktop containers expose their role through AccessibleRole.' },
+    { kind: 'event-web-only', element, member: 'OnSubmit', reason: 'Web: a container that is a form (HtmlTag="Form") is submitted by Enter or a submit button. WinForms has AcceptButton on the form instead.' },
+  ]),
+  { kind: 'property-web-only', element: '*', level: 'Control', member: 'AccessibleHidden', reason: 'Web aria-hidden: an element hidden from screen readers (a decorative backdrop). Desktop controls leave the accessibility tree with AccessibleRole None.' },
+  ...(['InputType', 'AutoComplete'] as const).map((member): AllowEntry => ({ kind: 'property-web-only', element: 'TextField', member, reason: 'Web: the input type (password, email… — the masked field and the phone keyboards) and the browser\'s autofill token. The desktop masks with UseSystemPasswordChar (not on the web yet).' })),
+  { kind: 'property-web-only', element: 'Button', member: 'ButtonType', reason: 'Web: a submit or reset button of its form (HTML button type). WinForms marks the form\'s AcceptButton / CancelButton instead.' },
   // ── WV-5b navigation elements ──
   ...NAV_ALLOWLIST,
   // ── WV-5b list elements (allowlist.lists.ts) ──

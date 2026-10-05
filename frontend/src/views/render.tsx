@@ -186,6 +186,7 @@ function applyRuntime(t: DomTargets, runtime: string, name: string, v: unknown):
   switch (runtime) {
     case 'aria-label': t.attrs['aria-label'] = s || null; break
     case 'aria-description': t.attrs['aria-description'] = s || null; break
+    case 'aria-hidden': t.attrs['aria-hidden'] = v === true || s === 'true' ? 'true' : null; break
     case 'aria-role': t.attrs.role = s && s !== 'Default' ? (ROLES[s] ?? s.toLowerCase()) : null; break
     case 'tab-index': t.attrs.tabindex = s === '' ? null : s; break
     case 'tab-stop': if (v === false) t.attrs.tabindex = '-1'; break
