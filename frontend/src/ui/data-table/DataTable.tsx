@@ -20,6 +20,8 @@ import { useColumnResize } from './useColumnResize'
 import type { DataTableColumn, DataTableProps, DataTableSort } from './types'
 
 const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' } as const
+/** Vertical padding of the cells per `density`. */
+const DENSITY = { compact: 'py-1.5', normal: 'py-2.5', comfortable: 'py-3.5' } as const
 
 /// How a sortable header's button positions itself inside its cell.
 ///
@@ -64,14 +66,15 @@ const HEADER_ALIGN = {
  * that distinction to be made correctly.
  */
 export function DataTable<T>({
-  rows, columns, rowKey,
+  rows, columns, rowKey: rowKeyProp,
   loading = false, skeletonRows = 5, error, onRetry,
   filtered = false, onClearFilters, emptyState, noResultsState,
   defaultSort = null, sort: sortProp, onSortChange, manualSort = false,
   pageSize: pageSizeProp = 25, pageSizeOptions = [10, 25, 50, 100], onPageSizeChange,
   page: pageProp, onPageChange, totalRows, manualPagination = false,
   selectable = false, selectedIds, onSelectionChange, bulkActions,
-  rowActions, onRowClick,
+  rowActions, onRowClick, onRowActivate, selectedIndex, onSelectedIndexChange,
+  emptyTitle, emptyText, density = 'normal',
   configurableColumns = false, hiddenColumns, onHiddenColumnsChange,
   resizableColumns = true,
   title, toolbar,
@@ -79,6 +82,20 @@ export function DataTable<T>({
   className, t,
 }: DataTableProps<T>) {
   const tr = uiT(t)
+  // A row's index in `rows` (the `.kbview` SelectedIndex / OnRowActivated), and the fallback row key.
+  const indexOf = useMemo(() => new Map(rows.map((r, i) => [r, i] as const)), [rows])
+  const rowKey = useMemo(() => rowKeyProp ?? ((r: T) => String(indexOf.get(r) ?? -1)), [rowKeyProp, indexOf])
+  // ── Single selection (uncontrolled unless `selectedIndex` is supplied) ─────
+  const single = selectedIndex !== undefined || !!onSelectedIndexChange
+  const [singleState, setSingleState] = useState(-1)
+  const current = selectedIndex ?? singleState
+  const pick = (index: number) => {
+    if (!single || index === current) return
+    if (selectedIndex === undefined) setSingleState(index)
+    onSelectedIndexChange?.(index)
+  }
+  const rowsFocusable = single || !!onRowActivate
+  const cellPad = DENSITY[density]
   const rootRef = useRef<HTMLDivElement>(null)
   const width = useContainerWidth(rootRef)
   // `width === null` only on the very first render (before the layout effect):
@@ -231,6 +248,21 @@ export function DataTable<T>({
     }
     return items
   }
+  const rowKeyDown = (e: React.KeyboardEvent<HTMLTableRowElement>, row: T, index: number) => {
+    if (e.target !== e.currentTarget) return
+    const go = (next: Element | null) => {
+      if (!(next instanceof HTMLTableRowElement)) return
+      e.preventDefault()
+      next.focus()
+      next.click()
+    }
+    if (e.key === 'ArrowDown') go(e.currentTarget.nextElementSibling)
+    else if (e.key === 'ArrowUp') go(e.currentTarget.previousElementSibling)
+    else if (e.key === 'Home') go(e.currentTarget.parentElement?.firstElementChild ?? null)
+    else if (e.key === 'End') go(e.currentTarget.parentElement?.lastElementChild ?? null)
+    else if (e.key === 'Enter' && onRowActivate) { e.preventDefault(); onRowActivate(row, index) }
+    else if (e.key === ' ') { e.preventDefault(); pick(index) }
+  }
   const actionsFor = (row: T) => (rowActions ?? []).filter(a => !a.hidden?.(row))
   const hasActionsColumn = !!rowActions?.length
 
@@ -267,8 +299,8 @@ export function DataTable<T>({
         t={t}
         variant="first-use"
         icon={<Inbox size={24} />}
-        title={tr('ui.dt_empty_title')}
-        description={tr('ui.dt_empty_desc')}
+        title={emptyTitle ?? tr('ui.dt_empty_title')}
+        description={emptyText ?? tr('ui.dt_empty_desc')}
       />
     )
   })()
@@ -419,13 +451,18 @@ export function DataTable<T>({
               <tbody>
                 {pageRows.map((row, i) => {
                   const id = rowKey(row)
-                  const isSel = selected.has(id)
+                  const index = indexOf.get(row) ?? -1
+                  const isSel = selected.has(id) || (single && index === current)
                   const actions = actionsFor(row)
                   return (
                     <tr
                       key={id}
-                      aria-selected={selectable ? isSel : undefined}
-                      onClick={onRowClick ? () => onRowClick(row) : undefined}
+                      aria-selected={selectable || single ? isSel : undefined}
+                      onClick={onRowClick || single ? () => { pick(index); onRowClick?.(row) } : undefined}
+                      onDoubleClick={onRowActivate ? () => onRowActivate(row, index) : undefined}
+                      // Rows take the focus one at a time (roving): Up / Down move it and select, Enter activates.
+                      tabIndex={rowsFocusable ? (index === current || (current < 0 && i === 0) ? 0 : -1) : undefined}
+                      onKeyDown={rowsFocusable ? e => rowKeyDown(e, row, index) : undefined}
                       onContextMenu={openCopyMenu}
                       /* Zebra on `surface-1`, hover one step further on `surface-2`.
                        * The two must not share a tone: hovering an odd row would then
@@ -436,13 +473,14 @@ export function DataTable<T>({
                         isSel
                           ? 'bg-primary-light'
                           : cn(i % 2 === 1 && 'bg-surface-1', 'hover:bg-surface-2'),
-                        onRowClick && 'cursor-pointer',
+                        (onRowClick || single) && 'cursor-pointer',
+                        rowsFocusable && 'focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
                       )}
                     >
                       {selectable && (
-                        <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                        <td className={cn('px-3', cellPad)} onClick={e => e.stopPropagation()}>
                           <Checkbox
-                            checked={isSel}
+                            checked={selected.has(id)}
                             onChange={() => toggleRow(id)}
                             label={tr('ui.dt_select_row')}
                             labelClassName="sr-only"
@@ -456,7 +494,7 @@ export function DataTable<T>({
                           // would drift by one as soon as a checkbox or an actions
                           // cell is present.
                           data-col={col.id}
-                          className={cn('px-4 py-2.5 text-text-primary', ALIGN[col.align ?? 'left'])}
+                          className={cn('px-4 text-text-primary', cellPad, ALIGN[col.align ?? 'left'])}
                           style={{ fontSize: 'var(--kb-text-body)' }}
                         >
                           {col.cell(row)}

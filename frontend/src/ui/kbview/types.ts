@@ -149,6 +149,8 @@ export type ArgsAdapter =
   | 'row'
   /** The callback receives the new sort: `e.value` = the sorted column's binding path. */
   | 'sort'
+  /** The callback receives `(index, checked)`: `ItemCheckEventArgs` (`e.index`, `e.checked`, `e.value` = checked). */
+  | 'item-check'
   /** DOM events listened to on the element's root by the runtime (common events). */
   | 'dom'
   /** A `PaintBox` paints: `PaintEventArgs` (the 2D context, the size in CSS px, the pixel ratio, the data). */
@@ -432,6 +434,7 @@ export const EVENT_ARGS = {
   ItemEventArgs: { chain: ['ItemEventArgs', 'EventArgs'], mutable: false, cancelable: false },
   ItemActivateEventArgs: { chain: ['ItemActivateEventArgs', 'EventArgs'], mutable: false, cancelable: false },
   PaintEventArgs: { chain: ['PaintEventArgs', 'EventArgs'], mutable: false, cancelable: false },
+  ItemCheckEventArgs: { chain: ['ItemCheckEventArgs', 'EventArgs'], mutable: false, cancelable: false },
 } as const satisfies Record<string, EventArgsInfo>
 
 export type EventArgsName = keyof typeof EVENT_ARGS

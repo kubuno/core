@@ -1,0 +1,15 @@
+<!-- DataTable: SelectedIndex two-way, OnRowActivated (double click, Enter), Density, EmptyTitle / EmptyText. -->
+<Stack xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x" Gap="20">
+  <Stack Gap="6">
+    <DataTable ItemsSource="{Binding people}" SelectedIndex="{Binding person, Mode=TwoWay}" Density="Compact" PageSize="0"
+               Title="Équipe" OnRowActivated="row_activated" AccessibleDescription="gallery-table">
+      <Column Header="Nom" Binding="{Binding Name}"/>
+      <Column Header="Rôle" Binding="{Binding Role}"/>
+      <Column Header="Projets" Binding="{Binding Projects}" Alignment="Right" Width="100"/>
+    </DataTable>
+    <Label Text="{Binding personText}" Role="Meta" ForeColor="TextSecondary"/>
+  </Stack>
+  <DataTable ItemsSource="{Binding none}" EmptyTitle="Aucun membre" EmptyText="Invitez une personne pour commencer." Density="Comfortable">
+    <Column Header="Nom" Binding="{Binding Name}"/>
+  </DataTable>
+</Stack>

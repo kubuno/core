@@ -73,6 +73,13 @@ export interface PaintEventArgs extends EventArgs {
   readonly data?: unknown
 }
 
+/** An item of a `CheckedListBox` was checked or unchecked. `value` is `checked`. */
+export interface ItemCheckEventArgs extends EventArgs {
+  readonly index: number
+  readonly checked: boolean
+  readonly value: boolean
+}
+
 const BUTTONS: readonly MouseButton[] = ['Left', 'Middle', 'Right']
 
 interface DomLike {
@@ -141,6 +148,8 @@ export function makeArgs(adapter: string, raw: readonly unknown[], ctx: ArgsCont
       const p = (raw[0] ?? {}) as Record<string, unknown>
       return { native: undefined, e: { native: undefined, ctx: p.ctx, width: p.width, height: p.height, dpr: p.dpr, data: p.data } }
     }
+    case 'item-check':
+      return { native, e: { ...base, index: typeof raw[0] === 'number' ? raw[0] : -1, checked: !!raw[1], value: !!raw[1] } }
     case 'sort':
       return { native, e: { ...base, value: (raw[0] as { columnId?: unknown } | undefined)?.columnId ?? raw[0] } }
     default:

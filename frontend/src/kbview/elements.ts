@@ -15,6 +15,7 @@ import {
   StepMeta, StepperMeta, TabItemMeta, TabsMeta,
 } from '../ui/kbview/containers.meta.ts'
 import { ColumnMeta, DataTableMeta } from '../ui/kbview/data.meta.ts'
+import { CheckedListBoxMeta, ItemMeta, ListBoxMeta, ListViewMeta, TreeViewMeta } from '../ui/kbview/lists.meta.ts'
 import { ContextMenuMeta, MenuItemMeta, ToolTipMeta } from '../ui/kbview/components.meta.ts'
 import { DockAreaMeta, DockPanelMeta, WorkspaceShellMeta } from '../sdk/kbview/workspace.meta.ts'
 import { PanelMeta, RepeaterMeta, ScrollAreaMeta, StackMeta, TableLayoutPanelMeta, UserControlMeta } from '../ui/kbview/views.meta.ts'
@@ -40,6 +41,7 @@ export const WEB_ELEMENTS: readonly AnyElementMeta[] = [
   FloatingWindowMeta, PopoverMeta, PanelMeta, UserControlMeta, ScrollAreaMeta, TableLayoutPanelMeta, GroupBoxMeta, SettingsRowMeta,
   // data
   DataTableMeta, ColumnMeta, RepeaterMeta,
+  ListBoxMeta, CheckedListBoxMeta, ListViewMeta, TreeViewMeta, ItemMeta,
   // docking (@kubuno/sdk)
   DockAreaMeta, DockPanelMeta, WorkspaceShellMeta,
   // components
