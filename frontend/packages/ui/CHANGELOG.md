@@ -8,6 +8,7 @@ under the published version number.
 
 ### Added
 
+- **Registry**: `Card` takes `IconSize`, `IconScaling` and `IconColor` for its header glyph.
 - **Registry**: `FloatingWindow` gains its footer (`ConfirmText`, `ConfirmEnabled`, `ConfirmBusy`, `ConfirmDanger`,
   `ConfirmFocused`, `CancelText`, `CancelEnabled`, events `OnConfirm` / `OnCancel`, written to `actions.confirm` /
   `actions.cancel`) and the `Banner` / `TitleActions` property elements; `HostStrings` on `Callout`, `EmptyState`,

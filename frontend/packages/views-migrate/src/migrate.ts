@@ -693,8 +693,26 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
   // the earlier ones did (the main screen when none holds).
   const branches: Array<{ cond: ts.Expression; jsx: ts.Expression }> = []
   const branchesBefore = new Map<ts.Statement, number>()
+  // Constants of a branch's own block (`if (outcome) { const n = …; return <A/> }`): computed only under its condition.
+  const ownBranch = new Map<ts.Statement, number>()
   for (let k = 0; k < statements.length; k++) {
     const s = statements[k]
+    if (ts.isIfStatement(s) && !s.elseStatement && ts.isBlock(s.thenStatement) && s.thenStatement.statements.length > 1) {
+      const inner = s.thenStatement.statements
+      const last = inner[inner.length - 1]
+      if (ts.isReturnStatement(last) && last.expression && inner.slice(0, -1).every((x) => ts.isVariableStatement(x))) {
+        branches.push({ cond: s.expression, jsx: last.expression })
+        const locals = inner.slice(0, -1)
+        for (const v of locals) {
+          branchesBefore.set(v, branches.length - 1)
+          ownBranch.set(v, branches.length - 1)
+        }
+        for (const later of statements.slice(k + 1)) branchesBefore.set(later, branches.length)
+        statements.splice(k, 1, ...locals)
+        k += locals.length - 1
+        continue
+      }
+    }
     if (ts.isIfStatement(s) && !s.elseStatement) {
       const then = ts.isBlock(s.thenStatement) && s.thenStatement.statements.length === 1 ? s.thenStatement.statements[0] : s.thenStatement
       if (ts.isReturnStatement(then) && then.expression) {
@@ -803,7 +821,9 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
     let st: ts.Node | undefined = decl
     while (st && !ts.isVariableStatement(st) && !(ts.isFunctionDeclaration(st) && st.parent === body)) st = st.parent
     const n = st ? branchesBefore.get(st as ts.Statement) ?? 0 : 0
-    return n ? branchConds.slice(0, n).map((c) => `!(${c})`) : undefined
+    const own = st ? ownBranch.get(st as ts.Statement) : undefined
+    const g = [...branchConds.slice(0, n).map((c) => `!(${c})`), ...(own !== undefined ? [`!!(${branchConds[own]})`] : [])]
+    return g.length ? g : undefined
   }
   for (const p of pending) p()
   for (const l of [...m.locals.values()]) {
@@ -1868,6 +1888,11 @@ function component(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, in
                 const sz = staticString(a) ?? (a.initializer && ts.isJsxExpression(a.initializer) && a.initializer.expression && ts.isNumericLiteral(skipParens(a.initializer.expression)) ? (skipParens(a.initializer.expression) as ts.NumericLiteral).text : undefined)
                 if (sz === undefined || !info.propertyNames.has('IconSize')) throw new NeedsPart(`<${info.name} ${target.name}>: an icon size the element cannot take`)
                 attr(h.node, 'IconSize', sz)
+              } else if (an === 'className') {
+                // A theme colour alone (`text-primary`) is the element's `IconColor` (the glyph's colour either way).
+                const color = iconColorOf(classValue(a))
+                if (!color || !info.propertyNames.has('IconColor')) throw new NeedsPart(`<${info.name} ${target.name}>: an icon with classes`)
+                attr(h.node, 'IconColor', color)
               } else if (an !== 'aria-hidden' && an !== 'key') throw new NeedsPart(`<${info.name} ${target.name}>: an icon with ${an}`)
             }
           }
@@ -1881,6 +1906,9 @@ function component(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, in
         } else value = valueOf(m, expr, ctx, target.name, kindOfProp(info, target.name))
       } else continue
       attr(h.node, target.name, value)
+      // `checked={mode === 'a'}` on a radio (`SelectedValue`, checked when it equals `Value`): the condition's value
+      // against `Value="true"`.
+      if (target.convert === 'equals-value' && !jsxAttr(e, 'value')) attr(h.node, 'Value', 'true')
       h.done.add(name)
       continue
     }
@@ -1907,6 +1935,12 @@ function component(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, in
     if (textProp && textOnly(children, m)) attr(h.node, textProp.name, textValue(m, children, ctx, `${snake(info.name)}_text`))
     else if (info.content && info.children !== 'None') h.node.children = children.flatMap((c) => convertChild(m, c, ctx))
     else throw new NeedsPart(`<${info.name}> with element children`)
+  }
+  // An element holding one child (`Card`, `FloatingWindow`) given several: one layout-neutral panel around them (the
+  // component renders its children in one place either way).
+  if (info.children === 'SingleWidget' && h.node.children.length > 1) {
+    m.stats.classAttributes++
+    h.node.children = [{ el: 'Panel', attrs: [{ name: 'Class', value: 'contents' }], children: h.node.children }]
   }
   if (slotNodes.length) h.node.children = [...slotNodes, ...h.node.children]
   m.stats.mapped++
@@ -2149,7 +2183,10 @@ function hostComponent(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement
   const comp = m.getter(tag.text, local ? `__parts.${tag.text}` : tag.text, { doc: `\`<${tag.text}>\`, rendered by a ReactHost.`, guards: hostGuards })
   const n: XNode = { el: 'ReactHost', attrs: [], children: [], comment: `TODO(views-migrate): ${why}` }
   attr(n, 'Component', `{Binding ${comp}}`)
-  if (entries.length) attr(n, 'Props', binding(m, ts.factory.createObjectLiteralExpression(), `{ ${entries.join(', ')} }`, ctx, `${snake(tag.text)}_props`))
+  // Typed as the component's props, so its inline callbacks get their parameter types as in the TSX.
+  const hasCallback = attributesOf(e).properties.some((p) => ts.isJsxAttribute(p) && !!p.initializer && ts.isJsxExpression(p.initializer) && !!p.initializer.expression && (ts.isArrowFunction(skipParens(p.initializer.expression)) || ts.isFunctionExpression(skipParens(p.initializer.expression))))
+  const propsText = `{ ${entries.join(', ')} }${hasCallback ? ` as React.ComponentProps<typeof ${local ? `__parts.${tag.text}` : tag.text}>` : ''}`
+  if (entries.length) attr(n, 'Props', binding(m, ts.factory.createObjectLiteralExpression(), propsText, ctx, `${snake(tag.text)}_props`))
   return n
 }
 
@@ -2503,6 +2540,13 @@ function convertChildren(m: Migration, children: readonly ts.JsxChild[], ctx: Js
 function isListOrCondition(e: ts.Expression): boolean {
   const x = skipParens(e)
   return ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === 'map'
+}
+
+/** The theme colour of an icon's classes when they are one text colour and nothing else (`text-primary` → `Primary`). */
+function iconColorOf(className: string | undefined): string | undefined {
+  if (!className || /\s/.test(className.trim()) || !className.startsWith('text-')) return undefined
+  const mapped = mapLabelClasses(className)
+  return mapped.rest.length === 0 ? mapped.props.ForeColor : undefined
 }
 
 /** Whether an expression's value is a string (or a string literal union). */

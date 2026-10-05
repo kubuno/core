@@ -43,6 +43,7 @@ export const CardMeta = {
     { name: 'Icon', kind: 'String', default: '', category: 'Icon', editor: 'icon', webOnly: true,
       doc: 'Web only: icon shown before the title.', docFr: 'Web uniquement : icône affichée avant le titre.',
       to: { prop: 'icon', convert: 'icon-node' } },
+    ...ICON_PROPERTIES,
     // Property elements (`<Card.Actions>…</Card.Actions>`): content slots, not attributes.
     { name: 'Actions', kind: 'String', default: '', category: 'Appearance', serialization: 'Content', browsable: false, webOnly: true,
       doc: 'Web only: controls of the header row, written as a <Card.Actions> property element.',

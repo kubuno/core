@@ -63,6 +63,7 @@ export const KBVIEW_ALLOWLIST: readonly AllowEntry[] = [
   { kind: 'property-web-only', element: 'Card', member: 'Actions', reason: 'Property element slot <Card.Actions> (header controls) of the @ui Card. To add on the desktop with the property-element slots.' },
   { kind: 'property-web-only', element: 'Card', member: 'Footer', reason: 'Property element slot <Card.Footer> of the @ui Card. To add on the desktop.' },
   { kind: 'property-mismatch', element: 'Card', member: 'Icon', level: 'View', reason: 'The web Card has its own Icon (header glyph, web only); on the desktop a root Card only has the view\'s window Icon. An own property hides the view\'s one on both targets.' },
+  ...['IconSize', 'IconScaling', 'IconColor'].map((member) => ({ kind: 'property-web-only' as const, element: 'Card', member, reason: "Size and colour of the web Card's header glyph (its Icon is web only)." })),
   { kind: 'property-mismatch', element: 'DataTable', member: 'Title', level: 'View', reason: 'The web DataTable has its own Title (toolbar title, web only), which hides the view\'s window Title on a root DataTable.' },
   { kind: 'property-missing-on-web', element: 'ProgressBar', member: 'Minimum', reason: 'The @ui ProgressBar always starts at 0 (value/max).' },
   { kind: 'property-missing-on-web', element: 'CheckBox', member: 'AutoCheck', reason: NOT_YET('WV-5a', 'a click always toggles the box.') },

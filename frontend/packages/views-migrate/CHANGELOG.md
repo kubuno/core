@@ -20,6 +20,7 @@ under the published version number.
 
 ### Added
 
+- More conversions: an early return whose block computes constants first (`if (outcome) { const n = …; return <A/> }`), several children of a one-child element (`Card`, `FloatingWindow`) wrapped in a layout-neutral panel, `checked={cond}` on a radio (`SelectedValue` against `Value="true"`), an icon prop's theme colour (`IconColor`), and the props object of a ReactHost typed as the component's props (inline callbacks keep their parameter types).
 - **`--split`: a file exporting several screens is cut into one file per screen before the conversion** (each then
   becomes its own view): the helpers only one screen uses move with it, the shared ones stay exported, and the
   project's importers are switched to the new files.
