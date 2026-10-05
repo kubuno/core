@@ -18,13 +18,20 @@ export interface MenuLinkProps {
   onClick?: (e: MouseEvent<HTMLAnchorElement>) => void
 }
 
+/**
+ * The look of the menu's footer link: an outlined button across the menu, inset like the menu's cards (the
+ * launcher's grid publishes its side inset as `--kb-waffle-inset`). A `Class` given in the view adds to it.
+ */
+const FOOTER_LINK =
+  'mt-3 mb-4 mx-[var(--kb-waffle-inset,26px)] flex items-center justify-center rounded-md border border-border px-4 py-2.5 text-center text-xs text-primary hover:bg-black/[0.04] transition-colors outline-none'
+
 const MenuLinkImpl = forwardRef<HTMLAnchorElement, MenuLinkProps>(function MenuLink({ text, href, className, style, onClick }, ref): ReactNode {
   const asItem = useMenuItemHost()
   return asItem(
     <a
       ref={ref}
       href={href ?? '#'}
-      className={className}
+      className={className ? `${FOOTER_LINK} ${className}` : FOOTER_LINK}
       style={style}
       onClick={(e) => {
         if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) e.preventDefault()

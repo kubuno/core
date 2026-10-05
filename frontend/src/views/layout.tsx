@@ -70,7 +70,7 @@ const DISABLED_OPACITY = 0.6
 /**
  * The element a container renders: a `<button>` for `AccessibleRole="PushButton"`, an `<a>` with `Href`,
  * else a `<div>`. The `role` given by the runtime is dropped when the native element already has it.
- * A button container lays its text out like any container (start-aligned), not centred like a text button.
+ * Its text is centred like any button's: a Label inside chooses its own alignment (TextAlign).
  */
 function box(p: ContainerBase, layout: CSSProperties, extra: Record<string, unknown>, ref: Ref<HTMLElement>, divideAcross = false): ReactElement {
   const { className, style, disabled, tabIndex, role, href, onClick, surface, cornerRadius, dividerColor } = p
@@ -89,7 +89,6 @@ function box(p: ContainerBase, layout: CSSProperties, extra: Record<string, unkn
     cls = [className, divideAcross ? DIVIDE_X_CLASS : DIVIDE_CLASS].filter(Boolean).join(' ')
   }
   if (isButton) {
-    own.textAlign = 'start'
     if (disabled) own.opacity = DISABLED_OPACITY
     // Sized like the <div> it replaces: the full width of a block or a stretching column (see VIEW_STYLES).
     ensureViewStyles()

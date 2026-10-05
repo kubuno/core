@@ -6,6 +6,21 @@ under the published version number.
 
 ## [Unreleased]
 
+### Added
+
+- **`GroupBox`, `SettingsRow`, `RadioGroup` and `PictureBox` components.** A titled group of settings with an
+  optional help line; one settings row (the setting's name and help line in a 240 px column beside its control,
+  stacked above it on a phone, a line between rows); a set of exclusive options built on `Radio`, one native
+  radio group moved with the arrow keys, vertical or side by side; a picture fitted by a size mode (normal,
+  stretch, zoom, centre, cover) with rounded corners and an optional border. They replace the local copies the
+  modules' settings pages each defined, and are the `.kbview` elements of the same names.
+- **Text weights and italics on `Label` and `LinkLabel`** (`weight`: Regular, Medium, SemiBold, Bold;
+  `fontStyle`: Italic).
+- **`Radio` takes a `name`**, so radios can form one native group (arrow keys move the choice).
+- **Element registry:** the new elements; `HoverBackColor`, `PressedBackColor`, `CornerRadius`, `BorderBrush`,
+  `BorderThickness` and `Elevation` on every element; `DividerColor` on `Stack` and `Panel`; `ScrollBarStyle`
+  on `ScrollArea`; `FontWeight` and `FontStyle` on `Label` and `LinkLabel`; `TableLayoutPanel`.
+
 ## [0.1.13] - 2026-10-05
 
 ### Added

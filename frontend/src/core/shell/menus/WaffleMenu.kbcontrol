@@ -6,7 +6,7 @@
   height, and acts on its events.
 -->
 <UserControl x:Props="WaffleMenuProps" DesignWidth="360" DesignHeight="580" OnLoad="waffle_menu_load">
-  <ScrollArea x:Name="body" Dock="Fill" ScrollbarGutter="StableBothEdges" Class="kb-inset-scroll">
+  <ScrollArea x:Name="body" Dock="Fill" ScrollbarGutter="StableBothEdges" ScrollBarStyle="Inset">
     <Panel>
       <AppTileGrid x:Name="grid" Apps="{Binding apps}" Favorites="{Binding shown}" Editing="{Binding editing}"
                    DropHereText="{Res shell.drag_here}" AllFavoritesText="{Res shell.all_in_favorites}"
@@ -14,13 +14,13 @@
         <AppTileGrid.Header>
           <Panel>
             <Stack Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" Gap="0" Padding="20, 16, 20, 4" Visible="{Binding viewing}">
-              <Label Text="{Res shell.favorites}" Overflow="Wrap" ForeColor="TextPrimary" Class="text-base font-semibold"/>
+              <Label Text="{Res shell.favorites}" Overflow="Wrap" ForeColor="TextPrimary" FontWeight="SemiBold" Class="text-base"/>
               <IconButton x:Name="edit_button" Icon="Pencil" Diameter="40" Glyph="16" Filled="true" OnClick="edit_button_click"/>
             </Stack>
             <Panel Padding="16, 16, 16, 4" Visible="{Binding editing}">
               <Stack Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" Gap="0">
-                <Button x:Name="cancel_button" Text="{Res common.cancel}" Variant="Ghost" Class="rounded-md px-5 bg-surface-2 hover:bg-surface-3" OnClick="cancel_button_click"/>
-                <Button x:Name="ok_button" Text="{Res shell.ok}" Class="rounded-md px-6" OnClick="ok_button_click"/>
+                <Button x:Name="cancel_button" Text="{Res common.cancel}" Variant="Ghost" Padding="20, 0, 20, 0" BackColor="Surface2" HoverBackColor="Surface3" OnClick="cancel_button_click"/>
+                <Button x:Name="ok_button" Text="{Res shell.ok}" Padding="24, 0, 24, 0" OnClick="ok_button_click"/>
               </Stack>
               <Label Text="{Res shell.drag_apps}" ForeColor="TextSecondary" TextAlign="MiddleCenter" Overflow="Wrap" Margin="0, 12, 0, 0"/>
             </Panel>
@@ -28,7 +28,6 @@
         </AppTileGrid.Header>
       </AppTileGrid>
       <MenuLink x:Name="marketplace" Text="{Res shell.more_modules}" Href="{Binding marketplaceHref}" Visible="{Binding showMarketplace}"
-                Class="mt-3 mb-4 mx-[var(--kb-waffle-inset,26px)] flex items-center justify-center rounded-md border border-border px-4 py-2.5 text-center text-xs text-primary hover:bg-black/[0.04] transition-colors outline-none"
                 OnClick="marketplace_click"/>
     </Panel>
   </ScrollArea>

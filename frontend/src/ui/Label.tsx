@@ -22,7 +22,7 @@ export type TextAlign =
   | 'BottomLeft' | 'BottomCenter' | 'BottomRight'
 
 const ALIGN_CLASS = (a: TextAlign | undefined): string | undefined =>
-  a?.endsWith('Center') ? 'text-center' : a?.endsWith('Right') ? 'text-end' : undefined
+  a?.endsWith('Center') ? 'text-center' : a?.endsWith('Right') ? 'text-end' : a ? 'text-start' : undefined
 
 /** `Overflow`: what a text too long for its box does. */
 export type TextOverflow = 'Ellipsis' | 'Clip' | 'Wrap'

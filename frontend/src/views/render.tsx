@@ -429,7 +429,8 @@ function build(
 
   // Children → prop adapter.
   const items = node.items
-  if (items) {
+  // No item children: the list comes from `ItemsSource` (already in the prop), not from an empty adapter.
+  if (items && !(items.list.length === 0 && props[items.prop] !== undefined)) {
     const content = items.content as { field?: string } | string | undefined
     const buildItem = (it: PlanNode, k: number, key: string): Props => {
       const ib = build(i, it, scope, values, new Map(), () => {}, [undefined, () => {}], { item: handleFor(i, it.id), index: k, itemKey: key })

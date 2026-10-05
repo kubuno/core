@@ -9,6 +9,27 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Added
+
+- **More elements for web views (`.kbview`).** Screens written as views can now use a grid of cells
+  (`TableLayoutPanel`, with column and row sizes, spans and cell lines), a titled group (`GroupBox`), a settings
+  row (`SettingsRow`: the setting's name and help line beside its control, stacked on a phone), a set of
+  exclusive options (`RadioGroup`, moved with the arrow keys) and a picture (`PictureBox`). Any element can now
+  show a background under the mouse and while pressed, rounded corners, an outline and a shadow, all in theme
+  colours; containers can draw lines between their children; texts can be bolder, lighter or italic. In a
+  panel with free placement, elements keep their distance to the edges they are anchored to when the panel
+  grows or shrinks, mirrored in right-to-left languages.
+- **Folding sections, check marks and list commands in views.** An accordion section opened or closed by the
+  user updates the view and raises its event; menu commands that toggle a check mark, or belong to a group of
+  exclusive choices, keep their state; a menu can add commands from a list and report which one was chosen.
+
+### Changed
+
+- **The account panel and the app launcher are built from those elements.** They no longer carry their own
+  style classes for hover backgrounds, rounded cards, outlines and text weights; they look the same as before.
+  In right-to-left languages the panel's close and camera buttons now sit on the reading direction's end side
+  and the other accounts' names are aligned to the start, next to their pictures.
+
 ### Fixed
 
 - **Signing up and creating accounts work on MySQL / MariaDB.** Public registration

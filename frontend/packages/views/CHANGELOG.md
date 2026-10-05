@@ -6,6 +6,33 @@ under the published version number.
 
 ## [Unreleased]
 
+### Added
+
+- **`TableLayoutPanel`.** A grid of cells: column and row counts, sizes per column and row (pixels, shares of
+  the room left, or the content's), children placed in reading order or at a given cell, spanning several
+  cells, aligned in their cell by their anchors, more children adding rows (or columns), optional cell lines
+  and spacing. Columns follow the reading direction.
+- **Interaction states and outlines on every element**, in theme colours: a background under the mouse
+  (`HoverBackColor`) and while pressed (`PressedBackColor`), rounded corners (`CornerRadius`; a container clips
+  its children to them), an outline (`BorderBrush`, `BorderThickness`) and a shadow (`Elevation`). A theme
+  colour followed by `/NN` is that colour at NN % opacity. Containers can draw a line between their children
+  (`DividerColor`); a scroll area can use the thin inset scroll bar of the menus.
+- **Anchored placement in a panel with `Layout="Absolute"`.** Elements keep their distance to the edges they
+  are anchored to (`Anchor`) when the panel is larger or smaller than the size they were placed at, stretch
+  between two anchored edges, or stay centred; docked elements keep their bands. The end edge follows the
+  reading direction.
+- **Item events through their parent:** an accordion section's `Open` follows the user (two-way) and raises
+  `OnToggled`; menu commands with `CheckOnClick` or a `RadioGroup` keep their check mark and raise
+  `OnCheckedChanged`; a context menu adds the commands of its `ItemsSource` and raises `OnItemClicked` with the
+  chosen one's key. A hidden item is left out of its parent's list.
+
+### Fixed
+
+- **Theme colours with a digit in their name** (`Surface1`, `Surface2`, `Surface3`) pointed at a CSS variable
+  that does not exist; theme colours now map to the host's variables (`OnPrimary`, `Divider`, `Selection`…).
+- **A container shown as a push button** fills its line like the block it replaces and lays its text out from
+  the start, and is drawn faded while disabled; a `Stack.Fill` child may shrink below its content's width.
+
 ## [0.1.0] - 2026-10-05
 
 ### Added
