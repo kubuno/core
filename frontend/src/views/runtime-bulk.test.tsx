@@ -56,6 +56,15 @@ describe('views runtime — bulk migration additions', () => {
     setTranslator(undefined)
   })
 
+  it('renders a Fragment through a ReactHost, and nothing for designer sample texts', async () => {
+    const { ReactHost } = await import('./index')
+    const { Fragment } = await import('react')
+    const { container, rerender } = render(createElement(ReactHost, { component: Fragment as never, props: { children: 'held' } }))
+    expect(container.textContent).toBe('held')
+    rerender(createElement(ReactHost, { component: 'part2 1' as never, props: 'part2_props 1' as never }))
+    expect(container.textContent).toBe('')
+  })
+
   it('does not render the view again and again when a hook gives a new object on every render', async () => {
     const Base = createViewBase({ ...plan, file: 'test/Loop.kbview' })
     class V extends (Base as unknown as new () => Record<string, unknown> & { publish(v: Record<string, unknown>): void }) {
