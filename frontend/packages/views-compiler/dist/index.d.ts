@@ -7,6 +7,7 @@ export { kbview, formatDiagnostic, TSCONFIG_HINT, type KbviewPluginOptions } fro
 export { emitViewModule, specifierFor, isAllowedImport, ICON_ALIASES, type EmitOptions, type EmitResult } from './emit.js';
 export { CompilerWasm, ViewCompiler, type CompilerVersion } from './compiler.js';
 export { ViewProject, loadNodeCompiler, scanViews, userControlsOf, codeBehindOf, viewOfCodeBehind, generatedPaths, writeGenerated, findHostRegistry, projectRegistryJson, GENERATED_DIR, VIEW_EXTENSIONS, type ProjectConfig, type ProjectOptions, } from './project.js';
+export { DESIGN_PATH, DEFAULT_DESIGN_ENTRY, DESIGN_SERVER_FILE, designEntryUrl, designPageHtml, designProjectInfo, themeFile, type DesignConfig, type DesignServerInfo, type DesignProjectInfo, } from './design-server.js';
 export { runKbviewTsc, remapTscOutput, mapCheckPosition, loadRemapContext, type KbviewTscResult } from './tsc.js';
 export { encodeMappings, decodeMappings, type SourceMapV3, type Segment } from './sourcemap.js';
 export type * from './types.js';

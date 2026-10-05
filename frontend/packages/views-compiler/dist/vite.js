@@ -12,10 +12,12 @@
  *   not compile keeps the last good one on screen, with the error overlay.
  * - Code-behinds use standard (TC39) decorators (`@bind accessor`): they are lowered with TypeScript before
  *   Vite's own transform, which leaves standard decorators as they are.
+ * - `vite serve` also serves the Visual Studio design surface at `/__kubuno_design__/` (`design-server.ts`).
  */
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { installDesignServer } from './design-server.js';
 import { emitViewModule } from './emit.js';
 import { codeBehindOf, isViewFile, projectPath, viewOfCodeBehind, writeGenerated, ViewProject } from './project.js';
 /** `file(line,col): severity code: message` — the format tsc, MSBuild and VS use. */
@@ -139,6 +141,8 @@ export function kbview(options = {}) {
             };
             server.watcher.on('add', onAddOrRemove);
             server.watcher.on('unlink', onAddOrRemove);
+            if (options.designServer !== false)
+                installDesignServer(server, p);
         },
     };
 }

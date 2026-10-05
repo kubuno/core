@@ -39,6 +39,14 @@ export interface ProjectConfig {
     classBudget?: number;
     /** The host registry file (default: `@kubuno/ui/kbview-registry.web.json` from node_modules). */
     hostRegistry?: string;
+    /**
+     * The Visual Studio design surface served by the dev server (`/__kubuno_design__/`): its entry module (a
+     * project-root-relative file; default `@kubuno/host-runtime/entry`) and a folder of Kubuno themes it can apply.
+     */
+    design?: {
+        entry?: string;
+        themes?: string;
+    };
 }
 export declare function readProjectConfig(root: string): ProjectConfig;
 /** The host registry: `node_modules/@kubuno/ui/kbview-registry.web.json`, searched upwards from `root`. */
@@ -66,6 +74,8 @@ export declare class ViewProject {
     readonly compiler: ViewCompiler;
     views: string[];
     readonly hostRegistry: string;
+    /** The project registries loaded after the host's (absolute paths, in loading order). */
+    readonly registries: string[];
     readonly sources: string[];
     private constructor();
     static open(root: string, options?: ProjectOptions): Promise<ViewProject>;

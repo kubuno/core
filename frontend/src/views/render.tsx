@@ -519,7 +519,8 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
   const cache = useRef<unknown[] | null>(null)
   const props = snapshotProps(i, node)
   const getSnapshot = (): unknown[] => {
-    const next = [node, i.sizeClass, resourcesVersion(), ...props.map((p) => valueOf(i, node, p, scope))]
+    // `i.design` is part of the snapshot: turning design mode on or off re-renders every element (`data-kb-id`).
+    const next = [node, i.sizeClass, i.design, resourcesVersion(), ...props.map((p) => valueOf(i, node, p, scope))]
     const prev = cache.current
     if (prev && shallowEqual(prev, next)) return prev
     cache.current = next
@@ -527,7 +528,7 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
   }
   const snapshot = useSyncExternalStore(i.subscribe, getSnapshot, getSnapshot)
   const values = new Map<PlanProp, unknown>()
-  props.forEach((p, k) => values.set(p, snapshot[k + 3]))
+  props.forEach((p, k) => values.set(p, snapshot[k + 4]))
 
   const [pending, setPendingState] = useState<Map<string, unknown>>(() => new Map())
   const [selected, setSelected] = useState<string | undefined>(undefined)
@@ -603,7 +604,7 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
 
   if (!built.visible) return null
 
-  if (node.template) return renderTemplate(node, scope, values)
+  if (node.template) return renderTemplate(i, node, scope, values)
 
   const Component = (node.c ?? resolveComponent(node.m, node.x)) as AnyComponent | undefined
   let element: ReactNode
@@ -716,10 +717,25 @@ function renderMenu(i: Internals, scope: Scope, menu: Menu, close: () => void): 
 /** The check marks the user changed in a view's menus (`CheckOnClick`, `RadioGroup`), by item id. */
 const menuChecks = new WeakMap<Internals, Map<string, boolean>>()
 
+/**
+ * The sample rows a `Repeater` shows in design mode when it has no rows (no data at design time):
+ * `DesignItemCount` of them (default 3, at most 50), whose fields read their own name and row number
+ * (`{Binding name}` shows `name 1`, `name 2`…), as the desktop designer does.
+ */
+function sampleRows(node: PlanNode): unknown[] {
+  const p = node.props?.find((x) => x.n === 'DesignItemCount')
+  const n = p && typeof p.v === 'number' ? Math.max(0, Math.min(50, Math.round(p.v))) : 3
+  return Array.from({ length: n }, (_, k) => new Proxy({}, {
+    get: (_t, key) => (typeof key === 'string' ? `${key} ${k + 1}` : undefined),
+    has: (_t, key) => typeof key === 'string',
+  }))
+}
+
 /** A `Repeater`: its children once per item of `ItemsSource`, each with the item as its row scope. */
-function renderTemplate(node: PlanNode, scope: Scope, values: Map<PlanProp, unknown>): ReactNode {
+function renderTemplate(i: Internals, node: PlanNode, scope: Scope, values: Map<PlanProp, unknown>): ReactNode {
   const source = node.props?.find((p) => p.n === 'ItemsSource')
-  const rows = source ? values.get(source) : UNSET
+  let rows = source ? values.get(source) : UNSET
+  if (!Array.isArray(rows) && i.design) rows = sampleRows(node)
   if (!Array.isArray(rows)) return null
   const keyProp = node.props?.find((p) => p.n === 'ItemKey')
   const keyField = keyProp && typeof keyProp.v === 'string' ? keyProp.v : undefined
@@ -775,6 +791,8 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
     ref.current = vm[KB]
   }
   const i = ref.current
+  // Design mode turned on or off on a live view: its elements must look again (after the commit).
+  const designChanged = i.state !== 'new' && i.design !== !!design
   i.design = !!design
   // New props from the host: the elements reading them (through `this.props` or a getter) must look again,
   // after `use()` (the notification is deferred to the commit, like any change made during a render).
@@ -797,7 +815,7 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
   } finally {
     i.deferred = false
   }
-  if (propsChanged) i.pending = true
+  if (propsChanged || designChanged) i.pending = true
   useLayoutEffect(() => {
     if (i.pending) {
       i.pending = false

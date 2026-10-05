@@ -11,6 +11,7 @@
     "build:registry": "node scripts/build-kbview-registry.mjs",
     "check:registry": "node scripts/build-kbview-registry.mjs --check && node scripts/kbview-conformance.mjs",
     "build:views-handles": "node scripts/build-views-handles.mjs",
+    "build:design-host": "vite build --config vite.design-host.config.ts",
     "test:views": "cd packages/views-compiler && vitest run && vitest run --config vitest.conformance.config.ts",
     "preview": "vite preview",
     "lint": "eslint src/",

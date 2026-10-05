@@ -140,6 +140,11 @@ export interface ProjectConfig {
   classBudget?: number
   /** The host registry file (default: `@kubuno/ui/kbview-registry.web.json` from node_modules). */
   hostRegistry?: string
+  /**
+   * The Visual Studio design surface served by the dev server (`/__kubuno_design__/`): its entry module (a
+   * project-root-relative file; default `@kubuno/host-runtime/entry`) and a folder of Kubuno themes it can apply.
+   */
+  design?: { entry?: string; themes?: string }
 }
 
 export function readProjectConfig(root: string): ProjectConfig {
@@ -207,15 +212,19 @@ export interface ProjectOptions {
 export class ViewProject {
   views: string[] = []
   readonly hostRegistry: string
+  /** The project registries loaded after the host's (absolute paths, in loading order). */
+  readonly registries: string[]
   readonly sources: string[]
 
   private constructor(
     readonly root: string,
     readonly compiler: ViewCompiler,
     hostRegistry: string,
+    registries: string[],
     sources: string[],
   ) {
     this.hostRegistry = hostRegistry
+    this.registries = registries
     this.sources = sources
   }
 
@@ -230,11 +239,11 @@ export class ViewProject {
     }
     const compiler = await loadNodeCompiler()
     compiler.addRegistry(readFileSync(host, 'utf8'), projectPath(root, host) || host, true)
-    for (const reg of [...(config.registries ?? []), ...(options.registries ?? [])]) {
-      const file = resolve(root, reg)
+    const registries = [...(config.registries ?? []), ...(options.registries ?? [])].map((reg) => resolve(root, reg))
+    for (const file of registries) {
       compiler.addRegistry(projectRegistryJson(root, file), projectPath(root, file), false)
     }
-    const project = new ViewProject(root, compiler, host, options.sources ?? config.sources ?? ['src'])
+    const project = new ViewProject(root, compiler, host, registries, options.sources ?? config.sources ?? ['src'])
     project.rescan()
     return project
   }

@@ -183,11 +183,14 @@ export class ViewProject {
     compiler;
     views = [];
     hostRegistry;
+    /** The project registries loaded after the host's (absolute paths, in loading order). */
+    registries;
     sources;
-    constructor(root, compiler, hostRegistry, sources) {
+    constructor(root, compiler, hostRegistry, registries, sources) {
         this.root = root;
         this.compiler = compiler;
         this.hostRegistry = hostRegistry;
+        this.registries = registries;
         this.sources = sources;
     }
     static async open(root, options = {}) {
@@ -199,11 +202,11 @@ export class ViewProject {
         }
         const compiler = await loadNodeCompiler();
         compiler.addRegistry(readFileSync(host, 'utf8'), projectPath(root, host) || host, true);
-        for (const reg of [...(config.registries ?? []), ...(options.registries ?? [])]) {
-            const file = resolve(root, reg);
+        const registries = [...(config.registries ?? []), ...(options.registries ?? [])].map((reg) => resolve(root, reg));
+        for (const file of registries) {
             compiler.addRegistry(projectRegistryJson(root, file), projectPath(root, file), false);
         }
-        const project = new ViewProject(root, compiler, host, options.sources ?? config.sources ?? ['src']);
+        const project = new ViewProject(root, compiler, host, registries, options.sources ?? config.sources ?? ['src']);
         project.rescan();
         return project;
     }

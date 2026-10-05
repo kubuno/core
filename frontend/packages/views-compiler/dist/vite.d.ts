@@ -8,6 +8,11 @@ export interface KbviewPluginOptions extends ProjectOptions {
     runtime?: string;
     /** Keep design-time values in the plans (the design surface's dev server). Default `false`. */
     design?: boolean;
+    /**
+     * Serve the Visual Studio design surface at `/__kubuno_design__/` in `vite serve` and announce it in
+     * `.kubuno/design-server.json` (see `design-server.ts`). Default `true`.
+     */
+    designServer?: boolean;
 }
 /** `file(line,col): severity code: message` — the format tsc, MSBuild and VS use. */
 export declare function formatDiagnostic(file: string, d: Diagnostic): string;

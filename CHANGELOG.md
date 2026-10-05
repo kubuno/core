@@ -129,6 +129,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Web views can be designed visually in Visual Studio** (for developers). The frontend's development server
+  serves the designer page of the Kubuno extension for Visual Studio (`/__kubuno_design__/`): it shows the
+  `.kbview` / `.kbcontrol` being edited — unsaved changes included — with the core's real elements, controls,
+  fonts, translations and light / dark themes, at phone, tablet or desktop widths, in French, English or Arabic
+  (right to left), with sample data (`<view>.design.json`, provided for the app launcher and the account panel).
+  Elements are selected, moved, resized, reordered and deleted on the page, new ones dropped from the Toolbox; a
+  view that stops compiling keeps its last good preview. A self-contained build of the same page (the new
+  `@kubuno/host-runtime` package, `npm run build:design-host`) is used when no development server runs; it shows
+  the project's own controls as placeholders.
 - **Conformance vectors for algorithms shared across web, desktop and mobile** (for developers). A shared
   algorithm now ships JSON vector suites (inputs and the outputs every implementation must produce, format 1,
   `vectors/conformance-vectors.schema.json`), run by a Rust runner (`kubuno-vectors` crate, used as a

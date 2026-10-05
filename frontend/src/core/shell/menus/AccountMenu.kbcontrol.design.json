@@ -1,0 +1,15 @@
+{
+  "props": {
+    "user": { "name": "Camille Martin", "email": "camille.martin@kubuno.local", "initials": "CM" },
+    "accounts": [
+      { "id": "u-2", "name": "Lucas Bernard", "email": "lucas.bernard@kubuno.local", "server": "kubuno.local", "initials": "LB", "connected": true, "unread": 3 },
+      { "id": "u-3", "name": "Inès Moreau", "email": "ines.moreau@kubuno.local", "server": "kubuno.local", "initials": "IM", "connected": false },
+      { "id": "r-1", "name": "Camille Martin", "email": "camille@asso-exemple.org", "server": "kubuno.asso-exemple.org", "initials": "CM", "connected": true, "remote": true }
+    ],
+    "showAdmin": true,
+    "manageHref": "/settings",
+    "labelsHref": "/labels",
+    "adminHref": "/admin"
+  },
+  "frame": { "background": "#E9EEF6", "cornerRadius": 28, "border": true }
+}

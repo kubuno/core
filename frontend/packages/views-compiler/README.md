@@ -127,6 +127,25 @@ controls and user controls (`.kbcontrol`). A control resolving to anything else 
 package — is a compile **error**, and the generated code only imports host singletons, `lucide-react` and
 the project's own files.
 
+## The Visual Studio design surface
+
+In `vite serve`, the plugin also serves the page the Kubuno extension for Visual Studio shows in its web view
+designer, so the designer renders your views with **your project's own controls and code-behinds**:
+
+| Route | What |
+|---|---|
+| `/__kubuno_design__/` | the design page (its entry: `kubuno.views.json` → `design.entry`, else `@kubuno/host-runtime/entry`) |
+| `/__kubuno_design__/project.json` | the registries (host, then the project's, with project-local modules as `/src/…`), the user controls, the plan ABI and the compiler version |
+| `/__kubuno_design__/themes/<id>/…` | the Kubuno themes of `design.themes` (`theme.json` and CSS only) |
+
+While the server listens, `.kubuno/design-server.json` (`{version, urls, designPath, pid, root}`) tells Visual
+Studio where to find it; the file is removed when the server stops. Turn the route off with
+`kbview({ designServer: false })`.
+
+```json
+{ "design": { "entry": "src/views/design/entry.tsx", "themes": "../themes" } }
+```
+
 ## Rebuilding the WebAssembly (maintainers)
 
 ```bash

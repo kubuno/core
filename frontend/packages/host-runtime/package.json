@@ -1,0 +1,27 @@
+{
+  "name": "@kubuno/host-runtime",
+  "version": "0.1.0",
+  "description": "Kubuno web views design host — a static build of the Visual Studio design surface page (React, @ui, the sdk, the @kubuno/views runtime, the .kbview compiler's WebAssembly, the host registry, the host CSS with the production fonts, the core's translations and the light / dark Kubuno themes), served from any origin or folder.",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/host-runtime",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubuno/core.git",
+    "directory": "frontend/packages/host-runtime"
+  },
+  "type": "module",
+  "sideEffects": true,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    "./entry": "./dist/entry.js",
+    "./index.html": "./dist/index.html",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

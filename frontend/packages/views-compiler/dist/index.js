@@ -7,5 +7,6 @@ export { kbview, formatDiagnostic, TSCONFIG_HINT } from './vite.js';
 export { emitViewModule, specifierFor, isAllowedImport, ICON_ALIASES } from './emit.js';
 export { CompilerWasm, ViewCompiler } from './compiler.js';
 export { ViewProject, loadNodeCompiler, scanViews, userControlsOf, codeBehindOf, viewOfCodeBehind, generatedPaths, writeGenerated, findHostRegistry, projectRegistryJson, GENERATED_DIR, VIEW_EXTENSIONS, } from './project.js';
+export { DESIGN_PATH, DEFAULT_DESIGN_ENTRY, DESIGN_SERVER_FILE, designEntryUrl, designPageHtml, designProjectInfo, themeFile, } from './design-server.js';
 export { runKbviewTsc, remapTscOutput, mapCheckPosition, loadRemapContext } from './tsc.js';
 export { encodeMappings, decodeMappings } from './sourcemap.js';

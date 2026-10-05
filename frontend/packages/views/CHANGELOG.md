@@ -31,6 +31,12 @@ under the published version number.
   `SearchField`, `MaskedField` and `PaintBox`, whose `OnPaint` handler draws on a canvas (`PaintEventArgs`: context,
   size, pixel ratio). New event args: `ItemCheckEventArgs`, `PaintEventArgs`.
 
+- **Sample rows in the designer.** A `Repeater` with nothing to show at design time shows `DesignItemCount`
+  sample rows (3 by default) whose bound fields read their own name and row number (`name 1`, `name 2`…), as
+  in the desktop designer.
+- **Design mode can be switched on and off on a live view**: its elements are marked for the designer again
+  (or no longer) without the view losing its state.
+
 ### Fixed
 
 - **Theme colours with a digit in their name** (`Surface1`, `Surface2`, `Surface3`) pointed at a CSS variable

@@ -1,0 +1,155 @@
+/*
+ * The design surface's own chrome (toolbar, canvas, adorners). It follows Visual Studio's colours (`setVsTheme`
+ * → `--vs-*`), never the Kubuno theme applied to the view. Unlayered on purpose: it wins over the host CSS.
+ */
+:root {
+  --vs-canvas: #1f1f1f;
+  --vs-panel: #2b2b2b;
+  --vs-text: #e4e4e4;
+  --vs-text-dim: #a6a6a6;
+  --vs-border: #3f3f46;
+  --vs-accent: #3794ff;
+  --vs-hover: rgba(255, 255, 255, 0.08);
+  --kbd-adorner: #1a73e8;
+  --kbd-toolbar-h: 32px;
+}
+:root[data-vs-theme='light'] {
+  --vs-canvas: #f5f5f5;
+  --vs-panel: #eeeef2;
+  --vs-text: #1e1e1e;
+  --vs-text-dim: #5f5f5f;
+  --vs-border: #ccced3;
+  --vs-accent: #0e70c0;
+  --vs-hover: rgba(0, 0, 0, 0.06);
+}
+
+html.kbd-page,
+html.kbd-page body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--vs-canvas);
+}
+
+.kbd-toolbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--kbd-toolbar-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: var(--vs-panel);
+  color: var(--vs-text);
+  border-bottom: 1px solid var(--vs-border);
+  font: 12px/1 'Segoe UI', system-ui, sans-serif;
+  z-index: 2147483000;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.kbd-group { display: inline-flex; align-items: center; gap: 2px; }
+.kbd-group + .kbd-group { padding-left: 10px; border-left: 1px solid var(--vs-border); }
+.kbd-label { color: var(--vs-text-dim); margin-right: 4px; }
+.kbd-btn {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  height: 22px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.kbd-btn:hover { background: var(--vs-hover); }
+.kbd-btn:focus-visible { outline: 1px solid var(--vs-accent); outline-offset: -1px; }
+.kbd-btn[aria-pressed='true'] { border-color: var(--vs-accent); background: color-mix(in srgb, var(--vs-accent) 18%, transparent); }
+.kbd-spacer { flex: 1 1 auto; }
+.kbd-chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 10px;
+  border: 1px solid var(--vs-border); color: var(--vs-text-dim);
+}
+.kbd-chip[data-on='true'] { color: var(--vs-text); border-color: var(--vs-accent); }
+.kbd-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.8; }
+.kbd-note { color: var(--vs-text-dim); overflow: hidden; text-overflow: ellipsis; }
+
+.kbd-canvas {
+  position: fixed;
+  top: var(--kbd-toolbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: auto;
+  background: var(--kbd-canvas-bg, var(--vs-canvas));
+}
+.kbd-stage {
+  box-sizing: content-box;
+  padding: 32px;
+  min-width: min-content;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.kbd-zoom { position: relative; flex: 0 0 auto; }
+.kbd-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--color-surface-0, #fff);
+  color: var(--color-text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.kbd-frame[data-auto-height='true'] { min-height: 120px; }
+/* The view's root fills the frame (the design size is the view's surface, like a Windows Forms form): a root Panel
+   whose children are all placed by X / Y has no height of its own otherwise. */
+.kbd-frame > [data-kb-id=''],
+.kbd-frame > div[style*='contents'] > [data-kb-id=''] { flex: 1 1 auto; min-height: 0; }
+.kbd-frame[data-stale='true'] > * { opacity: 0.55; filter: saturate(0.7); }
+.kbd-frame-empty {
+  margin: auto; padding: 24px; text-align: center; color: var(--color-text-tertiary, #80868b);
+  font: 13px/1.5 var(--font-family-sans, sans-serif);
+}
+.kbd-frame-error {
+  margin: 12px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--color-danger, #d93025);
+  color: var(--color-danger, #d93025); background: var(--color-danger-light, #fce8e6);
+  font: 12px/1.45 var(--font-family-mono, monospace); white-space: pre-wrap;
+}
+
+.kbd-overlay {
+  position: fixed;
+  overflow: hidden;
+  z-index: 2147482000;
+  outline: none;
+  cursor: default;
+}
+.kbd-overlay[data-design='false'] { pointer-events: none; }
+.kbd-overlay[data-design='false'] > * { display: none; }
+.kbd-ad { position: absolute; box-sizing: border-box; pointer-events: none; }
+.kbd-hover { border: 1px solid color-mix(in srgb, var(--kbd-adorner) 70%, transparent); }
+.kbd-sel { border: 1px solid var(--kbd-adorner); }
+.kbd-sel[data-primary='true'] { border-width: 2px; }
+.kbd-parent { border: 1px dashed color-mix(in srgb, var(--kbd-adorner) 75%, transparent); }
+.kbd-outline { border: 1px dashed rgba(128, 128, 128, 0.45); }
+.kbd-handle { width: 7px; height: 7px; background: #fff; border: 1px solid #8a8f98; }
+.kbd-handle[data-resizable='true'] { background: var(--kbd-adorner); border-color: #fff; }
+.kbd-marker { background: var(--kbd-adorner); border-radius: 2px; }
+.kbd-marker[data-kind='box'] { background: color-mix(in srgb, var(--kbd-adorner) 12%, transparent); border: 2px solid var(--kbd-adorner); }
+.kbd-marker[data-kind='ghost'] { background: color-mix(in srgb, var(--kbd-adorner) 10%, transparent); border: 1px dashed var(--kbd-adorner); }
+.kbd-marker[data-valid='false'] { --kbd-adorner: #d93025; }
+.kbd-marker[data-valid='false'][data-kind='line'],
+.kbd-marker[data-valid='false'][data-kind='box'] {
+  background: repeating-linear-gradient(135deg, rgba(217, 48, 37, 0.25) 0 4px, transparent 4px 8px);
+  border: 2px solid #d93025;
+}
+.kbd-band { background: color-mix(in srgb, var(--kbd-adorner) 14%, transparent); border: 1px solid color-mix(in srgb, var(--kbd-adorner) 50%, transparent); }
+.kbd-ghost { border: 1px solid var(--kbd-adorner); background: color-mix(in srgb, var(--kbd-adorner) 8%, transparent); }
+.kbd-size-tip {
+  position: absolute; padding: 2px 6px; border-radius: 3px; background: #1e1e1e; color: #fff;
+  font: 11px/1.4 'Segoe UI', system-ui, sans-serif; pointer-events: none; white-space: nowrap;
+}

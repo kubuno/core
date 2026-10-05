@@ -12,6 +12,7 @@
  *   not compile keeps the last good one on screen, with the error overlay.
  * - Code-behinds use standard (TC39) decorators (`@bind accessor`): they are lowered with TypeScript before
  *   Vite's own transform, which leaves standard decorators as they are.
+ * - `vite serve` also serves the Visual Studio design surface at `/__kubuno_design__/` (`design-server.ts`).
  */
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync } from 'node:fs'
@@ -19,6 +20,7 @@ import { join, resolve } from 'node:path'
 
 import type { Plugin, ResolvedConfig } from 'vite'
 
+import { installDesignServer } from './design-server.js'
 import { emitViewModule } from './emit.js'
 import { codeBehindOf, isViewFile, projectPath, viewOfCodeBehind, writeGenerated, ViewProject, type ProjectOptions } from './project.js'
 import type { CompileOutput, Diagnostic } from './types.js'
@@ -30,6 +32,11 @@ export interface KbviewPluginOptions extends ProjectOptions {
   runtime?: string
   /** Keep design-time values in the plans (the design surface's dev server). Default `false`. */
   design?: boolean
+  /**
+   * Serve the Visual Studio design surface at `/__kubuno_design__/` in `vite serve` and announce it in
+   * `.kubuno/design-server.json` (see `design-server.ts`). Default `true`.
+   */
+  designServer?: boolean
 }
 
 /** `file(line,col): severity code: message` — the format tsc, MSBuild and VS use. */
@@ -157,6 +164,7 @@ export function kbview(options: KbviewPluginOptions = {}): Plugin {
       }
       server.watcher.on('add', onAddOrRemove)
       server.watcher.on('unlink', onAddOrRemove)
+      if (options.designServer !== false) installDesignServer(server, p)
     },
   }
 }

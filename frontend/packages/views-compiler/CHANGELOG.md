@@ -6,6 +6,14 @@ under the published version number.
 
 ## [Unreleased]
 
+### Added
+
+- **The development server serves the Visual Studio design surface.** While `vite serve` runs, the page the
+  Kubuno extension for Visual Studio shows in its web view designer is available at `/__kubuno_design__/`, with
+  what it needs to render your views with your own controls (`/__kubuno_design__/project.json`, the Kubuno themes),
+  and `.kubuno/design-server.json` tells Visual Studio the server's address (removed when it stops). The page
+  comes from `kubuno.views.json` → `design.entry`; `kbview({ designServer: false })` turns the route off.
+
 ## [0.1.0] - 2026-10-05
 
 ### Fixed

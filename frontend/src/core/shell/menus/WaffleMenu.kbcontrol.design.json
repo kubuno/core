@@ -1,0 +1,26 @@
+{
+  "props": {
+    "apps": [
+      { "id": "drive", "label": "Drive", "icon": "HardDrive", "logo": "/drive-logo.png", "href": "/drive", "module": "drive", "moduleLabel": "Drive" },
+      { "id": "calendar", "label": "Agenda", "icon": "Calendar", "logo": "/calendar-logo.png", "href": "/calendar", "module": "calendar", "moduleLabel": "Agenda" },
+      { "id": "mail", "label": "Mail", "icon": "Mail", "logo": "/mail-logo.png", "href": "/mail", "module": "mail", "moduleLabel": "Mail" },
+      { "id": "office-documents", "label": "Documents", "icon": "FileText", "logo": "/office-documents-logo.png", "href": "/office/documents", "module": "office", "moduleLabel": "Office" },
+      { "id": "office-spreadsheets", "label": "Tableurs", "icon": "TableProperties", "logo": "/office-spreadsheets-logo.png", "href": "/office/spreadsheets", "module": "office", "moduleLabel": "Office" },
+      { "id": "office-presentations", "label": "Présentations", "icon": "LayoutTemplate", "logo": "/office-presentations-logo.png", "href": "/office/presentations", "module": "office", "moduleLabel": "Office" },
+      { "id": "photos", "label": "Photos", "icon": "Image", "logo": "/photos-logo.png", "href": "/photos", "module": "photos", "moduleLabel": "Photos" },
+      { "id": "chat", "label": "Discussions", "icon": "MessageSquare", "logo": "/chat-logo.png", "href": "/chat", "module": "chat", "moduleLabel": "Discussions" },
+      { "id": "contacts", "label": "Contacts", "icon": "Contact", "logo": "/contacts-logo.png", "href": "/contacts", "module": "contacts", "moduleLabel": "Contacts" },
+      { "id": "notes", "label": "Notes", "icon": "StickyNote", "logo": "/notes-logo.png", "href": "/notes", "module": "notes", "moduleLabel": "Notes" },
+      { "id": "tasks", "label": "Tâches", "icon": "CheckSquare", "logo": "/tasks-logo.png", "href": "/tasks", "module": "tasks", "moduleLabel": "Tâches" },
+      { "id": "maps", "label": "Cartes", "icon": "Map", "logo": "/maps-logo.png", "href": "/maps", "module": "maps", "moduleLabel": "Cartes" },
+      { "id": "forms", "label": "Formulaires", "icon": "ClipboardList", "logo": "/forms-logo.png", "href": "/forms", "module": "forms", "moduleLabel": "Formulaires" },
+      { "id": "assistant", "label": "Assistant", "icon": "Sparkles", "logo": "/assistant-logo.png", "href": "/assistant", "module": "assistant", "moduleLabel": "Assistant" },
+      { "id": "keestore", "label": "Coffre-fort", "icon": "KeyRound", "logo": "/keestore-logo.png", "href": "/keestore", "module": "keestore", "moduleLabel": "Coffre-fort" },
+      { "id": "wiki", "label": "Wiki", "icon": "BookOpen", "logo": "/wiki-logo.png", "href": "/wiki", "module": "wiki", "moduleLabel": "Wiki" }
+    ],
+    "favorites": ["drive", "calendar", "mail", "office-documents", "photos", "chat"],
+    "showMarketplace": true,
+    "marketplaceHref": "/admin/marketplace"
+  },
+  "frame": { "background": "#E9EEF6", "cornerRadius": 28, "border": true }
+}

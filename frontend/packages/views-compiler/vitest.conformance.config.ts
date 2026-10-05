@@ -19,7 +19,9 @@ export default defineConfig({
   cacheDir: join(tmpdir(), 'kbview-conformance-vitest'),
   // `@ui` reaches the core's stores, which reach the shell (`@kubuno/sdk` exports its header): the shell's own
   // user controls get compiled too, with the core project's registry of custom controls.
-  plugins: [kbview({ registries: [join(frontend, 'src', 'core', 'shell', 'menus', 'kbview-controls.json')] }), react()],
+  // No generated types: the shell's views lie outside this root, their declarations would land outside
+  // `.kubuno/views` (in the package's own `src/`).
+  plugins: [kbview({ registries: [join(frontend, 'src', 'core', 'shell', 'menus', 'kbview-controls.json')], generateTypes: false }), react()],
   resolve: {
     alias: {
       '@kubuno/views': join(frontend, 'src', 'views', 'index.ts'),

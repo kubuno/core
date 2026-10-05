@@ -70,6 +70,8 @@ obj/
 # the cargo target of the compiler's WASM build, and the compiler package's tsc state.
 .kubuno/views/
 **/.kubuno/views/
+# The running dev server's announcement for the Visual Studio web designer (written while `vite serve` listens).
+**/.kubuno/design-server.json
 /frontend/packages/views-compiler/wasm/target/
 /frontend/packages/views-compiler/tsconfig.tsbuildinfo
 
