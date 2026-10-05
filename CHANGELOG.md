@@ -9,6 +9,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-10-05
+
 ### Fixed
 
 - **The frontend builds again from a fresh checkout.** The type-check step of the build, the CI checks
@@ -2178,7 +2180,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   turned the Calendar radio buttons into black discs when handed `var(--color-primary)`.
   Theme colours are now resolved before they reach the canvas.
 
-[Unreleased]: https://github.com/kubuno/core/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/kubuno/core/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/kubuno/core/releases/tag/v0.1.14
 [0.1.13]: https://github.com/kubuno/core/releases/tag/v0.1.13
 [0.1.12]: https://github.com/kubuno/core/releases/tag/v0.1.12
 [0.1.11]: https://github.com/kubuno/core/releases/tag/v0.1.11
