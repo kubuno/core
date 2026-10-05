@@ -52,8 +52,8 @@ export interface DataTableBulkAction<T> {
 export interface DataTableProps<T> {
     rows: T[];
     columns: DataTableColumn<T>[];
-    /** Stable identity of a row — used for selection, keys and sort stability. */
-    rowKey: (row: T) => string;
+    /** Stable identity of a row — used for selection, keys and sort stability. Unset: the row's position in `rows`. */
+    rowKey?: (row: T) => string;
     loading?: boolean;
     skeletonRows?: number;
     /** Non-null switches the body to the `error` empty state. */
@@ -65,6 +65,9 @@ export interface DataTableProps<T> {
     onClearFilters?: () => void;
     /** Replaces the built-in "nothing yet" state (an `<EmptyState variant="first-use">`). */
     emptyState?: ReactNode;
+    /** Title and description of the built-in "nothing yet" state (`.kbview` `EmptyTitle` / `EmptyText`). */
+    emptyTitle?: string;
+    emptyText?: string;
     /** Replaces the built-in "no match" state (an `<EmptyState variant="no-results">`). */
     noResultsState?: ReactNode;
     defaultSort?: DataTableSort | null;
@@ -88,6 +91,14 @@ export interface DataTableProps<T> {
     bulkActions?: DataTableBulkAction<T>[];
     rowActions?: DataTableRowAction<T>[];
     onRowClick?: (row: T) => void;
+    /** Enter on a focused row, or a double click: the row and its index in `rows` (`.kbview` `OnRowActivated`). */
+    onRowActivate?: (row: T, index: number) => void;
+    /**
+     * The selected row's index in `rows` (whatever the sort), `-1` = none. Controlled when given; with it or
+     * `onSelectedIndexChange`, a click or the arrow keys select one row (tinted, `aria-selected`).
+     */
+    selectedIndex?: number;
+    onSelectedIndexChange?: (index: number) => void;
     /** Show the column chooser. */
     configurableColumns?: boolean;
     /**
@@ -98,6 +109,8 @@ export interface DataTableProps<T> {
     hiddenColumns?: string[];
     onHiddenColumnsChange?: (ids: string[]) => void;
     title?: ReactNode;
+    /** Row height: `compact`, `normal` (default) or `comfortable` (`.kbview` `Density`). */
+    density?: 'compact' | 'normal' | 'comfortable';
     /** Left side of the toolbar — a search field, filter chips… */
     toolbar?: ReactNode;
     /** Force the layout instead of following the container width. */

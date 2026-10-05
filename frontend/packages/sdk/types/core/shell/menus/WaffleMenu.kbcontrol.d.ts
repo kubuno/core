@@ -27,7 +27,7 @@ export declare abstract class ViewBase extends __View<__Props> {
   abstract grid_favorites_edited(sender: __ElementHandle, e: __ValueChangedEventArgs): void | Promise<void>
   /** Handles `AppTileGrid.OnTileInvoked` (line 13). */
   abstract grid_tile_invoked(sender: __ElementHandle, e: __ValueChangedEventArgs): void | Promise<void>
-  /** Handles `MenuLink.OnClick` (line 32). */
+  /** Handles `MenuLink.OnClick` (line 31). */
   abstract marketplace_click(sender: __ElementHandle, e: __MouseEventArgs): void | Promise<void>
   /** Handles `Button.OnClick` (line 23). */
   abstract ok_button_click(sender: __Button, e: __MouseEventArgs): void | Promise<void>

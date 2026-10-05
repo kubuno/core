@@ -57,6 +57,18 @@ export interface Accordion extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<AccordionSection>` — A section of an Accordion that can be expanded or collapsed. */
 export interface AccordionSection extends ElementHandle {
@@ -79,6 +91,8 @@ export interface Avatar extends ElementHandle {
     tint: "Auto" | "Accent";
     /** A circle, or a square with rounded corners. */
     shape: "Circle" | "Rounded";
+    /** A dot at the bottom end corner: the person's availability. */
+    presence: "None" | "Online" | "Away" | "Busy" | "Offline";
     /** Diameter of the avatar, in pixels. */
     avatarSize: number;
     /** Name that screen readers announce for the control. Leave empty to use its text. */
@@ -135,6 +149,18 @@ export interface Avatar extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Badge>` — A small pill showing a count or a status. */
 export interface Badge extends ElementHandle {
@@ -146,6 +172,8 @@ export interface Badge extends ElementHandle {
     size: "Sm" | "Md";
     /** Shows a coloured status dot before the text. */
     dot: boolean;
+    /** Largest width in pixels before the text is shortened. 0 means no limit. */
+    maxWidth: number;
     /** Name that screen readers announce for the control. Leave empty to use its text. */
     accessibleName: string;
     /** Description that screen readers announce for the control. */
@@ -200,6 +228,18 @@ export interface Badge extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Breadcrumb>` — A navigation trail. Add the segments as BreadcrumbItem children. */
 export interface Breadcrumb extends ElementHandle {
@@ -259,6 +299,18 @@ export interface Breadcrumb extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<BreadcrumbItem>` — A segment of a Breadcrumb trail. */
 export interface BreadcrumbItem extends ElementHandle {
@@ -343,6 +395,18 @@ export interface Button extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Callout>` — A message banner: information, success, warning or error. */
 export interface Callout extends ElementHandle {
@@ -412,6 +476,18 @@ export interface Callout extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Card>` — A card with an optional title that holds one child. */
 export interface Card extends ElementHandle {
@@ -483,6 +559,18 @@ export interface Card extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<CheckBox>` — A check box. */
 export interface CheckBox extends ElementHandle {
@@ -548,6 +636,99 @@ export interface CheckBox extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<CheckedListBox>` — A list of items, each with a check box. Space or a click on the box checks an item. */
+export interface CheckedListBox extends ElementHandle {
+    /** Index of the selected item, starting at 0. -1 means none. */
+    selectedIndex: number;
+    /** Checks or unchecks an item with a single click anywhere on it. */
+    checkOnClick: boolean;
+    /** Binding to the list of items to show, instead of Item children (each row's Text, or its DisplayMember field). */
+    itemsSource: readonly unknown[];
+    /** Web only: field of each bound item shown as its text. */
+    displayMember: string;
+    /** Web only: field of each bound item used as its value. */
+    valueMember: string;
+    /** Web only: height of a row, in pixels; 0 for the standard height. */
+    itemHeight: number;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<ColorField>` — A colour swatch that opens a colour picker. */
 export interface ColorField extends ElementHandle {
@@ -607,6 +788,18 @@ export interface ColorField extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Column>` — A column of a ListView or DataTable. */
 export interface Column extends ElementHandle {
@@ -691,6 +884,18 @@ export interface ComboBox extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<ContextMenu>` — A menu shown when a control that names it in its ContextMenu property is right-clicked, when a button names it in its DropDownMenu property, or from code (show). Add its commands as MenuItem elements; MenuItem children make a sub-menu. */
 export interface ContextMenu extends ElementHandle {
@@ -700,7 +905,15 @@ export interface ContextMenu extends ElementHandle {
 /** `<DataTable>` — A data table with sortable columns and pages. Declare the columns as Column children. */
 export interface DataTable extends ElementHandle {
     /** Binding to the list of rows to show. Each column shows the field named by its Binding. */
-    itemsSource: string;
+    itemsSource: readonly unknown[];
+    /** Index of the selected row in ItemsSource (whatever the sort), starting at 0. -1 means none. */
+    selectedIndex: number;
+    /** Height of the rows. */
+    density: "Compact" | "Normal" | "Comfortable";
+    /** Title shown when there is no row. Empty uses the default text. */
+    emptyTitle: string;
+    /** Description shown when there is no row. Empty uses the default text. */
+    emptyText: string;
     /** Number of rows per page. 0 shows every row without a pager. */
     pageSize: number;
     /** Page shown, starting at 0. A two-way binding follows the pager. */
@@ -773,6 +986,18 @@ export interface DataTable extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<DatePicker>` — A date field with a drop-down calendar. */
 export interface DatePicker extends ElementHandle {
@@ -844,6 +1069,18 @@ export interface DatePicker extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<DockArea>` — A work area surrounded by panels the user can dock left or right, group as tabs, split, float, resize, close and reopen. Add the panels as DockPanel children; one other child is the content of the central area. */
 export interface DockArea extends ElementHandle {
@@ -907,6 +1144,18 @@ export interface DockArea extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<DockPanel>` — A panel of a DockArea: a tab the user can move, dock, float or close, and one child element as its content. */
 export interface DockPanel extends ElementHandle {
@@ -995,6 +1244,18 @@ export interface Dropdown extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<EmptyState>` — A placeholder shown when an area has nothing to display. */
 export interface EmptyState extends ElementHandle {
@@ -1072,6 +1333,18 @@ export interface EmptyState extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<FloatingWindow>` — A window drawn inside the view, with the Kubuno title band and a close button; modal, it veils the rest of the window. */
 export interface FloatingWindow extends ElementHandle {
@@ -1091,6 +1364,8 @@ export interface FloatingWindow extends ElementHandle {
     iconColor: string;
     /** Web only: lets the user resize the window by its edges. */
     resizable: boolean;
+    /** Shows the close button of the title bar. */
+    showClose: boolean;
     /** Name that screen readers announce for the control. Leave empty to use its text. */
     accessibleName: string;
     /** Description that screen readers announce for the control. */
@@ -1145,6 +1420,18 @@ export interface FloatingWindow extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<GradientField>` — A gradient swatch that opens a gradient picker. */
 export interface GradientField extends ElementHandle {
@@ -1204,6 +1491,91 @@ export interface GradientField extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<GroupBox>` — A titled group around one child. On the web: a heading, an optional help line, then the content, like the sections of the settings pages. */
+export interface GroupBox extends ElementHandle {
+    /** Title shown at the top of the frame. */
+    title: string;
+    /** Space around the child, on all four sides, in pixels. */
+    padding: number;
+    /** Web only: a help line under the title. */
+    description: string;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Icon>` — An icon of the Kubuno icon set, alone or on a coloured disc. */
 export interface Icon extends ElementHandle {
@@ -1267,6 +1639,18 @@ export interface Icon extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<IconButton>` — A round button showing only an icon. */
 export interface IconButton extends ElementHandle {
@@ -1340,6 +1724,31 @@ export interface IconButton extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<Item>` — An item of a ListBox, CheckedListBox, ListView or TreeView. Item children make a sub-tree (TreeView) or the next columns' cells (ListView). */
+export interface Item extends ElementHandle {
+    /** Text of the item. */
+    text: string;
+    /** Web only: value of the item (SelectedValue); its text when empty. */
+    value: string;
+    /** Web only: icon shown before the text (a name of the Kubuno icon set). */
+    icon: string;
+    /** Web only: the item is checked (CheckedListBox). A two-way binding follows the user's clicks. */
+    checked: boolean;
+    /** Web only: the item shows its children at first (TreeView). */
+    expanded: boolean;
 }
 /** `<Label>` — A line or paragraph of text, in one of the shared typographic roles. */
 export interface Label extends ElementHandle {
@@ -1351,6 +1760,10 @@ export interface Label extends ElementHandle {
     textAlign: "TopLeft" | "TopCenter" | "TopRight" | "MiddleLeft" | "MiddleCenter" | "MiddleRight" | "BottomLeft" | "BottomCenter" | "BottomRight";
     /** What a text too long for the label does: ellipsis, clipped, or wrapped onto the next lines. */
     overflow: "Ellipsis" | "Clip" | "Wrap";
+    /** Web only: weight of the text. Default keeps the running text's weight; Medium is the host's emphasised step (rendered at 600). */
+    fontWeight: "Default" | "Regular" | "Medium" | "SemiBold" | "Bold";
+    /** Web only: upright or italic text. */
+    fontStyle: "Normal" | "Italic";
     /** Name that screen readers announce for the control. Leave empty to use its text. */
     accessibleName: string;
     /** Description that screen readers announce for the control. */
@@ -1405,6 +1818,18 @@ export interface Label extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<LinkLabel>` — A link. Its OnClick decides where to go; on the web, Href also gives it an address (middle click, open in a new tab). */
 export interface LinkLabel extends ElementHandle {
@@ -1414,6 +1839,10 @@ export interface LinkLabel extends ElementHandle {
     role: "Micro" | "Meta" | "Body" | "Heading" | "Title";
     /** Web only: the address of the link. A plain click stays in the app (OnClick decides); a middle or modified click opens the address. */
     href: string;
+    /** Web only: weight of the text. Default keeps the running text's weight; Medium is the host's emphasised step (rendered at 600). */
+    fontWeight: "Default" | "Regular" | "Medium" | "SemiBold" | "Bold";
+    /** Web only: upright or italic text. */
+    fontStyle: "Normal" | "Italic";
     /** Name that screen readers announce for the control. Leave empty to use its text. */
     accessibleName: string;
     /** Description that screen readers announce for the control. */
@@ -1468,6 +1897,259 @@ export interface LinkLabel extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<ListBox>` — A list of items. Add the items as Item children or bind ItemsSource. Arrow keys, Home / End, Page Up / Page Down and type-ahead move the selection; long lists are virtualised. */
+export interface ListBox extends ElementHandle {
+    /** How many items can be selected, and how Ctrl and Shift combine with a click. */
+    selectionMode: "None" | "One" | "MultiSimple" | "MultiExtended";
+    /** Index of the selected item, starting at 0. -1 means none. */
+    selectedIndex: number;
+    /** Binding to the list of items to show, instead of Item children (each row's Text, or its DisplayMember field). */
+    itemsSource: readonly unknown[];
+    /** Height of a row, in pixels; 0 for the standard height. */
+    itemHeight: number;
+    /** Web only: field of each bound item shown as its text. */
+    displayMember: string;
+    /** Web only: field of each bound item used as its value. */
+    valueMember: string;
+    /** Web only: value of the selected item (its Value, or ValueMember field of a bound row; else its text). Empty when none is selected. */
+    selectedValue: string;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<ListView>` — A list of items in columns. Declare the columns as Column children; the rows are Item children (their Item children fill the next columns) or ItemsSource (each column shows the field its Binding names). On the web, View also shows the items as a list or as tiles. */
+export interface ListView extends ElementHandle {
+    /** Index of the selected item, starting at 0. -1 means none. */
+    selectedIndex: number;
+    /** Allows several items to be selected (Ctrl and Shift). */
+    multiSelect: boolean;
+    /** Binding to the list of rows to show. Each column shows the field named by its Binding. */
+    itemsSource: readonly unknown[];
+    /** Web only: Details (rows in columns), List (the items' texts) or LargeIcon (tiles with the items' icons). */
+    view: "Details" | "List" | "LargeIcon";
+    /** Web only: height of a row, in pixels; 0 for the standard height. */
+    itemHeight: number;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<MaskedField>` — A text box that follows an input mask, for example 00/00/0000 (0 digit, 9 optional digit, L letter, ? optional letter, A / a letter or digit, & / C any character, \ before a literal). */
+export interface MaskedField extends ElementHandle {
+    /** Input mask, for example 00/00/0000 for a date. */
+    mask: string;
+    /** Text in the field (with the mask's literals). */
+    text: string;
+    /** Shows the field in the error colour. */
+    invalid: boolean;
+    /** Lets the text be selected and copied but not changed. */
+    readOnly: boolean;
+    /** Largest number of characters that can be typed. */
+    maxLength: number;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<MenuItem>` — A command of a menu. MenuItem children make it a sub-menu; a Text of a single dash (or Kind Separator) makes a separator line. */
 export interface MenuItem extends ElementHandle {
@@ -1572,22 +2254,30 @@ export interface NumericField extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
-/** `<Option>` — An item of a Dropdown or ComboBox list. */
+/** `<Option>` — An item of a Dropdown or ComboBox list, or a choice of a RadioGroup. */
 export interface Option extends ElementHandle {
     /** Value of the item. */
     value: string;
     /** Text shown for the item. Defaults to Value. */
     label: string;
 }
-/** `<Popover>` — A floating panel shown next to a control (its Target) while IsOpen is true; a click outside it or Escape closes it. It is painted above the rest of the view wherever it is declared. */
-export interface Popover extends ElementHandle {
-    /** The x:Name of the control it opens next to. */
-    target: string;
-    /** Whether it is shown. Bind it two-way to know when the user closes it. */
-    isOpen: boolean;
-    /** Which edges of the panel and the target line up. On the web Center is not available yet (Start is used). */
-    alignment: "Start" | "Center" | "End";
+/** `<PaintBox>` — A drawing surface: your OnPaint handler draws on it. On the web a <canvas>: e.ctx is its 2D context in CSS pixels (e.width, e.height, e.dpr); it is repainted on resize, on a pixel-ratio change and when PaintData changes. */
+export interface PaintBox extends ElementHandle {
+    /** Web only: what the drawing depends on (a binding); a new value repaints the surface, and it is e.data in OnPaint. */
+    paintData: string;
     /** Name that screen readers announce for the control. Leave empty to use its text. */
     accessibleName: string;
     /** Description that screen readers announce for the control. */
@@ -1642,6 +2332,176 @@ export interface Popover extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<PictureBox>` — An image, fitted into the control by SizeMode. On the web an <img>: its AccessibleName is the alternative text (none = a decorative picture). */
+export interface PictureBox extends ElementHandle {
+    /** The image: an image address (web) or the path of an image file, relative to the view. */
+    image: string;
+    /** Normal: at its size, top left. Stretch: to the control's size. Zoom: as large as fits, keeping its proportions. Center: at its size, centred. Cover: fills the control, keeping its proportions (cropped). */
+    sizeMode: "Normal" | "Stretch" | "Zoom" | "Center" | "Cover";
+    /** Rounds the corners of the image, in pixels. */
+    cornerRadius: number;
+    /** A line drawn around the control. */
+    borderStyle: "None" | "FixedSingle";
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<Popover>` — A floating panel shown next to a control (its Target) while IsOpen is true; a click outside it or Escape closes it. It is painted above the rest of the view wherever it is declared. */
+export interface Popover extends ElementHandle {
+    /** The x:Name of the control it opens next to. */
+    target: string;
+    /** Whether it is shown. Bind it two-way to know when the user closes it. */
+    isOpen: boolean;
+    /** Side of the target it opens on, when there is room (else the opposite side). */
+    placement: "Bottom" | "Top" | "Left" | "Right";
+    /** Which edges of the panel and the target line up. */
+    alignment: "Start" | "Center" | "End";
+    /** Width of the panel, in pixels; 0 for its content's. */
+    popupWidth: number;
+    /** Height of the panel, in pixels (its content scrolls); 0 for its content's. */
+    popupHeight: number;
+    /** Closes it on a click outside or Escape (the focus goes back to the target). */
+    lightDismiss: boolean;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<ProgressBar>` — A progress bar. */
 export interface ProgressBar extends ElementHandle {
@@ -1713,6 +2573,18 @@ export interface ProgressBar extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<RadioButton>` — An option button: only one option of a group can be selected. */
 export interface RadioButton extends ElementHandle {
@@ -1780,6 +2652,174 @@ export interface RadioButton extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<RadioGroup>` — Exclusive options: choosing one unchecks the others. Add the options as Option children, or bind ItemsSource. The arrow keys move the choice. */
+export interface RadioGroup extends ElementHandle {
+    /** Value of the chosen option. Empty when none is chosen. */
+    selectedValue: string;
+    /** One option per line, or the options side by side (wrapping). */
+    orientation: "Vertical" | "Horizontal";
+    /** A binding to the list of options to show, instead of Option children. */
+    itemsSource: readonly unknown[];
+    /** Field of each bound item shown as its text. */
+    displayMember: string;
+    /** Field of each bound item used as its value. */
+    valueMember: string;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<SearchField>` — A search box with a clear button. On the web, Escape clears it and Enter raises OnSearch. */
+export interface SearchField extends ElementHandle {
+    /** The searched text. */
+    text: string;
+    /** Hint shown while the field is empty. */
+    placeholder: string;
+    /** Lets the text be selected and copied but not changed. */
+    readOnly: boolean;
+    /** Largest number of characters that can be typed. */
+    maxLength: number;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Separator>` — A thin separating line. */
 export interface Separator extends ElementHandle {
@@ -1839,6 +2879,198 @@ export interface Separator extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<SettingsRow>` — One line of a settings page: the setting's name and help line, then the control that changes it (its child). Beside each other on a wide screen, stacked on a phone. */
+export interface SettingsRow extends ElementHandle {
+    /** Name of the setting. */
+    label: string;
+    /** A help line under the name. */
+    description: string;
+    /** Auto: the name beside the control, above it on a phone. Horizontal or Vertical forces one of the two. */
+    orientation: "Auto" | "Horizontal" | "Vertical";
+    /** Draws the line under the row (the last row of a list never draws one). */
+    showDivider: boolean;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<Sidebar>` — A navigation pane: rows with an icon and a label, section headers and expandable groups. The active row is SelectedItem. On the web, the rows are links of a <nav> (aria-current marks the active one). */
+export interface Sidebar extends ElementHandle {
+    /** Key of the active row (its x:Name, or its text when it has no Key). */
+    selectedItem: string;
+    /** Expanded shows the labels; Compact shows a rail of icons. */
+    displayMode: "Expanded" | "Compact";
+    /** Rows from a list (fields Text, Icon, Key, Level, and Kind="Section" for a header), instead of the rows written inside. */
+    itemsSource: string;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<SidebarItem>` — A row of a Sidebar: an icon and a label. SidebarItem children make it a group the user can expand or collapse. */
+export interface SidebarItem extends ElementHandle {
+    /** Label of the row. */
+    text: string;
+    /** Icon shown before the label: a name of the Kubuno icon set, or an image file (SVG, PNG…) relative to the view. */
+    icon: string;
+    /** The value of SelectedItem when the row is active; empty for its x:Name, else its text. */
+    key: string;
+    /** For a row with children: whether they are shown at first. */
+    expanded: boolean;
+    /** Whether the row can be chosen. */
+    enabled: boolean;
+    /** Whether the row is shown. */
+    visible: boolean;
+    /** Size of the icon: Small (16), Medium (20), Large (24), XLarge (32), a number of pixels, or width, height. Leave empty for the control's own size. */
+    iconSize: string;
+    /** How an image that is not square fills the icon's box: Fit shows all of it, Fill covers the box, Stretch fits it to the box exactly, None keeps its own size. */
+    iconScaling: "Fit" | "Fill" | "Stretch" | "None";
+    /** Colour of the icon, every pixel recoloured (for a one-colour icon). Leave empty for the control's colour: a glyph and an SVG drawn in currentColor follow it and the theme, another image keeps its colours. */
+    iconColor: string;
+}
+/** `<SidebarSection>` — A section header of a Sidebar: small uppercase text above the rows that follow it. */
+export interface SidebarSection extends ElementHandle {
+    /** Text of the header. */
+    text: string;
+    /** Whether the header is shown. */
+    visible: boolean;
 }
 /** `<Slider>` — A slider for choosing a value in a range. */
 export interface Slider extends ElementHandle {
@@ -1906,6 +3138,18 @@ export interface Slider extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Spinner>` — An animated loading indicator. */
 export interface Spinner extends ElementHandle {
@@ -1965,6 +3209,181 @@ export interface Spinner extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<Splitter>` — Two panes separated by a bar that can be dragged. On the web the bar is a focusable separator: the arrow keys move it (Shift: by 50 px), Home / End. */
+export interface Splitter extends ElementHandle {
+    /** Vertical: panes side by side. Horizontal: panes one above the other. */
+    orientation: "Vertical" | "Horizontal";
+    /** Size of the first pane, in pixels. Updated when the bar is moved. */
+    distance: number;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<StatusBar>` — A status bar: a row of StatusLabel cells along the bottom of a window. On the web, role="status" (changes are announced politely). */
+export interface StatusBar extends ElementHandle {
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<StatusLabel>` — A cell of a StatusBar: a text, an optional icon. Spring makes it share the leftover width; a Text of a single dash makes a separator; Clickable makes it a button. */
+export interface StatusLabel extends ElementHandle {
+    /** Text of the cell. A single dash makes a separator. */
+    text: string;
+    /** Icon shown before the text (a clickable cell): a name of the Kubuno icon set, or an image file relative to the view. */
+    icon: string;
+    /** The cell takes the width the other cells leave. */
+    spring: boolean;
+    /** The cell is a button: it lights up under the pointer and raises OnClick. */
+    clickable: boolean;
+    /** Whether a clickable cell can be clicked. */
+    enabled: boolean;
+    /** Whether the cell is shown. */
+    visible: boolean;
+    /** Size of the icon: Small (16), Medium (20), Large (24), XLarge (32), a number of pixels, or width, height. Leave empty for the control's own size. */
+    iconSize: string;
+    /** How an image that is not square fills the icon's box: Fit shows all of it, Fill covers the box, Stretch fits it to the box exactly, None keeps its own size. */
+    iconScaling: "Fit" | "Fill" | "Stretch" | "None";
+    /** Colour of the icon, every pixel recoloured (for a one-colour icon). Leave empty for the control's colour: a glyph and an SVG drawn in currentColor follow it and the theme, another image keeps its colours. */
+    iconColor: string;
 }
 /** `<Step>` — A step of a Stepper. */
 export interface Step extends ElementHandle {
@@ -2039,6 +3458,18 @@ export interface Stepper extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<Switch>` — An on/off switch. */
 export interface Switch extends ElementHandle {
@@ -2104,6 +3535,18 @@ export interface Switch extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<TabItem>` — A page of a Tabs control. */
 export interface TabItem extends ElementHandle {
@@ -2174,6 +3617,18 @@ export interface Tabs extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<TextArea>` — A multi-line text box. */
 export interface TextArea extends ElementHandle {
@@ -2249,6 +3704,18 @@ export interface TextArea extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<TextField>` — A single-line text box. */
 export interface TextField extends ElementHandle {
@@ -2328,6 +3795,18 @@ export interface TextField extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<ToolTip>` — A component that sets how the tooltips of the view appear. Each control's tooltip text is its ToolTip property. */
 export interface ToolTip extends ElementHandle {
@@ -2335,6 +3814,171 @@ export interface ToolTip extends ElementHandle {
     initialDelay: number;
     /** Whether the tooltips are shown at all. */
     active: boolean;
+}
+/** `<Toolbar>` — A toolbar. Add the commands as ToolbarItem children. One tab stop: the arrow keys move between the commands. */
+export interface Toolbar extends ElementHandle {
+    /** Paints a background band behind the commands. */
+    band: boolean;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
+}
+/** `<ToolbarItem>` — A command of a Toolbar. */
+export interface ToolbarItem extends ElementHandle {
+    /** Text of the command. Leave empty for an icon-only command. */
+    text: string;
+    /** Icon shown before the text: a name of the Kubuno icon set, or an image file (SVG, PNG…) relative to the view. */
+    icon: string;
+    /** Size of the icon: Small (16), Medium (20), Large (24), XLarge (32), a number of pixels, or width, height. Leave empty for the control's own size. */
+    iconSize: string;
+    /** How an image that is not square fills the icon's box: Fit shows all of it, Fill covers the box, Stretch fits it to the box exactly, None keeps its own size. */
+    iconScaling: "Fit" | "Fill" | "Stretch" | "None";
+    /** Colour of the icon, every pixel recoloured (for a one-colour icon). Leave empty for the control's colour: a glyph and an SVG drawn in currentColor follow it and the theme, another image keeps its colours. */
+    iconColor: string;
+    /** Web only: text shown under the pointer; the accessible name of an icon-only command. */
+    toolTip: string;
+    /** Web only: whether the command can be chosen. */
+    enabled: boolean;
+}
+/** `<TreeView>` — A tree of items that can be expanded. Add the items as nested Item children, or bind ItemsSource (a row's Items field nests). */
+export interface TreeView extends ElementHandle {
+    /** Selected item, as indexes separated by dots, for example 0.2.1. Empty means none. */
+    selectedPath: string;
+    /** Allows several items to be selected (Ctrl and Shift). */
+    multiSelect: boolean;
+    /** Binding to the items to show, instead of Item children (a row's Items or Children list makes its sub-tree on the web). */
+    itemsSource: readonly unknown[];
+    /** Height of a row, in pixels; 0 for the standard height. */
+    itemHeight: number;
+    /** Name that screen readers announce for the control. Leave empty to use its text. */
+    accessibleName: string;
+    /** Description that screen readers announce for the control. */
+    accessibleDescription: string;
+    /** Kind of element that screen readers announce. Default uses the control's own kind. */
+    accessibleRole: "Default" | "None" | "TitleBar" | "MenuBar" | "ScrollBar" | "Grip" | "Sound" | "Cursor" | "Caret" | "Alert" | "Window" | "Client" | "MenuPopup" | "MenuItem" | "ToolTip" | "Application" | "Document" | "Pane" | "Chart" | "Dialog" | "Border" | "Grouping" | "Separator" | "ToolBar" | "StatusBar" | "Table" | "ColumnHeader" | "RowHeader" | "Column" | "Row" | "Cell" | "Link" | "HelpBalloon" | "Character" | "List" | "ListItem" | "Outline" | "OutlineItem" | "PageTab" | "PropertyPage" | "Indicator" | "Graphic" | "StaticText" | "Text" | "PushButton" | "CheckButton" | "RadioButton" | "ComboBox" | "DropList" | "ProgressBar" | "Dial" | "HotkeyField" | "Slider" | "SpinButton" | "Diagram" | "Animation" | "Equation" | "ButtonDropDown" | "ButtonMenu" | "ButtonDropDownGrid" | "WhiteSpace" | "PageTabList" | "Clock" | "SplitButton" | "IpAddress" | "OutlineButton";
+    /** Background colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    backColor: string;
+    /** Text colour: a theme colour (it follows the light and dark themes) or a colour of your choice. Leave empty to use the parent's. */
+    foreColor: string;
+    /** Mouse pointer shown over the control. */
+    cursor: "Default" | "Arrow" | "IBeam" | "Hand" | "Wait" | "No" | "SizeAll" | "SizeNS" | "SizeWE" | "SizeNWSE" | "SizeNESW" | "Cross" | "Help" | "AppStarting" | "UpArrow";
+    /** Shows the text from right to left, for languages such as Arabic or Hebrew. Inherit uses the parent's setting. */
+    rightToLeft: "No" | "Yes" | "Inherit";
+    /** Whether the control reacts to the mouse and the keyboard. A disabled control is shown greyed, with everything inside it. */
+    enabled: boolean;
+    /** Whether the control is shown when the application runs. The designer still shows it. */
+    visible: boolean;
+    /** Position of the control in the order the Tab key follows, among the controls of the same container. */
+    tabIndex: number;
+    /** Whether the Tab key stops on the control. */
+    tabStop: boolean;
+    /** Menu shown when the control is right-clicked: the name of a ContextMenu of the view. */
+    contextMenu: string;
+    /** Whether data (files, text…) can be dragged onto the control: it then raises DragEnter, DragOver, DragLeave and DragDrop. */
+    allowDrop: boolean;
+    /** Shows the busy pointer over the control and everything inside it. */
+    useWaitCursor: boolean;
+    /** Text of the tooltip shown when the mouse rests on the control. */
+    toolTip: string;
+    /** Any text you want to keep with the control, for your own code. */
+    tag: string;
+    /** Distance from the left edge of the parent panel, in pixels. */
+    x: number;
+    /** Distance from the top edge of the parent panel, in pixels. */
+    y: number;
+    /** Width of the element, in pixels. */
+    width: number;
+    /** Height of the element, in pixels. */
+    height: number;
+    /** Edge of the parent panel the element is docked to, or Fill to take the remaining space. */
+    dock: "None" | "Top" | "Bottom" | "Left" | "Right" | "Fill";
+    /** Edges of the parent panel the element stays attached to when it is resized, for example Top, Left. */
+    anchor: string;
+    /** Space kept around the control by the container that lines it up with others: left, top, right, bottom, in pixels. */
+    margin: string;
+    /** Space inside the control, around its content: left, top, right, bottom, in pixels. */
+    padding: string;
+    /** Smallest size of the control: width, height in pixels (0 means no limit). */
+    minimumSize: string;
+    /** Largest size of the control: width, height in pixels (0 means no limit). */
+    maximumSize: string;
+    /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
+    class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** `<WorkspaceShell>` — The frame of an editor: a top bar with the title, the editor's name and the document's details, an optional status bar, and one child element as its body (typically a DockArea). */
 export interface WorkspaceShell extends ElementHandle {
@@ -2418,6 +4062,18 @@ export interface WorkspaceShell extends ElementHandle {
     maximumSize: string;
     /** Web only, migration aid: Tailwind classes added to the element. Flagged by the language server; use theme tokens and layout elements instead. */
     class: string;
+    /** Web only: background colour while the mouse is over the control (a theme colour; Token/NN for NN % opacity). Leave empty for none. */
+    hoverBackColor: string;
+    /** Web only: background colour while the control is pressed. Leave empty for none. */
+    pressedBackColor: string;
+    /** Web only: radius of the rounded corners, in pixels (a large value such as 9999 makes a pill). A container clips its children to its corners. Leave empty for the element's own corners. */
+    cornerRadius: number;
+    /** Web only: colour of a line drawn around the control (BorderThickness pixels wide). Leave empty for none. */
+    borderBrush: string;
+    /** Web only: width of the line drawn with BorderBrush, in pixels. */
+    borderThickness: number;
+    /** Web only: a shadow under the control, small, medium or large (the host's shadow steps). */
+    elevation: "None" | "Sm" | "Md" | "Lg";
 }
 /** Element name → handle type. */
 export interface ElementHandles {
@@ -2431,6 +4087,7 @@ export interface ElementHandles {
     Callout: Callout;
     Card: Card;
     CheckBox: CheckBox;
+    CheckedListBox: CheckedListBox;
     ColorField: ColorField;
     Column: Column;
     ComboBox: ComboBox;
@@ -2443,19 +4100,35 @@ export interface ElementHandles {
     EmptyState: EmptyState;
     FloatingWindow: FloatingWindow;
     GradientField: GradientField;
+    GroupBox: GroupBox;
     Icon: Icon;
     IconButton: IconButton;
+    Item: Item;
     Label: Label;
     LinkLabel: LinkLabel;
+    ListBox: ListBox;
+    ListView: ListView;
+    MaskedField: MaskedField;
     MenuItem: MenuItem;
     NumericField: NumericField;
     Option: Option;
+    PaintBox: PaintBox;
+    PictureBox: PictureBox;
     Popover: Popover;
     ProgressBar: ProgressBar;
     RadioButton: RadioButton;
+    RadioGroup: RadioGroup;
+    SearchField: SearchField;
     Separator: Separator;
+    SettingsRow: SettingsRow;
+    Sidebar: Sidebar;
+    SidebarItem: SidebarItem;
+    SidebarSection: SidebarSection;
     Slider: Slider;
     Spinner: Spinner;
+    Splitter: Splitter;
+    StatusBar: StatusBar;
+    StatusLabel: StatusLabel;
     Step: Step;
     Stepper: Stepper;
     Switch: Switch;
@@ -2464,5 +4137,8 @@ export interface ElementHandles {
     TextArea: TextArea;
     TextField: TextField;
     ToolTip: ToolTip;
+    Toolbar: Toolbar;
+    ToolbarItem: ToolbarItem;
+    TreeView: TreeView;
     WorkspaceShell: WorkspaceShell;
 }

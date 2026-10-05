@@ -54,6 +54,21 @@ export interface ItemActivateEventArgs<T = unknown> extends EventArgs {
     readonly item: T;
     readonly index: number;
 }
+/** `PaintBox.OnPaint` (web): draw with `ctx`, in CSS pixels (the context is already scaled by `dpr`). */
+export interface PaintEventArgs extends EventArgs {
+    readonly ctx: CanvasRenderingContext2D;
+    readonly width: number;
+    readonly height: number;
+    readonly dpr: number;
+    /** The box's `PaintData`. */
+    readonly data?: unknown;
+}
+/** An item of a `CheckedListBox` was checked or unchecked. `value` is `checked`. */
+export interface ItemCheckEventArgs extends EventArgs {
+    readonly index: number;
+    readonly checked: boolean;
+    readonly value: boolean;
+}
 interface DomLike {
     nativeEvent?: Event;
     button?: number;

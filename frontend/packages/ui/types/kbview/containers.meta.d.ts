@@ -641,6 +641,16 @@ export declare const FloatingWindowMeta: {
         readonly to: {
             readonly prop: "resizable";
         };
+    }, {
+        readonly name: "ShowClose";
+        readonly kind: "Bool";
+        readonly default: "true";
+        readonly category: "Behavior";
+        readonly doc: "Shows the close button of the title bar.";
+        readonly docFr: "Affiche le bouton Fermer de la barre de titre.";
+        readonly to: {
+            readonly prop: "showClose";
+        };
     }];
     readonly events: readonly [{
         readonly name: "OnClose";
@@ -707,24 +717,82 @@ export declare const PopoverMeta: {
             readonly change: "OnClosed";
         };
     }, {
+        readonly name: "Placement";
+        readonly kind: {
+            readonly Enum: readonly ["Bottom", "Top", "Left", "Right"];
+        };
+        readonly default: "Bottom";
+        readonly category: "Layout";
+        readonly doc: "Side of the target it opens on, when there is room (else the opposite side).";
+        readonly docFr: "Côté de la cible où il s'ouvre, quand il y a la place.";
+        readonly to: {
+            readonly prop: "placement";
+            readonly values: {
+                readonly Bottom: "bottom";
+                readonly Top: "top";
+                readonly Left: "left";
+                readonly Right: "right";
+            };
+        };
+    }, {
         readonly name: "Alignment";
         readonly kind: {
             readonly Enum: readonly ["Start", "Center", "End"];
         };
         readonly default: "Start";
         readonly category: "Layout";
-        readonly doc: "Which edges of the panel and the target line up. On the web Center is not available yet (Start is used).";
-        readonly docFr: "Bords du panneau et de la cible qui s'alignent. Sur le web, Center n'est pas encore disponible (Start est utilisé).";
+        readonly doc: "Which edges of the panel and the target line up.";
+        readonly docFr: "Bords du panneau et de la cible qui s'alignent.";
         readonly to: {
             readonly prop: "align";
             readonly values: {
                 readonly Start: "left";
-                readonly Center: "left";
+                readonly Center: "center";
                 readonly End: "right";
             };
         };
+    }, {
+        readonly name: "PopupWidth";
+        readonly kind: "F32";
+        readonly default: "0";
+        readonly category: "Layout";
+        readonly doc: "Width of the panel, in pixels; 0 for its content's.";
+        readonly docFr: "Largeur du panneau, en DIP ; 0 pour celle de son contenu.";
+        readonly to: {
+            readonly prop: "width";
+        };
+    }, {
+        readonly name: "PopupHeight";
+        readonly kind: "F32";
+        readonly default: "0";
+        readonly category: "Layout";
+        readonly doc: "Height of the panel, in pixels (its content scrolls); 0 for its content's.";
+        readonly docFr: "Hauteur du panneau, en DIP ; 0 pour celle de son contenu.";
+        readonly to: {
+            readonly prop: "height";
+        };
+    }, {
+        readonly name: "LightDismiss";
+        readonly kind: "Bool";
+        readonly default: "true";
+        readonly category: "Behavior";
+        readonly doc: "Closes it on a click outside or Escape (the focus goes back to the target).";
+        readonly docFr: "Le ferme sur un clic à l'extérieur ou Échap.";
+        readonly to: {
+            readonly prop: "lightDismiss";
+        };
     }];
     readonly events: readonly [{
+        readonly name: "OnOpened";
+        readonly category: "Behavior";
+        readonly args: "EventArgs";
+        readonly doc: "Occurs when the panel opens.";
+        readonly docFr: "Se produit quand le panneau s'ouvre.";
+        readonly from: {
+            readonly prop: "onOpen";
+            readonly args: "none";
+        };
+    }, {
         readonly name: "OnClosed";
         readonly category: "Behavior";
         readonly args: "EventArgs";

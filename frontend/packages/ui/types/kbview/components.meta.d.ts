@@ -40,7 +40,7 @@ export declare const ContextMenuMeta: {
         readonly docFr: "Se produit quand une commande issue d'ItemsSource est choisie : sa clé est le nouveau texte.";
         readonly from: {
             readonly runtime: "parent-adapter";
-            readonly args: "item";
+            readonly args: "value";
         };
     }];
     readonly web: {
@@ -148,6 +148,7 @@ export declare const MenuItemMeta: {
         readonly docFr: "Affiche une coche devant la commande.";
         readonly to: {
             readonly prop: "checked";
+            readonly change: "OnCheckedChanged";
         };
     }, {
         readonly name: "CheckOnClick";

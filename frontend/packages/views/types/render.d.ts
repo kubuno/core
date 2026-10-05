@@ -10,8 +10,8 @@ import { type ComponentType, type ReactNode } from 'react';
 import { type Scope } from './binding';
 import type { PlanNode } from './plan';
 import { type Cell, type ViewClass } from './view';
-/** A Kubuno colour token (`TextSecondary`) → its CSS variable. */
-export declare function tokenColor(token: string): string;
+import { tokenColor } from './style';
+export { tokenColor };
 interface NodeProps {
     node: PlanNode;
     scope: Scope;
@@ -33,4 +33,3 @@ export declare function KbView({ view, design, ...props }: {
     view: ViewClass | ComponentType<object>;
     design?: boolean;
 } & Record<string, unknown>): ReactNode;
-export {};

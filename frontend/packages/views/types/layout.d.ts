@@ -29,6 +29,10 @@ interface ContainerBase {
     href?: string;
     onClick?: (e: ReactMouseEvent<HTMLElement>) => void;
     surface?: Surface;
+    /** `CornerRadius` (px): the container's corners, its children clipped to them. */
+    cornerRadius?: number;
+    /** Web `DividerColor`: a line between two children (under each one but the last), in this colour. */
+    dividerColor?: string;
     /** @internal — given by the renderer to every element of `@kubuno/views`. */
     __view?: Internals;
     /** @internal */
@@ -56,7 +60,34 @@ interface PanelProps extends ContainerBase {
     /** `Dock` (default) or `Absolute`. */
     layout?: 'Dock' | 'Absolute';
 }
-/** `<Panel>`: children docked as bands (`Dock`), or placed by `X`/`Y` in `Layout="Absolute"`. */
+/** The edges of an `Anchor` value (`"Top, Right"`); empty or unreadable = `Top, Left`. */
+export interface AnchorEdges {
+    readonly top: boolean;
+    readonly bottom: boolean;
+    readonly left: boolean;
+    readonly right: boolean;
+}
+export declare function parseAnchor(value: unknown): AnchorEdges;
+/**
+ * Where an undocked child of an absolute `Panel` goes (WinForms anchor semantics, as the desktop's
+ * `panel_child_rects`): `X`/`Y`/`Width`/`Height` are authored against the panel's design size; an anchored edge
+ * keeps its distance to the panel's edge when the panel is larger or smaller, both edges of an axis stretch the
+ * child, neither edge keeps its size and moves by half the change. `X` counts from the inline start (it
+ * mirrors in `ar`/`he`), so `Right` is the inline end. Without a design size the child stays where `X`/`Y` say.
+ */
+export declare function anchoredStyle(anchor: AnchorEdges, at: {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+}, design: {
+    width: number;
+    height: number;
+} | undefined): CSSProperties;
+/**
+ * `<Panel>`: children docked as bands (`Dock`); with `Layout="Absolute"` the undocked children are placed by
+ * `X`/`Y`/`Width`/`Height` and kept at their `Anchor` edges, the docked ones still taking their bands.
+ */
 export declare const Panel: import("react").ForwardRefExoticComponent<PanelProps & import("react").RefAttributes<HTMLElement>>;
 /**
  * `<UserControl>`: the root of a `.kbcontrol` — a dock container that fills the room its host gives it
@@ -72,6 +103,26 @@ interface StackProps extends ContainerBase {
 }
 /** `<Stack>`: children along `Direction`, `Gap` px apart; a child with `Stack.Fill="true"` takes the rest. */
 export declare const Stack: import("react").ForwardRefExoticComponent<StackProps & import("react").RefAttributes<HTMLElement>>;
+/** One `ColumnStyles` / `RowStyles` entry → a CSS track (`Absolute 120`, `Percent 50`, `AutoSize`). */
+export declare function trackOf(style: string | undefined, fallback: string): string;
+/** The grid tracks of a table: `count` tracks, each from its `;`-separated style or the fallback. */
+export declare function tableTracks(styles: string | undefined, count: number, fallback: string): string;
+interface TableLayoutPanelProps extends ContainerBase {
+    columnCount?: number;
+    rowCount?: number;
+    columnStyles?: string;
+    rowStyles?: string;
+    growStyle?: 'AddRows' | 'AddColumns' | 'FixedSize';
+    cellBorderStyle?: 'None' | 'Single';
+    cellSpacing?: number;
+}
+/**
+ * `<TableLayoutPanel>`: `ColumnCount` × `RowCount` cells sized by `ColumnStyles` / `RowStyles` (a column without a
+ * style gets an equal share, a row without one sizes to its content), the children placed in reading order or at
+ * their `TableLayoutPanel.Row` / `.Column`, spanning `RowSpan` / `ColumnSpan`; more children than cells add rows
+ * (`GrowStyle="AddRows"`) or columns (`AddColumns`). Columns follow the reading direction.
+ */
+export declare const TableLayoutPanel: import("react").ForwardRefExoticComponent<TableLayoutPanelProps & import("react").RefAttributes<HTMLElement>>;
 interface ScrollAreaProps extends ContainerBase {
     /** `Corner`: radius of the scrolling viewport, px. */
     corner?: number;
@@ -79,6 +130,8 @@ interface ScrollAreaProps extends ContainerBase {
     gutter?: 'Auto' | 'Stable' | 'StableBothEdges';
     /** Web: which axes scroll. */
     scrollBars?: 'Vertical' | 'Horizontal' | 'Both';
+    /** Web `ScrollBarStyle`: `Inset` = the thin bar inset from the rounded corners (the host's `kb-inset-scroll`). */
+    scrollBarStyle?: 'Default' | 'Inset';
 }
 /** `<ScrollArea>`: its single child scrolls inside it (it shrinks with its container: `min-height: 0`). */
 export declare const ScrollArea: import("react").ForwardRefExoticComponent<ScrollAreaProps & import("react").RefAttributes<HTMLElement>>;

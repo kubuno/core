@@ -6,7 +6,7 @@ export declare const DataTableMeta: {
     readonly baseChain: readonly ["DataTable", "Control", "Component"];
     readonly children: "List";
     readonly allowedChildren: readonly ["Column"];
-    readonly defaultEvent: null;
+    readonly defaultEvent: "OnSelectionChanged";
     readonly properties: readonly [{
         readonly name: "ItemsSource";
         readonly kind: "String";
@@ -16,6 +16,58 @@ export declare const DataTableMeta: {
         readonly docFr: "Liaison vers la liste des lignes à afficher. Chaque colonne affiche le champ nommé par sa Binding.";
         readonly to: {
             readonly prop: "rows";
+            readonly convert: "items-source";
+        };
+    }, {
+        readonly name: "SelectedIndex";
+        readonly kind: "F32";
+        readonly default: "-1";
+        readonly category: "Data";
+        readonly doc: "Index of the selected row in ItemsSource (whatever the sort), starting at 0. -1 means none.";
+        readonly docFr: "Index de la ligne sélectionnée, à partir de 0. -1 signifie aucune.";
+        readonly to: {
+            readonly prop: "selectedIndex";
+            readonly change: "OnSelectionChanged";
+        };
+    }, {
+        readonly name: "Density";
+        readonly kind: {
+            readonly Enum: readonly ["Compact", "Normal", "Comfortable"];
+        };
+        readonly default: "Normal";
+        readonly category: "Appearance";
+        readonly bindable: true;
+        readonly doc: "Height of the rows.";
+        readonly docFr: "Hauteur des lignes.";
+        readonly to: {
+            readonly prop: "density";
+            readonly values: {
+                readonly Compact: "compact";
+                readonly Normal: "normal";
+                readonly Comfortable: "comfortable";
+            };
+        };
+    }, {
+        readonly name: "EmptyTitle";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly bindable: true;
+        readonly doc: "Title shown when there is no row. Empty uses the default text.";
+        readonly docFr: "Titre affiché quand il n'y a aucune ligne. Vide utilise le texte par défaut.";
+        readonly to: {
+            readonly prop: "emptyTitle";
+        };
+    }, {
+        readonly name: "EmptyText";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly bindable: true;
+        readonly doc: "Description shown when there is no row. Empty uses the default text.";
+        readonly docFr: "Description affichée quand il n'y a aucune ligne. Vide utilise le texte par défaut.";
+        readonly to: {
+            readonly prop: "emptyText";
         };
     }, {
         readonly name: "PageSize";
@@ -129,6 +181,26 @@ export declare const DataTableMeta: {
         };
     }];
     readonly events: readonly [{
+        readonly name: "OnSelectionChanged";
+        readonly category: "Behavior";
+        readonly args: "ValueChangedEventArgs";
+        readonly doc: "Occurs when the selected row changes. The value is its index in ItemsSource (-1: none).";
+        readonly docFr: "Se produit quand la ligne sélectionnée change.";
+        readonly from: {
+            readonly prop: "onSelectedIndexChange";
+            readonly args: "value";
+        };
+    }, {
+        readonly name: "OnRowActivated";
+        readonly category: "Action";
+        readonly args: "ItemActivateEventArgs";
+        readonly doc: "Occurs when a row is double-clicked, or Enter is pressed on it: e.item is the row, e.index its index in ItemsSource.";
+        readonly docFr: "Se produit quand une ligne est double-cliquée.";
+        readonly from: {
+            readonly prop: "onRowActivate";
+            readonly args: "row";
+        };
+    }, {
         readonly name: "OnSortChanged";
         readonly category: "Behavior";
         readonly args: "ValueChangedEventArgs";
@@ -256,6 +328,6 @@ export declare const ColumnMeta: {
         readonly module: null;
         readonly export: null;
         readonly domRoot: "none";
-        readonly itemOf: readonly ["DataTable"];
+        readonly itemOf: readonly ["DataTable", "ListView"];
     };
 };

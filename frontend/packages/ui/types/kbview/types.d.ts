@@ -58,7 +58,9 @@ export type Converter =
 /** `Theme` enum → the `WORKSPACE_*` palette constants of `@kubuno/sdk`. */
  | 'workspace-theme'
 /** `ItemsSource` → the array prop, each bound item mapped through `DisplayMember`/`ValueMember`. */
- | 'items-source';
+ | 'items-source'
+/** `items-source`, plus each item's `Icon` name made an icon element (`Sidebar` rows from a list). */
+ | 'items-source-icons';
 /**
  * How a `.kbview` property reaches the component when it is not a plain React prop: the views
  * runtime (`@kubuno/views`, WV-3) implements it around the component.
@@ -90,6 +92,8 @@ export type RuntimeTarget =
  | 'icon-size' | 'icon-color' | 'icon-scaling'
 /** Web-only `Class` (Tailwind classes) merged into the component's `className`. */
  | 'class'
+/** Web-only interaction states and outline (WV-5a): `HoverBackColor`, `PressedBackColor`, `CornerRadius`, `BorderBrush`, `BorderThickness`, `Elevation`. */
+ | 'hover-color' | 'pressed-color' | 'corner-radius' | 'border-brush' | 'border-thickness' | 'elevation'
 /** The view's root: the page / dialog title. */
  | 'view-title'
 /** Selects one of the element's `alternates` components (`TextField Variant`). */
@@ -127,8 +131,12 @@ export type ArgsAdapter =
  | 'row'
 /** The callback receives the new sort: `e.value` = the sorted column's binding path. */
  | 'sort'
+/** The callback receives `(index, checked)`: `ItemCheckEventArgs` (`e.index`, `e.checked`, `e.value` = checked). */
+ | 'item-check'
 /** DOM events listened to on the element's root by the runtime (common events). */
- | 'dom';
+ | 'dom'
+/** A `PaintBox` paints: `PaintEventArgs` (the 2D context, the size in CSS px, the pixel ratio, the data). */
+ | 'paint';
 /** The common events the runtime listens to on the DOM root (no React prop needed). */
 export type DomEvent = 'click' | 'dblclick' | 'auxclick' | 'mousedown' | 'mouseup' | 'mousemove' | 'mouseenter' | 'mouseleave' | 'mousehover' | 'wheel' | 'keydown' | 'keypress' | 'keyup' | 'focusin' | 'focus' | 'focusout' | 'blur' | 'resize' | 'drop' | 'dragenter' | 'dragover' | 'dragleave';
 type StringKeys<P> = Extract<keyof P, string>;
@@ -410,6 +418,16 @@ export declare const EVENT_ARGS: {
     };
     readonly ItemActivateEventArgs: {
         readonly chain: readonly ["ItemActivateEventArgs", "EventArgs"];
+        readonly mutable: false;
+        readonly cancelable: false;
+    };
+    readonly PaintEventArgs: {
+        readonly chain: readonly ["PaintEventArgs", "EventArgs"];
+        readonly mutable: false;
+        readonly cancelable: false;
+    };
+    readonly ItemCheckEventArgs: {
+        readonly chain: readonly ["ItemCheckEventArgs", "EventArgs"];
         readonly mutable: false;
         readonly cancelable: false;
     };

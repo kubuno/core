@@ -586,7 +586,7 @@ export declare const ComboBoxMeta: {
 /** `Option` items feed `Dropdown.options` and `Combobox.options`: checked against both item types. */
 export declare const OptionMeta: {
     readonly name: "Option";
-    readonly doc: "An item of a Dropdown or ComboBox list.";
+    readonly doc: "An item of a Dropdown or ComboBox list, or a choice of a RadioGroup.";
     readonly docFr: "Élément de la liste d'un Dropdown ou d'une ComboBox.";
     readonly family: "text";
     readonly baseChain: readonly ["Option", "Component"];
@@ -618,7 +618,7 @@ export declare const OptionMeta: {
         readonly module: null;
         readonly export: null;
         readonly domRoot: "none";
-        readonly itemOf: readonly ["Dropdown", "ComboBox"];
+        readonly itemOf: readonly ["Dropdown", "ComboBox", "RadioGroup"];
     };
 };
 export declare const DatePickerMeta: {

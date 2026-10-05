@@ -13,9 +13,12 @@ export interface AvatarProps {
     shape?: 'circle' | 'rounded';
     /** Diameter in px. */
     size?: number;
+    /** A dot at the bottom end corner: the person's availability. */
+    presence?: AvatarPresence;
     className?: string;
     style?: React.CSSProperties;
 }
+export type AvatarPresence = 'none' | 'online' | 'away' | 'busy' | 'offline';
 /**
  * A person's picture, or their initials on a disc while there is none (the `.kbview` `Avatar`). Built on
  * Radix Avatar: the initials show until the photo has loaded, and stay when it fails.

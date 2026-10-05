@@ -19,6 +19,10 @@ number at release time, and CI publishes that section as the GitHub Release note
   colours; containers can draw lines between their children; texts can be bolder, lighter or italic. In a
   panel with free placement, elements keep their distance to the edges they are anchored to when the panel
   grows or shrinks, mirrored in right-to-left languages.
+- **Lists, trees and navigation in web views.** Views can now show lists, check lists, detail lists and trees that
+  stay fluid with thousands of rows and work with the keyboard and screen readers, toolbars, a navigation sidebar, a
+  status bar, a resizable split, a search field, a field with an input mask and a drawing surface. Tables select a row
+  and open it on double-click or Enter; popovers open on any side and close on Escape; avatars show a presence dot.
 - **Folding sections, check marks and list commands in views.** An accordion section opened or closed by the
   user updates the view and raises its event; menu commands that toggle a check mark, or belong to a group of
   exclusive choices, keep their state; a menu can add commands from a list and report which one was chosen.

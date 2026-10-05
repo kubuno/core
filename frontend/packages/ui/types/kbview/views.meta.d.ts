@@ -99,6 +99,9 @@ export declare const UserControlMeta: {
         readonly Class: {
             readonly prop: "className";
         };
+        readonly CornerRadius: {
+            readonly prop: "cornerRadius";
+        };
     };
     readonly designDefaults: {
         readonly size: readonly [320, 240];
@@ -125,6 +128,8 @@ export declare const PanelMeta: {
         layout?: "Dock" | "Absolute";
     }>, PropertyMeta<{
         href?: string;
+    }>, PropertyMeta<{
+        dividerColor?: string;
     }>];
     readonly events: readonly [];
     readonly inheritedMap: {
@@ -211,6 +216,9 @@ export declare const PanelMeta: {
         };
         readonly Class: {
             readonly prop: "className";
+        };
+        readonly CornerRadius: {
+            readonly prop: "cornerRadius";
         };
     };
     readonly designDefaults: {
@@ -293,6 +301,8 @@ export declare const StackMeta: {
         };
     }, PropertyMeta<{
         href?: string;
+    }>, PropertyMeta<{
+        dividerColor?: string;
     }>];
     readonly events: readonly [];
     readonly inheritedMap: {
@@ -380,6 +390,9 @@ export declare const StackMeta: {
         readonly Class: {
             readonly prop: "className";
         };
+        readonly CornerRadius: {
+            readonly prop: "cornerRadius";
+        };
     };
     readonly designDefaults: {
         readonly size: readonly [200, 100];
@@ -443,6 +456,23 @@ export declare const ScrollAreaMeta: {
                 readonly Auto: "Auto";
                 readonly Stable: "Stable";
                 readonly StableBothEdges: "StableBothEdges";
+            };
+        };
+    }, {
+        readonly name: "ScrollBarStyle";
+        readonly kind: {
+            readonly Enum: readonly ["Default", "Inset"];
+        };
+        readonly default: "Default";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: the look of the scroll bar. Inset: a thin bar that starts and ends inside rounded corners (menus, popovers).";
+        readonly docFr: "Web uniquement : aspect de la barre de défilement. Inset : une barre fine qui commence et finit à l'intérieur des coins arrondis (menus, panneaux surgissants).";
+        readonly to: {
+            readonly prop: "scrollBarStyle";
+            readonly values: {
+                readonly Default: "Default";
+                readonly Inset: "Inset";
             };
         };
     }];
@@ -528,6 +558,9 @@ export declare const ScrollAreaMeta: {
         readonly Class: {
             readonly prop: "className";
         };
+        readonly CornerRadius: {
+            readonly prop: "corner";
+        };
     };
     readonly designDefaults: {
         readonly size: readonly [240, 160];
@@ -591,5 +624,198 @@ export declare const RepeaterMeta: {
         readonly domRoot: "none";
         readonly content: "children";
         readonly template: true;
+    };
+};
+export declare const TableLayoutPanelMeta: {
+    readonly name: "TableLayoutPanel";
+    readonly doc: "A grid: its children are placed in rows and columns sized in pixels, in shares of the room left, or to their content. On the web, a CSS grid whose columns follow the reading direction.";
+    readonly docFr: "Grille : ses enfants sont placés en lignes et en colonnes dimensionnées en pixels, en parts de la place restante, ou selon leur contenu.";
+    readonly family: "containers";
+    readonly baseChain: readonly ["TableLayoutPanel", "ContainerBase", "ScrollableControl", "Control", "Component"];
+    readonly children: "List";
+    readonly layoutKind: "Flow";
+    readonly defaultEvent: "OnClick";
+    readonly properties: readonly [{
+        readonly name: "ColumnCount";
+        readonly kind: "F32";
+        readonly default: "2";
+        readonly category: "Layout";
+        readonly doc: "The number of columns.";
+        readonly docFr: "Nombre de colonnes.";
+        readonly to: {
+            readonly prop: "columnCount";
+        };
+    }, {
+        readonly name: "RowCount";
+        readonly kind: "F32";
+        readonly default: "2";
+        readonly category: "Layout";
+        readonly doc: "The number of rows (more are added when the children need them, with GrowStyle AddRows).";
+        readonly docFr: "Nombre de lignes (d'autres sont ajoutées quand les enfants en ont besoin, avec GrowStyle AddRows).";
+        readonly to: {
+            readonly prop: "rowCount";
+        };
+    }, {
+        readonly name: "ColumnStyles";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Layout";
+        readonly doc: "How each column is sized, separated by semicolons: Absolute 120, Percent 50 or AutoSize. A missing one is Percent 1 (an equal share).";
+        readonly docFr: "Dimensionnement de chaque colonne, séparé par des points-virgules : Absolute 120, Percent 50 ou AutoSize. Une colonne sans style reçoit Percent 1 (une part égale).";
+        readonly to: {
+            readonly prop: "columnStyles";
+        };
+    }, {
+        readonly name: "RowStyles";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Layout";
+        readonly doc: "How each row is sized, separated by semicolons: Absolute 40, Percent 50 or AutoSize. A missing one is AutoSize.";
+        readonly docFr: "Dimensionnement de chaque ligne, séparé par des points-virgules : Absolute 40, Percent 50 ou AutoSize. Une ligne sans style est AutoSize.";
+        readonly to: {
+            readonly prop: "rowStyles";
+        };
+    }, {
+        readonly name: "GrowStyle";
+        readonly kind: {
+            readonly Enum: readonly ["AddRows", "AddColumns", "FixedSize"];
+        };
+        readonly default: "AddRows";
+        readonly category: "Layout";
+        readonly doc: "What happens when the children do not fit the declared grid.";
+        readonly docFr: "Ce qui se passe quand les enfants ne tiennent pas dans la grille déclarée.";
+        readonly to: {
+            readonly prop: "growStyle";
+            readonly values: {
+                readonly AddRows: "AddRows";
+                readonly AddColumns: "AddColumns";
+                readonly FixedSize: "FixedSize";
+            };
+        };
+    }, {
+        readonly name: "CellBorderStyle";
+        readonly kind: {
+            readonly Enum: readonly ["None", "Single"];
+        };
+        readonly default: "None";
+        readonly category: "Appearance";
+        readonly doc: "Lines drawn around and between the cells.";
+        readonly docFr: "Lignes dessinées autour des cellules et entre elles.";
+        readonly to: {
+            readonly prop: "cellBorderStyle";
+            readonly values: {
+                readonly None: "None";
+                readonly Single: "Single";
+            };
+        };
+    }, {
+        readonly name: "CellSpacing";
+        readonly kind: "F32";
+        readonly default: "0";
+        readonly category: "Layout";
+        readonly doc: "Space between two cells, in pixels.";
+        readonly docFr: "Espace entre deux cellules, en DIP.";
+        readonly to: {
+            readonly prop: "cellSpacing";
+        };
+    }];
+    readonly events: readonly [];
+    readonly inheritedMap: {
+        readonly Enabled: {
+            readonly prop: "disabled";
+            readonly convert: "invert";
+        };
+        readonly AccessibleName: {
+            readonly prop: "aria-label";
+        };
+        readonly AccessibleRole: {
+            readonly prop: "role";
+            readonly values: {
+                readonly Default: "";
+                readonly None: "none";
+                readonly TitleBar: "banner";
+                readonly MenuBar: "menubar";
+                readonly ScrollBar: "scrollbar";
+                readonly Grip: "separator";
+                readonly Sound: "none";
+                readonly Cursor: "none";
+                readonly Caret: "none";
+                readonly Alert: "alert";
+                readonly Window: "dialog";
+                readonly Client: "region";
+                readonly MenuPopup: "menu";
+                readonly MenuItem: "menuitem";
+                readonly ToolTip: "tooltip";
+                readonly Application: "application";
+                readonly Document: "document";
+                readonly Pane: "region";
+                readonly Chart: "img";
+                readonly Dialog: "dialog";
+                readonly Border: "none";
+                readonly Grouping: "group";
+                readonly Separator: "separator";
+                readonly ToolBar: "toolbar";
+                readonly StatusBar: "status";
+                readonly Table: "table";
+                readonly ColumnHeader: "columnheader";
+                readonly RowHeader: "rowheader";
+                readonly Column: "gridcell";
+                readonly Row: "row";
+                readonly Cell: "cell";
+                readonly Link: "link";
+                readonly HelpBalloon: "tooltip";
+                readonly Character: "none";
+                readonly List: "list";
+                readonly ListItem: "listitem";
+                readonly Outline: "tree";
+                readonly OutlineItem: "treeitem";
+                readonly PageTab: "tab";
+                readonly PropertyPage: "tabpanel";
+                readonly Indicator: "img";
+                readonly Graphic: "img";
+                readonly StaticText: "note";
+                readonly Text: "textbox";
+                readonly PushButton: "button";
+                readonly CheckButton: "checkbox";
+                readonly RadioButton: "radio";
+                readonly ComboBox: "combobox";
+                readonly DropList: "listbox";
+                readonly ProgressBar: "progressbar";
+                readonly Dial: "slider";
+                readonly HotkeyField: "textbox";
+                readonly Slider: "slider";
+                readonly SpinButton: "spinbutton";
+                readonly Diagram: "img";
+                readonly Animation: "img";
+                readonly Equation: "math";
+                readonly ButtonDropDown: "button";
+                readonly ButtonMenu: "button";
+                readonly ButtonDropDownGrid: "button";
+                readonly WhiteSpace: "none";
+                readonly PageTabList: "tablist";
+                readonly Clock: "timer";
+                readonly SplitButton: "button";
+                readonly IpAddress: "textbox";
+                readonly OutlineButton: "button";
+            };
+        };
+        readonly TabIndex: {
+            readonly prop: "tabIndex";
+        };
+        readonly Class: {
+            readonly prop: "className";
+        };
+        readonly CornerRadius: {
+            readonly prop: "cornerRadius";
+        };
+    };
+    readonly designDefaults: {
+        readonly size: readonly [320, 160];
+    };
+    readonly web: {
+        readonly module: "@kubuno/views";
+        readonly export: "TableLayoutPanel";
+        readonly domRoot: "ref";
+        readonly content: "children";
     };
 };

@@ -14,6 +14,18 @@ under the published version number.
   radio group moved with the arrow keys, vertical or side by side; a picture fitted by a size mode (normal,
   stretch, zoom, centre, cover) with rounded corners and an optional border. They replace the local copies the
   modules' settings pages each defined, and are the `.kbview` elements of the same names.
+- **Lists and trees: `ListBox`, `CheckedListBox`, `ListView` and `TreeView`.** Virtualised (only the visible rows are
+  drawn, 10 000 rows stay fluid), with the usual keyboard (arrows, Home / End, Page Up / Down, type-ahead, Space to
+  check, Left / Right to fold a tree branch, Enter to open, Shift / Ctrl to select several) mirrored in right-to-left
+  languages, and announced to screen readers as lists, grids and trees with their selected, checked and expanded states.
+- **Navigation and tools: `Toolbar`, `Sidebar`, `StatusBar`, `Splitter`, `SearchField`, `MaskedField` and `PaintBox`.**
+  A toolbar moved through with the arrow keys; a navigation sidebar with folding sections and a compact rail; a status
+  bar; a split view resized with the mouse or the keyboard; the shell's search pill; a field with an input mask; a
+  drawing surface repainted on resize.
+- **`DataTable`** selects one row by index, opens a row on double-click or Enter, has a compact density and a
+  text-only empty state; its rows no longer need a key. **`AnchoredPopover`** opens on any side, closes on Escape and
+  gives the focus back. **`Avatar`** shows a presence dot. **`Badge`** shortens its text past a maximum width;
+  **`FloatingWindow`** can hide its close button.
 - **Text weights and italics on `Label` and `LinkLabel`** (`weight`: Regular, Medium, SemiBold, Bold;
   `fontStyle`: Italic).
 - **`Radio` takes a `name`**, so radios can form one native group (arrow keys move the choice).

@@ -62,6 +62,16 @@ export declare const BadgeMeta: {
         readonly to: {
             readonly prop: "dot";
         };
+    }, {
+        readonly name: "MaxWidth";
+        readonly kind: "F32";
+        readonly default: "0";
+        readonly category: "Layout";
+        readonly doc: "Largest width in pixels before the text is shortened. 0 means no limit.";
+        readonly docFr: "Largeur maximale en pixels avant que le texte soit raccourci. 0 signifie aucune limite.";
+        readonly to: {
+            readonly prop: "maxWidth";
+        };
     }];
     readonly events: readonly [];
     readonly designDefaults: {

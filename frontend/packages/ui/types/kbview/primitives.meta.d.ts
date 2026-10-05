@@ -65,6 +65,42 @@ export declare const LabelMeta: {
                 readonly Wrap: "Wrap";
             };
         };
+    }, {
+        readonly name: "FontWeight";
+        readonly kind: {
+            readonly Enum: readonly ["Default", "Regular", "Medium", "SemiBold", "Bold"];
+        };
+        readonly default: "Default";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: weight of the text. Default keeps the running text's weight; Medium is the host's emphasised step (rendered at 600).";
+        readonly docFr: "Web uniquement : graisse du texte. Default garde celle du texte courant ; Medium est le palier d'emphase de l'hôte (rendu en 600).";
+        readonly to: {
+            readonly prop: "weight";
+            readonly values: {
+                readonly Regular: "Regular";
+                readonly Medium: "Medium";
+                readonly SemiBold: "SemiBold";
+                readonly Bold: "Bold";
+            };
+        };
+    }, {
+        readonly name: "FontStyle";
+        readonly kind: {
+            readonly Enum: readonly ["Normal", "Italic"];
+        };
+        readonly default: "Normal";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: upright or italic text.";
+        readonly docFr: "Web uniquement : texte droit ou italique.";
+        readonly to: {
+            readonly prop: "fontStyle";
+            readonly values: {
+                readonly Normal: "Normal";
+                readonly Italic: "Italic";
+            };
+        };
     }];
     readonly events: readonly [];
     readonly inheritedMap: {
@@ -138,6 +174,42 @@ export declare const LinkLabelMeta: {
         readonly docFr: "Web uniquement : l'adresse du lien. Un clic simple reste dans l'application (OnClick décide) ; un clic du milieu ou avec une touche de modification ouvre l'adresse.";
         readonly to: {
             readonly prop: "href";
+        };
+    }, {
+        readonly name: "FontWeight";
+        readonly kind: {
+            readonly Enum: readonly ["Default", "Regular", "Medium", "SemiBold", "Bold"];
+        };
+        readonly default: "Default";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: weight of the text. Default keeps the running text's weight; Medium is the host's emphasised step (rendered at 600).";
+        readonly docFr: "Web uniquement : graisse du texte. Default garde celle du texte courant ; Medium est le palier d'emphase de l'hôte (rendu en 600).";
+        readonly to: {
+            readonly prop: "weight";
+            readonly values: {
+                readonly Regular: "Regular";
+                readonly Medium: "Medium";
+                readonly SemiBold: "SemiBold";
+                readonly Bold: "Bold";
+            };
+        };
+    }, {
+        readonly name: "FontStyle";
+        readonly kind: {
+            readonly Enum: readonly ["Normal", "Italic"];
+        };
+        readonly default: "Normal";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: upright or italic text.";
+        readonly docFr: "Web uniquement : texte droit ou italique.";
+        readonly to: {
+            readonly prop: "fontStyle";
+            readonly values: {
+                readonly Normal: "Normal";
+                readonly Italic: "Italic";
+            };
         };
     }];
     readonly events: readonly [{
@@ -250,6 +322,26 @@ export declare const AvatarMeta: {
             };
         };
     }, {
+        readonly name: "Presence";
+        readonly kind: {
+            readonly Enum: readonly ["None", "Online", "Away", "Busy", "Offline"];
+        };
+        readonly default: "None";
+        readonly category: "Appearance";
+        readonly bindable: true;
+        readonly doc: "A dot at the bottom end corner: the person's availability.";
+        readonly docFr: "Pastille affichée en bas à droite : la disponibilité de la personne.";
+        readonly to: {
+            readonly prop: "presence";
+            readonly values: {
+                readonly None: "none";
+                readonly Online: "online";
+                readonly Away: "away";
+                readonly Busy: "busy";
+                readonly Offline: "offline";
+            };
+        };
+    }, {
         readonly name: "AvatarSize";
         readonly kind: "F32";
         readonly default: "36";
@@ -344,6 +436,90 @@ export declare const IconMeta: {
     readonly web: {
         readonly module: "@ui";
         readonly export: "IconGlyph";
+        readonly domRoot: "ref";
+    };
+};
+export declare const PictureBoxMeta: {
+    readonly name: "PictureBox";
+    readonly doc: "An image, fitted into the control by SizeMode. On the web an <img>: its AccessibleName is the alternative text (none = a decorative picture).";
+    readonly docFr: "Image : le chemin d'un fichier image, relatif à la vue, ajustée au contrôle selon SizeMode.";
+    readonly family: "display";
+    readonly baseChain: readonly ["PictureBox", "Control", "Component"];
+    readonly children: "None";
+    readonly defaultEvent: "OnClick";
+    readonly properties: readonly [{
+        readonly name: "Image";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly bindable: true;
+        readonly editor: "image";
+        readonly doc: "The image: an image address (web) or the path of an image file, relative to the view.";
+        readonly docFr: "Image : le chemin d'un fichier image, relatif à la vue.";
+        readonly to: {
+            readonly prop: "src";
+        };
+    }, {
+        readonly name: "SizeMode";
+        readonly kind: {
+            readonly Enum: readonly ["Normal", "Stretch", "Zoom", "Center", "Cover"];
+        };
+        readonly default: "Normal";
+        readonly category: "Behavior";
+        readonly doc: "Normal: at its size, top left. Stretch: to the control's size. Zoom: as large as fits, keeping its proportions. Center: at its size, centred. Cover: fills the control, keeping its proportions (cropped).";
+        readonly docFr: "Normal : à sa taille, en haut à gauche. Stretch : à la taille du contrôle. Zoom : aussi grande que possible en gardant ses proportions. Center : à sa taille, centrée. Cover : remplit le contrôle en gardant ses proportions (rognée).";
+        readonly to: {
+            readonly prop: "sizeMode";
+            readonly values: {
+                readonly Normal: "Normal";
+                readonly Stretch: "Stretch";
+                readonly Zoom: "Zoom";
+                readonly Center: "Center";
+                readonly Cover: "Cover";
+            };
+        };
+    }, {
+        readonly name: "CornerRadius";
+        readonly kind: "F32";
+        readonly default: "0";
+        readonly category: "Appearance";
+        readonly doc: "Rounds the corners of the image, in pixels.";
+        readonly docFr: "Arrondit les coins de l'image, en DIP.";
+        readonly to: {
+            readonly prop: "cornerRadius";
+        };
+    }, {
+        readonly name: "BorderStyle";
+        readonly kind: {
+            readonly Enum: readonly ["None", "FixedSingle"];
+        };
+        readonly default: "None";
+        readonly category: "Appearance";
+        readonly doc: "A line drawn around the control.";
+        readonly docFr: "Ligne dessinée autour du contrôle.";
+        readonly to: {
+            readonly prop: "borderStyle";
+            readonly values: {
+                readonly None: "None";
+                readonly FixedSingle: "FixedSingle";
+            };
+        };
+    }];
+    readonly events: readonly [];
+    readonly inheritedMap: {
+        readonly AccessibleName: {
+            readonly prop: "alt";
+        };
+        readonly Class: {
+            readonly prop: "className";
+        };
+    };
+    readonly designDefaults: {
+        readonly size: readonly [160, 120];
+    };
+    readonly web: {
+        readonly module: "@ui";
+        readonly export: "PictureBox";
         readonly domRoot: "ref";
     };
 };

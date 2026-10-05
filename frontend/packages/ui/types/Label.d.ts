@@ -10,11 +10,19 @@ export declare const TEXT_ROLE_CLASS: Readonly<Record<TextRole, string>>;
 export type TextAlign = 'TopLeft' | 'TopCenter' | 'TopRight' | 'MiddleLeft' | 'MiddleCenter' | 'MiddleRight' | 'BottomLeft' | 'BottomCenter' | 'BottomRight';
 /** `Overflow`: what a text too long for its box does. */
 export type TextOverflow = 'Ellipsis' | 'Clip' | 'Wrap';
+/** `FontWeight` (web): the host's weight steps. The host renders `font-medium` at 600 and running text at 500. */
+export type TextWeight = 'Regular' | 'Medium' | 'SemiBold' | 'Bold';
+export declare const TEXT_WEIGHT_CLASS: Readonly<Record<TextWeight, string>>;
+/** `FontStyle` (web): upright or italic. */
+export type TextStyle = 'Normal' | 'Italic';
 export interface LabelProps extends Omit<React.HTMLAttributes<HTMLParagraphElement>, 'role'> {
     text?: React.ReactNode;
     role?: TextRole;
     textAlign?: TextAlign;
     overflow?: TextOverflow;
+    /** Text weight; unset = the running text's (500). */
+    weight?: TextWeight;
+    fontStyle?: TextStyle;
     /** The ARIA role of the paragraph (rarely needed). */
     ariaRole?: string;
 }
@@ -26,6 +34,8 @@ export declare const Label: React.ForwardRefExoticComponent<LabelProps & React.R
 export interface LinkLabelProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
     text?: React.ReactNode;
     role?: TextRole;
+    weight?: TextWeight;
+    fontStyle?: TextStyle;
 }
 /**
  * A link (the `.kbview` `LinkLabel`). With an `href`, a plain left click stays in the app — its `onClick`

@@ -10,6 +10,8 @@ interface RadioProps {
     disabled?: boolean;
     className?: string;
     labelClassName?: string;
+    /** The native radio group: radios sharing a name move the choice with the arrow keys (`RadioGroup`). */
+    name?: string;
 }
 /**
  * The control is drawn on a canvas; the hidden `<input type="radio">` keeps every
@@ -20,5 +22,5 @@ interface RadioProps {
  * Same architecture as `Toggle`, including its four repaint triggers: a canvas is a
  * bitmap, so everything CSS used to redo for free has to be re-wired.
  */
-export declare function Radio({ checked, onChange, label, description, variant, color, disabled, className, labelClassName, }: RadioProps): import("react").JSX.Element;
+export declare function Radio({ checked, onChange, label, description, variant, color, disabled, className, labelClassName, name, }: RadioProps): import("react").JSX.Element;
 export {};

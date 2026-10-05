@@ -71,6 +71,8 @@ interface FloatingWindowProps {
     minWidth?: number;
     minHeight?: number;
     resizable?: boolean;
+    /** `false` hides the title bar's close button (Escape and `onClose` still close the window). Default `true`. */
+    showClose?: boolean;
     backdrop?: boolean;
     className?: string;
     /**
@@ -88,5 +90,5 @@ interface FloatingWindowProps {
 }
 /** Ancienne marge intérieure par défaut, gardée pour les fenêtres qui la veulent. */
 export declare const WINDOW_PADDING = 20;
-export declare function FloatingWindow({ title, icon, children, titleActions, banner, popout, onClose, defaultWidth, defaultHeight, minWidth, minHeight, resizable, backdrop, className, padding, actions, t, }: FloatingWindowProps): import("react").ReactPortal | null;
+export declare function FloatingWindow({ title, icon, children, titleActions, banner, popout, onClose, defaultWidth, defaultHeight, minWidth, minHeight, resizable, showClose, backdrop, className, padding, actions, t, }: FloatingWindowProps): import("react").ReactPortal | null;
 export {};

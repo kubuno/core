@@ -26,6 +26,11 @@ under the published version number.
   `OnCheckedChanged`; a context menu adds the commands of its `ItemsSource` and raises `OnItemClicked` with the
   chosen one's key. A hidden item is left out of its parent's list.
 
+- **Lists, trees, navigation and drawing in views.** `ListBox`, `CheckedListBox`, `ListView`, `TreeView` (with their
+  `Item` children or a bound list, two-way selection and check marks), `Toolbar`, `Sidebar`, `StatusBar`, `Splitter`,
+  `SearchField`, `MaskedField` and `PaintBox`, whose `OnPaint` handler draws on a canvas (`PaintEventArgs`: context,
+  size, pixel ratio). New event args: `ItemCheckEventArgs`, `PaintEventArgs`.
+
 ### Fixed
 
 - **Theme colours with a digit in their name** (`Surface1`, `Surface2`, `Surface3`) pointed at a CSS variable

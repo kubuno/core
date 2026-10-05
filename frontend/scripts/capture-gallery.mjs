@@ -89,6 +89,8 @@ listeners.push((m) => {
 })
 await send('Page.enable')
 await send('Runtime.enable')
+// Focus rings and :focus-visible as in a focused window (headless tabs are not focused).
+await send('Emulation.setFocusEmulationEnabled', { enabled: true })
 await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
 
 const navigate = async (url) => {
@@ -160,5 +162,5 @@ writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 1))
 await send('Browser.close').catch(() => {})
 ws.close()
 server.close()
-setTimeout(() => { try { chrome.kill() } catch { /* already gone */ } rmSync(profile, { recursive: true, force: true }); process.exit(0) }, 500)
+setTimeout(() => { try { chrome.kill() } catch { /* already gone */ } try { rmSync(profile, { recursive: true, force: true }) } catch { /* Chrome still releasing files */ } process.exit(0) }, 500)
 console.log(`${report.captures.length} captures in ${out}; pages with console errors: ${Object.keys(report.errors).length}`)
