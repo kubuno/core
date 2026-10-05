@@ -46,6 +46,7 @@ export function Sample({ title }: { title: string }) {
       </button>
       <Link to="/settings" className="text-primary hover:underline">{t('sample.settings', { defaultValue: 'Réglages' })}</Link>
       <Badge text={title} />
+      {copied && <Badge text={name} />}
     </div>
   )
 }

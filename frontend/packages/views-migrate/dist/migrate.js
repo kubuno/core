@@ -1870,7 +1870,10 @@ function part(m, node, ctx, why) {
     const obj = `{ ${props.map((p) => `${p.name}: ${p.expr}`).join(', ')} }`;
     const value = props.length ? binding(m, ts.factory.createObjectLiteralExpression(), obj, ctx, `${name}_props`) : undefined;
     const n = { el: 'ReactHost', attrs: [], children: [], comment: `TODO(views-migrate): ${why}` };
-    m.getters.push({ name, body: `__parts.${name}`, memo: false, doc: `A part of the screen still written in React (${why}).` });
+    // Under a condition, the component is guarded like its props: a ReactHost renders nothing while the condition fails
+    // (the designer shows hidden elements; their props getters give nothing then).
+    const partGuards = props.length ? (ctx.guards ?? []).filter((c) => !/__row/.test(c)) : [];
+    m.getters.push({ name, body: `__parts.${name}`, memo: false, doc: `A part of the screen still written in React (${why}).`, guards: partGuards.length ? partGuards : undefined });
     attr(n, 'Component', `{Binding ${name}}`);
     if (value)
         attr(n, 'Props', value);
@@ -1926,7 +1929,9 @@ function hostComponent(m, e, ctx, why) {
     if (local)
         m.exportedLocals.add(tag.text);
     // One getter per component, however many times it is used (`gettersByExpr`).
-    const comp = m.getter(tag.text, local ? `__parts.${tag.text}` : tag.text, { doc: `\`<${tag.text}>\`, rendered by a ReactHost.` });
+    // One getter per component and condition: guarded like its props (see `part`).
+    const hostGuards = entries.length ? (ctx.guards ?? []).filter((c) => !/__row/.test(c)) : [];
+    const comp = m.getter(tag.text, local ? `__parts.${tag.text}` : tag.text, { doc: `\`<${tag.text}>\`, rendered by a ReactHost.`, guards: hostGuards });
     const n = { el: 'ReactHost', attrs: [], children: [], comment: `TODO(views-migrate): ${why}` };
     attr(n, 'Component', `{Binding ${comp}}`);
     if (entries.length)
@@ -2059,7 +2064,8 @@ function codeBehind(m, target, xmlText) {
             cls.push('    this.navigate = useNavigate()');
         cls.push('  }', '');
     }
-    const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, m.deps(g.body)]));
+    // A memo depends on what its guard reads too: computed while the guard failed, it must be computed again once it holds.
+    const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, m.deps([g.body, ...(g.guards ?? [])].join(' ; '))]));
     for (const g of m.getters) {
         if (g.doc)
             cls.push(`  /** ${g.doc} */`);

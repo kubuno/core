@@ -29,11 +29,11 @@ beforeAll(() => {
 }, 120_000)
 
 describe('kbview-migrate on a sample screen', () => {
-  it('converts it, reporting the one part it cut out (a local component)', () => {
+  it('converts it, reporting what it left to React (a local component, used twice)', () => {
     expect(result.component).toBe('Sample')
     expect(result.status).toBe('partial')
     expect(result.reasons).toEqual(['<Badge> is no .kbview element (a local or dynamic component)'])
-    expect(result.stats.parts).toBe(1)
+    expect(result.stats.parts).toBe(2)
     expect(result.deletes).toEqual([SAMPLE])
     const s = summary(FRONTEND, [result])
     expect(s.partial).toBe(1)
@@ -87,6 +87,10 @@ describe('kbview-migrate on a sample screen', () => {
     // The code-behind is valid TypeScript (syntax).
     const out = ts.transpileModule(code, { reportDiagnostics: true, compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.Preserve } })
     expect(out.diagnostics ?? []).toEqual([])
+    // A component shown under a condition: its getter and its props' getter are guarded alike, and the props' memo
+    // depends on what the guard reads (computed while it failed, it is computed again once it holds).
+    expect(code).toMatch(/get Badge2\(\) \{\s*if \(!\(this\.copied\)\) return undefined as never\s*return __parts\.Badge/)
+    expect(code).toMatch(/get badge_props2\(\) \{\s*return this\.memo\('badge_props2', \[this\.name, this\.copied\]/)
     // A top-level statement declaring nothing (a registration) is kept, after the class.
     expect(code).toMatch(/export default Sample\.component\(\)\s+console\.debug\('sample loaded'\)/)
     expect(parts).toContain('export { Badge }')

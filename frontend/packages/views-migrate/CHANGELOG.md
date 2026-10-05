@@ -27,3 +27,6 @@ under the published version number.
 - A screen's top-level statements declaring nothing (a `Registry.register(…)` run when the file is imported) are
   kept in the code-behind, after the class; they were dropped (the core notification settings lost their « Account and
   security » activities).
+- A part or a component shown under a condition is guarded like its props, and a memoized getter depends on what its
+  guard reads: computed while the condition failed, it is computed again once it holds (the core sessions screen
+  showed its error state without its texts; the designer, which shows hidden elements, failed to render it).

@@ -1871,7 +1871,10 @@ function part(m: Migration, node: ts.Node, ctx: JsxCtx, why: string): XNode {
   const obj = `{ ${props.map((p) => `${p.name}: ${p.expr}`).join(', ')} }`
   const value = props.length ? binding(m, ts.factory.createObjectLiteralExpression(), obj, ctx, `${name}_props`) : undefined
   const n: XNode = { el: 'ReactHost', attrs: [], children: [], comment: `TODO(views-migrate): ${why}` }
-  m.getters.push({ name, body: `__parts.${name}`, memo: false, doc: `A part of the screen still written in React (${why}).` })
+  // Under a condition, the component is guarded like its props: a ReactHost renders nothing while the condition fails
+  // (the designer shows hidden elements; their props getters give nothing then).
+  const partGuards = props.length ? (ctx.guards ?? []).filter((c) => !/__row/.test(c)) : []
+  m.getters.push({ name, body: `__parts.${name}`, memo: false, doc: `A part of the screen still written in React (${why}).`, guards: partGuards.length ? partGuards : undefined })
   attr(n, 'Component', `{Binding ${name}}`)
   if (value) attr(n, 'Props', value)
   return n
@@ -1919,7 +1922,9 @@ function hostComponent(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement
   }
   if (local) m.exportedLocals.add(tag.text)
   // One getter per component, however many times it is used (`gettersByExpr`).
-  const comp = m.getter(tag.text, local ? `__parts.${tag.text}` : tag.text, { doc: `\`<${tag.text}>\`, rendered by a ReactHost.` })
+  // One getter per component and condition: guarded like its props (see `part`).
+  const hostGuards = entries.length ? (ctx.guards ?? []).filter((c) => !/__row/.test(c)) : []
+  const comp = m.getter(tag.text, local ? `__parts.${tag.text}` : tag.text, { doc: `\`<${tag.text}>\`, rendered by a ReactHost.`, guards: hostGuards })
   const n: XNode = { el: 'ReactHost', attrs: [], children: [], comment: `TODO(views-migrate): ${why}` }
   attr(n, 'Component', `{Binding ${comp}}`)
   if (entries.length) attr(n, 'Props', binding(m, ts.factory.createObjectLiteralExpression(), `{ ${entries.join(', ')} }`, ctx, `${snake(tag.text)}_props`))
@@ -2038,7 +2043,8 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
     if (m.needsNavigate) cls.push('    this.navigate = useNavigate()')
     cls.push('  }', '')
   }
-  const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, m.deps(g.body)] as const))
+  // A memo depends on what its guard reads too: computed while the guard failed, it must be computed again once it holds.
+  const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, m.deps([g.body, ...(g.guards ?? [])].join(' ; '))] as const))
   for (const g of m.getters) {
     if (g.doc) cls.push(`  /** ${g.doc} */`)
     // A getter of an element shown under a condition is only read when it holds (as the TSX only rendered it then).
