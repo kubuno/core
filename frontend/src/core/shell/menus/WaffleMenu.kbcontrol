@@ -14,7 +14,7 @@
         <AppTileGrid.Header>
           <Panel>
             <Stack Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" Gap="0" Padding="20, 16, 20, 4" Visible="{Binding viewing}">
-              <Label Text="{Res shell.favorites}" Overflow="Wrap" ForeColor="TextPrimary" FontWeight="SemiBold" Class="text-base"/>
+              <Label Text="{Res shell.favorites}" Overflow="Wrap" ForeColor="TextPrimary" FontWeight="SemiBold" Role="Subtitle"/>
               <IconButton x:Name="edit_button" Icon="Pencil" Diameter="40" Glyph="16" Filled="true" OnClick="edit_button_click"/>
             </Stack>
             <Panel Padding="16, 16, 16, 4" Visible="{Binding editing}">

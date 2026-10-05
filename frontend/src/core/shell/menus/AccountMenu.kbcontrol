@@ -27,7 +27,7 @@
           <IconButton x:Name="camera_button" Icon="Camera" Diameter="32" Glyph="15" AccessibleName="{Res shell.change_photo}" Enabled="{Binding canChangeAvatar}"
                       X="64" Y="60" Anchor="Bottom, Right" BackColor="Surface" Elevation="Md" BorderBrush="Border" HoverBackColor="Surface1" OnClick="camera_button_click"/>
         </Panel>
-        <Label Text="{Binding greeting}" ForeColor="TextPrimary" Overflow="Wrap" TextAlign="TopCenter" FontWeight="Regular" Margin="0, 0, 0, 12" Class="text-2xl"/>
+        <Label Text="{Binding greeting}" ForeColor="TextPrimary" Overflow="Wrap" TextAlign="TopCenter" Role="Display" FontWeight="Regular" Margin="0, 0, 0, 12"/>
         <LinkLabel x:Name="manage" Text="{Res shell.manage_account}" Href="{Binding manageHref}" ForeColor="Primary" Padding="20, 6, 20, 6" CornerRadius="9999"
                    BorderBrush="Primary/40" HoverBackColor="Primary/5" OnClick="manage_click"/>
       </Stack>
@@ -43,7 +43,7 @@
                 <Avatar Image="{Binding avatar}" DisplayName="{Binding name}" Initials="{Binding letter}" AvatarSize="24" BorderBrush="Surface" BorderThickness="2"/>
               </Repeater>
               <Label Text="{Binding moreText}" Visible="{Binding hasMore}" Overflow="Wrap" Width="24" Height="24" CornerRadius="9999" BackColor="Surface3"
-                     BorderBrush="Surface" BorderThickness="2" ForeColor="TextSecondary" FontWeight="Medium" Class="flex items-center justify-center text-[10px]"/>
+                     BorderBrush="Surface" BorderThickness="2" ForeColor="TextSecondary" FontWeight="Medium" Role="Badge" Class="flex items-center justify-center"/>
             </Stack>
             <Icon Name="ChevronUp" Size="16" ForeColor="TextTertiary" Visible="{Binding expanded}"/>
             <Icon Name="ChevronDown" Size="16" ForeColor="TextTertiary" Visible="{Binding collapsed}"/>
@@ -62,7 +62,7 @@
                   <Label Text="{Binding email}" Role="Meta" ForeColor="TextTertiary" TextAlign="TopLeft"/>
                 </Stack>
                 <Label Text="{Binding unreadText}" Visible="{Binding hasUnread}" Overflow="Wrap" MinimumSize="18, 0" Height="18" Padding="4, 0, 4, 0" CornerRadius="9999"
-                       BackColor="Danger" ForeColor="OnPrimary" FontWeight="Bold" Class="flex items-center justify-center shrink-0 text-[10px]"/>
+                       BackColor="Danger" ForeColor="OnPrimary" FontWeight="Bold" Role="Badge" Class="flex items-center justify-center shrink-0"/>
               </Stack>
 
               <!-- A dead session: « Déconnecté », Connexion / Supprimer. -->
@@ -74,7 +74,7 @@
                     <Label Text="{Binding email}" Role="Meta" ForeColor="TextTertiary"/>
                   </Stack>
                   <Label Text="{Binding disconnectedText}" Overflow="Wrap" ForeColor="TextSecondary" BackColor="Surface2" Padding="8, 2, 8, 2" CornerRadius="4"
-                         Class="shrink-0 text-[11px]"/>
+                         Role="Caption" Class="shrink-0"/>
                 </Stack>
                 <Stack Direction="LeftToRight" Margin="0, 10, 0, 0" Padding="52, 0, 0, 0">
                   <Button Text="{Binding reconnectText}" Size="Sm" OnClick="reconnect_click"/>
@@ -91,7 +91,7 @@
                     <Label Text="{Binding email}" Role="Meta" ForeColor="TextTertiary"/>
                   </Stack>
                   <Label Text="{Binding server}" Overflow="Wrap" ForeColor="TextTertiary" BackColor="Surface2" Padding="8, 2, 8, 2" CornerRadius="9999"
-                         BorderBrush="Border/60" Class="shrink-0 text-[11px]"/>
+                         BorderBrush="Border/60" Role="Caption" Class="shrink-0"/>
                 </Stack>
                 <Stack Direction="LeftToRight" Padding="52, 0, 0, 0">
                   <Button Text="{Binding openText}" Size="Sm" Icon="ExternalLink" IconSize="13" OnClick="open_remote_click"/>
