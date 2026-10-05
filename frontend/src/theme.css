@@ -25,6 +25,11 @@
   /* ── Search bar ────────────────────────────────────────── */
   --color-search-bg: #e9eef6;
 
+  /* ── Header panels (launcher, account panel) ──────────── */
+  /* Their ground (token `PanelBackground`): the search field's by default; a theme whose search field sits on a
+     dark header band (Numix) gives the panels their own. */
+  --color-panel-bg: var(--color-search-bg);
+
   /* ── Texte ─────────────────────────────────────────────── */
   --color-text-primary:   #444444;
   --color-text-secondary: #5f6368;

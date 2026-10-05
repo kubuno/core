@@ -24,6 +24,7 @@ import { api } from '../../api/client'
 import { authApi, type BrowserAccount } from '../../api/auth'
 import { initialsOf, type AccountEntry, type AccountEventArgs, type AccountUser } from './model'
 import AccountMenu from './AccountMenu'
+import { headerPanelChrome } from './panelChrome'
 
 /** The panel's width (`w-80`) and its distance to the viewport's edges. */
 const WIDTH = 320
@@ -215,8 +216,7 @@ function AccountButtonImpl({ onAddAccount }: AccountButtonProps) {
   }
 
   const panelStyle: CSSProperties = {
-    background: '#E9EEF6',
-    boxShadow: '0 4px 8px 3px rgba(0,0,0,.15),0 1px 3px rgba(0,0,0,.3)',
+    ...headerPanelChrome,
     top: place?.top ?? 0,
     left: place?.left ?? 0,
     maxHeight: place?.maxHeight ?? 'calc(100vh - 70px)',

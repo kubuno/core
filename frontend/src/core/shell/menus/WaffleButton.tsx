@@ -26,6 +26,7 @@ import { api } from '../../api/client'
 import type { User } from '../../types'
 import { MenuItemHostContext, type MenuItemHost } from './menuItemHost'
 import type { LauncherApp } from './model'
+import { headerPanelChrome } from './panelChrome'
 import WaffleMenu from './WaffleMenu'
 
 const FAV_KEY = 'kubuno-waffle-favorites'
@@ -142,8 +143,7 @@ function WaffleButtonImpl({ allApps, dark = false, fab = false, onOpenChange }: 
           // body scrolls instead of « Favoris » being clipped. Editing takes the whole room, so both zones
           // show while dragging.
           style={{
-            background: '#E9EEF6',
-            boxShadow: '0 4px 8px 3px rgba(0,0,0,.15),0 1px 3px rgba(0,0,0,.3)',
+            ...headerPanelChrome,
             maxHeight: editing
               ? 'var(--radix-dropdown-menu-content-available-height, calc(100vh - 80px))'
               : 'min(580px, var(--radix-dropdown-menu-content-available-height, calc(100vh - 80px)))',

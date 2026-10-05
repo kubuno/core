@@ -36,6 +36,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **The app launcher and the account panel are readable in the dark theme.** Their ground stayed light under
+  the dark theme's light text; it now follows the theme (a new theme colour, `--color-panel-bg`, defaulting to
+  the search field's ground — the Numix theme keeps its light panels). The Visual Studio designer shows them
+  the same way.
+- **Generated view types stay in `.kubuno/views`.** A `.kbview` outside the project folder (another folder or
+  drive) made the view compiler write its generated declarations outside the project's `.kubuno/views` folder;
+  they now go under `.kubuno/views/_external/`.
 - **Signing up and creating accounts work on MySQL / MariaDB.** Public registration
   answered with an error 500 on MySQL and MariaDB: keeping the password history to
   its configured depth used a `LIMIT` inside an `IN (...)` subquery, which those

@@ -11,5 +11,5 @@
     "labelsHref": "/labels",
     "adminHref": "/admin"
   },
-  "frame": { "background": "#E9EEF6", "cornerRadius": 28, "border": true }
+  "frame": { "background": "PanelBackground", "cornerRadius": 28, "border": true }
 }

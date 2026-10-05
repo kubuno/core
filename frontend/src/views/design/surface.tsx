@@ -24,7 +24,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
-import { KbView, registerElements } from '@kubuno/views'
+import { KbView, registerElements, tokenColor } from '@kubuno/views'
 import { designClass, setDesignDataContext, setDesignPlan } from '../designApi'
 import type { ViewPlan } from '../plan'
 import { CELL, type ViewClass } from '../view'
@@ -594,7 +594,7 @@ export class DesignSurface {
     }
     const chrome = this.doc?.designData?.frame
     const isControl = this.plan?.kind === 'control'
-    this.frame.style.background = chrome?.background ?? (isControl ? 'var(--color-surface-0)' : 'var(--body-bg, var(--color-surface-0))')
+    this.frame.style.background = chrome?.background ? tokenColor(chrome.background) : (isControl ? 'var(--color-surface-0)' : 'var(--body-bg, var(--color-surface-0))')
     this.frame.style.borderRadius = chrome?.cornerRadius ? `${chrome.cornerRadius}px` : ''
     this.frame.style.border = chrome?.border ? '1px solid var(--color-border)' : ''
     const z = this.zoom()

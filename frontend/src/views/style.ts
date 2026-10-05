@@ -41,6 +41,8 @@ const TOKEN_VARS: Readonly<Record<string, string>> = {
   Hover: '--color-surface-1',
   ControlFillHover: '--color-surface-2',
   TitleBarBackground: '--color-primary',
+  // The ground of the header's panels, the launcher and the account panel (SHELL-CONTROLS.md §8).
+  PanelBackground: '--color-panel-bg',
 }
 
 /** Fallbacks of the tokens the host does not declare as variables. */
