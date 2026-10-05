@@ -14,6 +14,13 @@ under the published version number.
   and `.kubuno/design-server.json` tells Visual Studio the server's address (removed when it stops). The page
   comes from `kubuno.views.json` → `design.entry`; `kbview({ designServer: false })` turns the route off.
 
+### Fixed
+
+- **Generated files never leave `.kubuno/views`.** A view outside the project root (a sibling folder, another
+  drive) had its `.d.ts`, check file and span map written outside the project's `.kubuno/views` folder; they now
+  go under `.kubuno/views/_external/` followed by the view's absolute path (`generatedRelPath`, the same rule as
+  the Kubuno language server).
+
 ## [0.1.0] - 2026-10-05
 
 ### Fixed

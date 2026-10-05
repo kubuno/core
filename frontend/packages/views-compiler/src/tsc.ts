@@ -18,7 +18,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 
-import { GENERATED_DIR, ViewProject, toPosix } from './project.js'
+import { GENERATED_DIR, ViewProject, generatedPaths, toPosix } from './project.js'
 import type { CheckSpan, HandlerUse } from './types.js'
 import { formatDiagnostic, hasGeneratedTypesSetup } from './vite.js'
 
@@ -90,12 +90,10 @@ export function loadRemapContext(project: ViewProject, cwd: string): RemapContex
   const checks = new Map<string, CheckMapFile>()
   const codeBehinds = new Map<string, CheckMapFile>()
   for (const v of project.views) {
-    const rel = relative(project.root, v)
-    const base = join(project.root, GENERATED_DIR, rel)
-    const mapFile = base + '.check.json'
-    if (!existsSync(mapFile)) continue
-    const map = JSON.parse(readFileSync(mapFile, 'utf8')) as CheckMapFile
-    checks.set(resolve(base + '.check.ts'), map)
+    const paths = generatedPaths(project.root, v)
+    if (!existsSync(paths.map)) continue
+    const map = JSON.parse(readFileSync(paths.map, 'utf8')) as CheckMapFile
+    checks.set(resolve(paths.check), map)
     for (const ext of ['.ts', '.tsx']) {
       const cb = v.replace(/\.(kbview|kbcontrol)$/i, ext)
       if (existsSync(cb)) codeBehinds.set(resolve(cb), map)

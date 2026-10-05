@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { GENERATED_DIR, ViewProject, toPosix } from './project.js';
+import { GENERATED_DIR, ViewProject, generatedPaths, toPosix } from './project.js';
 import { formatDiagnostic, hasGeneratedTypesSetup } from './vite.js';
 const TSC_LINE = /^(.+?)\((\d+),(\d+)\): (error|warning|message) (TS\d+): (.*)$/;
 /** Maps one generated check-file position back to the view. */
@@ -70,13 +70,11 @@ export function loadRemapContext(project, cwd) {
     const checks = new Map();
     const codeBehinds = new Map();
     for (const v of project.views) {
-        const rel = relative(project.root, v);
-        const base = join(project.root, GENERATED_DIR, rel);
-        const mapFile = base + '.check.json';
-        if (!existsSync(mapFile))
+        const paths = generatedPaths(project.root, v);
+        if (!existsSync(paths.map))
             continue;
-        const map = JSON.parse(readFileSync(mapFile, 'utf8'));
-        checks.set(resolve(base + '.check.ts'), map);
+        const map = JSON.parse(readFileSync(paths.map, 'utf8'));
+        checks.set(resolve(paths.check), map);
         for (const ext of ['.ts', '.tsx']) {
             const cb = v.replace(/\.(kbview|kbcontrol)$/i, ext);
             if (existsSync(cb))

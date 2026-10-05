@@ -98,9 +98,34 @@ export function userControlsOf(root: string, views: readonly string[]): UserCont
     })
 }
 
-/** The generated files of a view. */
+/** Folder (under {@link GENERATED_DIR}) of the generated files of views outside the project root. */
+export const EXTERNAL_DIR = '_external'
+
+/**
+ * The path of a view's generated files relative to {@link GENERATED_DIR}, `/`-separated — always inside it.
+ *
+ * A view under the project root keeps its root-relative path (`src/A.kbview`). A view outside it (a sibling
+ * folder, another drive) goes under `_external/` followed by its absolute path's segments: a leading `\\?\`
+ * removed, empty and `.` segments dropped, `:` removed (`C:` → `C`), `..` → `_up` — so neither `..` nor a drive
+ * letter can lead out of the folder. The language server (`kubuno-views-ls`, `web/project.rs`) applies the same
+ * rule, byte for byte.
+ */
+export function generatedRelPath(root: string, viewFile: string): string {
+  const rel = relative(resolve(root), resolve(viewFile))
+  const segments = rel.split(/[\\/]/)
+  if (rel && !isAbsolute(rel) && !segments.includes('..')) return segments.filter((s) => s && s !== '.').join('/')
+  const external = resolve(viewFile)
+    .replace(/^\\\\\?\\/, '')
+    .split(/[\\/]/)
+    .filter((s) => s && s !== '.')
+    .map((s) => (s === '..' ? '_up' : s.replace(/:/g, '')))
+    .filter((s) => s)
+  return [EXTERNAL_DIR, ...external].join('/')
+}
+
+/** The generated files of a view (always under `<root>/.kubuno/views`, see {@link generatedRelPath}). */
 export function generatedPaths(root: string, viewFile: string): { dts: string; check: string; map: string } {
-  const base = join(root, GENERATED_DIR, relative(root, viewFile))
+  const base = join(root, GENERATED_DIR, ...generatedRelPath(root, viewFile).split('/'))
   return { dts: base + '.d.ts', check: base + '.check.ts', map: base + '.check.json' }
 }
 
