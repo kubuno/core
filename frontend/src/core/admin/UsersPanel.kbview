@@ -1,0 +1,76 @@
+<!-- UsersPanel — converted from UsersPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel>
+  <!-- TODO(views-migrate): <CreateUserModal> is no .kbview element (a local or dynamic component) -->
+  <ReactHost Component="{Binding CreateUserModal}" Props="{Binding create_user_modal_props}" Visible="{Binding showCreate}"/>
+  <Callout ActionLabel="{Res common.cancel}"
+           Title="{Res admin.pick_user_reset_title}"
+           Body="{Res admin.pick_user_reset_desc}"
+           Visible="{Binding pendingReset}"
+           Class="mb-4"
+           OnAction="callout_action"/>
+  <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start">
+    <!-- TODO(views-migrate): <OrgUnitScopePanel> is no .kbview element (./OrgUnitScopePanel#OrgUnitScopePanel) -->
+    <ReactHost Component="{Binding OrgUnitScopePanel}" Props="{Binding org_unit_scope_panel_props}" Visible="{Binding show_can_priv_org}"/>
+    <Panel Class="flex-1 min-w-0">
+      <!-- TODO(views-migrate): <RegistrationToggle> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding RegistrationToggle}" Visible="{Binding show_can_priv_settings}"/>
+      <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" WrapContents="true" Class="mb-4">
+        <Panel Class="flex-1 min-w-[180px] max-w-sm">
+          <TextField InputType="Search"
+                     Text="{Binding search}"
+                     Placeholder="{Res admin.search_user}"
+                     OnTextChanged="text_field_text_changed"/>
+        </Panel>
+        <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" ForeColor="TextSecondary" Class="mr-auto"/>
+        <Button IconSize="16" Icon="UserPlus" Text="{Res admin.new_user}" Visible="{Binding show_can_priv_users}" OnClick="button_click"/>
+      </Stack>
+      <Stack Direction="LeftToRight"
+             Gap="12"
+             CrossAlign="Center"
+             WrapContents="true"
+             BackColor="PrimaryLight"
+             Visible="{Binding show_selected_size}"
+             Class="mb-3 px-4 py-2.5 rounded-xl border border-border">
+        <Label HtmlTag="Span" Text="{Res admin.bulk_selected, Count={Binding selected.size}}" Overflow="Wrap" ForeColor="TextPrimary"/>
+        <Button Size="Sm"
+                Variant="Secondary"
+                IconSize="15"
+                Icon="Building2"
+                Loading="{Binding bulkMove.isPending}"
+                Text="{Res admin.bulk_ou_action}"
+                Visible="{Binding canBulk}"
+                OnClick="button_click2"/>
+        <Panel AccessibleRole="PushButton"
+               AutoSize="true"
+               Class="ml-auto flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
+               OnClick="panel_click">
+          <Icon Name="X" Size="14"/>
+          <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+        </Panel>
+      </Stack>
+      <Panel Class="bg-white rounded-xl border border-border overflow-x-auto">
+        <!-- TODO(views-migrate): <table> has no .kbview element yet -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+      <Stack Direction="LeftToRight"
+             Gap="0"
+             CrossAlign="Center"
+             Justify="SpaceBetween"
+             ForeColor="TextSecondary"
+             Visible="{Binding show_data_data_total}"
+             Class="mt-4 text-sm">
+        <Button Variant="Secondary" Size="Sm" Enabled="{Binding enabled_unless_page}" Text="{Res admin.prev}" OnClick="button_click3"/>
+        <Label HtmlTag="Span" Text="{Binding span_text2}" Overflow="Wrap" InheritFontSize="true"/>
+        <Button Variant="Secondary"
+                Size="Sm"
+                Enabled="{Binding enabled_unless_page_limit_data}"
+                Text="{Res admin.next}"
+                OnClick="button_click4"/>
+      </Stack>
+    </Panel>
+  </Stack>
+  <!-- TODO(views-migrate): <OrgUnitPicker> is no .kbview element (./OrgUnitPicker#default) -->
+  <ReactHost Component="{Binding OrgUnitPicker}" Props="{Binding org_unit_picker_props}" Visible="{Binding bulkPicker}"/>
+  <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+  <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+</Panel>

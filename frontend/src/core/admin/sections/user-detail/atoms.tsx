@@ -1,27 +1,4 @@
-import { Badge } from '@ui'
 import type { User } from '../../../types'
-
-/**
- * The small, repeated pieces of the account sheet. They live here rather than
- * inline so the three tabs describe layout only, and so a role or a status is
- * painted identically wherever it appears.
- */
-
-/** Colour of a role badge. Tokens only — no literal hex, both themes remap. */
-const ROLE_VARIANT: Record<string, 'danger' | 'primary' | 'default'> = {
-  admin: 'danger',
-  user:  'primary',
-  guest: 'default',
-}
-
-export function RoleBadge({ role, label }: { role: string; label: string }) {
-  return <Badge variant={ROLE_VARIANT[role] ?? 'default'}>{label}</Badge>
-}
-
-export function StatusBadge({ active, label }: { active: boolean; label: string }) {
-  return <Badge variant={active ? 'success' : 'default'} dot>{label}</Badge>
-}
-
 /**
  * The definition row and the em-dash placeholder are shared with the other
  * record sheets — three of them draw the same row now, so it lives one level up

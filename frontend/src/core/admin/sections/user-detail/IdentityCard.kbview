@@ -1,0 +1,55 @@
+<!-- IdentityCard — converted from IdentityCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="Props" HtmlTag="Aside" Class="{Binding aside_class}">
+  <Stack Gap="12" Class="p-4">
+    <Panel>
+      <!-- TODO(views-migrate): <RoleBadge> is no .kbview element (./RoleBadge#default) -->
+      <ReactHost Component="{Binding RoleBadge}" Props="{Binding role_badge_props}"/>
+    </Panel>
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start">
+      <!-- TODO(views-migrate): <UserAvatar> is no .kbview element (./atoms#UserAvatar) -->
+      <ReactHost Component="{Binding UserAvatar}" Props="{Binding user_avatar_props}"/>
+      <Panel Class="min-w-0 flex-1">
+        <Label HtmlTag="H1"
+               Text="{Binding h1_text}"
+               FontWeight="Medium"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-page)]"/>
+        <Label Text="{Binding props.user.email}" ForeColor="TextSecondary" InheritFontSize="true" Class="[font-size:var(--kb-text-meta)]"/>
+      </Panel>
+    </Stack>
+    <Stack Gap="6">
+      <Panel>
+        <!-- TODO(views-migrate): <StatusBadge> is no .kbview element (./StatusBadge#default) -->
+        <ReactHost Component="{Binding StatusBadge}" Props="{Binding status_badge_props}"/>
+      </Panel>
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_meta_t_admin}"/>
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_meta_t_admin2}"/>
+    </Stack>
+  </Stack>
+  <Panel Visible="{Binding show_unit_name}" Class="border-t border-border px-4 py-3">
+    <Label HtmlTag="Span"
+           Text="{Res admin.ud_org_unit}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Class="block [font-size:var(--kb-text-meta)]"/>
+    <Label HtmlTag="Span"
+           Text="{Binding unitName}"
+           FontWeight="Medium"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-meta)]"/>
+  </Panel>
+  <Panel Class="border-t border-border py-1">
+    <!-- TODO(views-migrate): <Action> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Action}" Props="{Binding action_props}" Visible="{Binding show_can_priv_user}"/>
+    <!-- TODO(views-migrate): <Action> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Action2}" Props="{Binding action_props2}" Visible="{Binding show_can_priv_org}"/>
+    <!-- TODO(views-migrate): <Action> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Action3}" Props="{Binding action_props3}" Visible="{Binding show_can_priv_users}"/>
+  </Panel>
+</Panel>

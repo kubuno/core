@@ -1,13 +1,22 @@
-import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
-import { Power, KeyRound, Building2 } from 'lucide-react'
-import { api } from '../../../api/client'
-import { useAuthStore } from '../../../store/authStore'
-import type { OrgUnit, User } from '../../../types'
-import { PRIV } from '../../../authz/types'
-import { usePrivileges } from '../../../authz/usePrivileges'
-import { RoleBadge, StatusBadge, UserAvatar } from './atoms'
-import { formatAgo, formatDay } from '../format'
+/**
+ * Code-behind of `IdentityCard.kbview` (converted from `IdentityCard.tsx` by @kubuno/views-migrate).
+ */
+import { Fragment } from 'react'
+import { useTranslation } from "react-i18next"
+import { useQuery } from "@tanstack/react-query"
+import { Power, KeyRound, Building2 } from "lucide-react"
+import { api } from "../../../api/client"
+import { useAuthStore } from "../../../store/authStore"
+import type { OrgUnit, User } from "../../../types"
+import { PRIV } from "../../../authz/types"
+import { usePrivileges } from "../../../authz/usePrivileges"
+import { UserAvatar } from "./atoms"
+import { formatAgo, formatDay } from "../format"
+import RoleBadge from "./RoleBadge"
+import StatusBadge from "./StatusBadge"
+
+import { ViewBase } from './IdentityCard.kbview'
+import * as __parts from './IdentityCard.parts'
 
 interface Props {
   user: User
@@ -20,144 +29,162 @@ interface Props {
   goPane:   (pane: 'profile' | 'security') => void
 }
 
-/** One row of the action list. Disabled rows say WHY in a tooltip: greying a
- *  control without explaining it leaves the operator guessing whether the
- *  console is broken or the rule is deliberate. */
-function Action({
-  icon, label, onClick, danger, disabled, reason,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-  danger?:   boolean
-  disabled?: boolean
-  reason?:   string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? reason : undefined}
-      className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors
-        ${disabled
-          ? 'cursor-not-allowed text-text-tertiary'
-          : danger
-            ? 'text-danger hover:bg-danger-light'
-            : 'text-text-primary hover:bg-surface-2'}`}
-    >
-      <span className="shrink-0">{icon}</span>
-      <span className="truncate">{label}</span>
-    </button>
-  )
-}
+export type { Props }
 
-/**
- * The account's identity card — context on the left, verbs underneath.
- *
- * It stays put while the tabs scroll: the tabs show and edit PROPERTIES, this
- * card answers "who am I acting on?" and carries the actions that have side
- * effects on the account itself. Keeping the two apart is what stops an operator
- * from editing one account while reading another's name.
- */
-export function IdentityCard({ user, mobile, busy, onToggleActive, goPane }: Props) {
-  const { t } = useTranslation()
-  const { can } = usePrivileges()
-  const me = useAuthStore(s => s.user)
-  const isSelf = me?.id === user.id
+export class IdentityCard extends ViewBase {
+  tr!: IdentityCardStores['t']
+  can!: IdentityCardStores['can']
+  me!: IdentityCardStores['me']
+  units!: IdentityCardStores['units']
 
-  // Shared react-query key: the units are already in cache from the accounts
-  // list, so naming the unit costs no extra request.
-  const { data: units } = useQuery({
-    queryKey: ['admin-org-units'],
-    queryFn:  () => api.get<{ org_units: OrgUnit[] }>('/admin/org-units').then(r => r.data.org_units),
-    enabled:  can(PRIV.ORG_UNITS_READ),
-    staleTime: 30_000,
-  })
-  const unitName = units?.find(u => u.id === user.org_unit_id)?.name
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const { can } = usePrivileges()
+    const me = useAuthStore(s => s.user)
+    const { data: units } = useQuery({
+      queryKey: ['admin-org-units'],
+      queryFn:  () => api.get<{ org_units: OrgUnit[] }>('/admin/org-units').then(r => r.data.org_units),
+      enabled:  can(PRIV.ORG_UNITS_READ),
+      staleTime: 30_000,
+    })
+    return { t, can, me, units }
+  }
 
-  const meta = (label: string, value: string) => (
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, can: s.can, me: s.me, units: s.units })
+  }
+
+  get isSelf() {
+    return this.me?.id === this.props.user.id
+  }
+
+  get unitName() {
+    return this.units?.find(u => u.id === this.props.user.org_unit_id)?.name
+  }
+
+  get aside_class() {
+    return `rounded-xl border border-border bg-white ${
+        this.props.mobile
+          ? 'w-full'
+          // Same 52px as the accounts panel: the console's breadcrumb bar is
+          // sticky at the top of this scrolling area and would clip the card.
+          : 'sticky top-[52px] self-start shrink-0 w-[300px]'}`
+  }
+
+  /** `<RoleBadge>`, rendered by a ReactHost. */
+  get RoleBadge() {
+    return RoleBadge
+  }
+
+  get role_badge_props() {
+    return this.memo('role_badge_props', [this.props, this.tr], () => ({ role: this.props.user.role, label: this.tr(`admin.role_${this.props.user.role}`, { defaultValue: this.props.user.role }) }))
+  }
+
+  /** `<UserAvatar>`, rendered by a ReactHost. */
+  get UserAvatar() {
+    return UserAvatar
+  }
+
+  get user_avatar_props() {
+    return this.memo('user_avatar_props', [this.props], () => ({ user: this.props.user, size: 44 }))
+  }
+
+  get h1_text() {
+    return this.props.user.display_name || this.props.user.username
+  }
+
+  /** `<StatusBadge>`, rendered by a ReactHost. */
+  get StatusBadge() {
+    return StatusBadge
+  }
+
+  get status_badge_props() {
+    return this.memo('status_badge_props', [this.props, this.tr], () => ({ active: this.props.user.is_active, label: this.props.user.is_active ? this.tr('admin.active') : this.tr('admin.inactive') }))
+  }
+
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_meta_t_admin() {
+    return this.memo('content_meta_t_admin', [this.tr, this.props], () => ({ children: this.meta(this.tr('admin.ud_last_login'), this.props.user.last_login_at ? formatAgo(this.props.user.last_login_at) : '—') }))
+  }
+
+  get content_meta_t_admin2() {
+    return this.memo('content_meta_t_admin2', [this.tr, this.props], () => ({ children: this.meta(this.tr('admin.ud_created'), formatDay(this.props.user.created_at, navigator.language)) }))
+  }
+
+  get show_unit_name() {
+    return !!(this.unitName)
+  }
+
+  get show_can_priv_user() {
+    return this.can(PRIV.USER_PASSWORD)
+  }
+
+  /** `<Action>`, rendered by a ReactHost. */
+  get Action() {
+    if (!(this.can(PRIV.USER_PASSWORD))) return undefined as never
+    return __parts.Action
+  }
+
+  get action_props() {
+    return this.memo('action_props', [this.tr, this.props, this.can], () => {
+      if (!(this.can(PRIV.USER_PASSWORD))) return undefined as never
+      return ({ icon: <KeyRound size={15} />, label: this.tr('admin.act_reset_password'), onClick: () => this.props.goPane('security') } as React.ComponentProps<typeof __parts.Action>)
+    })
+  }
+
+  get show_can_priv_org() {
+    return this.can(PRIV.ORG_UNITS_READ)
+  }
+
+  /** `<Action>`, rendered by a ReactHost. */
+  get Action2() {
+    if (!(this.can(PRIV.ORG_UNITS_READ))) return undefined as never
+    return __parts.Action
+  }
+
+  get action_props2() {
+    return this.memo('action_props2', [this.tr, this.props, this.can], () => {
+      if (!(this.can(PRIV.ORG_UNITS_READ))) return undefined as never
+      return ({ icon: <Building2 size={15} />, label: this.tr('admin.bulk_ou_action'), onClick: () => this.props.goPane('profile') } as React.ComponentProps<typeof __parts.Action>)
+    })
+  }
+
+  get show_can_priv_users() {
+    return this.can(PRIV.USERS_UPDATE)
+  }
+
+  /** `<Action>`, rendered by a ReactHost. */
+  get Action3() {
+    if (!(this.can(PRIV.USERS_UPDATE))) return undefined as never
+    return __parts.Action
+  }
+
+  get action_props3() {
+    return this.memo('action_props3', [this.props, this.tr, this.isSelf, this.can], () => {
+      if (!(this.can(PRIV.USERS_UPDATE))) return undefined as never
+      return ({ icon: <Power size={15} />, label: this.props.user.is_active ? this.tr('admin.disable') : this.tr('admin.enable'), danger: this.props.user.is_active, onClick: this.props.onToggleActive, disabled: this.isSelf || this.props.busy, reason: this.isSelf ? this.tr('admin.ud_self_action_blocked') : undefined })
+    })
+  }
+
+  meta(label: string, value: string) {
+    return (
     <div className="flex flex-col">
       <span className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>{label}</span>
       <span className="text-text-primary" style={{ fontSize: 'var(--kb-text-meta)' }}>{value}</span>
     </div>
   )
+  }
 
-  return (
-    <aside
-      className={`rounded-xl border border-border bg-white ${
-        mobile
-          ? 'w-full'
-          // Same 52px as the accounts panel: the console's breadcrumb bar is
-          // sticky at the top of this scrolling area and would clip the card.
-          : 'sticky top-[52px] self-start shrink-0 w-[300px]'}`}
-    >
-      <div className="flex flex-col gap-3 p-4">
-        <div>
-          <RoleBadge role={user.role} label={t(`admin.role_${user.role}`, { defaultValue: user.role })} />
-        </div>
-
-        <div className="flex items-start gap-3">
-          <UserAvatar user={user} size={44} />
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate font-medium text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-              {user.display_name || user.username}
-            </h1>
-            <p className="truncate text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {user.email}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <div>
-            <StatusBadge active={user.is_active} label={user.is_active ? t('admin.active') : t('admin.inactive')} />
-          </div>
-          {meta(t('admin.ud_last_login'), user.last_login_at ? formatAgo(user.last_login_at) : '—')}
-          {meta(t('admin.ud_created'), formatDay(user.created_at, navigator.language))}
-        </div>
-      </div>
-
-      {unitName && (
-        <div className="border-t border-border px-4 py-3">
-          <span className="block text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('admin.ud_org_unit')}
-          </span>
-          <span className="font-medium text-text-primary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {unitName}
-          </span>
-        </div>
-      )}
-
-      <div className="border-t border-border py-1">
-        {can(PRIV.USER_PASSWORD) && (
-          <Action
-            icon={<KeyRound size={15} />}
-            label={t('admin.act_reset_password')}
-            onClick={() => goPane('security')}
-          />
-        )}
-        {can(PRIV.ORG_UNITS_READ) && (
-          <Action
-            icon={<Building2 size={15} />}
-            label={t('admin.bulk_ou_action')}
-            onClick={() => goPane('profile')}
-          />
-        )}
-        {can(PRIV.USERS_UPDATE) && (
-          <Action
-            icon={<Power size={15} />}
-            label={user.is_active ? t('admin.disable') : t('admin.enable')}
-            danger={user.is_active}
-            onClick={onToggleActive}
-            // An operator must not be able to lock themselves out in one click.
-            // The server refuses it too; saying so here is what turns a dead
-            // control into an understood rule.
-            disabled={isSelf || busy}
-            reason={isSelf ? t('admin.ud_self_action_blocked') : undefined}
-          />
-        )}
-      </div>
-    </aside>
-  )
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type IdentityCardStores = ReturnType<IdentityCard['useStores']>
+
+export default IdentityCard.component()

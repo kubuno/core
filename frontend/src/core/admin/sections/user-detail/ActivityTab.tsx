@@ -1,86 +1,104 @@
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, History, ShieldAlert, TriangleAlert } from 'lucide-react'
-import { Card, DataTable, EmptyState, type DataTableColumn } from '@ui'
-import { api } from '../../../api/client'
-import type { User } from '../../../types'
-import { AUDIT_OUTCOME_STYLE, type AuditEntry } from '../auditTypes'
-import { formatWhen } from '../format'
+/**
+ * Code-behind of `ActivityTab.kbview` (converted from `ActivityTab.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { useQuery } from "@tanstack/react-query"
+import { ChevronDown, ChevronRight, ShieldAlert, TriangleAlert } from "lucide-react"
+import { type DataTableColumn } from "@ui"
+import { api } from "../../../api/client"
+import type { User } from "../../../types"
+import { AUDIT_OUTCOME_STYLE, type AuditEntry } from "../auditTypes"
+import { formatWhen } from "../format"
 
-/** How many trail entries each of the two queries pulls. */
+import { ViewBase } from './ActivityTab.kbview'
+import * as __parts from './ActivityTab.parts'
+
 const SCOPE_LIMIT = 100
 
 interface AuditPage { entries: AuditEntry[]; next_cursor: string | null }
 
-/**
- * Activity tab — the audit entries that concern this account.
- *
- * ── Why two queries ──────────────────────────────────────────────────────────
- * `GET /admin/audit` filters by `actor_id`, `action`, `target_type`, `outcome`,
- * dates and free text — but NOT by `target_id`. There is therefore no single
- * server-side filter that returns "everything about this account", so the tab
- * combines the two narrowings the route does support:
- *
- *   • `actor_id=<id>`                   — exact: what this account DID;
- *   • `target_type=user&q=<email>`      — what was done TO it. Every entry the
- *     admin handlers write about a user labels its target `"<name> <email>"`,
- *     so the email is a reliable needle.
- *
- * Both results are then filtered EXACTLY on `target_id === id || actor_id === id`
- * before display: `q` is a substring match and could otherwise drag in a
- * homonym. Adding `target_id` to the route would collapse this to one call.
- */
-export default function ActivityTab({ user }: { user: User }) {
-  const { t, i18n } = useTranslation()
-  const [open, setOpen] = useState<number | null>(null)
+export type ActivityTabProps = { user: User }
 
-  const asTarget = useQuery({
-    queryKey: ['admin-audit-user-target', user.id],
-    queryFn: () => api
-      .get<AuditPage>('/admin/audit', {
-        params: { target_type: 'user', q: user.email, limit: SCOPE_LIMIT },
-      })
-      .then(r => r.data),
-  })
+export class ActivityTab extends ViewBase {
+  @bind accessor open: number | null = null
+  tr!: ActivityTabStores['t']
+  i18n!: ActivityTabStores['i18n']
+  asTarget!: ActivityTabHooks['asTarget']
+  asActor!: ActivityTabHooks['asActor']
+  rows!: ActivityTabHooks['rows']
 
-  const asActor = useQuery({
-    queryKey: ['admin-audit-user-actor', user.id],
-    queryFn: () => api
-      .get<AuditPage>('/admin/audit', { params: { actor_id: user.id, limit: SCOPE_LIMIT } })
-      .then(r => r.data),
-  })
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t, i18n } = useTranslation()
+    return { t, i18n }
+  }
 
-  const rows = useMemo(() => {
-    const merged = new Map<number, AuditEntry>()
-    for (const e of [...(asTarget.data?.entries ?? []), ...(asActor.data?.entries ?? [])]) {
-      // Exact ownership test — `q` above is only a pre-filter.
-      if (e.target_id === user.id || e.actor_id === user.id) merged.set(e.id, e)
-    }
-    return [...merged.values()].sort(
-      (a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id,
-    )
-  }, [asTarget.data, asActor.data, user.id])
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const asTarget = useQuery({
+      queryKey: ['admin-audit-user-target', this.props.user.id],
+      queryFn: () => api
+        .get<AuditPage>('/admin/audit', {
+          params: { target_type: 'user', q: this.props.user.email, limit: SCOPE_LIMIT },
+        })
+        .then(r => r.data),
+    })
+    const asActor = useQuery({
+      queryKey: ['admin-audit-user-actor', this.props.user.id],
+      queryFn: () => api
+        .get<AuditPage>('/admin/audit', { params: { actor_id: this.props.user.id, limit: SCOPE_LIMIT } })
+        .then(r => r.data),
+    })
+    const rows = useMemo(() => {
+      const merged = new Map<number, AuditEntry>()
+      for (const e of [...(asTarget.data?.entries ?? []), ...(asActor.data?.entries ?? [])]) {
+        // Exact ownership test — `q` above is only a pre-filter.
+        if (e.target_id === this.props.user.id || e.actor_id === this.props.user.id) merged.set(e.id, e)
+      }
+      return [...merged.values()].sort(
+        (a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id,
+      )
+    }, [asTarget.data, asActor.data, this.props.user.id])
+    return { asTarget, asActor, rows }
+  }
 
-  const isLoading = asTarget.isLoading || asActor.isLoading
-  const isError   = asTarget.isError || asActor.isError
-  const truncated =
-    (asTarget.data?.entries.length ?? 0) >= SCOPE_LIMIT ||
-    (asActor.data?.entries.length ?? 0) >= SCOPE_LIMIT
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, i18n: s.i18n })
+    const h = this.useHooks()
+    this.publish({ asTarget: h.asTarget, asActor: h.asActor, rows: h.rows })
+  }
 
-  const columns: DataTableColumn<AuditEntry>[] = [
+  get isLoading() {
+    return this.asTarget.isLoading || this.asActor.isLoading
+  }
+
+  get isError() {
+    return this.asTarget.isError || this.asActor.isError
+  }
+
+  get truncated() {
+    return (this.asTarget.data?.entries.length ?? 0) >= SCOPE_LIMIT ||
+    (this.asActor.data?.entries.length ?? 0) >= SCOPE_LIMIT
+  }
+
+  get columns(): DataTableColumn<AuditEntry>[] {
+    return this.memo('columns', [this.tr, this.i18n, this.props, this.open], () => [
     {
       id: 'when',
-      header: t('admin.audit_col_when'),
-      headerText: t('admin.audit_col_when'),
+      header: this.tr('admin.audit_col_when'),
+      headerText: this.tr('admin.audit_col_when'),
       minWidth: 170,
       sortValue: e => new Date(e.occurred_at),
-      cell: e => <span className="whitespace-nowrap tabular-nums text-text-secondary">{formatWhen(e.occurred_at, i18n.language)}</span>,
+      cell: e => <span className="whitespace-nowrap tabular-nums text-text-secondary">{formatWhen(e.occurred_at, this.i18n.language)}</span>,
     },
     {
       id: 'action',
-      header: t('admin.audit_col_action'),
-      headerText: t('admin.audit_col_action'),
+      header: this.tr('admin.audit_col_action'),
+      headerText: this.tr('admin.audit_col_action'),
       primary: true,
       minWidth: 180,
       sortValue: e => e.action,
@@ -88,20 +106,20 @@ export default function ActivityTab({ user }: { user: User }) {
     },
     {
       id: 'role',
-      header: t('admin.ud_act_col_role'),
-      headerText: t('admin.ud_act_col_role'),
+      header: this.tr('admin.ud_act_col_role'),
+      headerText: this.tr('admin.ud_act_col_role'),
       minWidth: 110,
-      sortValue: e => (e.actor_id === user.id ? 'actor' : 'target'),
+      sortValue: e => (e.actor_id === this.props.user.id ? 'actor' : 'target'),
       cell: e => (
         <span className="text-text-secondary">
-          {e.actor_id === user.id ? t('admin.ud_act_role_actor') : t('admin.ud_act_role_target')}
+          {e.actor_id === this.props.user.id ? this.tr('admin.ud_act_role_actor') : this.tr('admin.ud_act_role_target')}
         </span>
       ),
     },
     {
       id: 'actor',
-      header: t('admin.audit_col_actor'),
-      headerText: t('admin.audit_col_actor'),
+      header: this.tr('admin.audit_col_actor'),
+      headerText: this.tr('admin.audit_col_actor'),
       minWidth: 180,
       defaultHidden: true,
       sortValue: e => e.actor_label,
@@ -109,8 +127,8 @@ export default function ActivityTab({ user }: { user: User }) {
     },
     {
       id: 'outcome',
-      header: t('admin.audit_col_outcome'),
-      headerText: t('admin.audit_col_outcome'),
+      header: this.tr('admin.audit_col_outcome'),
+      headerText: this.tr('admin.audit_col_outcome'),
       minWidth: 110,
       sortValue: e => e.outcome,
       cell: e => (
@@ -120,14 +138,14 @@ export default function ActivityTab({ user }: { user: User }) {
         >
           {e.outcome === 'denied' && <ShieldAlert size={11} />}
           {e.outcome === 'error' && <TriangleAlert size={11} />}
-          {t(`admin.audit_outcome_${e.outcome}`)}
+          {this.tr(`admin.audit_outcome_${e.outcome}`)}
         </span>
       ),
     },
     {
       id: 'ip',
-      header: t('admin.audit_col_ip'),
-      headerText: t('admin.audit_col_ip'),
+      header: this.tr('admin.audit_col_ip'),
+      headerText: this.tr('admin.audit_col_ip'),
       minWidth: 120,
       defaultHidden: true,
       sortValue: e => e.ip_address ?? '',
@@ -135,13 +153,13 @@ export default function ActivityTab({ user }: { user: User }) {
     },
     {
       id: 'detail',
-      header: t('admin.ud_act_col_detail'),
-      headerText: t('admin.ud_act_col_detail'),
+      header: this.tr('admin.ud_act_col_detail'),
+      headerText: this.tr('admin.ud_act_col_detail'),
       minWidth: 220,
       // Disclosure inside the cell: the table has no row-expansion API, and a
       // side panel would hide the row the operator is comparing against.
       cell: (e) => {
-        const expanded = open === e.id
+        const expanded = this.open === e.id
         const hasBody = e.detail != null || e.before != null || e.after != null
         if (!hasBody) return <span className="text-text-tertiary">—</span>
         return (
@@ -150,14 +168,14 @@ export default function ActivityTab({ user }: { user: User }) {
           <div className="min-w-0" style={{ maxWidth: 460 }}>
             <button
               type="button"
-              onClick={(ev) => { ev.stopPropagation(); setOpen(expanded ? null : e.id) }}
+              onClick={(ev) => { ev.stopPropagation(); this.open = expanded ? null : e.id }}
               aria-expanded={expanded}
               className="flex items-center gap-1 rounded-sm text-text-secondary transition-colors
                          hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               style={{ fontSize: 'var(--kb-text-meta)' }}
             >
               {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              {expanded ? t('admin.ud_act_hide') : (e.detail ?? t('admin.ud_act_show'))}
+              {expanded ? this.tr('admin.ud_act_hide') : (e.detail ?? this.tr('admin.ud_act_show'))}
             </button>
             {expanded && (
               <pre className="mt-1.5 max-h-56 overflow-auto rounded-md border border-border bg-surface-1 p-2
@@ -170,40 +188,28 @@ export default function ActivityTab({ user }: { user: User }) {
         )
       },
     },
-  ]
+  ])
+  }
 
-  return (
-    <Card
-      title={t('admin.ud_act_title')}
-      icon={<History size={16} />}
-      subtitle={truncated ? t('admin.ud_act_truncated', { total: SCOPE_LIMIT }) : t('admin.ud_act_desc')}
-      flush
-    >
-      <DataTable
-        t={t}
-        rows={rows}
-        columns={columns}
-        rowKey={e => String(e.id)}
-        loading={isLoading}
-        error={isError ? t('admin.ud_act_error') : undefined}
-        onRetry={() => { void asTarget.refetch(); void asActor.refetch() }}
-        defaultSort={{ columnId: 'when', direction: 'desc' }}
-        pageSize={25}
-        pageSizeOptions={[10, 25, 50]}
-        configurableColumns
-        minTableWidth={760}
-        className="p-3"
-        emptyState={(
-          <EmptyState
-            t={t}
-            compact
-            variant="first-use"
-            icon={<History size={22} />}
-            title={t('admin.ud_act_empty')}
-            description={t('admin.ud_act_empty_desc')}
-          />
-        )}
-      />
-    </Card>
-  )
+  get subtitle() {
+    return this.truncated ? this.tr('admin.ud_act_truncated', { total: SCOPE_LIMIT }) : this.tr('admin.ud_act_desc')
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.tr, this.rows, this.columns, this.isLoading, this.isError, this.asTarget, this.asActor], () => ({ t: this.tr, rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, asTarget: this.asTarget, asActor: this.asActor }))
+  }
+
+  /** A part of the screen still written in React (<DataTable> t, columns, rowKey, onRetry, defaultSort, pageSizeOptions, configurableColumns, minTableWidth, emptyState: no .kbview property). */
+  get Part1() {
+    return __parts.Part1
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ActivityTabStores = ReturnType<ActivityTab['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type ActivityTabHooks = ReturnType<ActivityTab['useHooks']>
+
+export default ActivityTab.component()

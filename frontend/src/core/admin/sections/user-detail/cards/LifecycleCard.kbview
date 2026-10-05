@@ -1,0 +1,5 @@
+<!-- LifecycleCard — converted from LifecycleCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Card x:Props="LifecycleCardProps" Title="{Res admin.ud_card_lifecycle}" IconSize="16" Icon="CalendarClock">
+  <!-- TODO(views-migrate): <dl> has no .kbview element yet -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+</Card>

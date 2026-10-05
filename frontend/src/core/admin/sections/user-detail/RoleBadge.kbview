@@ -1,0 +1,2 @@
+<!-- RoleBadge — converted from RoleBadge.tsx by @kubuno/views-migrate. -->
+<Badge x:Props="RoleBadgeProps" Variant="{Binding variant}" Text="{Binding props.label}"/>
