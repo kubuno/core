@@ -41,6 +41,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The settings screens, the appearance dialog and the administration home are now views** (`.kbview` + a
+  TypeScript class), editable in the Visual Studio designer: profile, notifications, themes, clients, security and
+  sessions tabs, the settings page around them, the appearance dialog, the administration home and its « coming soon »
+  placeholder. Converted with `kbview-migrate`, then checked pixel by pixel, accessibility tree and keyboard order
+  against the previous screens (light and dark, French, English and Arabic, desktop and phone widths): identical.
+  The parts that are still React (cards of other screens, the 2FA section, the device list) are rendered inside the
+  views until they are converted in turn.
 - **The navigation labels live in `.kbres` files** (`core/i18n/nav.kbres` and one per language), the format of the
   desktop applications, compiled to the same translations as before (checked identical in the 13 languages).
 - **The account panel and the app launcher are built from those elements.** They no longer carry their own

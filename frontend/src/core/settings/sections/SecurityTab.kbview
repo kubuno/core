@@ -1,0 +1,21 @@
+<!-- SecurityTab — converted from SecurityTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="max-w-md space-y-6">
+  <Panel>
+    <Label HtmlTag="H3" Text="{Res settings.sec_change_password}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="mb-3"/>
+    <Panel HtmlTag="Form" Class="space-y-3" OnSubmit="panel_submit">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+        <TextField InputType="Password"
+                   Label="{Binding label}"
+                   Text="{Binding text}"
+                   AutoComplete="{Binding auto_complete}"
+                   OnTextChanged="text_field_text_changed"/>
+      </Repeater>
+      <Label Text="{Binding error}" Overflow="Wrap" ForeColor="Danger" Visible="{Binding show_error}"/>
+      <Label Text="{Res settings.sec_updated}" Overflow="Wrap" ForeColor="Success" Visible="{Binding success}"/>
+      <Button ButtonType="Submit" Text="{Res settings.sec_update}"/>
+    </Panel>
+  </Panel>
+  <Panel Class="h-px bg-border"/>
+  <!-- TODO(views-migrate): <TwoFactorSection> is no .kbview element (./TwoFactorSection#TwoFactorSection) -->
+  <ReactHost Component="{Binding TwoFactorSection}"/>
+</Panel>
