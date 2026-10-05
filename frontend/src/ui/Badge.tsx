@@ -10,6 +10,8 @@ interface BadgeProps {
   size?: BadgeSize
   className?: string
   dot?: boolean
+  /** Largest width in pixels before the text is cut with an ellipsis (`MaxWidth`); 0 or unset = no limit. */
+  maxWidth?: number
 }
 
 const variants: Record<BadgeVariant, string> = {
@@ -35,7 +37,8 @@ const sizes: Record<BadgeSize, string> = {
   md: 'text-xs px-2 py-0.5',
 }
 
-export function Badge({ children, variant = 'default', size = 'md', className, dot = false }: BadgeProps) {
+export function Badge({ children, variant = 'default', size = 'md', className, dot = false, maxWidth }: BadgeProps) {
+  const limited = maxWidth !== undefined && maxWidth > 0
   return (
     <span
       className={cn(
@@ -44,9 +47,10 @@ export function Badge({ children, variant = 'default', size = 'md', className, d
         sizes[size],
         className,
       )}
+      style={limited ? { maxWidth } : undefined}
     >
       {dot && <span className={cn('h-1.5 w-1.5 rounded-full flex-shrink-0', dotVariants[variant])} />}
-      {children}
+      {limited ? <span className="min-w-0 truncate">{children}</span> : children}
     </span>
   )
 }

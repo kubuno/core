@@ -285,6 +285,9 @@ export const FloatingWindowMeta = {
       doc: 'Web only: lets the user resize the window by its edges.',
       docFr: "Web uniquement : permet à l'utilisateur de redimensionner la fenêtre par ses bords.",
       to: { prop: 'resizable' } },
+    { name: 'ShowClose', kind: 'Bool', default: 'true', category: 'Behavior',
+      doc: 'Shows the close button of the title bar.', docFr: 'Affiche le bouton Fermer de la barre de titre.',
+      to: { prop: 'showClose' } },
   ],
   events: [
     { name: 'OnClose', category: 'Action', args: 'EventArgs',

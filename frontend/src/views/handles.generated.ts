@@ -176,6 +176,8 @@ export interface Badge extends ElementHandle {
   size: "Sm" | "Md"
   /** Shows a coloured status dot before the text. */
   dot: boolean
+  /** Largest width in pixels before the text is shortened. 0 means no limit. */
+  maxWidth: number
   /** Name that screen readers announce for the control. Leave empty to use its text. */
   accessibleName: string
   /** Description that screen readers announce for the control. */
@@ -1294,6 +1296,8 @@ export interface FloatingWindow extends ElementHandle {
   iconColor: string
   /** Web only: lets the user resize the window by its edges. */
   resizable: boolean
+  /** Shows the close button of the title bar. */
+  showClose: boolean
   /** Name that screen readers announce for the control. Leave empty to use its text. */
   accessibleName: string
   /** Description that screen readers announce for the control. */

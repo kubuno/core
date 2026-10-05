@@ -94,6 +94,8 @@ interface FloatingWindowProps {
 
   // Comportement
   resizable?:    boolean           // défaut : false
+  /** `false` hides the title bar's close button (Escape and `onClose` still close the window). Default `true`. */
+  showClose?:    boolean
   backdrop?:     boolean           // défaut : false — overlay semi-transparent
   className?:    string            // classes CSS additionnelles sur la fenêtre
   /**
@@ -134,6 +136,7 @@ export function FloatingWindow({
   minWidth      = 280,
   minHeight     = 120,
   resizable     = false,
+  showClose     = true,
   backdrop      = false,
   className     = '',
   padding,
@@ -631,7 +634,7 @@ export function FloatingWindow({
               <SquareArrowOutUpRight size={14} />
             </button>
           )}
-          <button
+          {showClose && <button
             onClick={closeWindow}
             onMouseDown={e => e.stopPropagation()}
             title="Fermer (Échap)"
@@ -639,7 +642,7 @@ export function FloatingWindow({
                        text-current opacity-80 transition-colors hover:opacity-100 hover:bg-white/20"
           >
             <X size={15} strokeWidth={2.2} />
-          </button>
+          </button>}
         </div>
 
         {/* The window's alert: under the title, ABOVE the scrolling area, so it
