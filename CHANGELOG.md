@@ -9,6 +9,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release build ids are no longer marked as modified (`.dirty`).** The 0.1.14 and 0.1.15 packages still
+  carried the marker: the workspace lock file was not bumped with the version, so the release build
+  rewrote it. The lock file now follows the version.
+
 ## [0.1.15] - 2026-10-05
 
 ### Fixed
