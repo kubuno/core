@@ -62,6 +62,8 @@ interface ContainerBase {
   as?: string
   /** Web `AccessibleModal`: `aria-modal` (a dialog that keeps the reader inside it). */
   'aria-modal'?: boolean
+  /** `AutoSize`: sized to its content (a push-button container like a native button) instead of filling its line. */
+  autoSize?: boolean
   /** @internal — given by the renderer to every element of `@kubuno/views`. */
   __view?: Internals
   /** @internal */
@@ -94,10 +96,13 @@ function box(p: ContainerBase, layout: CSSProperties, extra: Record<string, unkn
   }
   if (isButton) {
     if (disabled) own.opacity = DISABLED_OPACITY
-    // Sized like the <div> it replaces: the full width of a block or a stretching column (see VIEW_STYLES).
-    ensureViewStyles()
-    cls = [cls, BUTTON_BOX_CLASS].filter(Boolean).join(' ')
-  }
+    // Sized like the <div> it replaces: the full width of a block or a stretching column (see VIEW_STYLES); with
+    // AutoSize, like a native button (its content's width).
+    if (!p.autoSize) {
+      ensureViewStyles()
+      cls = [cls, BUTTON_BOX_CLASS].filter(Boolean).join(' ')
+    }
+  } else if (p.autoSize) own.width = 'fit-content'
   const props: Record<string, unknown> = {
     ref,
     className: cls,

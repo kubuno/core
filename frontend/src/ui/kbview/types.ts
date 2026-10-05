@@ -91,7 +91,7 @@ export type RuntimeTarget =
   | 'aria-label' | 'aria-description' | 'aria-role' | 'aria-hidden'
   /** `tabindex` on the DOM root (`TabIndex`, `TabStop`). */
   | 'tab-index' | 'tab-stop'
-  /** Wraps the element in the `@ui` `Tooltip`. */
+  /** The DOM root's `title` (the shell draws the Kubuno tooltip for it). */
   | 'tooltip'
   /** Opens the named `ContextMenu` (rendered with `MenuDropdown`) on right click / on click. */
   | 'context-menu' | 'drop-down-menu'

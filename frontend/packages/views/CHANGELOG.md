@@ -8,6 +8,8 @@ under the published version number.
 
 ### Added
 
+- **`AutoSize` on `Panel` and `Stack`**: the container sizes to its content instead of filling its line; a push-button
+  container (`AccessibleRole="PushButton"`) then sizes like a native button.
 - **`View.memo(key, deps, compute)`** for getters returning an object or a list: the same object while `deps` are
   unchanged, so a binding reading the getter twice sees no change (a new array on every read would re-render without
   end).
@@ -50,6 +52,9 @@ under the published version number.
 
 ### Changed
 
+- **`ToolTip` renders the element's `title`** instead of wrapping it in the `@ui` `Tooltip`: no wrapper element any more
+  (a wrapped push button lost its sizing in a row), the same accessible name as a hand-written `title`, and the
+  shell still draws the Kubuno tooltip for it.
 - **`View.component()` is typed as a function component** (it always was one): a view without props now fits a slot
   expecting a component with props, as a function component does.
 

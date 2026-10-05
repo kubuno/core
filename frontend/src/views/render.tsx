@@ -265,7 +265,6 @@ interface Built {
   dom: DomTargets
   visible: boolean
   domEvents: [string, (ev: Event) => void][]
-  tooltip?: unknown
   menus: { context?: string; dropDown?: string }
   after?: ReactNode
   needsDom: boolean
@@ -426,7 +425,9 @@ function build(
     const t = p.to
     if (t.runtime) {
       if (t.runtime === 'visible') { if (v === false) out.visible = false; continue }
-      if (t.runtime === 'tooltip') { if (v) out.tooltip = v; continue }
+      // A tooltip is the DOM root's `title`: layout-neutral (no wrapper), the accessible name or description a
+      // hand-written `title` gives, and the shell draws the Kubuno bubble for it (TitleTooltips).
+      if (t.runtime === 'tooltip') { if (v) dom.attrs.title = String(v); continue }
       if (t.runtime === 'context-menu') { if (v) out.menus.context = String(v); continue }
       if (t.runtime === 'drop-down-menu') { if (v) out.menus.dropDown = String(v); continue }
       applyRuntime(dom, t.runtime, p.n, v)
@@ -518,7 +519,7 @@ function build(
   if (node.content && node.children?.length && !node.template) props[node.content] = renderList(node.children, scope)
   for (const [slot, nodes] of Object.entries(node.slots ?? {})) props[slot] = renderList(nodes, scope)
 
-  if (node.name || out.tooltip !== undefined || out.menus.context || out.menus.dropDown || i.design) out.needsDom = true
+  if (node.name || out.menus.context || out.menus.dropDown || i.design) out.needsDom = true
   if (Object.keys(dom.attrs).length || Object.keys(dom.style).length || dom.classes.length) out.needsDom = true
   return out
 }
@@ -622,7 +623,7 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
   if (!Component) {
     if (dev()) console.warn(`[views] ${i.cell.plan.file}:${node.at[0]}:${node.at[1]}: no component for <${node.el}> (${node.m ?? '?'} ${node.x ?? '?'})`)
     element = createElement('div', { 'data-kb-missing': node.el, ref: (el: HTMLElement | null) => { rootRef.current = el } })
-  } else if (node.dom === 'ref' && !built.tooltip) {
+  } else if (node.dom === 'ref') {
     element = createElement(Component, { ...built.props, ref: (el: HTMLElement | null) => { rootRef.current = el } })
   } else {
     element = createElement(Component, built.props)
@@ -632,10 +633,6 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
         ref: (el: HTMLElement | null) => { rootRef.current = (el?.firstElementChild as HTMLElement | null) ?? el },
       }, element)
     }
-  }
-  if (built.tooltip !== undefined) {
-    const Tooltip = resolveComponent('@ui', 'Tooltip')
-    if (Tooltip) element = createElement(Tooltip, { label: built.tooltip }, element)
   }
   const extra: ReactNode[] = []
   if (built.after !== undefined) extra.push(createElement(Fragment, { key: 'after' }, built.after))

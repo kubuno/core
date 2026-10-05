@@ -69,6 +69,14 @@ const CONTAINER_TAG: PropertyMeta<{ as?: string }> = {
   to: { prop: 'as', values: Object.fromEntries(CONTAINER_TAGS.map((t) => [t, t.toLowerCase()])) as Record<(typeof CONTAINER_TAGS)[number], string> },
 }
 
+/** `AutoSize` of a container: sized to its content (a push-button container like a native button) instead of filling its line. */
+const AUTO_SIZE: PropertyMeta<{ autoSize?: boolean }> = {
+  name: 'AutoSize', kind: 'Bool', default: 'false', category: 'Layout',
+  doc: 'Sizes the container to its content instead of filling its line (a container with AccessibleRole="PushButton" then sizes like a native button).',
+  docFr: 'Dimensionne le conteneur selon son contenu au lieu de remplir sa ligne (un conteneur AccessibleRole="PushButton" se dimensionne alors comme un bouton natif).',
+  to: { prop: 'autoSize' },
+}
+
 /** Web-only: `aria-modal` of a dialog container. */
 const ACCESSIBLE_MODAL: PropertyMeta<{ 'aria-modal'?: boolean }> = {
   name: 'AccessibleModal', kind: 'Bool', default: 'false', category: 'Accessibility', webOnly: true,
@@ -117,7 +125,7 @@ export const PanelMeta = {
   children: 'List',
   layoutKind: 'DockAnchor',
   defaultEvent: 'OnClick',
-  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER, CONTAINER_TAG, ACCESSIBLE_MODAL],
+  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER, CONTAINER_TAG, ACCESSIBLE_MODAL, AUTO_SIZE],
   events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,
   designDefaults: { size: [200, 100] },
@@ -158,6 +166,7 @@ export const StackMeta = {
     DIVIDER,
     CONTAINER_TAG,
     ACCESSIBLE_MODAL,
+    AUTO_SIZE,
   ],
   events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,
