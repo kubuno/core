@@ -6,6 +6,12 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-05
+
+### Changed
+
+- Type surface updated: the declarations of the WaffleMenu and AccountMenu handles and of panelChrome changed since 0.1.11.
+
 ## [0.1.11] - 2026-10-05
 
 ### Fixed

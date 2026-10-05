@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-05
+
 ### Added
 
 - **`View.publish(values)`** sets fields from what hooks returned this render and re-renders only when one changed,

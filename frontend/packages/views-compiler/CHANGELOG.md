@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-05
+
 ### Added
 
 - **String resources as `.kbres` sets.** `import strings from './strings.kbres'` gives the set's i18next bundles by

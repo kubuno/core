@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-10-05
+
 ### Added
 
 - **Four more typographic roles** for `Label` and `LinkLabel` (`role`, registry `Role`), shared with the desktop:
