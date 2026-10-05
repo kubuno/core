@@ -5,7 +5,7 @@ import React from 'react'
  * steps: `Meta` and `Body` are Tailwind's `text-xs` / `text-sm` (re-pointed at 11.5 / 13.5 px by
  * `index.css`, with Tailwind's line heights), the others the `--kb-text-*` tokens.
  */
-export type TextRole = 'Micro' | 'Meta' | 'Body' | 'Heading' | 'Title'
+export type TextRole = 'Micro' | 'Meta' | 'Body' | 'Heading' | 'Title' | 'Badge' | 'Caption' | 'Subtitle' | 'Display'
 
 export const TEXT_ROLE_CLASS: Readonly<Record<TextRole, string>> = {
   Micro: 'text-[length:var(--kb-text-micro)]',
@@ -13,6 +13,12 @@ export const TEXT_ROLE_CLASS: Readonly<Record<TextRole, string>> = {
   Body: 'text-sm',
   Heading: 'text-[length:var(--kb-text-heading)]',
   Title: 'text-[length:var(--kb-text-title)]',
+  // The four steps added for what screens wrote as free sizes: the small ones set the size only (the line stays the
+  // running text's, as `text-[10px]` did), the large ones Tailwind's pairs (`text-base` 16/24, `text-2xl` 24/32).
+  Badge: 'text-[length:var(--kb-text-badge)]',
+  Caption: 'text-[length:var(--kb-text-caption)]',
+  Subtitle: 'text-base',
+  Display: 'text-2xl',
 }
 
 /** `TextAlign` (WinForms `ContentAlignment`) → the horizontal part, the only one a flow label has. */

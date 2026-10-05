@@ -1828,8 +1828,8 @@ export interface Item extends ElementHandle {
 export interface Label extends ElementHandle {
   /** Text shown. */
   text: string
-  /** Text style: small, caption, body, heading or title (the same sizes on the web and the desktop). */
-  role: "Micro" | "Meta" | "Body" | "Heading" | "Title"
+  /** Text style: small, caption, body, heading or title, and the badge (10), caption (11), subtitle (16) and display (24) steps (the same sizes on the web and the desktop). */
+  role: "Micro" | "Meta" | "Body" | "Heading" | "Title" | "Badge" | "Caption" | "Subtitle" | "Display"
   /** Position of the text in the label. On the web the horizontal part applies (Left = start, Right = end of the reading direction). */
   textAlign: "TopLeft" | "TopCenter" | "TopRight" | "MiddleLeft" | "MiddleCenter" | "MiddleRight" | "BottomLeft" | "BottomCenter" | "BottomRight"
   /** What a text too long for the label does: ellipsis, clipped, or wrapped onto the next lines. */
@@ -1917,7 +1917,7 @@ export interface LinkLabel extends ElementHandle {
   /** Text of the link. */
   text: string
   /** Text style: small, caption, body, heading or title. */
-  role: "Micro" | "Meta" | "Body" | "Heading" | "Title"
+  role: "Micro" | "Meta" | "Body" | "Heading" | "Title" | "Badge" | "Caption" | "Subtitle" | "Display"
   /** Web only: the address of the link. A plain click stays in the app (OnClick decides); a middle or modified click opens the address. */
   href: string
   /** Web only: weight of the text. Default keeps the running text's weight; Medium is the host's emphasised step (rendered at 600). */

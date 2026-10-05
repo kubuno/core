@@ -227,27 +227,32 @@
   --kb-window-content:      #ffffff;                 /* opaque, non négociable */
   --kb-shadow-window:       0 6px 18px rgb(0 0 0 / 24%);
 
-  /* ── Tailles de texte ─────────────────────────────────── */
-  /* Échelle du projet ; 14px est le corps par défaut.
+  /* ── Text sizes ───────────────────────────────────────── */
+  /* The project's scale; the body is 13.5px.
    *
-   * SIX tailles, pas une de plus : 11 · 12 · 14 · 16 · 22 · 28. Chacune existe
-   * dans l'échelle typographique de référence du secteur, aucune n'est inventée,
-   * et il y a au moins 2px entre deux voisines — un écart plus fin ne se voit
-   * pas mais doit être maintenu partout.
+   * Six core steps (micro to page), shared as the typographic roles of views (`Label Role`, VIEWS-SPEC §7.1) on the web and the
+   * desktop: each exists in the industry's reference type scale, none is invented, and two neighbours are at least
+   * 2px apart — a finer gap does not show but would have to be kept everywhere.
    *
-   * Le haut de l'échelle était tassé (18, 20 et 22 en 4px, dont deux échelons
-   * qui ne servaient que 2 fois chacun) ; il saute désormais de 15,5 à 21,5.
+   * The top of the scale was crowded (18, 20 and 22 in 4px, two of those steps used twice each); it now jumps from
+   * 15.5 to 21.5.
    *
-   * AVANT D'EN AJOUTER UNE : les rôles peuvent PARTAGER une taille — ce qui
-   * distingue un libellé d'un titre de carte à 13,5px, c'est la graisse et la
-   * couleur, pas un pixel de plus. Un besoin nouveau se résout presque toujours
-   * en réutilisant un échelon avec une autre graisse. */
-  --kb-text-micro:   10.5px;  /* pastilles, compteurs */
-  --kb-text-meta:    11.5px;  /* métadonnées, légendes */
-  --kb-text-body:    13.5px;  /* corps : libellés, champs, menus, onglets */
-  --kb-text-heading: 15.5px;  /* en-têtes de section, titres de carte */
-  --kb-text-title:   21.5px;  /* nom d'un objet en tête de panneau, gros titre */
-  --kb-text-page:    22.5px;  /* titre de page (h1) — 27.5px en administration */
+   * BEFORE ADDING ONE: roles may SHARE a size — what tells a label from a 13.5px card title is the weight and the
+   * colour, not one more pixel. A new need is nearly always met by an existing step with another weight.
+   *
+   * The four last steps (badge, caption, subtitle, display) are the free sizes screens wrote before they were views
+   * (`text-[10px]`, `text-[11px]`, `text-base`, `text-2xl`), given a role so a view names a role rather than a size;
+   * the desktop's type scale has the same four. */
+  --kb-text-micro:   10.5px;  /* badges, counters */
+  --kb-text-meta:    11.5px;  /* metadata, captions */
+  --kb-text-body:    13.5px;  /* body: labels, fields, menus, tabs */
+  --kb-text-heading: 15.5px;  /* section headers, card titles */
+  --kb-text-title:   21.5px;  /* an object's name heading a panel, large title */
+  --kb-text-page:    22.5px;  /* page title (h1) — 27.5px in the administration */
+  --kb-text-badge:    10px;   /* initials and counts in small avatar and count pills (role Badge) */
+  --kb-text-caption:  11px;   /* small pills and chips (role Caption) */
+  --kb-text-subtitle: 16px;   /* a group title one step above a heading (role Subtitle; Tailwind's text-base) */
+  --kb-text-display:  24px;   /* a large greeting or display line (role Display; Tailwind's text-2xl) */
 
   /* L'administration porte des titres plus grands que le reste du produit : une
      console se parcourt par grandes sections, et le titre est le repère qui dit

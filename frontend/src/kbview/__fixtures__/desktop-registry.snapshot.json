@@ -3585,7 +3585,11 @@
        "Meta",
        "Body",
        "Heading",
-       "Title"
+       "Title",
+       "Badge",
+       "Caption",
+       "Subtitle",
+       "Display"
       ]
      },
      "default": "Body",
@@ -3688,7 +3692,11 @@
        "Meta",
        "Body",
        "Heading",
-       "Title"
+       "Title",
+       "Badge",
+       "Caption",
+       "Subtitle",
+       "Display"
       ]
      },
      "default": "Body",

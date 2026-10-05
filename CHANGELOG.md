@@ -11,6 +11,9 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Four more text sizes for views, the same on the web and the desktop**: badge (10 px), caption (11 px), subtitle
+  (16 px) and display (24 px). The launcher's « Favorites » title and the account panel's greeting, unread counts and
+  account pills use them instead of fixed sizes (checked identical, light and dark, three languages, desktop and phone).
 - **A codemod from React screens to views (`@kubuno/views-migrate`, `kbview-migrate`).** It turns a TSX screen into a
   `.kbview` view and its code-behind class, says per file what it converted and what it left in React (and why), and
   keeps the screen's look, text and accessibility; measured on the core's settings, admin and dialog screens.

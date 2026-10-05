@@ -9,7 +9,7 @@ import type { IconGlyph } from '../IconGlyph'
 import type { PictureBox } from '../PictureBox'
 import type { ElementMeta } from './types.ts'
 
-const ROLE_VALUES = { Micro: 'Micro', Meta: 'Meta', Body: 'Body', Heading: 'Heading', Title: 'Title' } as const
+const ROLE_VALUES = { Micro: 'Micro', Meta: 'Meta', Body: 'Body', Heading: 'Heading', Title: 'Title', Badge: 'Badge', Caption: 'Caption', Subtitle: 'Subtitle', Display: 'Display' } as const
 
 /** Web-only text weight and style (WV-5a), proposed for the desktop Label (which takes them from Font today). */
 const FONT_WEIGHT = {
@@ -51,9 +51,9 @@ export const LabelMeta = {
   properties: [
     { name: 'Text', kind: 'String', default: '', category: 'Appearance',
       doc: 'Text shown.', docFr: 'Texte affiché.', to: { prop: 'text' } },
-    { name: 'Role', kind: { Enum: ['Micro', 'Meta', 'Body', 'Heading', 'Title'] }, default: 'Body', category: 'Appearance',
-      doc: 'Text style: small, caption, body, heading or title (the same sizes on the web and the desktop).',
-      docFr: 'Style du texte : petit, légende, corps, intertitre ou titre.',
+    { name: 'Role', kind: { Enum: ['Micro', 'Meta', 'Body', 'Heading', 'Title', 'Badge', 'Caption', 'Subtitle', 'Display'] }, default: 'Body', category: 'Appearance',
+      doc: 'Text style: small, caption, body, heading or title, and the badge (10), caption (11), subtitle (16) and display (24) steps (the same sizes on the web and the desktop).',
+      docFr: 'Style du texte : petit, légende, corps, intertitre ou titre, et les paliers pastille (10), légende fine (11), sous-titre (16) et affichage (24).',
       to: { prop: 'role', values: ROLE_VALUES } },
     { name: 'TextAlign', kind: { Enum: ['TopLeft', 'TopCenter', 'TopRight', 'MiddleLeft', 'MiddleCenter', 'MiddleRight', 'BottomLeft', 'BottomCenter', 'BottomRight'] }, default: 'TopLeft', category: 'Misc', aliases: ['Align'],
       doc: 'Position of the text in the label. On the web the horizontal part applies (Left = start, Right = end of the reading direction).',
@@ -85,9 +85,9 @@ export const LinkLabelMeta = {
   properties: [
     { name: 'Text', kind: 'String', default: '', category: 'Appearance',
       doc: 'Text of the link.', docFr: 'Texte du lien.', to: { prop: 'text' } },
-    { name: 'Role', kind: { Enum: ['Micro', 'Meta', 'Body', 'Heading', 'Title'] }, default: 'Body', category: 'Appearance',
+    { name: 'Role', kind: { Enum: ['Micro', 'Meta', 'Body', 'Heading', 'Title', 'Badge', 'Caption', 'Subtitle', 'Display'] }, default: 'Body', category: 'Appearance',
       doc: 'Text style: small, caption, body, heading or title.',
-      docFr: 'Style du texte : petit, légende, corps, intertitre ou titre.',
+      docFr: 'Style du texte : petit, légende, corps, intertitre ou titre, et les paliers pastille (10), légende fine (11), sous-titre (16) et affichage (24).',
       to: { prop: 'role', values: ROLE_VALUES } },
     { name: 'Href', kind: 'String', default: '', category: 'Behavior', bindable: true, webOnly: true,
       doc: 'Web only: the address of the link. A plain click stays in the app (OnClick decides); a middle or modified click opens the address.',

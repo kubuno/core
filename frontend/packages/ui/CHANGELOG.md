@@ -8,6 +8,10 @@ under the published version number.
 
 ### Added
 
+- **Four more typographic roles** for `Label` and `LinkLabel` (`role`, registry `Role`), shared with the desktop:
+  `Badge` (10 px, initials and counts in small pills), `Caption` (11 px, small pills and chips), `Subtitle` (16 px,
+  Tailwind's `text-base` line) and `Display` (24 px, `text-2xl`), with the tokens `--kb-text-badge`, `--kb-text-caption`,
+  `--kb-text-subtitle` and `--kb-text-display`. A view names a role instead of writing a text size in `Class`.
 - **`Label` keeps the HTML semantics of a text.** `as` renders it as a heading (`h1`–`h6`), an inline `span`, a
   `strong`… instead of a paragraph, and `inheritSize` (also on `LinkLabel`) leaves out the role's size class so the
   text keeps its parent's font size. The registry gains `Label HtmlTag` / `InheritFontSize`, `LinkLabel

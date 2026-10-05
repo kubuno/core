@@ -49,6 +49,10 @@ export const WEB_TEXT_ROLES = {
   Body: { token: '--kb-text-body', size: 13.5 },
   Heading: { token: '--kb-text-heading', size: 15.5 },
   Title: { token: '--kb-text-title', size: 21.5 },
+  Badge: { token: '--kb-text-badge', size: 10 },
+  Caption: { token: '--kb-text-caption', size: 11 },
+  Subtitle: { token: '--kb-text-subtitle', size: 16 },
+  Display: { token: '--kb-text-display', size: 24 },
 } as const
 
 /** Page titles (`--kb-text-page`): not a Label role, the page header's own step. */
