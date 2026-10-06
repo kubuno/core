@@ -110,7 +110,10 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
   const file = sf.getFilePath()
   const stem = basename(file).replace(/\.tsx?$/, '')
   const exported = componentsOf(sf).filter((c) => c.exportedAt)
-  if (exported.length < 2) return undefined
+  // One exported component is split out too when it is not the file's namesake and the file exports other things (a
+  // re-export, a helper): the view is named after the component, the module keeps the rest.
+  const otherExports = sf.getExportDeclarations().length > 0 || sf.getStatements().some((st) => isExported(st) && !exported.some((c) => topStatement(sf, c.fn as unknown as Node) === st))
+  if (exported.length === 0 || (exported.length === 1 && (exported[0].name === stem || !otherExports))) return undefined
   const toMove = exported.filter((c) => c.name !== stem && c.exported === 'named')
   if (!toMove.length) return undefined
   // ts-morph paths (forward slashes on every OS).
@@ -139,17 +142,23 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
 
   // A helper moves with a component when every statement using it moves with that same component.
   const movedWith = new Map<Statement, string>()
+  // A local (unexported) component it renders that others render too is copied into its file: the old file's own
+  // conversion moves its local components out of reach (into its parts file).
+  const copiedWith = new Map<string, Statement[]>()
   for (const c of toMove) {
     const own = stmtOf.get(c.name)!
     const queue = [...refs.get(own)!.statements]
     while (queue.length) {
       const h = queue.shift()!
       if (movedWith.has(h) || [...stmtOf.values()].includes(h)) continue
-      if (componentsOf(sf).some((x) => topStatement(sf, x.fn as unknown as Node) === h)) continue // components never move as helpers
+      const isComponent = componentsOf(sf).some((x) => topStatement(sf, x.fn as unknown as Node) === h)
       if (isExported(h)) continue
       const users = usersOf(h)
       if (users.every((u) => u === own || movedWith.get(u) === c.name)) {
         movedWith.set(h, c.name)
+        queue.push(...refs.get(h)!.statements)
+      } else if (isComponent && !(copiedWith.get(c.name) ?? []).includes(h)) {
+        copiedWith.set(c.name, [...(copiedWith.get(c.name) ?? []), h])
         queue.push(...refs.get(h)!.statements)
       }
     }
@@ -159,7 +168,7 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
   const texts: Record<string, string> = {}
   for (const c of toMove) {
     const own = stmtOf.get(c.name)!
-    const mine = allStatements.filter((s) => s === own || movedWith.get(s) === c.name)
+    const mine = allStatements.filter((s) => s === own || movedWith.get(s) === c.name || (copiedWith.get(c.name) ?? []).includes(s))
     const usedImports = new Set<string>()
     const fromOld = new Set<string>()
     const fromSplit = new Map<string, string>()
@@ -190,6 +199,15 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
   // The old file: the moved statements out, the helpers they share exported, the moved components imported back.
   for (const st of toExport) if (Node.isExportable(st)) st.setIsExported(true)
   const removed = allStatements.filter((s) => [...stmtOf.values()].includes(s) || movedWith.has(s))
+  // A copied local component the old file itself no longer renders goes too (it would be left unused).
+  const copied = new Set([...copiedWith.values()].flat())
+  for (let again = true; again;) {
+    again = false
+    for (const s of copied) {
+      if (removed.includes(s) || isExported(s) || toExport.has(s)) continue
+      if (usersOf(s).every((u) => removed.includes(u))) { removed.push(s); again = true }
+    }
+  }
   const usedBack = new Set<string>()
   for (const s of allStatements) {
     if (removed.includes(s)) continue
@@ -204,7 +222,9 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
     if (at >= 0) rest = rest.slice(0, at) + rest.slice(at + c.length).replace(/^[ \t]*\r?\n/, '')
   }
   if (rest !== sf.getFullText()) sf.replaceWithText(rest)
-  // Imports nothing uses any more.
+  // Imports nothing uses any more (again until none goes: a removal can leave a stale reference behind).
+  for (let pass = 0, before = -1; pass < 3 && before !== sf.getFullText().length; pass++) {
+  before = sf.getFullText().length
   for (const imp of sf.getImportDeclarations()) {
     for (const n of imp.getNamedImports()) {
       const local = n.getAliasNode() ?? n.getNameNode()
@@ -213,6 +233,7 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
     const def = imp.getDefaultImport()
     if (def && def.findReferencesAsNodes().every((r) => r.getSourceFile() !== sf || r === def)) imp.removeDefaultImport()
     if (!imp.getNamedImports().length && !imp.getDefaultImport() && !imp.getNamespaceImport() && imp.getImportClause()) imp.remove()
+  }
   }
   for (const n of usedBack) addImport(sf, `import { ${n} } from './${n}'`)
 

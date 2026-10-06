@@ -19,7 +19,7 @@ function keysOf(o, prefix = '', out = new Set()) {
     return out;
 }
 /** `<root>/src/**\/locales/<lang>/<ns>.json` bundles of `lang`, by namespace. */
-function jsonBundles(root, lang) {
+export function jsonBundles(root, lang) {
     const out = new Map();
     const walk = (dir) => {
         for (const name of readdirSync(dir)) {
@@ -44,6 +44,16 @@ function jsonBundles(root, lang) {
     };
     if (existsSync(join(root, 'src')))
         walk(join(root, 'src'));
+    // A module's generated catalogue: `src/i18n.data.json` (`{ <lang>: { … } }`), registered by its sibling
+    // `i18n.ts` under `registerModuleTranslations('<ns>', …)`.
+    const data = join(root, 'src', 'i18n.data.json');
+    const reg = join(root, 'src', 'i18n.ts');
+    if (existsSync(data) && existsSync(reg)) {
+        const ns = /registerModuleTranslations\(\s*['"]([^'"]+)['"]/.exec(readFileSync(reg, 'utf8'))?.[1];
+        const bundle = JSON.parse(readFileSync(data, 'utf8'))[lang];
+        if (ns && bundle)
+            keysOf(bundle, '', out.get(ns) ?? out.set(ns, new Set()).get(ns));
+    }
     return out;
 }
 export function openProject(root, files, opts = {}) {

@@ -15,6 +15,12 @@ import { Panel, ReactHost, Repeater, ScrollArea, Stack, TableLayoutPanel, UserCo
 import { findIcon } from './utils/iconMap'
 
 registerElements('@ui', ui as unknown as Record<string, unknown>)
+// The `@ui` elements whose `className` lands on their root element: a view's `Class` on them is passed as that prop,
+// with no layout wrapper among their parent's children (where `space-y-*`, `divide-y` or `> *` selectors would land
+// on an undrawn `display: contents` box). Set here, where the host's single `@ui` instance is wired to the views.
+for (const c of [ui.Card, ui.Callout, ui.EmptyState, ui.Badge, ui.Separator, ui.Spinner, ui.ProgressBar, ui.Toggle]) {
+  ;(c as unknown as { kbRootClass?: boolean }).kbRootClass = true
+}
 registerElements('@kubuno/sdk', { DockArea, WorkspaceShell })
 // The elements the runtime renders itself (layout containers, Repeater), for interpreted plans.
 registerElements('@kubuno/views', { Panel, ReactHost, Repeater, ScrollArea, Stack, TableLayoutPanel, UserControl })

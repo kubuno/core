@@ -91,7 +91,10 @@ export function notifyElements(i: Internals): void {
 
 /** Re-renders every live view (language change, theme change). */
 export function invalidateViews(): void {
-  for (const i of live) notify(i)
+  for (const i of live) {
+    forgetMemos(i.vm)
+    notify(i)
+  }
 }
 
 /** @internal */
@@ -155,6 +158,14 @@ function shallowEqual(a: unknown, b: unknown): boolean {
 
 /** The memos of `View.memo`, per view instance (outside the instance: a prototype swap keeps them). */
 const memos = new WeakMap<object, Map<string, { deps: unknown[]; value: unknown }>>()
+
+/**
+ * Drops what a view memoized (`View.memo`): on a language or theme change, a value computed from translated texts or
+ * from a registry (a module's name) is computed again, as the TSX it replaces did on every render.
+ */
+export function forgetMemos(vm: object): void {
+  memos.delete(vm)
+}
 
 /**
  * Base of every view's code-behind (through its generated `ViewBase`). `P` is the root's `x:Props`.

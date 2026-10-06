@@ -55,6 +55,11 @@ export declare function componentsOf(sf: SourceFile): Array<FoundComponent & {
     exportedAt: boolean;
 }>;
 export declare function migrateFile(cfg: MigrateConfig, sf: SourceFile, wanted?: string): MigrationResult;
+/**
+ * Indents every line of `code` but the lines inside a template literal (their spaces belong to the string: the text
+ * of a `<pre>` would change).
+ */
+export declare function indentCode(code: string, pad: string): string;
 /** The component a file's conversion targets (the exported one named like the file, or the only exported one). */
 export declare function targetComponent(sf: SourceFile, wanted?: string): string | undefined;
 /**

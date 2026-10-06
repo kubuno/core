@@ -198,6 +198,8 @@ class Migration {
   propsType?: string
   propsTypeDecl?: string
   needsMemoize = false
+  /** Fields holding the values of hooks the TSX called only to render again (every memo depends on them). */
+  readonly rerenderMembers: string[] = []
   needsNavigate = false
   /** Getters already made for an expression text (same expression → same getter). */
   readonly gettersByExpr = new Map<string, string>()
@@ -356,7 +358,7 @@ class Migration {
           case 'setter':
             // A setter passed as a value: the generated method (`setForm(v)`), bound.
             this.usedSetters.add(l)
-            text = `this.${l.member}.bind(this)`
+            text = boundRef(l.member)
             break
           case 'prop':
             text = `this.props.${l.name}`
@@ -367,7 +369,7 @@ class Migration {
           case 'method': {
             // A method passed as a value keeps its `this`.
             const called = ts.isCallExpression(parent) && parent.expression === n
-            text = called ? `this.${l.member}` : `this.${l.member}.bind(this)`
+            text = called ? `this.${l.member}` : boundRef(l.member)
             break
           }
           default:
@@ -541,6 +543,13 @@ function isHookCall(e: ts.Node | undefined): boolean {
   return false
 }
 
+/** Whether `e` calls a hook anywhere outside a nested function (its value then comes from a hook: React's rules apply). */
+function containsHookCall(e: ts.Node): boolean {
+  if (isHookCall(e)) return true
+  if (ts.isArrowFunction(e) || ts.isFunctionExpression(e) || ts.isFunctionDeclaration(e)) return false
+  return !!ts.forEachChild(e, (c) => containsHookCall(c) || undefined)
+}
+
 /** Names declared by a binding pattern / identifier, with their declaration nodes. */
 function declaredNames(name: ts.BindingName): Array<{ name: string; decl: ts.Node }> {
   if (ts.isIdentifier(name)) return [{ name: name.text, decl: name.parent }]
@@ -613,6 +622,14 @@ export function migrateFile(cfg: MigrateConfig, sf: SourceFile, wanted?: string)
   }
   result.reasons.push(...m.reasons)
   result.stats = m.stats
+  if (m.stats.elements > 0 && m.stats.mapped === 0) {
+    // Nothing of it maps to a `.kbview` element: a view would only wrap the same React in a ReactHost. It stays TSX.
+    result.reasons.push('no element maps to a .kbview element (the view would only host the TSX): left as it is')
+    result.outputs = {}
+    result.edits = {}
+    result.deletes = []
+    return result
+  }
   result.defaults = m.defaults
   result.status = m.stats.parts > 0 || m.reasons.length > 0 ? 'partial' : 'converted'
   return result
@@ -698,6 +715,13 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) m.propsType = t.typeName.text
       else m.propsTypeDecl = t.getText()
       if (!m.propsType) m.propsType = `${target.name}Props`
+    } else if (ts.isObjectBindingPattern(p0.name)) {
+      // `({ name = 'x', selected = false })`: the props TypeScript inferred from the defaults.
+      const inferred = writableType(m, m.typeText(p0))
+      if (inferred) {
+        m.propsTypeDecl = inferred
+        m.propsType = `${target.name}Props`
+      }
     }
   }
 
@@ -806,9 +830,10 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
           }
           continue
         }
-        if (init && isHookCall(init)) {
-          const callee = (skipParens(init) as ts.CallExpression).expression
-          const hookName = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : ''
+        if (init && containsHookCall(init)) {
+          // (A hook inside an expression — `useLocation().pathname`, `useStore(sel) ?? fallback` — is a hook statement too.)
+          const callee = isHookCall(init) ? (skipParens(init) as ts.CallExpression).expression : undefined
+          const hookName = !callee ? '' : ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : ''
           for (const n of declaredNames(d.name)) {
             if (hookName === 'useTranslation' && n.name === 't') {
               const nsArg = (skipParens(init) as ts.CallExpression).arguments[0]
@@ -844,7 +869,20 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       m.addLocal({ name: s.name.text, kind: 'method', member: m.member(s.name.text), decl: s })
       continue
     }
-    if (ts.isExpressionStatement(s) && isHookCall(s.expression)) {
+    if (ts.isExpressionStatement(s) && containsHookCall(s.expression)) {
+      // A hook whose value the TSX dropped (`useModulesStore((s) => s.loadedVersion)`) was there to render the screen
+      // again when it changes — so that what the body computes from a registry or a store is computed again: its value
+      // is kept in a field every memoized getter depends on.
+      const callee = isHookCall(s.expression) ? (skipParens(s.expression) as ts.CallExpression).expression : undefined
+      const hookName = !callee ? '' : ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : ''
+      // (A store read through a selector — `useXStore(sel)` — not a hook run for its effects: those give nothing to follow.)
+      if (/^use[A-Z]\w*Store$/.test(hookName) && (skipParens(s.expression) as ts.CallExpression).arguments.length > 0) {
+        const member = m.member(`rerender${m.rerenderMembers.length + 1}`)
+        m.rerenderMembers.push(member)
+        const transform = (t: string): string => `this.${member} = ${t.trim().replace(/;$/, '')}`
+        pending.push(() => m.addUse(transform(m.rewrite(s, { inUse: true })), s, transform))
+        continue
+      }
       pending.push(() => m.addUse(m.rewrite(s, { inUse: true }), s))
       continue
     }
@@ -938,7 +976,8 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
         }
         // Its type written out (the TSX inferred it): a getter typed from hooks typed from getters would otherwise
         // depend on itself.
-        const inferred = l.type ?? declaredType(m, l.decl.name)
+        // A written annotation is rewritten too (`typeof state` → `X['state']`).
+        const inferred = (l.decl.type ? m.rewrite(l.decl.type) : undefined) ?? l.type ?? declaredType(m, l.decl.name)
         m.getters.push({ name: l.member, body, memo: m.isObjectValue(init), type: inferred, guards: guardsOf(l.decl), prelude: bare.size && !l.fill?.length ? [...condPre, ...[...bare].filter((x) => !condBare.has(x)).map((x) => `const ${x.name} = ${refText(m, x)}`)] : undefined })
         m.stats.getters++
       }
@@ -977,7 +1016,11 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
         ...(guards?.length ? [`    if (${guards.map((g) => `!(${g})`).join(' || ')}) return undefined as never`] : []),
         ...[...bare].map((x) => `    const ${x.name} = ${refText(m, x)}`),
       ]
-      let b = ts.isBlock(f.body) ? m.rewrite(f.body, { bare }) : `{\n    return ${m.rewrite(f.body, { bare })}\n  }`
+      // An expression body that only acts (a setter call, an assignment) returns nothing: the method can be an event
+      // handler as it is (a handler returns `void`).
+      let b = ts.isBlock(f.body) ? m.rewrite(f.body, { bare }) : `{
+    ${actsOnly(m, f.body) ? '' : 'return '}${m.rewrite(f.body, { bare })}
+  }`
       if (prelude.length) b = b.replace(/^\{/, `{\n${prelude.join('\n')}`)
       const typeParams = f.typeParameters?.length ? `<${f.typeParameters.map((t) => m.rewrite(t)).join(', ')}>` : undefined
       m.methods.push({ name: l.member, params, body: b, async: isAsync, typeParams, ret: f.type ? `: ${m.rewrite(f.type)}` : undefined })
@@ -1545,7 +1588,13 @@ function arity(m: Migration, e: ts.Expression): number {
 function handler(m: Migration, expr: ts.Expression, ctx: JsxCtx, node: XNode, event: string, from: EventFrom = {}): string {
   m.stats.handlers++
   m.viewsTypes.add('EventArgs')
-  const x = skipParens(expr)
+  let x = skipParens(expr)
+  // `cond ? (e) => … : undefined`: the function, run only while the condition holds (its own narrowing kept).
+  let only: ts.Expression | undefined
+  if (ts.isConditionalExpression(x) && isNullishLiteral(skipParens(x.whenFalse) as ts.Expression)) {
+    const fn = skipParens(x.whenTrue)
+    if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) { only = x.condition; x = fn }
+  }
   const base = `${snake(node.attrs.find((a) => a.name === 'x:Name')?.value ?? node.el)}_${snake(event.replace(/^On/, ''))}`
   // The template's row as locals, then the conditions the element is shown under (the event only fires then: the
   // TSX handler read the values those conditions narrowed).
@@ -1581,13 +1630,16 @@ function handler(m: Migration, expr: ts.Expression, ctx: JsxCtx, node: XNode, ev
     const name = m.member(base)
     const isAsync = !!x.modifiers?.some((k) => k.kind === ts.SyntaxKind.AsyncKeyword)
     let prelude = rowDestructure
+    if (only) prelude += `    if (!(${m.rewrite(only, { rows: rowParamsAsLocals(ctx, new Map(ctx.rows ?? [])) })})) return undefined as never
+`
     const p = x.parameters[0]
     if (p) {
       if (!ts.isIdentifier(p.name)) throw new NeedsPart(`a handler destructuring its event (${x.getText().slice(0, 40)}…)`)
       // The parameter keeps its written type; else the DOM event type, else the type TypeScript inferred when it can be
       // written here, else `any` (the TSX's own code then type-checks as before).
-      const inferred = !p.type && !receivedType ? printableType(m, p) : undefined
-      const t = p.type ? p.type.getText() : receivedType ?? inferred ?? 'any'
+      // (React's event type when it is the one inferred: an HTML element's handler gets React's synthetic event.)
+      const inferred = !p.type ? printableType(m, p) : undefined
+      const t = p.type ? p.type.getText() : (inferred && (!receivedType || inferred.startsWith('React.')) ? inferred : receivedType ?? inferred ?? 'any')
       prelude += `    const ${p.name.text} = ${received} as ${t}\n`
     }
     const inner = m.rewrite(x.body, { rows: rowParamsAsLocals(ctx, new Map(ctx.rows ?? [])) })
@@ -1622,6 +1674,30 @@ function printableType(m: Migration, node: ts.Node): string | undefined {
     return text.replace(/\b(ChangeEvent|MouseEvent|KeyboardEvent|FormEvent|FocusEvent|SyntheticEvent|DragEvent|PointerEvent|WheelEvent)</g, 'React.$1<')
   }
   return undefined
+}
+
+function isNullishLiteral(e: ts.Expression): boolean {
+  return e.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(e) && e.text === 'undefined')
+}
+
+/**
+ * Indents every line of `code` but the lines inside a template literal (their spaces belong to the string: the text
+ * of a `<pre>` would change).
+ */
+export function indentCode(code: string, pad: string): string {
+  const sf = ts.createSourceFile('part.tsx', code, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX)
+  const inside: Array<[number, number]> = []
+  const visit = (n: ts.Node): void => {
+    if (ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateExpression(n)) inside.push([n.getStart(sf), n.getEnd()])
+    else ts.forEachChild(n, visit)
+  }
+  visit(sf)
+  let out = ''
+  for (let k = 0; k < code.length; k++) {
+    out += code[k]
+    if (code[k] === '\n' && !inside.some(([s, e]) => k > s && k < e)) out += pad
+  }
+  return out
 }
 
 function needsReturn(body: ts.Node): boolean {
@@ -1672,7 +1748,44 @@ function intrinsic(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, ta
     // A size utility in the computed classes: the text has its own size.
     if (/(^|[\s'"`])text-(xs|sm|base|lg|[2-9]?xl|\[)/.test(cls!.getText())) node.attrs = node.attrs.filter((a) => a.name !== 'InheritFontSize')
   }
+  dataAttributes(m, e, tag, node, ctx)
   return node
+}
+
+/**
+ * `data-*` attributes of an HTML element → the container's `DataAttributes` (`app-chrome; module=drive`): a literal
+ * when every value is written, else a getter building the same list (a value `undefined` or `null` leaves its
+ * attribute out, as React does).
+ */
+function dataAttributes(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, tag: string, node: XNode, ctx: JsxCtx): void {
+  const attrs = attributesOf(e).properties.filter((p): p is ts.JsxAttribute => ts.isJsxAttribute(p) && p.name.getText().startsWith('data-'))
+  if (!attrs.length) return
+  if (node.el !== 'Panel' && node.el !== 'Stack') throw new NeedsPart(`<${tag} ${attrs.map((a) => a.name.getText()).join(' ')}>: data attributes on a text`)
+  const parts: { name: string; value?: string; expr?: ts.Expression }[] = attrs.map((a) => {
+    const name = a.name.getText().slice('data-'.length)
+    if (!a.initializer) return { name }
+    const str = staticString(a)
+    if (str !== undefined) return { name, value: str }
+    const expr = ts.isJsxExpression(a.initializer) ? a.initializer.expression : undefined
+    if (!expr) throw new NeedsPart(`<${tag} data-${name}>: a value that is not an expression`)
+    return { name, expr }
+  })
+  if (parts.some((p) => /[;=]/.test(p.value ?? ''))) throw new NeedsPart(`<${tag}>: a data attribute value with ; or =`)
+  const literal = (p: { name: string; value?: string }): string => (p.value === undefined ? p.name : `${p.name}=${p.value}`)
+  if (parts.every((p) => !p.expr)) {
+    attr(node, 'DataAttributes', parts.map(literal).join('; '))
+    return
+  }
+  const bare = new Set<Local>()
+  const items = parts.map((p) => {
+    if (!p.expr) return JSON.stringify(literal(p))
+    if (!ctx.row) for (const l of nestedNullables(m, p.expr)) bare.add(l)
+    const text = m.rewrite(skipParens(p.expr) as ts.Expression, { rows: ctx.rows, bare })
+    return `((v: unknown) => (v === undefined || v === null ? '' : ${JSON.stringify(`${p.name}=`)} + String(v)))(${text})`
+  })
+  const text = `[${items.join(', ')}].filter(Boolean).join('; ')`
+  const first = parts.find((p) => p.expr)!.expr!
+  attr(node, 'DataAttributes', binding(m, first, text, ctx, `${tag}_data`, [...bare].map((l) => `const ${l.name} = ${refText(m, l)}`)))
 }
 
 function intrinsicInner(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, tag: string, ctx: JsxCtx): XNode {
@@ -1680,7 +1793,7 @@ function intrinsicInner(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElemen
   const cls = jsxAttr(e, 'className')
   const className = classValue(cls)
   const unsupported = attributesOf(e).properties.filter((p): p is ts.JsxAttribute => ts.isJsxAttribute(p)).map((p) => p.name.getText())
-    .filter((n) => !['key', 'className', 'style', 'aria-label', 'aria-hidden', 'aria-modal', 'title', 'role', 'tabIndex', 'type', 'href', 'disabled'].includes(n) && !(/^on[A-Z]/.test(n) && domEvent(n)))
+    .filter((n) => !['key', 'className', 'style', 'aria-label', 'aria-hidden', 'aria-modal', 'title', 'role', 'tabIndex', 'type', 'href', 'disabled'].includes(n) && !n.startsWith('data-') && !(/^on[A-Z]/.test(n) && domEvent(n)))
   if (['input', 'select', 'textarea', 'img', 'svg', 'canvas', 'video', 'audio', 'iframe', 'table', 'tbody', 'thead', 'tr', 'td', 'th', 'hr', 'br', 'pre'].includes(tag)) {
     throw new NeedsPart(`<${tag}> has no .kbview element yet`)
   }
@@ -1935,7 +2048,10 @@ function component(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, in
       }
       const x = skipParens(value)
       let v: string
-      if ((ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) && target.values) v = target.values.get(x.text) ?? x.text
+      if ((ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) && target.values) {
+        if (!target.values.has(x.text)) throw new NeedsPart(`<${info.name} ${prop}.${key}="${x.text}">: no .kbview value`)
+        v = target.values.get(x.text)!
+      }
       else if (target.convert === 'invert') v = invertExpr(m, value, ctx, nameFor(value, 'enabled_unless'))
       else if (target.convert) throw new NeedsPart(`<${info.name}> ${prop}.${key}: a value the property converts (${target.convert})`)
       else if (!isTextValue(m, x as ts.Expression)) throw new NeedsPart(`<${info.name}> ${prop}.${key}: an object value for a text property`)
@@ -1986,10 +2102,17 @@ function component(m: Migration, e: ts.JsxElement | ts.JsxSelfClosingElement, in
       let value: string
       // A bare boolean attribute (`disabled`) is true: inverted for `Enabled`.
       if (!init) value = target.convert === 'invert' ? 'false' : 'true'
-      else if (ts.isStringLiteral(init)) value = target.values ? target.values.get(init.text) ?? init.text : init.text
+      else if (ts.isStringLiteral(init)) {
+        // A value the element has no name for (`type="date"` on a TextField): the element stays React.
+        if (target.values && !target.values.has(init.text)) throw new NeedsPart(`<${info.name} ${name}="${init.text}">: no .kbview value`)
+        value = target.values ? target.values.get(init.text)! : init.text
+      }
       else if (expr) {
         const x = skipParens(expr)
-        if ((ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) && target.values) value = target.values.get(x.text) ?? x.text
+        if ((ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) && target.values) {
+          if (!target.values.has(x.text)) throw new NeedsPart(`<${info.name} ${name}="${x.text}">: no .kbview value`)
+          value = target.values.get(x.text)!
+        }
         else if (target.convert === 'invert') value = invertExpr(m, expr, ctx, nameFor(expr, 'enabled_unless'))
         else if (target.convert === 'icon-node' || target.convert === 'icon-component') {
           // An icon: a Lucide element or component becomes its name (`icon={<Plus size={16}/>}` → `Icon="Plus"`).
@@ -2183,6 +2306,7 @@ function part(m: Migration, node: ts.Node, ctx: JsxCtx, why: string): XNode {
   // own, with its narrowed type (passing `menu` would lose the narrowing of `menu.pos`).
   const edits: Array<{ s: number; e: number; text: string }> = []
   const visit = (n: ts.Node): void => {
+    const tagPosition = (ts.isJsxOpeningElement(n.parent) || ts.isJsxSelfClosingElement(n.parent) || ts.isJsxClosingElement(n.parent)) && n.parent.tagName === n
     if (ts.isPropertyAccessExpression(n) && !(ts.isCallExpression(n.parent) && n.parent.expression === n)) {
       let root: ts.Expression = n
       while (ts.isPropertyAccessExpression(root)) root = root.expression
@@ -2205,7 +2329,9 @@ function part(m: Migration, node: ts.Node, ctx: JsxCtx, why: string): XNode {
         }
         const type = declared && isNull(declared) && !isNull(here) ? (writableType(m, m.typeText(n)) ?? indexed()) : undefined
         if (type) {
-          const propName = n.getText().replace(/[^A-Za-z0-9_$]+/g, '_')
+          // A component written as a tag (`<config.Body />`) keeps a capital: JSX reads a lower-case tag as an HTML element.
+          const flat = n.getText().replace(/[^A-Za-z0-9_$]+/g, '_')
+          const propName = tagPosition ? flat.charAt(0).toUpperCase() + flat.slice(1) : flat
           // Read with `?.`: the narrowing may come from inside the part (`{data && <a href={data.href}/>}`), where it is only used once it holds.
           const segs: string[] = []
           for (let x: ts.Expression = n; ts.isPropertyAccessExpression(x); x = x.expression) segs.unshift(x.name.text)
@@ -2288,15 +2414,23 @@ function nestedNullables(m: Migration, body: ts.Node): Set<Local> {
   return out
 }
 
+/**
+ * A method or setter passed as a value: bound once per view (the same function on every render — a new one would
+ * change a `ref` callback or an effect dependency each time, and `ref={setNode}` would update without end).
+ */
+function boundRef(member: string): string {
+  return `this.memo(${JSON.stringify(member + ':bound')}, [], () => this.${member}.bind(this))`
+}
+
 /** How a component-scope name is reached from the class (a part's prop, a row field). */
 function refText(m: Migration, l: Local): string {
   switch (l.kind) {
     case 'prop': return `this.props.${l.member}`
     case 'props-object': return 'this.props'
-    case 'method': return `this.${l.member}.bind(this)`
+    case 'method': return boundRef(l.member)
     case 'setter':
       m.usedSetters.add(l)
-      return `this.${l.member}.bind(this)`
+      return boundRef(l.member)
     default: return `this.${l.member}`
   }
 }
@@ -2394,6 +2528,9 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
   if (m.propsTypeDecl) body.push(`export type ${m.propsType} = ${m.propsTypeDecl}`, '')
   else if (m.propsType && !sf.getInterface(m.propsType)?.isExported() && !sf.getTypeAlias(m.propsType)?.isExported() && (sf.getInterface(m.propsType) || sf.getTypeAlias(m.propsType))) {
     body.push(`export type { ${m.propsType} }`, '')
+  } else if (m.propsType && sf.getImportDeclarations().some((i) => i.getNamedImports().some((n) => (n.getAliasNode()?.getText() ?? n.getName()) === m.propsType))) {
+    // Imported (from the file it was split from): exported again, the view's generated base reads it here.
+    body.push(`export type { ${m.propsType} }`, '')
   }
   // The file's other statements (types, constants, helpers): kept when the code-behind uses them (see below).
   const helpers: Array<{ names: string[]; text: string; exported?: boolean }> = []
@@ -2465,7 +2602,10 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
     // Written out when it can be: a field typed from the hooks that read getters typed from fields can depend on itself.
     members.push(`  ${l.member}!: ${(l.kind !== 'translate' && writableType(m, l.type)) || typeOf(l)}`)
   }
-  if (m.needsNavigate) members.push(`  navigate!: ReturnType<typeof useNavigate>`)
+  // The TSX's own `navigate` (useNavigate) serves the links too.
+  const ownNavigate = [...used].some((l) => l.member === 'navigate')
+  if (m.needsNavigate && !ownNavigate) members.push(`  navigate!: ReturnType<typeof useNavigate>`)
+  for (const r of m.rerenderMembers) members.push(`  ${r}?: unknown`)
   if (members.length) cls.push(...members, '')
   // A statement keeps its own indentation, moved from its column in the TSX to the method's.
   const indent = (s: string, k: number): string => {
@@ -2500,11 +2640,11 @@ function codeBehind(m: Migration, target: FoundComponent, xmlText: string): stri
       cls.push(mine.length ? `    const ${v} = this.${g.method}()` : `    this.${g.method}()`)
       if (mine.length) cls.push(`    this.publish({ ${mine.map((l) => (l.member === l.name ? `${l.name}: ${v}.${l.name}` : `${l.member}: ${v}.${l.name}`)).join(', ') } })`)
     }
-    if (m.needsNavigate) cls.push('    this.navigate = useNavigate()')
+    if (m.needsNavigate && !ownNavigate) cls.push('    this.navigate = useNavigate()')
     cls.push('  }', '')
   }
   // A memo depends on what its guard reads too: computed while the guard failed, it must be computed again once it holds.
-  const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, m.deps([g.body, ...(g.guards ?? []), ...(g.prelude ?? [])].join(' ; '))] as const))
+  const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, [...new Set([...m.deps([g.body, ...(g.guards ?? []), ...(g.prelude ?? [])].join(' ; ')), ...m.rerenderMembers])]] as const))
   for (const g of m.getters) {
     if (g.doc) cls.push(`  /** ${g.doc} */`)
     // A getter of an element shown under a condition is only read when it holds (as the TSX only rendered it then).
@@ -2576,7 +2716,7 @@ function partsFile(m: Migration): string {
     const typed = p.props.length ? `{ ${p.props.map((x) => x.name).join(', ')} }: { ${p.props.map((x) => `${x.name}: ${x.type ?? 'any'}`).join('; ')} }` : ''
     if (p.props.some((x) => !x.type)) body.push('', '// eslint-disable-next-line @typescript-eslint/no-explicit-any')
     else body.push('')
-    body.push(`export function ${p.name}(${typed}) {`, `  return (`, `    ${p.jsx.split('\n').join('\n    ')}`, `  )`, `}`)
+    body.push(`export function ${p.name}(${typed}) {`, `  return (`, `    ${indentCode(p.jsx, '    ')}`, `  )`, `}`)
   }
   let text = body.join('\n')
   // The other statements of the file the parts use (types, constants, helpers), then the imports they need.
@@ -2656,6 +2796,17 @@ export function rewriteImporters(cfg: MigrateConfig, targets: ReadonlyArray<{ sf
         named.remove()
         if (!imp.getDefaultImport()) imp.setDefaultImport(local)
         if (!imp.getNamedImports().length && imp.getImportClause()?.getNamedBindings()) imp.removeNamedImports()
+        changed.add(other)
+      }
+      // A re-export (`export { Field } from '../inline-edit/Field'`): the view's component, under the same name.
+      for (const exp of other.getExportDeclarations()) {
+        const target2 = exp.getModuleSpecifierSourceFile()
+        if (!target2 || target2.getFilePath().replace(/\.tsx?$/, '') !== noExt) continue
+        const named = exp.getNamedExports().find((n) => n.getName() === component)
+        if (!named) continue
+        const alias = named.getAliasNode()?.getText() ?? component
+        named.remove()
+        exp.addNamedExport({ name: 'default', alias })
         changed.add(other)
       }
     }
@@ -2830,4 +2981,16 @@ function isPlainSetterCall(m: Migration, e: ts.Expression, setter: Local, args: 
   const arg = call.arguments[0].getText().replace(/\s+/g, '')
   if (args === 'value') return arg === p
   return arg === `${p}.target.value` || arg === `${p}.target.checked` || arg === `${p}.currentTarget.value`
+}
+
+/**
+ * Whether an arrow function's expression body only acts — a state setter call (an assignment in the class), an
+ * assignment, a `void` expression — rather than computing a value its callers read.
+ */
+function actsOnly(m: Migration, body: ts.Node): boolean {
+  const x = skipParens(body)
+  if (ts.isVoidExpression(x)) return true
+  if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.EqualsToken) return true
+  if (ts.isCallExpression(x) && ts.isIdentifier(x.expression)) return m.localOf(x.expression)?.kind === 'setter'
+  return false
 }

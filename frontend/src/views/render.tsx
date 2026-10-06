@@ -25,7 +25,7 @@ import { UNSET, readBinding, writeBinding, type Scope } from './binding'
 import { applyArgs, makeArgs, type ArgsContext } from './events'
 import type { IconValue, PlanEvent, PlanNode, PlanProp, PlanResArg, ViewPlan } from './plan'
 import { hostTranslator, onResourcesChanged, resolveComponent, resolveIcon, resolveResource, resourcesVersion } from './resolve'
-import { CELL, KB, handleFor, notify, notifyElements, setComponentFactory, setLive, type Cell, type Internals, type View, type ViewClass } from './view'
+import { CELL, KB, forgetMemos, handleFor, notify, notifyElements, setComponentFactory, setLive, type Cell, type Internals, type View, type ViewClass } from './view'
 import { ELEVATIONS, HOVER_CLASS, PRESSED_CLASS, ensureViewStyles, tokenColor } from './style'
 
 type Props = Record<string, unknown>
@@ -442,6 +442,9 @@ function build(
 
   for (const p of list) {
     let v = pending.has(p.n) ? pending.get(p.n) : values.get(p)
+    // A `Visible` binding that gives no value hides the element, as `{cond && <X/>}` renders nothing for an undefined
+    // `cond` (in the designer the element stays shown: its bindings have no data there).
+    if (p.to.runtime === 'visible' && p.b && !i.design && (v === UNSET || v === undefined || v === null)) { out.visible = false; continue }
     if (v === UNSET || v === undefined) continue
     if (p.b && p.to.convert !== 'binding-cell' && v !== null) {
       if (p.kind === 'F32' && typeof v !== 'number') v = Number(v)
@@ -652,6 +655,12 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
     element = createElement('div', { 'data-kb-missing': node.el, ref: (el: HTMLElement | null) => { rootRef.current = el } })
   } else if (node.dom === 'ref') {
     element = createElement(Component, { ...built.props, ref: (el: HTMLElement | null) => { rootRef.current = el } })
+  } else if (built.needsDom && !i.design && classesOnly(node, built) && (Component as { kbRootClass?: boolean }).kbRootClass) {
+    // Classes alone, on a component that puts its `className` on its root (`Card`, `Callout`…): passed as that prop.
+    // A `display: contents` wrapper would sit among its parent's children, where `space-y-*`, `divide-y` and
+    // `> *` selectors would land on it — and nothing of a `display: contents` box is drawn.
+    const own = typeof built.props.className === 'string' ? built.props.className : ''
+    element = createElement(Component, { ...built.props, className: [own, ...built.dom.classes].filter(Boolean).join(' ') })
   } else {
     element = createElement(Component, built.props)
     if (built.needsDom) {
@@ -843,7 +852,10 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
     }
   }
   useSyncExternalStore(i.subscribe, () => i.rootVersion, () => i.rootVersion)
-  useEffect(() => onResourcesChanged(() => notify(i)), [i])
+  useEffect(() => onResourcesChanged(() => {
+    forgetMemos(i.vm)
+    notify(i)
+  }), [i])
   i.deferred = true
   try {
     i.vm.use()
@@ -905,4 +917,10 @@ export function KbView({ view, design, ...props }: { view: ViewClass | Component
   const cell = cls[CELL]
   if (cell) return createElement(ViewRoot, { cell, cls, props, design })
   return createElement(view as ComponentType<object>, props)
+}
+
+/** Whether all a node needs of its DOM root is classes (no name, events, attributes, styles or menus). */
+function classesOnly(node: PlanNode, built: Built): boolean {
+  return !node.name && built.dom.classes.length > 0 && !built.domEvents.length && !built.menus.context && !built.menus.dropDown &&
+    !Object.keys(built.dom.attrs).length && !Object.keys(built.dom.style).length
 }

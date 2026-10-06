@@ -8,6 +8,7 @@ under the published version number.
 
 ### Added
 
+- **Registry**: `DataAttributes` on `Panel` and `Stack` (web only, bindable): the element's `data-*` attributes.
 - **Registry**: `Card` takes `IconSize`, `IconScaling` and `IconColor` for its header glyph.
 - **Registry**: `FloatingWindow` gains its footer (`ConfirmText`, `ConfirmEnabled`, `ConfirmBusy`, `ConfirmDanger`,
   `ConfirmFocused`, `CancelText`, `CancelEnabled`, events `OnConfirm` / `OnCancel`, written to `actions.confirm` /

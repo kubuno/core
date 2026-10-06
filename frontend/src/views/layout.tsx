@@ -64,10 +64,27 @@ interface ContainerBase {
   'aria-modal'?: boolean
   /** `AutoSize`: sized to its content (a push-button container like a native button) instead of filling its line. */
   autoSize?: boolean
+  /** Web `DataAttributes`: `data-*` attributes of the element (`app-chrome; panel=right`), read by styles and scripts. */
+  dataAttributes?: string
   /** @internal — given by the renderer to every element of `@kubuno/views`. */
   __view?: Internals
   /** @internal */
   __id?: string
+}
+
+/**
+ * `DataAttributes="app-chrome; panel=right"` → `{ 'data-app-chrome': '', 'data-panel': 'right' }`: entries separated by
+ * `;`, each a name (an empty attribute) or `name=value`; a name that is not a valid attribute name is ignored.
+ */
+export function dataAttributesOf(spec: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const entry of (spec ?? '').split(';')) {
+    const at = entry.indexOf('=')
+    const name = (at < 0 ? entry : entry.slice(0, at)).trim().replace(/^data-/, '')
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) continue
+    out[`data-${name}`] = at < 0 ? '' : entry.slice(at + 1).trim()
+  }
+  return out
 }
 
 /** A disabled push-button container is drawn faded, like the hand-written rows it replaces (`disabled:opacity-60`). */
@@ -110,6 +127,7 @@ function box(p: ContainerBase, layout: CSSProperties, extra: Record<string, unkn
     tabIndex,
     'aria-label': p['aria-label'],
     'aria-modal': p['aria-modal'] || undefined,
+    ...dataAttributesOf(p.dataAttributes),
     ...extra,
   }
   if (isButton) {

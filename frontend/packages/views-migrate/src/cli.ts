@@ -61,8 +61,17 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     files = next
   }
   const same = (a: string, b: string): boolean => resolve(a) === resolve(b)
+  // The screens nothing of which maps to a view element stay TSX: known first, so that their importers keep them.
+  const leftAsIs = new Map<string, MigrationResult>()
+  for (const f of files) {
+    const sf = ctx.project.getSourceFile(f)
+    if (!sf) continue
+    const r = migrateFile(ctx.config, sf, component_)
+    if (r.status === 'skipped' && r.stats.elements > 0 && r.stats.mapped === 0) leftAsIs.set(f, r)
+  }
   // The importers of every component of the batch switch to its default export first (see rewriteImporters).
   const targets = files.flatMap((f) => {
+    if (leftAsIs.has(f)) return []
     const sf = ctx.project.getSourceFile(f)
     const component = sf && targetComponent(sf, component_)
     return sf && component ? [{ sf, component }] : []
@@ -74,7 +83,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       results.push({ file: f, status: 'skipped', reasons: ['not found in the project'], stats: { elements: 0, mapped: 0, classAttributes: 0, parts: 0, getters: 0, handlers: 0, bindings: 0, resources: 0 }, outputs: {}, deletes: [], edits: {}, defaults: [] })
       continue
     }
-    const r = migrateFile(ctx.config, sf, component_)
+    const r = leftAsIs.get(f) ?? migrateFile(ctx.config, sf, component_)
     results.push(r)
     const rel = relative(root, f)
     console.log(`${r.status.toUpperCase().padEnd(9)} ${rel}${r.component ? ` (${r.component})` : ''}: ${r.stats.mapped}/${r.stats.elements} elements, ${r.stats.parts} part(s), ${r.stats.classAttributes} Class, ${r.stats.getters} getter(s), ${r.stats.handlers} handler(s)`)

@@ -8,12 +8,14 @@ under the published version number.
 
 ### Fixed
 
+- A `Visible` binding that gives no value (`undefined`, `null`, a path not found) hides its element, as `{cond && <X/>}` renders nothing (in the designer the element stays shown). An `@ui` element whose `className` lands on its root (`kbRootClass`: `Card`, `Callout`, `EmptyState`, `Badge`, `Separator`, `Spinner`, `ProgressBar`, `Toggle`) receives a view's `Class` directly, with no `display: contents` wrapper among its parent's children (`space-y-*` and `divide-y` reach it again). What a view memoized (`View.memo`) is computed again after a language or theme change (a module's name read from a registry kept the previous language).
 - A view no longer renders again because its own hooks published new values during its render (only its elements are
   refreshed): a hook returning a new object on every render looped without end. `ReactHost` shows nothing, instead
   of throwing, when the designer's sample data stand in for its component or props.
 
 ### Added
 
+- **`DataAttributes`** on `Panel` and `Stack` (web only): `data-*` attributes of the element (`app-chrome; module=drive`), bindable — the page's styles and scripts find the shell's chrome and panels by them.
 - **`setTranslator(t)`** (host): the translator an `@ui` element receives as `t` when its view sets `HostStrings`;
   the `host-t` converter. Object props are built field by field along dotted paths (`actions` + `confirm.label`).
 

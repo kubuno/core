@@ -69,6 +69,14 @@ const CONTAINER_TAG: PropertyMeta<{ as?: string }> = {
   to: { prop: 'as', values: Object.fromEntries(CONTAINER_TAGS.map((t) => [t, t.toLowerCase()])) as Record<(typeof CONTAINER_TAGS)[number], string> },
 }
 
+/** Web `DataAttributes`: the container's `data-*` attributes (the shell's styles and scripts find it by them). */
+const DATA_ATTRIBUTES: PropertyMeta<{ dataAttributes?: string }> = {
+  name: 'DataAttributes', kind: 'String', default: '', category: 'Behavior', bindable: true, webOnly: true,
+  doc: 'Web only: data-* attributes of the element, separated by semicolons — a name (app-chrome) or name=value (panel=right). Styles and scripts of the page find the element by them.',
+  docFr: "Web uniquement : attributs data-* de l'élément, séparés par des points-virgules — un nom (app-chrome) ou nom=valeur (panel=right). Les styles et scripts de la page retrouvent l'élément par eux.",
+  to: { prop: 'dataAttributes' },
+}
+
 /** `AutoSize` of a container: sized to its content (a push-button container like a native button) instead of filling its line. */
 const AUTO_SIZE: PropertyMeta<{ autoSize?: boolean }> = {
   name: 'AutoSize', kind: 'Bool', default: 'false', category: 'Layout',
@@ -125,7 +133,7 @@ export const PanelMeta = {
   children: 'List',
   layoutKind: 'DockAnchor',
   defaultEvent: 'OnClick',
-  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER, CONTAINER_TAG, ACCESSIBLE_MODAL, AUTO_SIZE],
+  properties: [SURFACE, DOCK_LAYOUT, HREF, DIVIDER, CONTAINER_TAG, ACCESSIBLE_MODAL, AUTO_SIZE, DATA_ATTRIBUTES],
   events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,
   designDefaults: { size: [200, 100] },
@@ -167,6 +175,7 @@ export const StackMeta = {
     CONTAINER_TAG,
     ACCESSIBLE_MODAL,
     AUTO_SIZE,
+    DATA_ATTRIBUTES,
   ],
   events: [ON_SUBMIT],
   inheritedMap: CONTAINER_INHERITED,

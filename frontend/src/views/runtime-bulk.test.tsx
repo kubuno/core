@@ -56,6 +56,50 @@ describe('views runtime — bulk migration additions', () => {
     setTranslator(undefined)
   })
 
+  it('passes classes as className to a component whose className lands on its root (no wrapper)', async () => {
+    function Boxed(props: { className?: string }): ReactNode {
+      return createElement('section', { className: ['boxed', props.className].filter(Boolean).join(' ') })
+    }
+    ;(Boxed as { kbRootClass?: boolean }).kbRootClass = true
+    registerElements('bulk-ui', { Boxed })
+    const Base = createViewBase({
+      abi: 1, file: 'test/Boxed.kbview', kind: 'view', names: {}, handlers: [],
+      root: { id: '', el: 'Boxed', at: [1, 1], m: 'bulk-ui', x: 'Boxed', props: [{ n: 'Class', to: { runtime: 'class' }, kind: 'String', at: [1, 8], v: 'p-5 mt-2' }] },
+    })
+    const { container } = render(createElement(KbView, { view: Base as never }))
+    const first = container.firstElementChild as HTMLElement
+    expect(first.tagName).toBe('SECTION')
+    expect(first.className).toBe('boxed p-5 mt-2')
+  })
+
+  it('hides an element whose Visible binding gives no value (undefined or null)', async () => {
+    const { Panel } = await import('./index')
+    registerElements('bulk-ui', { Panel })
+    const Base = createViewBase({
+      abi: 1, file: 'test/Shown.kbview', kind: 'view', names: {}, handlers: [],
+      root: {
+        id: '', el: 'Panel', at: [1, 1], m: 'bulk-ui', x: 'Panel', content: 'children',
+        children: [
+          { id: 'a', el: 'Label', at: [2, 1], m: 'bulk-ui', x: 'Boxed', props: [
+            { n: 'Visible', to: { runtime: 'visible' }, kind: 'Bool', at: [2, 8], b: { path: 'maybe', mode: 'OneWay', at: [2, 16] } },
+            { n: 'Class', to: { runtime: 'class' }, kind: 'String', at: [2, 30], v: 'hidden-one' },
+          ] },
+          { id: 'b', el: 'Label', at: [3, 1], m: 'bulk-ui', x: 'Boxed', props: [
+            { n: 'Visible', to: { runtime: 'visible' }, kind: 'Bool', at: [3, 8], b: { path: 'yes', mode: 'OneWay', at: [3, 16] } },
+            { n: 'Class', to: { runtime: 'class' }, kind: 'String', at: [3, 30], v: 'shown-one' },
+          ] },
+        ],
+      },
+    } as ViewPlan)
+    class V extends (Base as unknown as new () => Record<string, unknown>) {
+      maybe: boolean | undefined = undefined
+      yes = true
+    }
+    const { container } = render(createElement(KbView, { view: V as never }))
+    expect(container.querySelector('.hidden-one')).toBeNull()
+    expect(container.querySelector('.shown-one')).not.toBeNull()
+  })
+
   it('renders a Fragment through a ReactHost, and nothing for designer sample texts', async () => {
     const { ReactHost } = await import('./index')
     const { Fragment } = await import('react')
@@ -79,5 +123,31 @@ describe('views runtime — bulk migration additions', () => {
     renders = 0
     await act(async () => { render(createElement(KbView, { view: V as never })) })
     expect(renders).toBeLessThan(5)
+  })
+})
+
+describe('DataAttributes', () => {
+  it('reads names and name=value entries, and ignores what is no attribute name', async () => {
+    const { dataAttributesOf } = await import('./layout')
+    expect(dataAttributesOf('app-chrome; module=drive ;data-x=1; Bad Name; ')).toEqual({ 'data-app-chrome': '', 'data-module': 'drive', 'data-x': '1' })
+  })
+})
+
+describe('memos and the language', () => {
+  it('computes memoized values again after a language change', async () => {
+    const { invalidateResources } = await import('./index')
+    let lang = 'en'
+    const Base = createViewBase({
+      abi: 1, file: 'test/Memo.kbview', kind: 'view', names: {}, handlers: [],
+      root: { id: '', el: 'Boxed', at: [1, 1], m: 'bulk-ui', x: 'Boxed', props: [{ n: 'Class', to: { runtime: 'class' }, kind: 'String', at: [1, 8], b: { path: 'label', mode: 'OneWay', at: [1, 16] } }] },
+    })
+    class V extends (Base as unknown as new () => Record<string, unknown> & { memo<T>(k: string, d: unknown[], f: () => T): T }) {
+      get label(): string { return this.memo('label', [], () => `label-${lang}`) }
+    }
+    const { container } = render(createElement(KbView, { view: V as never }))
+    expect(container.querySelector('.label-en')).not.toBeNull()
+    lang = 'fr'
+    await act(async () => invalidateResources())
+    expect(container.querySelector('.label-fr')).not.toBeNull()
   })
 })

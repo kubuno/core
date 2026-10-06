@@ -102,6 +102,12 @@ describe('the split pre-pass (--split)', () => {
     expect(old).not.toMatch(/First|Second|FIRST_CLASS|useTranslation|@ui/)
   })
 
+  it('copies a local component both render into each file, and drops it from the old one', () => {
+    expect(created('First')).toMatch(/function Tag\(/)
+    expect(created('Second')).toMatch(/function Tag\(/)
+    expect(edited('Pair')).not.toMatch(/Tag/)
+  })
+
   it('switches the importers to the new files', () => {
     const u = edited('PairUser')
     expect(u).toContain("import { type Mode } from './Pair'")
@@ -147,5 +153,82 @@ describe('aliased conditions', () => {
   it('declares the condition and what it narrows as constants of the getter', () => {
     const a = convert('Alias.tsx')
     expect(a.code).toMatch(/get delta\(\)[^\n]*\n\s*const previous = this\.props\.previous\s*\n\s*const snapshot = previous === null\s*\n\s*return !snapshot && previous > 0/)
+  })
+})
+
+describe('the bundles of a module', () => {
+  it('reads a generated `src/i18n.data.json` catalogue under the namespace its `i18n.ts` registers', async () => {
+    const { jsonBundles } = await import('../src/project.js')
+    const keys = jsonBundles(join(FIXTURES, 'module-i18n'), 'en').get('drive')
+    expect(keys?.has('app.title')).toBe(true)
+    expect(keys?.has('app.nested.deep')).toBe(true)
+  })
+})
+
+describe('inline handlers', () => {
+  it("types an untyped event parameter with React's event, and guards a conditional handler by its condition", () => {
+    const h = convert('Handlers.tsx')
+    expect(h.code).toMatch(/const e = args\.native as React\.DragEvent<HTMLDivElement/)
+    expect(h.code).toMatch(/if \(!\(this\.props\.onOpen\)\) return undefined as never\s*\n\s*this\.props\.onOpen\('a'\)/)
+  })
+})
+
+describe('screens with nothing to convert', () => {
+  it('leaves a screen whose every element stays React as it is', () => {
+    const w = convert('Wrapper.tsx')
+    expect(w.result.status).toBe('skipped')
+    expect(Object.keys(w.result.outputs)).toHaveLength(0)
+    expect(w.result.deletes).toHaveLength(0)
+  })
+})
+
+describe('data attributes', () => {
+  it('turns written data-* attributes into DataAttributes, and computed ones into a getter building the list', () => {
+    const d = convert('DataAttrs.tsx')
+    expect(d.view).toContain('DataAttributes="app-shell; kind=main"')
+    expect(d.view).toMatch(/DataAttributes="\{Binding aside_data\}"/)
+    expect(d.code).toContain(`["app-chrome", ((v: unknown) => (v === undefined || v === null ? '' : "module=" + String(v)))(this.props.moduleId)`)
+  })
+})
+
+describe('narrowed components and navigation', () => {
+  it('passes a narrowed component written as a tag under a capitalised prop, and keeps one navigate', () => {
+    const n = convert('NarrowTag.tsx')
+    expect(n.parts).toMatch(/<Cfg_Body \/>/)
+    expect(n.parts).toMatch(/Cfg_Body: /)
+    expect(n.code.match(/navigate!:/g)?.length).toBe(1)
+  })
+})
+
+describe('methods passed as values', () => {
+  it('binds a setter given as a value once per view', () => {
+    const r = convert('RefSetter.tsx')
+    expect(r.code).toContain(`this.memo("setNode:bound", [], () => this.setNode.bind(this))`)
+    expect(r.code).not.toMatch(/[^>] this\.setNode\.bind\(this\)/)
+  })
+})
+
+describe('parts', () => {
+  it('keeps the lines of a template literal as they are when it indents a part', async () => {
+    const { indentCode } = await import('../src/migrate.js')
+    const code = '<pre className="x">{`{\n  "id": 1\n}`}</pre>'
+    expect(indentCode(`<div>\n${code}\n</div>`, '    ')).toBe(`<div>\n    ${code}\n    </div>`)
+  })
+})
+
+describe('hooks inside expressions', () => {
+  it('runs a hook called inside an expression in use(), not in a getter', () => {
+    const h = convert('HookExpr.tsx')
+    expect(h.code).not.toMatch(/get pathname\(\)/)
+    expect(h.code).toMatch(/useStores\(\) \{[^]*const pathname = useLocation\(\)\.pathname/)
+    expect(h.code).toMatch(/const hash = useLocation\(\)\.hash \|\| /)
+  })
+})
+
+describe('hooks called to render again', () => {
+  it('keeps the value of a hook the TSX dropped, and makes every memo depend on it', () => {
+    const r = convert('Rerender.tsx')
+    expect(r.code).toMatch(/this\.rerender1 = useVersionStore\(\(s\) => s\.version\)/)
+    expect(r.code).toMatch(/this\.memo\('hit', \[this\.pathname, this\.rerender1\]/)
   })
 })
