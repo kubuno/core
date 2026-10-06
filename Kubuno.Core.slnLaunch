@@ -20,5 +20,14 @@
         "Action": "Start"
       }
     ]
+  },
+  {
+    "Name": "Kubuno Desktop (Windows)",
+    "Projects": [
+      {
+        "Path": "desktop\\windows\\kubuno-desktop-shell\\Kubuno.Desktop.Shell.rsproj",
+        "Action": "Start"
+      }
+    ]
   }
 ]
