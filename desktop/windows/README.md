@@ -23,7 +23,6 @@ windows/
 ├── kubuno-drive-desktop-app-controls/  the painting surface (ported from Files, MIT)
 ├── kubuno-desktop-shell-controls/, kubuno-desktop-header-data/   the header menus and their data, for every app
 ├── kubuno-desktop-shell/               kubuno-desktop.exe — the Windows face of the shell's app
-├── kubuno-office-desktop/              kubuno-documents — word processor for the Office module
 ├── packaging/                          Microsoft Store (MSIX): manifest, Store logos, packaging script
 └── tools/                              UI reference and parity tooling (PowerShell)
 ```
@@ -59,7 +58,8 @@ in `kubuno-drive-desktop`, custom Direct2D controls, the shell/storage layer, lo
 
 - **`kubuno-chat`** — two-pane messaging for the Chat module, now in the chat module's repository
   ([`kubuno/chat`](https://github.com/kubuno/chat), `desktop/windows/`).
-- **`kubuno-documents`** — a native word processor for the Office module's documents.
+- **`kubuno-documents`** — a native word processor for the Office module's documents, now in the office module's
+  repository ([`kubuno/office`](https://github.com/kubuno/office), `desktop/`; its engine in `common/core`).
 
 ## Requirements
 

@@ -2166,33 +2166,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kubuno-office-desktop"
-version = "0.1.1-alpha"
-dependencies = [
- "embed-manifest",
- "kubuno-desktop",
- "kubuno-desktop-account",
- "kubuno-desktop-header-data",
- "kubuno-desktop-shell-controls",
- "kubuno-desktop-sync",
- "kubuno-drive-desktop-app-controls",
- "kubuno-office-docs-core",
- "serde",
- "serde_json",
- "windows 0.62.2",
- "windows-numerics 0.3.1",
- "winresource",
-]
-
-[[package]]
-name = "kubuno-office-docs-core"
-version = "0.1.1-alpha"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "kubuno-web-views-compiler-core"
 version = "0.2.1"
 dependencies = [

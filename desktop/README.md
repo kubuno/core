@@ -39,7 +39,6 @@ desktop/
 │   │                                  the platform extension points (platform) with portable defaults
 │   ├── kubuno-desktop-sync/           file synchronisation engine and the kubuno-sync daemon
 │   ├── kubuno-desktop-account, -secrets, -api-client, -sync-engine, -app-storage/  accounts, tokens, local data
-│   ├── kubuno-office-docs-core/       the word processor's engine (shared core of the Office module)
 │   ├── kubuno-desktop-views-syntax, -views-model, -views-meta, -views-macros, -data-model, -data-macros,
 │   │   -resources-model, -resources-macros, -resources-tool, kubuno-web-views-compiler-core,
 │   │   kubuno-drive-desktop-shared   the portable layers of the framework
@@ -50,7 +49,6 @@ desktop/
 │   ├── kubuno-desktop-shell-controls, -header-data   the header menus and their data, for every app
 │   ├── kubuno-desktop-shell/      kubuno-desktop.exe: the Windows interface of the shell's app (views, tray,
 │   │                              Explorer integration) and the Windows implementations of its extension points
-│   ├── kubuno-office-desktop/     kubuno-documents.exe, the Office module's word processor (moves to office next)
 │   └── packaging/                 Microsoft Store (MSIX)
 ├── linux/      kubuno-desktop-shell-linux: the entry point (portable platform, text interface)
 └── macos/      kubuno-desktop-shell-macos: the entry point (portable platform, text interface)
@@ -156,8 +154,9 @@ icon set and one set of controls:
   settings, sharing the Kubuno component library with the other apps. It is a Rust port of the MIT-licensed
   *Files* project; credits and architecture notes are in
   the drive repository's `desktop/windows/README.md`.
-- **Kubuno Chat** (now in [`kubuno/chat`](https://github.com/kubuno/chat), `desktop/windows/`) and **Kubuno Documents** — native two-pane messaging, and a native
-  word processor for the Office module.
+- **Kubuno Chat** (now in [`kubuno/chat`](https://github.com/kubuno/chat), `desktop/windows/`) and **Kubuno Documents** (now in
+  [`kubuno/office`](https://github.com/kubuno/office), `desktop/`, with its engine in `common/core`) — native two-pane
+  messaging, and a native word processor for the Office module.
 
 ## Usage (sync daemon)
 

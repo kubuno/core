@@ -11,6 +11,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Kubuno Documents moves to the office repository.** The word processor (`kubuno-documents.exe`, crate
+  `kubuno-office-desktop`) and its document engine (`kubuno-office-docs-core`) leave the desktop workspace (`desktop/`) for
+  [`kubuno/office`](https://github.com/kubuno/office) (`desktop/` and `common/core`), with their history. It builds
+  there against the `desktop-v0.1.1-alpha` tag of this repository, like the Chat and Drive apps; the desktop
+  workspace, the solution and the CI no longer list them.
 - **Web views designer: a page is designed on a white sheet.** In Visual Studio, a `.kbview` (page, window, dialog)
   is shown on a white canvas whatever Visual Studio's theme, its boundary drawn as a light-grey dashed line at the
   chosen width; the light / dark preview still switches the page itself. A `.kbcontrol` keeps the canvas in Visual

@@ -12,11 +12,11 @@ desktop/
 ├── common/      complete and portable: the shell's app (kubuno-desktop-shell-common: start-up, accounts and
 │                token broker, the sync engine's door and its offline sample, the activity log, the platform
 │                extension points), the sync daemon (kubuno-desktop-sync), accounts/secrets/storage/API client,
-│                the offline-sync engine, the word processor's engine, the portable framework layers (.kbview
+│                the offline-sync engine, the portable framework layers (.kbview
 │                grammar, model, metadata, macros; resources and data models; the web views compiler), assets
 ├── windows/     what Windows does differently: the Win32 / Direct2D framework (kubuno-desktop, -ui, -controls,
 │                -views, -views-ls, -data, -print, -resources, the painting surface, the header menus and data),
-│                the shell's Windows interface and kubuno-desktop.exe, Kubuno Documents, packaging/ (MSIX), tools/
+│                the shell's Windows interface and kubuno-desktop.exe, packaging/ (MSIX), tools/
 ├── linux/       kubuno-desktop-shell-linux: the entry point (portable platform, text interface)
 └── macos/       kubuno-desktop-shell-macos: the entry point (portable platform, text interface)
 ```
@@ -41,7 +41,7 @@ under that folder, for tests that must not touch the real profile.
 
 ### Static linking: every exe is self-contained
 
-Every program of the workspace (shell, documents, the gallery, the
+Every program of the workspace (shell, the gallery, the
 tools) links the design system (`kubuno-desktop-ui`, with the host `kubuno-desktop-controls` and
 the painting surface `kubuno-drive-desktop-app-controls`) and Rust's `std` **statically**: an
 exe runs from a folder that holds only itself — no `kubuno_desktop_ui` DLL, no
@@ -73,9 +73,9 @@ The programs, over the framework (linked statically into each exe):
 | Program | Crate | Role |
 |---|---|---|
 | `kubuno-desktop.exe` | `windows/kubuno-desktop-shell` (over `common/kubuno-desktop-shell-common`) | the shell: launcher, accounts, activity, settings, sync, Explorer |
-| `kubuno-documents.exe` | `windows/kubuno-office-desktop` | the word processor |
 
 The module apps build in their own repositories (`kubuno/chat` → `kubuno-chat.exe`, `kubuno/drive` → `drive.exe`,
+`kubuno/office` → `kubuno-documents.exe`,
 under `desktop/`), against a `desktop-v*` tag of the core repository (README, "Versions and tags").
 
 > **target-dir**: the repository often lives on a network share (Z:), where the MSVC linker fails to write a PDB

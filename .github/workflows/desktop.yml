@@ -39,7 +39,7 @@ jobs:
       PACKAGES: >-
         -p kubuno-desktop-shell-common -p kubuno-desktop-sync -p kubuno-desktop-sync-engine
         -p kubuno-desktop-account -p kubuno-desktop-api-client -p kubuno-desktop-secrets
-        -p kubuno-desktop-app-storage -p kubuno-office-docs-core
+        -p kubuno-desktop-app-storage
         -p kubuno-desktop-views-syntax -p kubuno-desktop-views-model -p kubuno-desktop-views-meta
         -p kubuno-desktop-views-macros -p kubuno-desktop-data-model -p kubuno-desktop-data-macros
         -p kubuno-desktop-resources-model -p kubuno-desktop-resources-macros -p kubuno-desktop-resources-tool

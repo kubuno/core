@@ -11,6 +11,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Kubuno Documents moves to the office repository.** The word processor (`kubuno-documents.exe`, crate
+  `kubuno-office-desktop`) and its document engine (`kubuno-office-docs-core`) leave `desktop/` for
+  [`kubuno/office`](https://github.com/kubuno/office) (`desktop/` and `common/core`), with their history. It builds
+  there against the `desktop-v0.1.1-alpha` tag of this repository, like the Chat and Drive apps; the desktop
+  workspace, the solution and the CI no longer list them.
 - **Kubuno Desktop moves into the core repository, under `desktop/`, with its history.** The `kubuno/desktop`
   repository is retired. `desktop/` is one Cargo workspace for every operating system: `common/` carries the
   complete, portable part and `windows/`, `linux/`, `macos/` only what each system does differently. The crates
