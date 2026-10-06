@@ -1,0 +1,3 @@
+<!-- ReportSummary — converted from ReportSummary.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<!-- TODO(views-migrate): <section data-report-card data-report-summary>: attribute(s) without a .kbview property -->
+<ReactHost x:Props="ReportSummaryProps" Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_main}"/>

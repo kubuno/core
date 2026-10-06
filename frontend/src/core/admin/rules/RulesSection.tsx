@@ -1,171 +1,140 @@
-// Automation ▸ Rules — the inventory.
-//
-// ── What the list is for ─────────────────────────────────────────────────────
-// Answering, at a glance, the two questions an operator arrives with: what is
-// armed right now, and what has it been doing. So the mode is the loudest column
-// on the row, the one mode that ACTS is the only one painted as a danger, and
-// the recent-run count sits next to it.
-//
-// ── Writing a rule is not "administering" ────────────────────────────────────
-// Reads need `core.rules.read`; every write needs `core.rules.manage`, which no
-// seeded role holds. That is not an oversight: a rule can suspend accounts and
-// revoke sessions, at machine speed, over a population its author describes
-// rather than names. The console mirrors the split — a reader sees everything
-// and can run a backtest (which acts on nobody), and is offered no verb that
-// arms anything.
-
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import {
-  AlertTriangle, Copy, FlaskConical, ListChecks, Pencil, Play, Plus, Power, ScrollText, Trash2,
-} from 'lucide-react'
-import {
-  Badge, Button, Callout, ConfirmDialog, Combobox, DataTable, EmptyState, Input, useToast,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import { Search, X } from 'lucide-react'
-import { PRIV } from '../../authz/types'
-import { usePrivileges } from '../../authz/usePrivileges'
-import { useConfirm } from '../../hooks/useConfirm'
-import { adminUrl, useAdminAction } from '../adminAction'
-import type { AdminSectionProps } from '../sections/registry'
-import { formatAgo, formatWhen } from '../sections/format'
-import RuleEditor, { type Pane } from './RuleEditor'
-import ExecutionsPanel from './ExecutionsPanel'
-import {
-  useCreateRule, useDeleteRule, useExecutions, useRuleCatalog, useRules, useSetRuleMode,
-} from './api'
-import { MODE_ORDER, modeLabel, modeVariant, severityLabel, severityVariant } from './labels'
-import { ruleToInput, type Mode, type Rule } from './types'
-
 /**
- * How many recent runs the counter is computed over.
- *
- * The API offers no per-rule run counter, so the console counts the rows it
- * loaded — and the column header says over how many, because "3" and "3 of the
- * last 200" are not the same claim.
+ * Code-behind of `RulesSection.kbview` (converted from `RulesSection.tsx` by @kubuno/views-migrate).
  */
+import { bind, type MouseEventArgs } from '@kubuno/views'
+import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { AlertTriangle, Copy, FlaskConical, Pencil, Play, Power, ScrollText, Trash2 } from "lucide-react"
+import { Badge, Button, ConfirmDialog, Combobox, Input, useToast, type DataTableColumn, type DataTableRowAction } from "@ui"
+import { Search, X } from "lucide-react"
+import { PRIV } from "../../authz/types"
+import { usePrivileges } from "../../authz/usePrivileges"
+import { useConfirm } from "../../hooks/useConfirm"
+import { adminUrl, useAdminAction } from "../adminAction"
+import { formatAgo, formatWhen } from "../sections/format"
+import RuleEditor, { type Pane } from "./RuleEditor"
+import { useCreateRule, useDeleteRule, useExecutions, useRuleCatalog, useRules, useSetRuleMode } from "./api"
+import { MODE_ORDER, modeLabel, modeVariant, severityLabel, severityVariant } from "./labels"
+import { ruleToInput, type Mode, type Rule } from "./types"
+
+import { ViewBase } from './RulesSection.kbview'
+import * as __parts from './RulesSection.parts'
+
 const RECENT_WINDOW = 200
 
-export default function RulesSection({ params, navigate }: AdminSectionProps) {
-  const { t, i18n } = useTranslation()
-  const { can } = usePrivileges()
-  const toast = useToast()
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+export class RulesSection extends ViewBase {
+  @bind accessor q = ''
+  @bind accessor modeFilter = ''
+  @bind accessor moduleFilter = ''
+  tr!: RulesSectionStores['t']
+  i18n!: RulesSectionStores['i18n']
+  can!: RulesSectionStores['can']
+  toast!: RulesSectionStores['toast']
+  confirm!: RulesSectionStores['confirm']
+  confirmState!: RulesSectionStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  data!: RulesSectionHooks['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: RulesSectionHooks['refetch']
+  recent!: RulesSectionHooks['recent']
+  setMode!: RulesSectionStores['setMode']
+  remove!: RulesSectionStores['remove']
+  create!: RulesSectionStores['create']
+  recentCount!: Map<string, number>
+  triggerLabel!: Map<string, string>
+  modules!: string[]
+  rows!: Rule[]
 
-  const canWrite = can(PRIV.RULES_MANAGE)
-
-  const openId  = params.get('rule')
-  const creating = params.get('new') === '1'
-  const pane = (params.get('pane') as Pane | null) ?? undefined
-
-  const [q, setQ] = useState('')
-  const [modeFilter, setModeFilter] = useState('')
-  const [moduleFilter, setModuleFilter] = useState('')
-
-  const { data, isLoading, isError, refetch } = useRules(!openId && !creating)
-  const catalog = useRuleCatalog()
-  const recent = useExecutions({ limit: RECENT_WINDOW }, !openId && !creating)
-  const setMode = useSetRuleMode()
-  const remove = useDeleteRule()
-  const create = useCreateRule()
-
-  // Verbs this section claims, so a link from the search or an alert lands on
-  // the surface that performs the task rather than on the page.
-  useAdminAction('create', () => navigate(adminUrl({ tab: 'rules', params: { new: 1 } })))
-  useAdminAction('simulate', id => { if (id) armSimulation(id) })
-  useAdminAction('impact', id => { if (id) navigate(adminUrl({ tab: 'rules', params: { rule: id, pane: 'impact' } })) })
-
-  const recentCount = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const e of recent.data ?? []) m.set(e.rule_id, (m.get(e.rule_id) ?? 0) + 1)
-    return m
-  }, [recent.data])
-
-  const triggerLabel = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const x of catalog.data?.triggers ?? []) m.set(x.key, x.label)
-    return m
-  }, [catalog.data])
-
-  const rules = data?.rules ?? []
-
-  const modules = useMemo(
-    () => [...new Set(rules.map(r => r.trigger.split('.')[0]))].sort(),
-    [rules],
-  )
-
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    return rules.filter(r => {
-      if (modeFilter && r.mode !== modeFilter) return false
-      if (moduleFilter && !r.trigger.startsWith(`${moduleFilter}.`)) return false
-      if (!needle) return true
-      return r.name.toLowerCase().includes(needle)
-        || (r.description ?? '').toLowerCase().includes(needle)
-        || r.trigger.toLowerCase().includes(needle)
-    })
-  }, [rules, q, modeFilter, moduleFilter])
-
-  function armSimulation(id: string) {
-    setMode.mutate({ id, mode: 'simulate', change_note: 'Passage en simulation depuis la console' }, {
-      onSuccess: () => toast.success(t('admin.rl_toast_simulating')),
-      onError:   () => toast.error(t('admin.rl_toast_mode_failed')),
-    })
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t, i18n } = useTranslation()
+    const { can } = usePrivileges()
+    const toast = useToast()
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    const catalog = useRuleCatalog()
+    const setMode = useSetRuleMode()
+    const remove = useDeleteRule()
+    const create = useCreateRule()
+    const triggerLabel = useMemo(() => {
+      const m = new Map<string, string>()
+      for (const x of catalog.data?.triggers ?? []) m.set(x.key, x.label)
+      return m
+    }, [catalog.data])
+    return { t, i18n, can, toast, confirm, confirmState, handleConfirm, handleCancel, catalog, setMode, remove, create, triggerLabel }
   }
 
-  const toggleMode = (rule: Rule) => {
-    // Never straight to `enforce` from a menu: re-arming a rule that acts is a
-    // decision taken in the editor, in front of the mode descriptions.
-    const next: Mode = rule.mode === 'inactive' ? 'simulate' : 'inactive'
-    setMode.mutate({ id: rule.id, mode: next }, {
-      onSuccess: () => toast.success(t(next === 'inactive' ? 'admin.rl_toast_disabled' : 'admin.rl_toast_simulating')),
-      onError:   () => toast.error(t('admin.rl_toast_mode_failed')),
-    })
-  }
-
-  const duplicate = (rule: Rule) => {
-    const input = ruleToInput(rule)
-    create.mutate(
-      // A copy is born inactive whatever the original was doing: duplicating a
-      // rule must never be a way to arm a second one by accident.
-      { ...input, name: t('admin.rl_copy_name', { name: rule.name }), mode: 'inactive' },
-      {
-        onSuccess: () => toast.success(t('admin.rl_toast_duplicated')),
-        onError:   () => toast.error(t('admin.rl_toast_duplicate_failed')),
-      },
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const { data, isLoading, isError, refetch } = useRules(!this.openId && !this.creating)
+    this.publish({ data, isLoading, isError, refetch })
+    const recent = useExecutions({ limit: RECENT_WINDOW }, !this.openId && !this.creating)
+    this.publish({ recent })
+    useAdminAction('create', () => this.props.navigate(adminUrl({ tab: 'rules', params: { new: 1 } })))
+    useAdminAction('simulate', id => { if (id) this.armSimulation(id) })
+    useAdminAction('impact', id => { if (id) this.props.navigate(adminUrl({ tab: 'rules', params: { rule: id, pane: 'impact' } })) })
+    const recentCount = useMemo(() => {
+      const m = new Map<string, number>()
+      for (const e of recent.data ?? []) m.set(e.rule_id, (m.get(e.rule_id) ?? 0) + 1)
+      return m
+    }, [recent.data])
+    this.publish({ recentCount })
+    const modules = useMemo(
+      () => [...new Set(this.rules.map(r => r.trigger.split('.')[0]))].sort(),
+      [this.rules],
     )
+    this.publish({ modules })
+    const rows = useMemo(() => {
+      const needle = this.q.trim().toLowerCase()
+      return this.rules.filter(r => {
+        if (this.modeFilter && r.mode !== this.modeFilter) return false
+        if (this.moduleFilter && !r.trigger.startsWith(`${this.moduleFilter}.`)) return false
+        if (!needle) return true
+        return r.name.toLowerCase().includes(needle)
+          || (r.description ?? '').toLowerCase().includes(needle)
+          || r.trigger.toLowerCase().includes(needle)
+      })
+    }, [this.rules, this.q, this.modeFilter, this.moduleFilter])
+    this.publish({ rows })
+    return { data, isLoading, isError, refetch, recent, recentCount, modules, rows }
   }
 
-  const askDelete = async (rule: Rule) => {
-    const ok = await confirm({
-      title: t('admin.rl_delete_title'),
-      message: t('admin.rl_delete_body', { name: rule.name }),
-      confirmLabel: t('common.delete'),
-      variant: 'danger',
-    })
-    if (!ok) return
-    remove.mutate(rule.id, {
-      onSuccess: () => toast.success(t('admin.rl_toast_deleted')),
-      onError:   () => toast.error(t('admin.rl_toast_delete_failed')),
-    })
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, i18n: s.i18n, can: s.can, toast: s.toast, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel, setMode: s.setMode, remove: s.remove, create: s.create, triggerLabel: s.triggerLabel })
+    const h = this.useHooks()
+    this.publish({ data: h.data, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch, recent: h.recent, recentCount: h.recentCount, modules: h.modules, rows: h.rows })
   }
 
-  if (creating || openId) {
-    return (
-      <RuleEditor
-        ruleId={creating ? null : openId}
-        initialPane={pane}
-        canWrite={canWrite}
-        onClose={() => navigate(adminUrl({ tab: 'rules' }))}
-      />
-    )
+  get canWrite(): boolean {
+    return this.can(PRIV.RULES_MANAGE)
   }
 
-  const columns: DataTableColumn<Rule>[] = [
+  get openId(): string | null {
+    return this.props.params.get('rule')
+  }
+
+  get creating(): boolean {
+    return this.props.params.get('new') === '1'
+  }
+
+  get pane(): Pane | undefined {
+    return (this.props.params.get('pane') as Pane | null) ?? undefined
+  }
+
+  get rules(): Rule[] {
+    return this.memo('rules', [this.data], () => this.data?.rules ?? [])
+  }
+
+  get columns(): DataTableColumn<Rule>[] {
+    return this.memo('columns', [this.tr, this.triggerLabel, this.recentCount, this.i18n, this.creating, this.openId], () => {
+      if (!(!(this.creating || this.openId))) return undefined as never
+      return [
     {
       id: 'name',
-      header: t('admin.rl_col_name'),
+      header: this.tr('admin.rl_col_name'),
       primary: true,
       required: true,
       minWidth: 220,
@@ -184,36 +153,36 @@ export default function RulesSection({ params, navigate }: AdminSectionProps) {
     },
     {
       id: 'mode',
-      header: t('admin.rl_col_mode'),
+      header: this.tr('admin.rl_col_mode'),
       width: 150,
       cell: r => (
         <Badge variant={modeVariant(r.mode)} size="sm">
           {r.mode === 'simulate' && <FlaskConical size={10} />}
           {r.mode === 'enforce' && <AlertTriangle size={10} />}
-          {modeLabel(t, r.mode)}
+          {modeLabel(this.tr, r.mode)}
         </Badge>
       ),
       sortValue: r => MODE_ORDER.indexOf(r.mode),
     },
     {
       id: 'trigger',
-      header: t('admin.rl_col_trigger'),
+      header: this.tr('admin.rl_col_trigger'),
       width: 190,
       cell: r => (
-        <span className="truncate text-text-secondary">{triggerLabel.get(r.trigger) ?? r.trigger}</span>
+        <span className="truncate text-text-secondary">{this.triggerLabel.get(r.trigger) ?? r.trigger}</span>
       ),
-      sortValue: r => triggerLabel.get(r.trigger) ?? r.trigger,
+      sortValue: r => this.triggerLabel.get(r.trigger) ?? r.trigger,
     },
     {
       id: 'module',
-      header: t('admin.rl_col_module'),
+      header: this.tr('admin.rl_col_module'),
       width: 110,
       cell: r => <Badge variant="default" size="sm">{r.trigger.split('.')[0]}</Badge>,
       sortValue: r => r.trigger.split('.')[0],
     },
     {
       id: 'actions',
-      header: t('admin.rl_col_actions'),
+      header: this.tr('admin.rl_col_actions'),
       width: 90,
       align: 'right',
       cell: r => <span className="tabular-nums text-text-secondary">{r.actions.length}</span>,
@@ -221,215 +190,313 @@ export default function RulesSection({ params, navigate }: AdminSectionProps) {
     },
     {
       id: 'severity',
-      header: t('admin.rl_col_severity'),
+      header: this.tr('admin.rl_col_severity'),
       width: 110,
       cell: r => (
-        <Badge variant={severityVariant(r.severity)} size="sm">{severityLabel(t, r.severity)}</Badge>
+        <Badge variant={severityVariant(r.severity)} size="sm">{severityLabel(this.tr, r.severity)}</Badge>
       ),
       sortValue: r => ({ critical: 0, warning: 1, info: 2 } as Record<string, number>)[r.severity] ?? 3,
     },
     {
       id: 'recent',
-      header: t('admin.rl_col_recent'),
-      headerText: t('admin.rl_col_recent'),
+      header: this.tr('admin.rl_col_recent'),
+      headerText: this.tr('admin.rl_col_recent'),
       width: 110,
       align: 'right',
       cell: r => (
-        <span className="tabular-nums text-text-secondary" title={t('admin.rl_col_recent_hint', { n: RECENT_WINDOW })}>
-          {recentCount.get(r.id) ?? 0}
+        <span className="tabular-nums text-text-secondary" title={this.tr('admin.rl_col_recent_hint', { n: RECENT_WINDOW })}>
+          {this.recentCount.get(r.id) ?? 0}
         </span>
       ),
-      sortValue: r => recentCount.get(r.id) ?? 0,
+      sortValue: r => this.recentCount.get(r.id) ?? 0,
     },
     {
       id: 'updated',
-      header: t('admin.rl_col_updated'),
+      header: this.tr('admin.rl_col_updated'),
       width: 150,
       cell: r => (
-        <span className="whitespace-nowrap text-text-secondary" title={formatWhen(r.updated_at, i18n.language)}>
+        <span className="whitespace-nowrap text-text-secondary" title={formatWhen(r.updated_at, this.i18n.language)}>
           {formatAgo(r.updated_at)}
         </span>
       ),
       sortValue: r => new Date(r.updated_at),
     },
   ]
+    })
+  }
 
-  const rowActions: DataTableRowAction<Rule>[] = [
+  get rowActions(): DataTableRowAction<Rule>[] {
+    return this.memo('rowActions', [this.canWrite, this.tr, this.props, this.setMode, this.toast, this.create, this.confirm, this.remove, this.creating, this.openId], () => {
+      if (!(!(this.creating || this.openId))) return undefined as never
+      return [
     {
       id: 'edit',
-      label: canWrite ? t('admin.rl_action_edit') : t('admin.rl_action_open'),
+      label: this.canWrite ? this.tr('admin.rl_action_edit') : this.tr('admin.rl_action_open'),
       icon: <Pencil size={15} />,
-      onClick: r => navigate(adminUrl({ tab: 'rules', params: { rule: r.id } })),
+      onClick: r => this.props.navigate(adminUrl({ tab: 'rules', params: { rule: r.id } })),
     },
     {
       id: 'impact',
-      label: t('admin.rl_action_impact'),
+      label: this.tr('admin.rl_action_impact'),
       icon: <Play size={15} />,
-      onClick: r => navigate(adminUrl({ tab: 'rules', params: { rule: r.id, pane: 'impact' } })),
+      onClick: r => this.props.navigate(adminUrl({ tab: 'rules', params: { rule: r.id, pane: 'impact' } })),
     },
     {
       id: 'log',
-      label: t('admin.rl_action_log'),
+      label: this.tr('admin.rl_action_log'),
       icon: <ScrollText size={15} />,
-      onClick: r => navigate(adminUrl({ tab: 'rules-log', params: { rule: r.id } })),
+      onClick: r => this.props.navigate(adminUrl({ tab: 'rules-log', params: { rule: r.id } })),
     },
-    ...(canWrite ? [
+    ...(this.canWrite ? [
       {
         id: 'simulate',
-        label: t('admin.rl_action_simulate'),
+        label: this.tr('admin.rl_action_simulate'),
         icon: <FlaskConical size={15} />,
-        onClick: (r: Rule) => armSimulation(r.id),
+        onClick: (r: Rule) => this.armSimulation(r.id),
         hidden: (r: Rule) => r.mode === 'simulate',
       },
       {
         id: 'toggle',
-        label: t('admin.rl_action_toggle'),
+        label: this.tr('admin.rl_action_toggle'),
         icon: <Power size={15} />,
-        onClick: (r: Rule) => toggleMode(r),
+        onClick: (r: Rule) => this.toggleMode(r),
       },
       {
         id: 'duplicate',
-        label: t('admin.rl_action_duplicate'),
+        label: this.tr('admin.rl_action_duplicate'),
         icon: <Copy size={15} />,
-        onClick: (r: Rule) => duplicate(r),
+        onClick: (r: Rule) => this.duplicate(r),
       },
       {
         id: 'delete',
-        label: t('common.delete'),
+        label: this.tr('common.delete'),
         icon: <Trash2 size={15} />,
         danger: true,
-        onClick: (r: Rule) => void askDelete(r),
+        onClick: (r: Rule) => void this.askDelete(r),
       },
     ] : []),
   ]
+    })
+  }
 
-  const anyFilter = !!(q || modeFilter || moduleFilter)
+  get anyFilter(): boolean {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    return !!(this.q || this.modeFilter || this.moduleFilter)
+  }
 
-  const toolbar = (
+  get toolbar() {
+    return this.memo('toolbar', [this.q, this.tr, this.modeFilter, this.moduleFilter, this.modules, this.creating, this.openId], () => {
+      if (!(!(this.creating || this.openId))) return undefined as never
+      const q = this.q
+      const modeFilter = this.modeFilter
+      const moduleFilter = this.moduleFilter
+      const anyFilter = !!(q || modeFilter || moduleFilter)
+      return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <Input value={q} onChange={e => setQ(e.target.value)} placeholder={t('admin.rl_search_ph')}
+      <Input value={q} onChange={e => this.q = e.target.value} placeholder={this.tr('admin.rl_search_ph')}
         leftIcon={<Search size={15} />} className="w-52 pl-9" />
       <Combobox
         value={modeFilter}
-        onChange={setModeFilter}
+        onChange={this.setModeFilter.bind(this)}
         options={[
-          { value: '', label: t('admin.rl_filter_all_modes') },
-          ...MODE_ORDER.map(m => ({ value: m, label: modeLabel(t, m) })),
+          { value: '', label: this.tr('admin.rl_filter_all_modes') },
+          ...MODE_ORDER.map(m => ({ value: m, label: modeLabel(this.tr, m) })),
         ]}
         width={170}
-        aria-label={t('admin.rl_filter_all_modes')}
+        aria-label={this.tr('admin.rl_filter_all_modes')}
       />
       <Combobox
         value={moduleFilter}
-        onChange={setModuleFilter}
+        onChange={this.setModuleFilter.bind(this)}
         options={[
-          { value: '', label: t('admin.rl_filter_all_modules') },
-          ...modules.map(m => ({ value: m, label: m })),
+          { value: '', label: this.tr('admin.rl_filter_all_modules') },
+          ...this.modules.map(m => ({ value: m, label: m })),
         ]}
         width={160}
-        aria-label={t('admin.rl_filter_all_modules')}
+        aria-label={this.tr('admin.rl_filter_all_modules')}
       />
       {anyFilter && (
         <Button variant="ghost" size="sm" icon={<X size={14} />}
-          onClick={() => { setQ(''); setModeFilter(''); setModuleFilter('') }}>
-          {t('admin.rl_reset_filters')}
+          onClick={() => { this.q = ''; this.modeFilter = ''; this.moduleFilter = '' }}>
+          {this.tr('admin.rl_reset_filters')}
         </Button>
       )}
     </div>
   )
+    })
+  }
 
-  const armed = rules.filter(r => r.mode === 'enforce').length
-  const simulating = rules.filter(r => r.mode === 'simulate').length
+  get armed(): number {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    return this.rules.filter(r => r.mode === 'enforce').length
+  }
 
-  return (
-    <div className="min-w-0">
-      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-          {t('admin.nav_rules')}
-        </h1>
-        {data && (
-          <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('admin.rl_counts', { count: rules.length, armed, simulating })}
-          </span>
-        )}
-        <div className="ms-auto flex items-center gap-2">
-          <Button variant="secondary" size="sm" icon={<ScrollText size={14} />}
-            onClick={() => navigate(adminUrl({ tab: 'rules-log' }))}>
-            {t('admin.nav_rules_log')}
-          </Button>
-          {canWrite && (
-            <Button variant="primary" size="sm" icon={<Plus size={14} />}
-              onClick={() => navigate(adminUrl({ tab: 'rules', params: { new: 1 } }))}>
-              {t('admin.rl_new')}
-            </Button>
-          )}
-        </div>
-      </div>
+  get simulating(): number {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    return this.rules.filter(r => r.mode === 'simulate').length
+  }
 
-      {/* The engine can be switched off instance-wide; a list of armed rules
-          that are not running is the most dangerous thing this page could show
-          without saying so. */}
-      {data && !data.engine_enabled && (
-        <div className="mb-3">
-          <Callout variant="warning" title={t('admin.rl_engine_off_title')}>
-            {t('admin.rl_engine_off_body')}
-          </Callout>
-        </div>
-      )}
-      {data && data.indexed < rules.filter(r => r.mode !== 'inactive').length && (
-        <div className="mb-3">
-          <Callout variant="info">
-            {t('admin.rl_indexed_note', {
-              count: data.indexed,
-              active: rules.filter(r => r.mode !== 'inactive').length,
-            })}
-          </Callout>
-        </div>
-      )}
-      {!canWrite && (
-        <div className="mb-3">
-          <Callout variant="info" title={t('admin.rl_readonly_title')}>{t('admin.rl_readonly_body')}</Callout>
-        </div>
-      )}
+  get show_case_1() {
+    return !!(this.creating || this.openId)
+  }
 
-      <DataTable
-        rows={rows}
-        columns={columns}
-        rowKey={r => r.id}
-        loading={isLoading}
-        error={isError ? t('admin.rl_list_error') : undefined}
-        onRetry={() => void refetch()}
-        filtered={anyFilter}
-        onClearFilters={() => { setQ(''); setModeFilter(''); setModuleFilter('') }}
-        toolbar={toolbar}
-        rowActions={rowActions}
-        onRowClick={r => navigate(adminUrl({ tab: 'rules', params: { rule: r.id } }))}
-        configurableColumns
-        pageSize={25}
-        t={t}
-        emptyState={
-          <EmptyState
-            icon={<ListChecks size={26} />}
-            variant="first-use"
-            title={t('admin.rl_empty_title')}
-            description={t('admin.rl_empty_desc')}
-            action={canWrite ? {
-              label: t('admin.rl_new'),
-              icon: <Plus size={14} />,
-              onClick: () => navigate(adminUrl({ tab: 'rules', params: { new: 1 } })),
-            } : undefined}
-          />
-        }
-      />
+  /** `<RuleEditor>`, rendered by a ReactHost. */
+  get RuleEditor() {
+    if (!(this.creating || this.openId)) return undefined as never
+    return RuleEditor
+  }
 
-      {confirmState && (
-        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
-      )}
-    </div>
-  )
+  get rule_editor_props() {
+    return this.memo('rule_editor_props', [this.creating, this.openId, this.pane, this.canWrite, this.props], () => {
+      if (!(this.creating || this.openId)) return undefined as never
+      return ({ ruleId: this.creating ? null : this.openId, initialPane: this.pane, canWrite: this.canWrite, onClose: () => this.props.navigate(adminUrl({ tab: 'rules' })) } as React.ComponentProps<typeof RuleEditor>)
+    })
+  }
+
+  get show_main() {
+    return !(this.creating || this.openId)
+  }
+
+  get show_data() {
+    return this.memo('show_data', [this.data, this.creating, this.openId], () => {
+      if (!(!(this.creating || this.openId))) return undefined as never
+      return !!(this.data)
+    })
+  }
+
+  get show_data_data_engine() {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    return !!(this.data && !this.data.engine_enabled)
+  }
+
+  get show_data_data_indexed() {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    return !!(this.data && this.data.indexed < this.rules.filter(r => r.mode !== 'inactive').length)
+  }
+
+  get rl_indexed_note_count() {
+    if (!(!(this.creating || this.openId)) || !(this.data && this.data.indexed < this.rules.filter(r => r.mode !== 'inactive').length)) return undefined as never
+    return this.data.indexed
+  }
+
+  get rl_indexed_note_active() {
+    if (!(!(this.creating || this.openId)) || !(this.data && this.data.indexed < this.rules.filter(r => r.mode !== 'inactive').length)) return undefined as never
+    return this.rules.filter(r => r.mode !== 'inactive').length
+  }
+
+  get show_can_write() {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    return !this.canWrite
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.anyFilter, this.q, this.modeFilter, this.moduleFilter, this.toolbar, this.rowActions, this.props, this.canWrite, this.creating, this.openId], () => {
+      if (!(!(this.creating || this.openId))) return undefined as never
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, anyFilter: this.anyFilter, setQ: this.setQ.bind(this), setModeFilter: this.setModeFilter.bind(this), setModuleFilter: this.setModuleFilter.bind(this), toolbar: this.toolbar, rowActions: this.rowActions, navigate: this.props.navigate, canWrite: this.canWrite })
+    })
+  }
+
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, rowActions, onRowClick, configurableColumns, t, emptyState: no .kbview property). */
+  get Part1() {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    return __parts.Part1
+  }
+
+  get show_confirm_state() {
+    return this.memo('show_confirm_state', [this.confirmState, this.creating, this.openId], () => {
+      if (!(!(this.creating || this.openId))) return undefined as never
+      return !!(this.confirmState)
+    })
+  }
+
+  /** `<ConfirmDialog>`, rendered by a ReactHost. */
+  get ConfirmDialog() {
+    if (!(!(this.creating || this.openId)) || !(this.confirmState)) return undefined as never
+    return ConfirmDialog
+  }
+
+  get confirm_dialog_props() {
+    return this.memo('confirm_dialog_props', [this.confirmState, this.handleConfirm, this.handleCancel, this.creating, this.openId], () => {
+      if (!(!(this.creating || this.openId)) || !(this.confirmState)) return undefined as never
+      return ({ ...this.confirmState, onConfirm: this.handleConfirm, onCancel: this.handleCancel })
+    })
+  }
+
+  armSimulation(id: string) {
+    this.setMode.mutate({ id, mode: 'simulate', change_note: 'Passage en simulation depuis la console' }, {
+      onSuccess: () => this.toast.success(this.tr('admin.rl_toast_simulating')),
+      onError:   () => this.toast.error(this.tr('admin.rl_toast_mode_failed')),
+    })
+  }
+
+  toggleMode(rule: Rule) {
+    // Never straight to `enforce` from a menu: re-arming a rule that acts is a
+    // decision taken in the editor, in front of the mode descriptions.
+    const next: Mode = rule.mode === 'inactive' ? 'simulate' : 'inactive'
+    this.setMode.mutate({ id: rule.id, mode: next }, {
+      onSuccess: () => this.toast.success(this.tr(next === 'inactive' ? 'admin.rl_toast_disabled' : 'admin.rl_toast_simulating')),
+      onError:   () => this.toast.error(this.tr('admin.rl_toast_mode_failed')),
+    })
+  }
+
+  duplicate(rule: Rule) {
+    const input = ruleToInput(rule)
+    this.create.mutate(
+      // A copy is born inactive whatever the original was doing: duplicating a
+      // rule must never be a way to arm a second one by accident.
+      { ...input, name: this.tr('admin.rl_copy_name', { name: rule.name }), mode: 'inactive' },
+      {
+        onSuccess: () => this.toast.success(this.tr('admin.rl_toast_duplicated')),
+        onError:   () => this.toast.error(this.tr('admin.rl_toast_duplicate_failed')),
+      },
+    )
+  }
+
+  async askDelete(rule: Rule) {
+    const ok = await this.confirm({
+      title: this.tr('admin.rl_delete_title'),
+      message: this.tr('admin.rl_delete_body', { name: rule.name }),
+      confirmLabel: this.tr('common.delete'),
+      variant: 'danger',
+    })
+    if (!ok) return
+    this.remove.mutate(rule.id, {
+      onSuccess: () => this.toast.success(this.tr('admin.rl_toast_deleted')),
+      onError:   () => this.toast.error(this.tr('admin.rl_toast_delete_failed')),
+    })
+  }
+
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.creating || this.openId))) return undefined as never
+    this.props.navigate(adminUrl({ tab: 'rules-log' }))
+  }
+
+  button_click2(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.creating || this.openId)) || !(this.canWrite)) return undefined as never
+    this.props.navigate(adminUrl({ tab: 'rules', params: { new: 1 } }))
+  }
+
+  /** `setModeFilter` of the TSX: a value, or an update of the previous one. */
+  setModeFilter(value: RulesSection['modeFilter'] | ((prev: RulesSection['modeFilter']) => RulesSection['modeFilter'])) {
+    this.modeFilter = typeof value === 'function' ? (value as (prev: RulesSection['modeFilter']) => RulesSection['modeFilter'])(this.modeFilter) : value
+  }
+
+  /** `setModuleFilter` of the TSX: a value, or an update of the previous one. */
+  setModuleFilter(value: RulesSection['moduleFilter'] | ((prev: RulesSection['moduleFilter']) => RulesSection['moduleFilter'])) {
+    this.moduleFilter = typeof value === 'function' ? (value as (prev: RulesSection['moduleFilter']) => RulesSection['moduleFilter'])(this.moduleFilter) : value
+  }
+
+  /** `setQ` of the TSX: a value, or an update of the previous one. */
+  setQ(value: RulesSection['q'] | ((prev: RulesSection['q']) => RulesSection['q'])) {
+    this.q = typeof value === 'function' ? (value as (prev: RulesSection['q']) => RulesSection['q'])(this.q) : value
+  }
+
 }
 
-/** The run log as its own place, so it is findable rather than buried. */
-export function RulesLogSection({ params }: AdminSectionProps) {
-  return <ExecutionsPanel ruleId={params.get('rule')} />
-}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type RulesSectionStores = ReturnType<RulesSection['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type RulesSectionHooks = ReturnType<RulesSection['useHooks']>
+
+export default RulesSection.component()

@@ -1,0 +1,47 @@
+<!-- AuditSection — converted from AuditSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="bg-white rounded-xl border border-border overflow-hidden">
+  <Panel Class="flex flex-wrap items-baseline gap-2 px-5 py-4 border-b border-border">
+    <Label HtmlTag="H2" Text="{Res admin.audit_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-base"/>
+    <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_retention}"/>
+    <Panel Class="ml-auto">
+      <!-- TODO(views-migrate): <Button> with element children -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Panel>
+  </Panel>
+  <Stack Direction="LeftToRight" CrossAlign="End" WrapContents="true" BackColor="Surface1" Class="px-5 py-3 border-b border-border">
+    <Panel HtmlTag="Form" Class="flex items-center gap-2" OnSubmit="panel_submit">
+      <!-- TODO(views-migrate): <TextField LeftIcon>: an icon size the element cannot take -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+    <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+    <ReactHost Component="{Binding Part4}" Props="{Binding part3_props}"/>
+    <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+    <ReactHost Component="{Binding Part5}" Props="{Binding part3_props}"/>
+    <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+    <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+    <Stack Direction="LeftToRight" Gap="6" CrossAlign="Center">
+      <Label HtmlTag="Span" Text="{Res admin.audit_filter_from}" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+      <ReactHost Component="{Binding Part7}" Props="{Binding part7_props}"/>
+      <Label HtmlTag="Span" Text="{Res admin.audit_filter_to}" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+      <ReactHost Component="{Binding Part8}" Props="{Binding part7_props}"/>
+    </Stack>
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           Visible="{Binding anyFilter}"
+           Class="h-9 px-2 text-sm text-text-tertiary hover:text-text-primary"
+           OnClick="panel_click">
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.audit_reset_filters}"/>
+    </Panel>
+  </Stack>
+  <Panel Class="overflow-x-auto">
+    <!-- TODO(views-migrate): <table> has no .kbview element yet -->
+    <ReactHost Component="{Binding Part9}" Props="{Binding part9_props}"/>
+  </Panel>
+  <Panel Visible="{Binding hasNextPage}" Class="px-5 py-3 border-t border-border text-center">
+    <Button Variant="Secondary" Enabled="{Binding enabled_unless_is_fetching}" Text="{Binding button_text}" OnClick="button_click"/>
+  </Panel>
+</Panel>

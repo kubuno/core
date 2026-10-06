@@ -1,0 +1,19 @@
+<!-- ExecutionsPanel — converted from ExecutionsPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="Props" Class="min-w-0">
+  <Label HtmlTag="H1"
+         Text="{Res admin.nav_rules_log}"
+         Overflow="Wrap"
+         ForeColor="TextPrimary"
+         InheritFontSize="true"
+         Visible="{Binding show_embedded}"
+         Class="mb-4 [font-size:var(--kb-text-page)]"/>
+  <Label Text="{Res admin.rl_log_intro}"
+         Overflow="Wrap"
+         ForeColor="TextSecondary"
+         InheritFontSize="true"
+         Class="mb-3 [font-size:var(--kb-text-meta)]"/>
+  <!-- TODO(views-migrate): elements held in an expression -->
+  <ReactHost Component="{Binding Fragment}" Props="{Binding content_filters}"/>
+  <!-- TODO(views-migrate): elements held in an expression -->
+  <ReactHost Component="{Binding Fragment}" Props="{Binding content_body}"/>
+</Panel>

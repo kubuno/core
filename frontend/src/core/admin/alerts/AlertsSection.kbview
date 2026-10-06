@@ -1,0 +1,85 @@
+<!-- AlertsSection — converted from AlertsSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <AlertDetail> is no .kbview element (./AlertDetail#default) -->
+  <ReactHost Component="{Binding AlertDetail}" Props="{Binding alert_detail_props}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+      <Label HtmlTag="H1"
+             Text="{Res admin.nav_alerts}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.al_counts, Open={Binding al_counts_open}, Critical={Binding al_counts_critical}, Mine={Binding al_counts_mine}}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Visible="{Binding show_summary}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Stack Direction="LeftToRight" CrossAlign="Center" Class="ms-auto">
+        <Button Variant="Secondary"
+                Size="Sm"
+                IconSize="14"
+                Icon="RefreshCw"
+                Loading="{Binding scan.isPending}"
+                Text="{Res admin.al_scan_now}"
+                Visible="{Binding canManage}"
+                OnClick="button_click"/>
+      </Stack>
+    </Panel>
+    <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true" Class="mb-3 min-w-0">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+        <Panel HtmlTag="Span"
+               ForeColor="TextSecondary"
+               BackColor="Surface2"
+               Class="inline-flex items-center gap-1 rounded-full ps-2.5 pe-1 py-0.5 [font-size:var(--kb-text-meta)]">
+          <Panel AccessibleRole="PushButton"
+                 AutoSize="true"
+                 Class="inline-flex items-center gap-1 rounded-sm hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                 OnClick="panel_click">
+            <Icon Name="Bookmark" Size="12"/>
+            <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding v.name}"/>
+          </Panel>
+          <Panel AccessibleRole="PushButton"
+                 AutoSize="true"
+                 AccessibleName="{Res admin.al_view_delete, Name={Binding v.name}}"
+                 Class="rounded-full p-0.5 hover:bg-surface-3 hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                 OnClick="panel_click2">
+            <Icon Name="Trash2" Size="12"/>
+          </Panel>
+        </Panel>
+      </Repeater>
+      <Panel HtmlTag="Span" Visible="{Binding saving}" Class="inline-flex items-center gap-1.5">
+        <TextField Text="{Binding viewName, Mode=TwoWay}"
+                   Placeholder="{Res admin.al_view_name_ph}"
+                   FieldClass="w-44"
+                   OnKeyDown="text_field_key_down"/>
+        <Button Variant="Secondary"
+                Size="Sm"
+                Enabled="{Binding enabled_unless_view_name_trim}"
+                Text="{Res admin.al_view_save}"
+                OnClick="doSaveView"/>
+        <Button Variant="Ghost" Size="Sm" Text="{Res common.cancel}" OnClick="button_click2"/>
+      </Panel>
+      <Button Variant="Ghost"
+              Size="Sm"
+              IconSize="14"
+              Icon="BookmarkPlus"
+              Text="{Res admin.al_view_new}"
+              Visible="{Binding show_not_saving}"
+              OnClick="button_click3"/>
+    </Stack>
+    <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, selectedIds, onSelectionChange, bulkActions, rowActions, onRowClick, configurableColumns, t, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <Panel Visible="{Binding hasNextPage}" Class="mt-3 text-center">
+      <Button Variant="Secondary"
+              Size="Sm"
+              Enabled="{Binding enabled_unless_is_fetching}"
+              Text="{Binding button_text}"
+              OnClick="button_click4"/>
+    </Panel>
+    <!-- TODO(views-migrate): <MobileSheet> is no .kbview element (@ui#MobileSheet) -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+  </Panel>
+</Panel>

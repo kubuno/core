@@ -1,0 +1,132 @@
+<!-- AlertDetail — converted from AlertDetail.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AlertDetailProps" Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <Panel Visible="{Binding show_case_2}" Class="min-w-0">
+    <Button Variant="Ghost" Size="Sm" IconSize="15" Icon="ArrowLeft" Text="{Res admin.al_back}" OnClick="button_click"/>
+    <Callout Variant="Danger" Title="{Res admin.al_detail_error}" Class="mt-3"/>
+  </Panel>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-4 mt-2 min-w-0">
+      <Panel Class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Panel HtmlTag="Span" AccessibleHidden="true" Class="{Binding span_class}"/>
+        <Label HtmlTag="H1"
+               Text="{Binding h1_text}"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+        <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" InheritFontSize="true" Class="{Binding span_class2}"/>
+        <Label HtmlTag="Span"
+               Text="{Binding span_text2}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               BackColor="Surface2"
+               InheritFontSize="true"
+               Class="rounded-full px-1.5 py-0.5 [font-size:var(--kb-text-micro)]"/>
+      </Panel>
+      <Label Text="{Binding p_text}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-1 max-w-prose [font-size:var(--kb-text-body)]"/>
+    </Panel>
+    <!-- TODO(views-migrate): <ActionButtons> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding ActionButtons}" Props="{Binding action_buttons_props}"/>
+    <Panel Class="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <Panel Class="min-w-0 space-y-4">
+        <Card Title="{Res admin.al_lifecycle_title}" Visible="{Binding canManage}">
+          <Panel Class="contents">
+            <Stack Direction="LeftToRight" WrapContents="true">
+              <Button Variant="Secondary"
+                      Size="Sm"
+                      IconSize="14"
+                      Icon="Hand"
+                      Text="{Res admin.al_take}"
+                      Visible="{Binding show_alert_status_acknowledged}"
+                      OnClick="button_click2"/>
+              <Button Variant="Secondary"
+                      Size="Sm"
+                      IconSize="14"
+                      Icon="Check"
+                      Text="{Res admin.al_resolve}"
+                      Visible="{Binding show_alert_status_resolved}"
+                      OnClick="button_click3"/>
+              <Button Variant="Secondary"
+                      Size="Sm"
+                      IconSize="14"
+                      Icon="Ban"
+                      Text="{Res admin.al_ignore}"
+                      Visible="{Binding show_alert_status_ignored}"
+                      OnClick="button_click4"/>
+              <Button Variant="Secondary"
+                      Size="Sm"
+                      IconSize="14"
+                      Icon="RotateCcw"
+                      Text="{Res admin.al_reopen}"
+                      Visible="{Binding show_is_open_alert_status}"
+                      OnClick="button_click5"/>
+            </Stack>
+            <Panel Class="mt-3 max-w-sm">
+              <Label HtmlTag="Label"
+                     Text="{Res admin.al_assignee}"
+                     Overflow="Wrap"
+                     ForeColor="TextSecondary"
+                     InheritFontSize="true"
+                     Class="mb-1 block [font-size:var(--kb-text-meta)]"/>
+              <!-- TODO(views-migrate): <ComboBox> searchPlaceholder, emptyLabel, clearable, onClear: no .kbview property -->
+              <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+              <Label Text="{Res admin.al_assignee_hint}"
+                     Overflow="Wrap"
+                     ForeColor="TextTertiary"
+                     InheritFontSize="true"
+                     Class="mt-1 [font-size:var(--kb-text-micro)]"/>
+            </Panel>
+          </Panel>
+        </Card>
+        <Card Title="{Res admin.al_timeline_title}">
+          <Panel Class="contents">
+            <!-- TODO(views-migrate): <Timeline> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding Timeline}" Props="{Binding timeline_props}"/>
+            <Panel Visible="{Binding canManage}" Class="mt-4 border-t border-border pt-3">
+              <!-- TODO(views-migrate): <TextArea> rows: no .kbview property -->
+              <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+              <Stack Direction="LeftToRight" Gap="0" Justify="End" Class="mt-2">
+                <Button Variant="Secondary"
+                        Size="Sm"
+                        IconSize="14"
+                        Icon="Send"
+                        Enabled="{Binding enabled_unless_draft_trim_comment}"
+                        Text="{Res admin.al_comment_send}"
+                        OnClick="send"/>
+              </Stack>
+            </Panel>
+          </Panel>
+        </Card>
+      </Panel>
+      <Panel Class="min-w-0 space-y-4">
+        <Card Title="{Res admin.al_context_title}">
+          <!-- TODO(views-migrate): <dl> has no .kbview element yet -->
+          <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        </Card>
+        <Card Title="{Res admin.al_related_title}" Subtitle="{Res admin.al_related_sub}" Visible="{Binding show_related}">
+          <Panel HtmlTag="Ul" Class="min-w-0 space-y-2">
+            <Repeater ItemKey="key" ItemsSource="{Binding rows_related}">
+              <Panel HtmlTag="Li" Class="min-w-0">
+                <!-- TODO(views-migrate): <Link style> -->
+                <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+                <Label HtmlTag="Span"
+                       Text="{Binding span_text}"
+                       Overflow="Wrap"
+                       ForeColor="TextTertiary"
+                       InheritFontSize="true"
+                       Class="[font-size:var(--kb-text-micro)]"/>
+              </Panel>
+            </Repeater>
+          </Panel>
+        </Card>
+      </Panel>
+    </Panel>
+  </Panel>
+</Panel>

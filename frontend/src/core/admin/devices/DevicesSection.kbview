@@ -1,0 +1,37 @@
+<!-- DevicesSection — converted from DevicesSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <DeviceDetail> is no .kbview element (./DeviceDetail#default) -->
+  <ReactHost Component="{Binding DeviceDetail}" Props="{Binding device_detail_props}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+      <Label HtmlTag="H1"
+             Text="{Res admin.nav_sessions}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+      <Label HtmlTag="Span"
+             Text="{Res devices.count, Count={Binding count_count}}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Visible="{Binding show_data}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Button Variant="Ghost"
+              Size="Sm"
+              IconSize="14"
+              Icon="X"
+              Text="{Res devices.clear_account_filter}"
+              Visible="{Binding show_user_id}"
+              OnClick="button_click"/>
+    </Panel>
+    <Callout Title="{Res devices.scope_title}" Body="{Res devices.scope_body}" Class="mb-4"/>
+    <Callout Body="{Res devices.no_country_db}" Visible="{Binding show_data_data_country}" Class="mb-4"/>
+    <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, rowActions, onRowClick, configurableColumns, t, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <MobileSheet> is no .kbview element (@ui#MobileSheet) -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

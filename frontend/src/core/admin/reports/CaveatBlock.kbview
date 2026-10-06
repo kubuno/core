@@ -1,0 +1,3 @@
+<!-- CaveatBlock — converted from CaveatBlock.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<!-- TODO(views-migrate): <ReportBlock> is no .kbview element (./ReportBlock#default) -->
+<ReactHost x:Props="CaveatBlockProps" Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_main}"/>

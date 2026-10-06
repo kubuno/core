@@ -1,0 +1,20 @@
+<!-- CoverSheet — converted from CoverSheet.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="CoverSheetProps" Gap="0" Class="h-full">
+  <Stack Direction="LeftToRight" CrossAlign="Center">
+    <!-- TODO(views-migrate): <InstanceLogo> is no .kbview element (../../../shell/InstanceLogo#InstanceLogo) -->
+    <ReactHost Component="{Binding InstanceLogo}" Props="{Binding instance_logo_props}"/>
+    <Label HtmlTag="Span" Text="{Binding props.instance}" Overflow="Wrap" InheritFontSize="true" Class="[font-size:var(--kb-text-heading)]"/>
+  </Stack>
+  <Stack Gap="0" Justify="Center" Class="flex-1">
+    <Label Text="{Res admin.rep_document}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-body)]"/>
+    <Label HtmlTag="H1" Text="{Binding props.title}" Overflow="Wrap" InheritFontSize="true" Class="mt-2 [font-size:32pt] [line-height:1.15]"/>
+    <Label Text="{Binding props.about}" Overflow="Wrap" InheritFontSize="true" Class="mt-3 max-w-2xl [font-size:var(--kb-text-heading)]"/>
+    <Label Text="{Binding p_text}" Overflow="Wrap" InheritFontSize="true" Class="mt-6 [font-size:var(--kb-text-body)]"/>
+  </Stack>
+  <!-- TODO(views-migrate): <dl> has no .kbview element yet -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+</Stack>

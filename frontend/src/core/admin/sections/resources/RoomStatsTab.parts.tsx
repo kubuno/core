@@ -5,8 +5,9 @@
 import { type ReactNode } from "react"
 import { Clock } from "lucide-react"
 import { Dropdown } from "@ui"
-import { BarChart, HBarList } from "../../DashboardCharts"
 import type { RoomStatsTab } from './RoomStatsTab'
+import BarChart from '../../BarChart'
+import HBarList from '../../HBarList'
 
 function StatCard({
   label, value, icon: Icon, accent,

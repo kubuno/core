@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next'
-import { CELL, HEAD, Nothing, ReportBlock } from './ReportTables'
+import { CELL, HEAD } from './ReportTables'
 import type { ReportModel } from './model'
 import type { FlowItem } from './paged/types'
+import Nothing from './Nothing'
+import ReportBlock from './ReportBlock'
 
 /**
  * The records behind the figure — who, when, what.

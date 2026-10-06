@@ -28,7 +28,7 @@ import HealthSection from '../health/HealthSection'
 import AlertsSection from '../alerts/AlertsSection'
 import DevicesSection from '../devices/DevicesSection'
 import NetworksSection from '../devices/NetworksSection'
-import RulesSection, { RulesLogSection } from '../rules/RulesSection'
+import RulesSection from '../rules/RulesSection'
 import DetectorsSection from '../detectors/DetectorsSection'
 import SecurityDashboardSection from '../security/SecurityDashboardSection'
 import ReportsSection from '../reports/ReportsSection'
@@ -44,6 +44,7 @@ import DataMigrationSection from './data-migration/DataMigrationSection'
 import DataExportSection from './data-export/DataExportSection'
 import SubscriptionSection from './subscription/SubscriptionSection'
 import { adminUrl } from '../adminAction'
+import RulesLogSection from '../rules/RulesLogSection'
 
 /**
  * Everything a section may need from the router. Sections that need neither may

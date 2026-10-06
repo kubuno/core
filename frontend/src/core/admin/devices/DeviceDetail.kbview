@@ -1,0 +1,91 @@
+<!-- DeviceDetail — converted from DeviceDetail.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="DeviceDetailProps" Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <EmptyState ActionLabel="{Res devices.retry}"
+              IconSize="26"
+              Icon="TriangleAlert"
+              Variant="Error"
+              Title="{Res devices.error}"
+              Visible="{Binding show_case_2}"
+              OnAction="empty_state_action"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-4 flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
+      <Label HtmlTag="H1"
+             Text="{Binding h1_text}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+      <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" InheritFontSize="true" Class="{Binding span_class}"/>
+      <Label HtmlTag="Span"
+             Text="{Binding device.user_label}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-1 [font-size:var(--kb-text-meta)]"/>
+    </Panel>
+    <Callout Variant="Danger"
+             Title="{Res devices.blocked_title}"
+             Body="{Binding callout_text}"
+             Visible="{Binding show_device_approval_blocked}"
+             Class="mb-4"/>
+    <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true" Visible="{Binding canManage}" Class="mb-4">
+      <Button Variant="Secondary"
+              Size="Sm"
+              IconSize="14"
+              Icon="Check"
+              Text="{Res devices.approve}"
+              Visible="{Binding show_device_approval_approved}"
+              OnClick="button_click"/>
+      <Button Variant="Secondary"
+              Size="Sm"
+              IconSize="14"
+              Icon="Ban"
+              Text="{Res devices.block}"
+              Visible="{Binding show_device_approval_blocked2}"
+              OnClick="button_click2"/>
+      <Button Variant="Secondary"
+              Size="Sm"
+              IconSize="14"
+              Icon="Check"
+              Text="{Res devices.unblock}"
+              Visible="{Binding show_not_device_approval_blocked}"
+              OnClick="button_click3"/>
+      <Button Variant="Secondary"
+              Size="Sm"
+              IconSize="14"
+              Icon="LogOut"
+              Enabled="{Binding enabled_unless_data_sessions}"
+              Text="{Res devices.sign_out}"
+              OnClick="button_click4"/>
+      <Button Variant="Ghost" Size="Sm" IconSize="14" Icon="Trash2" Text="{Res devices.forget}" OnClick="button_click5"/>
+    </Stack>
+    <Panel Class="grid gap-4 lg:grid-cols-2">
+      <Card Title="{Res devices.facts_title}" Subtitle="{Res devices.facts_subtitle}">
+        <!-- TODO(views-migrate): <DeviceFacts> is no .kbview element (../../devices/panels#DeviceFacts) -->
+        <ReactHost Component="{Binding DeviceFacts}" Props="{Binding device_facts_props}"/>
+      </Card>
+      <Card Title="{Res devices.declared_title}">
+        <!-- TODO(views-migrate): <DeclaredSignals> is no .kbview element (../../devices/panels#DeclaredSignals) -->
+        <ReactHost Component="{Binding DeclaredSignals}" Props="{Binding device_facts_props}"/>
+      </Card>
+      <Card Title="{Res devices.sessions_title, N={Binding sessions_title_n}}" Flush="true">
+        <!-- TODO(views-migrate): <SessionList> is no .kbview element (../../devices/panels#SessionList) -->
+        <ReactHost Component="{Binding SessionList}" Props="{Binding session_list_props}"/>
+      </Card>
+      <Card Title="{Res devices.timeline_title}">
+        <!-- TODO(views-migrate): <DeviceTimeline> is no .kbview element (../../devices/panels#DeviceTimeline) -->
+        <ReactHost Component="{Binding DeviceTimeline}" Props="{Binding device_timeline_props}"/>
+      </Card>
+    </Panel>
+    <Label Text="{Binding p_text}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Class="mt-4 [font-size:var(--kb-text-meta)]"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

@@ -1,12 +1,18 @@
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { Activity, ChevronDown, ChevronRight, Radio } from 'lucide-react'
-import { Button, Callout, Combobox, DataTable, EmptyState, type ComboboxOption, type DataTableColumn } from '@ui'
-import { api } from '../../api/client'
-import { formatWhen } from './format'
+/**
+ * Code-behind of `EventLogSection.kbview` (converted from `EventLogSection.tsx` by @kubuno/views-migrate).
+ */
+import { bind, type MouseEventArgs } from '@kubuno/views'
+import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { useInfiniteQuery } from "@tanstack/react-query"
+import { ChevronDown, ChevronRight } from "lucide-react"
+import { type ComboboxOption, type DataTableColumn } from "@ui"
+import { api } from "../../api/client"
+import { formatWhen } from "./format"
 
-/** Rows fetched per request. The route caps `limit` at 200 server-side. */
+import { ViewBase } from './EventLogSection.kbview'
+import * as __parts from './EventLogSection.parts'
+
 const PAGE = 50
 
 interface EventRow {
@@ -19,73 +25,107 @@ interface EventRow {
 
 interface EventPage { events: EventRow[]; limit: number; offset: number }
 
-/**
- * Module event bus (`core.event_log`), 30-day retention.
- *
- * NOT the administrative audit trail: entries here have no actor and record
- * what the SYSTEM did (a file uploaded, an event created), whereas the audit
- * trail records who changed the configuration. Both screens live under
- * "Reporting" and are routinely confused, hence the callout.
- *
- * ── What the route actually offers ───────────────────────────────────────────
- * `GET /admin/event-log` accepts `limit` (≤ 200), `offset` and an EXACT
- * `event_type`. It returns no total and no cursor, so:
- *   • pagination is "load more" over `offset` — a page count would be a lie
- *     without a total, and a page *selector* would let the user jump into a
- *     window whose size nobody knows;
- *   • the type filter is fed from the types actually seen in what has been
- *     loaded (the route exposes no facets endpoint), which is stated in the UI
- *     rather than passed off as an exhaustive catalogue.
- */
-export default function EventLogSection() {
-  const { t, i18n } = useTranslation()
-  const [type, setType] = useState('')
-  const [open, setOpen] = useState<number | null>(null)
+function inner(e: EventRow): Record<string, unknown> | null {
+  const p = e.payload?.payload
+  return p && typeof p === 'object' && !Array.isArray(p) ? (p as Record<string, unknown>) : null
+}
 
-  const { data, fetchNextPage, hasNextPage, isFetching, isLoading, isError, refetch } = useInfiniteQuery({
-    queryKey: ['admin-event-log', type],
-    initialPageParam: 0,
-    queryFn: ({ pageParam }) => api
-      .get<EventPage>('/admin/event-log', {
-        params: { limit: PAGE, offset: pageParam, ...(type ? { event_type: type } : {}) },
-      })
-      .then(r => r.data),
-    // No total and no cursor: a short page is the only end-of-list signal.
-    getNextPageParam: (last, all) =>
-      last.events.length < PAGE ? undefined : all.length * PAGE,
-  })
+function subType(e: EventRow): string | null {
+  const v = inner(e)?.event_type
+  return typeof v === 'string' && v !== e.event_type ? v : null
+}
 
-  const rows = useMemo(() => (data?.pages ?? []).flatMap(p => p.events), [data])
+function sourceModule(e: EventRow): string | null {
+  if (e.source_module) return e.source_module
+  const v = inner(e)?.module_id
+  return typeof v === 'string' && v ? v : null
+}
 
-  // Types observed so far — the honest substitute for a facets endpoint.
-  const typeOptions: ComboboxOption[] = useMemo(() => {
-    const seen = new Map<string, number>()
-    for (const e of rows) seen.set(e.event_type, (seen.get(e.event_type) ?? 0) + 1)
-    const options: ComboboxOption[] = [...seen.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([value, count]) => ({ value, label: value, description: t('admin.el_type_count', { total: count }) }))
-    // Keep the active filter selectable even once its rows scrolled out.
-    if (type && !seen.has(type)) options.unshift({ value: type, label: type })
-    return [{ value: '', label: t('admin.el_filter_all_types') }, ...options]
-  }, [rows, type, t])
+function preview(payload: Record<string, unknown>): string {
+  const json = JSON.stringify(payload)
+  return json.length > 120 ? `${json.slice(0, 120)}…` : json
+}
 
-  const columns: DataTableColumn<EventRow>[] = [
+export class EventLogSection extends ViewBase {
+  @bind accessor type = ''
+  @bind accessor open: number | null = null
+  tr!: EventLogSectionStores['t']
+  i18n!: EventLogSectionStores['i18n']
+  fetchNextPage!: EventLogSectionHooks['fetchNextPage']
+  hasNextPage!: boolean
+  isFetching!: boolean
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: EventLogSectionHooks['refetch']
+  rows!: EventRow[]
+  typeOptions!: ComboboxOption[]
+
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t, i18n } = useTranslation()
+    return { t, i18n }
+  }
+
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const t = this.tr
+    const { data, fetchNextPage, hasNextPage, isFetching, isLoading, isError, refetch } = useInfiniteQuery({
+      queryKey: ['admin-event-log', this.type],
+      initialPageParam: 0,
+      queryFn: ({ pageParam }) => api
+        .get<EventPage>('/admin/event-log', {
+          params: { limit: PAGE, offset: pageParam, ...(this.type ? { event_type: this.type } : {}) },
+        })
+        .then(r => r.data),
+      // No total and no cursor: a short page is the only end-of-list signal.
+      getNextPageParam: (last, all) =>
+        last.events.length < PAGE ? undefined : all.length * PAGE,
+    })
+    this.publish({ fetchNextPage, hasNextPage, isFetching, isLoading, isError, refetch })
+    const rows = useMemo(() => (data?.pages ?? []).flatMap(p => p.events), [data])
+    this.publish({ rows })
+    const typeOptions: ComboboxOption[] = useMemo(() => {
+      const seen = new Map<string, number>()
+      for (const e of rows) seen.set(e.event_type, (seen.get(e.event_type) ?? 0) + 1)
+      const options: ComboboxOption[] = [...seen.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([value, count]) => ({ value, label: value, description: t('admin.el_type_count', { total: count }) }))
+      // Keep the active filter selectable even once its rows scrolled out.
+      if (this.type && !seen.has(this.type)) options.unshift({ value: this.type, label: this.type })
+      return [{ value: '', label: t('admin.el_filter_all_types') }, ...options]
+    }, [rows, this.type, t])
+    this.publish({ typeOptions })
+    return { data, fetchNextPage, hasNextPage, isFetching, isLoading, isError, refetch, rows, typeOptions }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, i18n: s.i18n })
+    const h = this.useHooks()
+    this.publish({ fetchNextPage: h.fetchNextPage, hasNextPage: h.hasNextPage, isFetching: h.isFetching, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch, rows: h.rows, typeOptions: h.typeOptions })
+  }
+
+  get columns(): DataTableColumn<EventRow>[] {
+    return this.memo('columns', [this.tr, this.i18n, this.open], () => {
+      const open = this.open
+      return [
     {
       id: 'when',
-      header: t('admin.audit_col_when'),
-      headerText: t('admin.audit_col_when'),
+      header: this.tr('admin.audit_col_when'),
+      headerText: this.tr('admin.audit_col_when'),
       minWidth: 170,
       sortValue: e => new Date(e.created_at),
       cell: e => (
         <span className="whitespace-nowrap tabular-nums text-text-secondary">
-          {formatWhen(e.created_at, i18n.language)}
+          {formatWhen(e.created_at, this.i18n.language)}
         </span>
       ),
     },
     {
       id: 'type',
-      header: t('admin.el_col_type'),
-      headerText: t('admin.el_col_type'),
+      header: this.tr('admin.el_col_type'),
+      headerText: this.tr('admin.el_col_type'),
       primary: true,
       minWidth: 200,
       sortValue: e => e.event_type,
@@ -105,8 +145,8 @@ export default function EventLogSection() {
     },
     {
       id: 'module',
-      header: t('admin.el_col_module'),
-      headerText: t('admin.el_col_module'),
+      header: this.tr('admin.el_col_module'),
+      headerText: this.tr('admin.el_col_module'),
       minWidth: 130,
       sortValue: e => sourceModule(e) ?? '',
       cell: (e) => {
@@ -121,9 +161,9 @@ export default function EventLogSection() {
               <span
                 className="rounded-full bg-surface-2 px-1.5 py-0.5 text-text-tertiary"
                 style={{ fontSize: 'var(--kb-text-micro)' }}
-                title={t('admin.el_module_derived')}
+                title={this.tr('admin.el_module_derived')}
               >
-                {t('admin.el_module_derived_short')}
+                {this.tr('admin.el_module_derived_short')}
               </span>
             )}
           </span>
@@ -132,8 +172,8 @@ export default function EventLogSection() {
     },
     {
       id: 'payload',
-      header: t('admin.el_col_payload'),
-      headerText: t('admin.el_col_payload'),
+      header: this.tr('admin.el_col_payload'),
+      headerText: this.tr('admin.el_col_payload'),
       minWidth: 280,
       cell: (e) => {
         const expanded = open === e.id
@@ -145,7 +185,7 @@ export default function EventLogSection() {
           <div className="min-w-0" style={{ maxWidth: 420 }}>
             <button
               type="button"
-              onClick={() => setOpen(expanded ? null : e.id)}
+              onClick={() => this.open = expanded ? null : e.id}
               aria-expanded={expanded}
               className="flex w-full min-w-0 items-center gap-1 rounded-sm text-left text-text-secondary
                          transition-colors hover:text-text-primary
@@ -154,7 +194,7 @@ export default function EventLogSection() {
             >
               {expanded ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
               <span className="min-w-0 truncate font-mono">
-                {expanded ? t('admin.el_collapse') : preview(e.payload)}
+                {expanded ? this.tr('admin.el_collapse') : preview(e.payload)}
               </span>
             </button>
             {expanded && (
@@ -169,111 +209,53 @@ export default function EventLogSection() {
       },
     },
   ]
+    })
+  }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      {/* No card title here: AdminPage already paints "Event log" as the page
-          heading, and repeating it inside the box says nothing twice. */}
-      <p className="flex items-center gap-2 text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-        <Radio size={15} className="shrink-0 text-text-tertiary" aria-hidden />
-        {t('admin.el_desc')}
-      </p>
+  get part1_props() {
+    return this.memo('part1_props', [this.tr, this.type, this.typeOptions], () => ({ t: this.tr, type: this.type, setType: this.setType.bind(this), typeOptions: this.typeOptions }))
+  }
 
-      <Callout t={t} variant="info" title={t('admin.el_vs_audit_title')}>
-        {t('admin.el_vs_audit_desc')}
-      </Callout>
+  /** A part of the screen still written in React (<ComboBox> width, searchPlaceholder: no .kbview property). */
+  get Part1() {
+    return __parts.Part1
+  }
 
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-            <Combobox
-              t={t}
-              value={type || ''}
-              onChange={setType}
-              options={typeOptions}
-              width={260}
-              aria-label={t('admin.el_filter_type')}
-              placeholder={t('admin.el_filter_all_types')}
-              searchPlaceholder={t('admin.el_filter_type')}
-            />
-            <span className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {t('admin.el_types_hint')}
-            </span>
-            <span className="ml-auto text-text-secondary tabular-nums" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {t('admin.el_loaded', { total: rows.length })}
-            </span>
-          </div>
+  get part2_props() {
+    return this.memo('part2_props', [this.tr, this.rows, this.columns, this.isLoading, this.isError, this.refetch, this.type], () => ({ t: this.tr, rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, refetch: this.refetch, type: this.type, setType: this.setType.bind(this) }))
+  }
 
-          <DataTable
-            t={t}
-            rows={rows}
-            columns={columns}
-            rowKey={e => String(e.id)}
-            loading={isLoading}
-            skeletonRows={8}
-            error={isError ? t('admin.el_error') : undefined}
-            onRetry={() => void refetch()}
-            filtered={Boolean(type)}
-            onClearFilters={() => setType('')}
-            // The server already returns newest-first and paginates; sorting or
-            // paging locally would only reorder the window that happens to be
-            // loaded and would silently contradict the "load more" below.
-            manualSort
-            pageSize={0}
-            configurableColumns
-            minTableWidth={820}
-            emptyState={(
-              <EmptyState
-                t={t}
-                variant="first-use"
-                icon={<Activity size={24} />}
-                title={t('admin.el_empty')}
-                description={t('admin.el_empty_desc')}
-              />
-            )}
-          />
+  /** A part of the screen still written in React (<DataTable> t, columns, rowKey, skeletonRows, onRetry, filtered, onClearFilters, manualSort, configurableColumns, minTableWidth, emptyState: no .kbview property). */
+  get Part2() {
+    return __parts.Part2
+  }
 
-          {hasNextPage && (
-            <div className="text-center">
-              <Button variant="secondary" onClick={() => void fetchNextPage()} disabled={isFetching}>
-                {isFetching ? t('common.loading') : t('admin.el_load_more')}
-              </Button>
-            </div>
-          )}
-      </div>
-    </div>
-  )
+  get enabled_unless_is_fetching() {
+    if (!(this.hasNextPage)) return undefined as never
+    return !(this.isFetching)
+  }
+
+  get button_text() {
+    if (!(this.hasNextPage)) return undefined as never
+    return this.isFetching ? this.tr('common.loading') : this.tr('admin.el_load_more')
+  }
+
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(this.hasNextPage)) return undefined as never
+    void this.fetchNextPage()
+  }
+
+  /** `setType` of the TSX: a value, or an update of the previous one. */
+  setType(value: EventLogSection['type'] | ((prev: EventLogSection['type']) => EventLogSection['type'])) {
+    this.type = typeof value === 'function' ? (value as (prev: EventLogSection['type']) => EventLogSection['type'])(this.type) : value
+  }
+
 }
 
-// ── Payload helpers ──────────────────────────────────────────────────────────
+/** What `useStores()` gives (the types of the fields it fills). */
+export type EventLogSectionStores = ReturnType<EventLogSection['useStores']>
 
-/** Inner `payload` of the `{ type, payload }` envelope the bus serialises. */
-function inner(e: EventRow): Record<string, unknown> | null {
-  const p = e.payload?.payload
-  return p && typeof p === 'object' && !Array.isArray(p) ? (p as Record<string, unknown>) : null
-}
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type EventLogSectionHooks = ReturnType<EventLogSection['useHooks']>
 
-/**
- * `Custom` is a single enum variant carrying the real name in its payload, so
- * the column would otherwise read "Custom" for the bulk of the table.
- */
-function subType(e: EventRow): string | null {
-  const v = inner(e)?.event_type
-  return typeof v === 'string' && v !== e.event_type ? v : null
-}
-
-/**
- * `core.event_log.source_module` is never written by the core (the INSERT in
- * `EventBus::publish_and_log` omits the column), so the module is recovered
- * from the payload when it carries one.
- */
-function sourceModule(e: EventRow): string | null {
-  if (e.source_module) return e.source_module
-  const v = inner(e)?.module_id
-  return typeof v === 'string' && v ? v : null
-}
-
-/** One-line summary shown while the payload is collapsed. */
-function preview(payload: Record<string, unknown>): string {
-  const json = JSON.stringify(payload)
-  return json.length > 120 ? `${json.slice(0, 120)}…` : json
-}
+export default EventLogSection.component()

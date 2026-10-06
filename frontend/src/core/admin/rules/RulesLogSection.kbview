@@ -1,0 +1,3 @@
+<!-- RulesLogSection — converted from RulesLogSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<!-- TODO(views-migrate): <ExecutionsPanel> is no .kbview element (./ExecutionsPanel#default) -->
+<ReactHost x:Props="AdminSectionProps" Component="{Binding ExecutionsPanel}" Props="{Binding executions_panel_props}"/>

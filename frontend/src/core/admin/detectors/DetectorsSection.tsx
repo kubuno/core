@@ -1,81 +1,99 @@
-// Content detectors — the list.
-//
-// The screen answers one question at a glance: what is this instance looking
-// for, and is it actually looking. A disabled detector is the single most
-// consequential state here — a rule that names it is stored, armed, and inert —
-// so it is a column rather than a detail somebody finds by opening the sheet.
+/**
+ * Code-behind of `DetectorsSection.kbview` (converted from `DetectorsSection.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { ShieldCheck, ShieldOff } from "lucide-react"
+import { type DataTableColumn, type DataTableRowAction } from "@ui"
+import ConfirmDialog from "@ui/ConfirmDialog"
+import { useConfirm } from "../../hooks/useConfirm"
+import { PRIV } from "../../authz/types"
+import { usePrivileges } from "../../authz/usePrivileges"
+import { adminUrl, useAdminAction } from "../adminAction"
+import { useDetectors, useDeleteDetector, errorMessage, type Detector } from "./api"
+import { asPercent, categoryLabel, categoryOrder, checksumLabel, kindLabel } from "./labels"
+import DetectorEditor from "./DetectorEditor"
 
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Plus, ShieldCheck, ShieldOff, SearchCheck } from 'lucide-react'
-import {
-  Button, DataTable, EmptyState,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import ConfirmDialog from '@ui/ConfirmDialog'
-import { useConfirm } from '../../hooks/useConfirm'
-import { PRIV } from '../../authz/types'
-import { usePrivileges } from '../../authz/usePrivileges'
-import { adminUrl, useAdminAction } from '../adminAction'
-import type { AdminSectionProps } from '../sections/registry'
-import { useDetectors, useDeleteDetector, errorMessage, type Detector } from './api'
-import { asPercent, categoryLabel, categoryOrder, checksumLabel, kindLabel } from './labels'
-import DetectorEditor from './DetectorEditor'
+import { ViewBase } from './DetectorsSection.kbview'
+import * as __parts from './DetectorsSection.parts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export default function DetectorsSection({ params, navigate }: AdminSectionProps) {
-  const { t }   = useTranslation()
-  const { can } = usePrivileges()
-  const canManage = can(PRIV.RULES_MANAGE)
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+export class DetectorsSection extends ViewBase {
+  @bind accessor editing: string | 'new' | null = null
+  @bind accessor error: string | null = null
+  tr!: DetectorsSectionStores['t']
+  can!: DetectorsSectionStores['can']
+  confirm!: DetectorsSectionStores['confirm']
+  confirmState!: DetectorsSectionStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  data!: DetectorsSectionStores['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: DetectorsSectionStores['refetch']
+  remove!: DetectorsSectionStores['remove']
+  openId!: string | null
+  rows!: Detector[]
 
-  const [editing, setEditing] = useState<string | 'new' | null>(null)
-  const [error, setError]     = useState<string | null>(null)
-
-  const { data, isLoading, isError, refetch } = useDetectors()
-  const remove = useDeleteDetector()
-
-  // `/admin/detectors?action=create` from anywhere in the console.
-  useAdminAction('create', () => { if (canManage) setEditing('new') })
-
-  // `/admin/detectors?detector=…` accepts a row id OR a catalogue key: a rule's
-  // detector leaf names the KEY (a rule read three years later must still say
-  // what it looked for), so the rules console can only link here by key. An
-  // unknown key — or a list still loading — falls back to the catalogue rather
-  // than sending a non-uuid into `GET /admin/detectors/:id`.
-  const openParam = params.get('detector')
-  const openId = useMemo(() => {
-    if (!openParam) return null
-    if (UUID_RE.test(openParam)) return openParam
-    return (data?.detectors ?? []).find(d => d.key === openParam)?.id ?? null
-  }, [openParam, data])
-  const active = editing ?? openId
-
-  const rows = useMemo(() => {
-    const list = data?.detectors ?? []
-    return [...list].sort((a, b) =>
-      categoryOrder(a.category) - categoryOrder(b.category) ||
-      a.label.localeCompare(b.label))
-  }, [data])
-
-  if (active) {
-    return (
-      <DetectorEditor
-        id={active === 'new' ? null : active}
-        limits={data?.limits}
-        onClose={() => {
-          setEditing(null)
-          if (openId) navigate(adminUrl({ tab: 'detectors' }))
-        }}
-      />
-    )
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t }   = useTranslation()
+    const { can } = usePrivileges()
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    const { data, isLoading, isError, refetch } = useDetectors()
+    const remove = useDeleteDetector()
+    const rows = useMemo(() => {
+      const list = data?.detectors ?? []
+      return [...list].sort((a, b) =>
+        categoryOrder(a.category) - categoryOrder(b.category) ||
+        a.label.localeCompare(b.label))
+    }, [data])
+    return { t, can, confirm, confirmState, handleConfirm, handleCancel, data, isLoading, isError, refetch, remove, rows }
   }
 
-  const columns: DataTableColumn<Detector>[] = [
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const data = this.data
+    useAdminAction('create', () => { if (this.canManage) this.editing = 'new' })
+    const openParam = this.openParam
+    const openId = useMemo(() => {
+      if (!openParam) return null
+      if (UUID_RE.test(openParam)) return openParam
+      return (data?.detectors ?? []).find(d => d.key === openParam)?.id ?? null
+    }, [openParam, data])
+    this.publish({ openId })
+    return { openId }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, can: s.can, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel, data: s.data, isLoading: s.isLoading, isError: s.isError, refetch: s.refetch, remove: s.remove, rows: s.rows })
+    const h = this.useHooks()
+    this.publish({ openId: h.openId })
+  }
+
+  get canManage(): boolean {
+    return this.can(PRIV.RULES_MANAGE)
+  }
+
+  get openParam(): string | null {
+    return this.props.params.get('detector')
+  }
+
+  get active(): string | null {
+    return this.editing ?? this.openId
+  }
+
+  get columns(): DataTableColumn<Detector>[] {
+    return this.memo('columns', [this.tr, this.active], () => {
+      if (!(!(this.active))) return undefined as never
+      return [
     {
       id: 'label',
-      header: t('admin.det_col_detector'),
+      header: this.tr('admin.det_col_detector'),
       primary: true,
       minWidth: 220,
       sortValue: r => r.label,
@@ -90,28 +108,28 @@ export default function DetectorsSection({ params, navigate }: AdminSectionProps
     },
     {
       id: 'category',
-      header: t('admin.det_col_category'),
+      header: this.tr('admin.det_col_category'),
       sortValue: r => categoryOrder(r.category),
-      cell: r => <span className="text-text-secondary">{categoryLabel(t, r.category)}</span>,
+      cell: r => <span className="text-text-secondary">{categoryLabel(this.tr, r.category)}</span>,
     },
     {
       id: 'kind',
-      header: t('admin.det_col_kind'),
+      header: this.tr('admin.det_col_kind'),
       sortValue: r => r.kind,
       cell: r => (
         <span className="text-text-secondary">
-          {kindLabel(t, r.kind)}
-          {r.checksum ? ` · ${checksumLabel(t, r.checksum)}` : ''}
+          {kindLabel(this.tr, r.kind)}
+          {r.checksum ? ` · ${checksumLabel(this.tr, r.checksum)}` : ''}
         </span>
       ),
     },
     {
       id: 'thresholds',
-      header: t('admin.det_col_thresholds'),
+      header: this.tr('admin.det_col_thresholds'),
       minWidth: 200,
       cell: r => (
         <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {t('admin.det_thresholds_summary', {
+          {this.tr('admin.det_thresholds_summary', {
             confidence: asPercent(r.min_confidence),
             matches: r.min_matches,
             unique: r.min_unique_matches,
@@ -121,7 +139,7 @@ export default function DetectorsSection({ params, navigate }: AdminSectionProps
     },
     {
       id: 'state',
-      header: t('admin.det_col_state'),
+      header: this.tr('admin.det_col_state'),
       sortValue: r => (r.is_enabled ? 0 : 1),
       cell: r => (
         <span className="inline-flex items-center gap-1.5">
@@ -129,117 +147,136 @@ export default function DetectorsSection({ params, navigate }: AdminSectionProps
             ? <ShieldCheck size={14} className="text-success" aria-hidden />
             : <ShieldOff size={14} className="text-text-tertiary" aria-hidden />}
           <span className={r.is_enabled ? 'text-text-secondary' : 'text-text-tertiary'}>
-            {r.is_enabled ? t('admin.det_state_on') : t('admin.det_state_off')}
+            {r.is_enabled ? this.tr('admin.det_state_on') : this.tr('admin.det_state_off')}
           </span>
         </span>
       ),
     },
     {
       id: 'origin',
-      header: t('admin.det_col_origin'),
+      header: this.tr('admin.det_col_origin'),
       defaultHidden: true,
       sortValue: r => (r.is_builtin ? 0 : 1),
       cell: r => (
         <span className="text-text-tertiary">
-          {r.is_builtin ? t('admin.det_origin_builtin') : t('admin.det_origin_custom')}
+          {r.is_builtin ? this.tr('admin.det_origin_builtin') : this.tr('admin.det_origin_custom')}
         </span>
       ),
     },
   ]
+    })
+  }
 
-  const rowActions: DataTableRowAction<Detector>[] = canManage
+  get rowActions(): DataTableRowAction<Detector>[] {
+    return this.memo('rowActions', [this.canManage, this.tr, this.editing, this.confirm, this.error, this.remove, this.active], () => {
+      if (!(!(this.active))) return undefined as never
+      return this.canManage
     ? [
         {
           id: 'edit',
-          label: t('admin.det_action_edit'),
-          onClick: r => setEditing(r.id),
+          label: this.tr('admin.det_action_edit'),
+          onClick: r => this.editing = r.id,
         },
         {
           id: 'delete',
-          label: t('admin.det_action_delete'),
+          label: this.tr('admin.det_action_delete'),
           danger: true,
           hidden: r => r.is_builtin,
           onClick: async r => {
-            const ok = await confirm({
-              title: t('admin.det_delete_title'),
-              message: t('admin.det_delete_message', { label: r.label }),
-              confirmLabel: t('admin.det_action_delete'),
+            const ok = await this.confirm({
+              title: this.tr('admin.det_delete_title'),
+              message: this.tr('admin.det_delete_message', { label: r.label }),
+              confirmLabel: this.tr('admin.det_action_delete'),
               variant: 'danger',
             })
             if (!ok) return
-            setError(null)
+            this.error = null
             try {
-              await remove.mutateAsync(r.id)
+              await this.remove.mutateAsync(r.id)
             } catch (e) {
-              setError(errorMessage(e, t('admin.det_delete_failed')))
+              this.error = errorMessage(e, this.tr('admin.det_delete_failed'))
             }
           },
         },
       ]
     : []
+    })
+  }
 
-  return (
-    <div className="min-w-0">
-      <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-        {t('admin.det_title')}
-      </h1>
-      <p className="mt-1 max-w-3xl text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-        {t('admin.det_intro')}
-      </p>
+  get show_case_1() {
+    return !!(this.active)
+  }
 
-      {error && (
-        <p className="mt-3 text-danger" role="alert" style={{ fontSize: 'var(--kb-text-body)' }}>
-          {error}
-        </p>
-      )}
+  /** `<DetectorEditor>`, rendered by a ReactHost. */
+  get DetectorEditor() {
+    if (!(this.active)) return undefined as never
+    return DetectorEditor
+  }
 
-      <div className="mt-4">
-        <DataTable
-          rows={rows}
-          columns={columns}
-          rowKey={r => r.id}
-          loading={isLoading}
-          error={isError ? t('admin.det_load_failed') : undefined}
-          onRetry={() => void refetch()}
-          rowActions={rowActions}
-          onRowClick={r => setEditing(r.id)}
-          configurableColumns
-          pageSize={0}
-          t={t}
-          toolbar={canManage
-            ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Plus size={14} />}
-                onClick={() => setEditing('new')}
-              >
-                {t('admin.det_new')}
-              </Button>
-            )
-            : undefined}
-          emptyState={(
-            <EmptyState
-              icon={<SearchCheck size={26} />}
-              variant="first-use"
-              title={t('admin.det_empty_title')}
-              description={t('admin.det_empty_desc')}
-              action={canManage
-                ? { label: t('admin.det_new'), onClick: () => setEditing('new') }
-                : undefined}
-              t={t}
-            />
-          )}
-        />
-      </div>
+  get detector_editor_props() {
+    return this.memo('detector_editor_props', [this.active, this.data, this.editing, this.props, this.openId], () => {
+      if (!(this.active)) return undefined as never
+      const openId = this.openId
+      return ({ id: this.active === 'new' ? null : this.active, limits: this.data?.limits, onClose: () => {
+          this.editing = null
+          if (openId) this.props.navigate(adminUrl({ tab: 'detectors' }))
+        } } as React.ComponentProps<typeof DetectorEditor>)
+    })
+  }
 
-      {confirmState && (
-        <ConfirmDialog
-          {...confirmState}
-          onConfirm={handleConfirm}
-          onCancel={handleCancel}
-        />
-      )}
-    </div>
-  )
+  get show_main() {
+    return !(this.active)
+  }
+
+  get show_error() {
+    if (!(!(this.active))) return undefined as never
+    return !!(this.error)
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.editing, this.canManage, this.active], () => {
+      if (!(!(this.active))) return undefined as never
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, setEditing: this.setEditing.bind(this), canManage: this.canManage })
+    })
+  }
+
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, onRetry, rowActions, onRowClick, configurableColumns, t, toolbar, emptyState: no .kbview property). */
+  get Part1() {
+    if (!(!(this.active))) return undefined as never
+    return __parts.Part1
+  }
+
+  get show_confirm_state() {
+    return this.memo('show_confirm_state', [this.confirmState, this.active], () => {
+      if (!(!(this.active))) return undefined as never
+      return !!(this.confirmState)
+    })
+  }
+
+  /** `<ConfirmDialog>`, rendered by a ReactHost. */
+  get ConfirmDialog() {
+    if (!(!(this.active)) || !(this.confirmState)) return undefined as never
+    return ConfirmDialog
+  }
+
+  get confirm_dialog_props() {
+    return this.memo('confirm_dialog_props', [this.confirmState, this.handleConfirm, this.handleCancel, this.active], () => {
+      if (!(!(this.active)) || !(this.confirmState)) return undefined as never
+      return ({ ...this.confirmState, onConfirm: this.handleConfirm, onCancel: this.handleCancel })
+    })
+  }
+
+  /** `setEditing` of the TSX: a value, or an update of the previous one. */
+  setEditing(value: string | 'new' | null | ((prev: string | 'new' | null) => string | 'new' | null)) {
+    this.editing = typeof value === 'function' ? (value as (prev: string | 'new' | null) => string | 'new' | null)(this.editing) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type DetectorsSectionStores = ReturnType<DetectorsSection['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type DetectorsSectionHooks = ReturnType<DetectorsSection['useHooks']>
+
+export default DetectorsSection.component()

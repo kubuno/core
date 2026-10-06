@@ -1,55 +1,33 @@
-// The rule editor: a wizard to create, a tabbed sheet to modify.
-//
-// ── Why two shapes ───────────────────────────────────────────────────────────
-// Writing a rule from nothing is a sequence — you cannot choose a field before
-// you have chosen a trigger, and you must not choose a mode before you know what
-// the rule does. Changing the recipient of a notification is not a sequence, and
-// walking somebody through five steps to do it is how a console teaches people
-// to stop editing their rules. So: Stepper on create, Tabs on modify.
-//
-// ── Everything comes from the catalogue ──────────────────────────────────────
-// The trigger list, the queryable fields, the operators permitted per field, the
-// available actions and their parameter schemas, the settable modes and the
-// ceilings — all of it is served by `GET /admin/rules/catalog`. This file
-// enumerates none of them.
-//
-// ── Mobile ───────────────────────────────────────────────────────────────────
-// Building a boolean tree on a 390 px screen is a fiction: the row alone needs a
-// field, an operator and a value side by side. So on a phone the builder is
-// replaced by the natural-language summary — which is the readable form of
-// exactly the same thing — and the operator is told where to go to change it.
-// Everything else (name, actions, scope, mode, impact, log) stays editable.
+/**
+ * Code-behind of `RuleEditor.kbview` (converted from `RuleEditor.tsx` by @kubuno/views-migrate).
+ */
+import { bind, type MouseEventArgs } from '@kubuno/views'
+import { Fragment } from 'react'
+import { useEffect, useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { FlaskConical, Save, Sparkles } from "lucide-react"
+import { Badge, Button, Callout, Card, Combobox, Input, Textarea, useIsMobile, useToast, type StepDef } from "@ui"
+import { flatten, fromWire, toWire, wireDepth, wireLeaves, type UiGroup, type Verdict } from "./condition"
+import { leafErrors, leafQuotas, type LeafContext } from "./leafKinds"
+import ConditionTree from "./ConditionTree"
+import ConditionTester from "./ConditionTester"
+import ActionsEditor from "./ActionsEditor"
+import ScopeEditor from "./ScopeEditor"
+import ModePicker from "./ModePicker"
+import ImpactPanel from "./ImpactPanel"
+import RuleSummaryPanel from "./RuleSummaryPanel"
+import { useCreateRule, useRule, useRuleCatalog, useUpdateRule } from "./api"
+import { useDirectory, useScopePreview } from "./useDirectory"
+import { SEVERITIES, severityLabel } from "./labels"
+import { formatWhen } from "../sections/format"
+import type { SummaryContext } from "./summary"
+import { emptyRuleInput, ruleToInput, type RuleInput, type RuleLimits } from "./types"
+import { useAdminCrumbs } from "../AdminBreadcrumb"
+import { apiErrorDetail } from "../../api/errorMessage"
+import RuleSentence from "./RuleSentence"
 
-import { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import {
-  Check, FlaskConical, Save, Sparkles,
-} from 'lucide-react'
-import {
-  Badge, Button, Callout, Card, Combobox, Input, Stepper, Tabs, Textarea, useIsMobile, useToast,
-  type StepDef,
-} from '@ui'
-import { flatten, fromWire, toWire, wireDepth, wireLeaves, type UiGroup, type Verdict } from './condition'
-import { leafErrors, leafQuotas, type LeafContext } from './leafKinds'
-// Side-effect import: registers the `detector` leaf kind. Nothing below refers
-// to it — the builder, the summary and the tester pick it up from the registry,
-// which is the whole point of the registry.
-import './detectorLeaf'
-import ConditionTree from './ConditionTree'
-import ConditionTester from './ConditionTester'
-import ActionsEditor from './ActionsEditor'
-import ScopeEditor from './ScopeEditor'
-import ModePicker from './ModePicker'
-import ImpactPanel from './ImpactPanel'
-import RuleSummaryPanel, { RuleSentence } from './RuleSummaryPanel'
-import { useCreateRule, useRule, useRuleCatalog, useUpdateRule } from './api'
-import { useDirectory, useScopePreview } from './useDirectory'
-import { SEVERITIES, severityLabel } from './labels'
-import { formatWhen } from '../sections/format'
-import type { SummaryContext } from './summary'
-import { emptyRuleInput, ruleToInput, type RuleInput, type RuleLimits } from './types'
-import { useAdminCrumbs } from '../AdminBreadcrumb'
-import { apiErrorDetail } from '../../api/errorMessage'
+import { ViewBase } from './RuleEditor.kbview'
+import * as __parts from './RuleEditor.parts'
 
 export type Pane = 'basics' | 'conditions' | 'actions' | 'scope' | 'mode' | 'impact' | 'history'
 
@@ -66,258 +44,310 @@ interface Props {
   initialPane?: Pane
 }
 
-export default function RuleEditor({ ruleId, onClose, canWrite, initialPane }: Props) {
-  const { t, i18n } = useTranslation()
-  const toast = useToast()
-  const isMobile = useIsMobile()
+export type { Props }
 
-  const catalog = useRuleCatalog()
-  const detail  = useRule(ruleId)
-  const create  = useCreateRule()
-  const update  = useUpdateRule()
-  const dir     = useDirectory()
+export class RuleEditor extends ViewBase {
+  @bind accessor verdicts: Record<string, Verdict> | null = null
+  @bind accessor loaded = false
+  @bind accessor error: string | null = null
+  tr!: RuleEditorStores['t']
+  i18n!: RuleEditorStores['i18n']
+  toast!: RuleEditorStores['toast']
+  isMobile!: boolean
+  catalog!: RuleEditorStores['catalog']
+  detail!: RuleEditorHooks['detail']
+  create!: RuleEditorStores['create']
+  update!: RuleEditorStores['update']
+  dir!: RuleEditorStores['dir']
+  pane!: Pane
+  setPane!: RuleEditorHooks['setPane']
+  input!: RuleInput
+  setInput!: RuleEditorStores['setInput']
+  tree!: UiGroup
+  setTree!: RuleEditorStores['setTree']
+  leafCtx!: LeafContext
+  summaryCtx!: SummaryContext
+  preview!: RuleEditorStores['preview']
+  wire!: RuleEditorStores['wire']
+  leafNodes!: RuleEditorStores['leafNodes']
+  leafProblems!: string[]
 
-  const isNew = ruleId === null
-  const [pane, setPane] = useState<Pane>(initialPane ?? 'basics')
-  const [input, setInput] = useState<RuleInput>(emptyRuleInput)
-  const [tree, setTree] = useState<UiGroup>(() => fromWire({ type: 'all', of: [] }))
-  const [verdicts, setVerdicts] = useState<Record<string, Verdict> | null>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // Seed once from the server, never on every render: an in-flight refetch must
-  // not drag the operator's half-written tree back to what was stored.
-  useEffect(() => {
-    if (isNew || loaded || !detail.data) return
-    setInput(ruleToInput(detail.data.rule))
-    setTree(fromWire(detail.data.rule.conditions))
-    setLoaded(true)
-  }, [isNew, loaded, detail.data])
-
-  const limits = catalog.data?.limits ?? FALLBACK_LIMITS
-  const trigger = catalog.data?.triggers.find(x => x.key === input.trigger)
-  const readOnly = !canWrite
-
-  const leafCtx: LeafContext = useMemo(() => ({ trigger, catalog: catalog.data, t }),
-    [trigger, catalog.data, t])
-  const summaryCtx: SummaryContext = useMemo(() => ({
-    trigger,
-    catalog:   catalog.data,
-    t,
-    actions:   catalog.data?.actions ?? [],
-    unitName:  dir.unitName,
-    groupName: dir.groupName,
-    userName:  dir.userName,
-  }), [trigger, t, catalog.data, dir])
-
-  const preview = useScopePreview(input.scope, dir)
-
-  const set = <K extends keyof RuleInput>(key: K, value: RuleInput[K]) =>
-    setInput(prev => ({ ...prev, [key]: value }))
-
-  // Changing the trigger invalidates every comparison: the fields belong to the
-  // trigger, so a tree kept across the change would name fields the new trigger
-  // does not expose and be refused on save.
-  const setTrigger = (key: string) => {
-    setInput(prev => ({ ...prev, trigger: key }))
-    setTree(fromWire({ type: 'all', of: [] }))
-    setVerdicts(null)
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t, i18n } = useTranslation()
+    const toast = useToast()
+    const isMobile = useIsMobile()
+    const catalog = useRuleCatalog()
+    const create  = useCreateRule()
+    const update  = useUpdateRule()
+    const dir     = useDirectory()
+    const [input, setInput] = useState<RuleInput>(emptyRuleInput)
+    const [tree, setTree] = useState<UiGroup>(() => fromWire({ type: 'all', of: [] }))
+    const preview = useScopePreview(input.scope, dir)
+    const wire = useMemo(() => toWire(tree), [tree])
+    const leafNodes = useMemo(
+      () => flatten(tree).flatMap(n => (n.kind === 'leaf' ? [n.node] : [])), [tree])
+    return { t, i18n, toast, isMobile, catalog, create, update, dir, input, setInput, tree, setTree, preview, wire, leafNodes }
   }
 
-  const wire = useMemo(() => toWire(tree), [tree])
-  const overDepth  = wireDepth(wire) > limits.condition_depth
-  const overLeaves = wireLeaves(wire) > limits.condition_leaves
-
-  // What the leaves themselves refuse, and the ceilings a single kind carries.
-  // Both come from the registry: this file names no kind and counts no detector.
-  const leafNodes = useMemo(
-    () => flatten(tree).flatMap(n => (n.kind === 'leaf' ? [n.node] : [])), [tree])
-  const leafProblems = useMemo(() => {
-    const messages = leafErrors(leafNodes, leafCtx, t)
-    for (const q of leafQuotas(leafNodes, leafCtx, t)) {
-      if (q.used > q.max) messages.push(q.over)
-    }
-    return messages
-  }, [leafNodes, leafCtx, t])
-
-  const payload = (): RuleInput => ({ ...input, conditions: wire })
-
-  const nameOk = input.name.trim().length > 0
-  const triggerOk = input.trigger.length > 0
-  const canSave = nameOk && triggerOk && !overDepth && !overLeaves
-    && leafProblems.length === 0 && canWrite
-
-  const save = () => {
-    setError(null)
-    const body = payload()
-    const onError = (e: unknown) => {
-      const message = (e as { response?: { data?: { error?: string; message?: string } } })
-        ?.response?.data?.error
-        ?? apiErrorDetail(e)
-        ?? t('admin.rl_save_failed')
-      setError(message)
-      toast.error(t('admin.rl_save_failed'))
-    }
-    if (isNew) {
-      create.mutate(body, {
-        onSuccess: () => { toast.success(t('admin.rl_toast_created')); onClose() },
-        onError,
-      })
-    } else if (ruleId) {
-      update.mutate({ id: ruleId, input: body }, {
-        onSuccess: () => { toast.success(t('admin.rl_toast_saved')); onClose() },
-        onError,
-      })
-    }
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const t = this.tr
+    const catalog = this.catalog
+    const dir = this.dir
+    const input = this.input
+    const setInput = this.setInput
+    const setTree = this.setTree
+    const leafNodes = this.leafNodes
+    const detail  = useRule(this.props.ruleId)
+    this.publish({ detail })
+    const [pane, setPane] = useState<Pane>(this.props.initialPane ?? 'basics')
+    this.publish({ pane, setPane })
+    useEffect(() => {
+      if (this.isNew || this.loaded || !detail.data) return
+      setInput(ruleToInput(detail.data.rule))
+      setTree(fromWire(detail.data.rule.conditions))
+      this.loaded = true
+    }, [this.isNew, this.loaded, detail.data])
+    const trigger = this.trigger
+    const leafCtx: LeafContext = useMemo(() => ({ trigger, catalog: catalog.data, t }),
+      [trigger, catalog.data, t])
+    this.publish({ leafCtx })
+    const summaryCtx: SummaryContext = useMemo(() => ({
+      trigger,
+      catalog:   catalog.data,
+      t,
+      actions:   catalog.data?.actions ?? [],
+      unitName:  dir.unitName,
+      groupName: dir.groupName,
+      userName:  dir.userName,
+    }), [trigger, t, catalog.data, dir])
+    this.publish({ summaryCtx })
+    const leafProblems = useMemo(() => {
+      const messages = leafErrors(leafNodes, leafCtx, t)
+      for (const q of leafQuotas(leafNodes, leafCtx, t)) {
+        if (q.used > q.max) messages.push(q.over)
+      }
+      return messages
+    }, [leafNodes, leafCtx, t])
+    this.publish({ leafProblems })
+    useAdminCrumbs(useMemo(
+      () => [{ label: this.isNew ? t('admin.rl_new_title') : (input.name || t('admin.rl_edit_title')) }],
+      [this.isNew, input.name, t],
+    ))
+    return { detail, pane, setPane, leafCtx, summaryCtx, leafProblems }
   }
 
-  // ── Panes ──────────────────────────────────────────────────────────────────
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, i18n: s.i18n, toast: s.toast, isMobile: s.isMobile, catalog: s.catalog, create: s.create, update: s.update, dir: s.dir, input: s.input, setInput: s.setInput, tree: s.tree, setTree: s.setTree, preview: s.preview, wire: s.wire, leafNodes: s.leafNodes })
+    const h = this.useHooks()
+    this.publish({ detail: h.detail, pane: h.pane, setPane: h.setPane, leafCtx: h.leafCtx, summaryCtx: h.summaryCtx, leafProblems: h.leafProblems })
+  }
 
-  const triggerOptions = (catalog.data?.triggers ?? []).map(x => ({
+  get isNew(): boolean {
+    return this.props.ruleId === null
+  }
+
+  get limits(): RuleLimits {
+    return this.memo('limits', [this.catalog], () => this.catalog.data?.limits ?? FALLBACK_LIMITS)
+  }
+
+  get trigger() {
+    return this.memo('trigger', [this.catalog, this.input], () => this.catalog.data?.triggers.find(x => x.key === this.input.trigger))
+  }
+
+  get readOnly(): boolean {
+    return !this.props.canWrite
+  }
+
+  get overDepth(): boolean {
+    return wireDepth(this.wire) > this.limits.condition_depth
+  }
+
+  get overLeaves(): boolean {
+    return wireLeaves(this.wire) > this.limits.condition_leaves
+  }
+
+  get nameOk(): boolean {
+    return this.input.name.trim().length > 0
+  }
+
+  get triggerOk(): boolean {
+    return this.input.trigger.length > 0
+  }
+
+  get canSave(): boolean {
+    return this.nameOk && this.triggerOk && !this.overDepth && !this.overLeaves
+    && this.leafProblems.length === 0 && this.props.canWrite
+  }
+
+  get triggerOptions(): { value: string; label: string; description: string; group: string; disabled: boolean; keywords: string; }[] {
+    return this.memo('triggerOptions', [this.catalog], () => (this.catalog.data?.triggers ?? []).map(x => ({
     value: x.key,
     label: x.label,
     description: x.description ?? x.key,
     group: x.module_id,
     disabled: x.is_orphan,
     keywords: `${x.key} ${x.event_type}`,
-  }))
+  })))
+  }
 
-  const basics = (
+  get basics() {
+    return this.memo('basics', [this.tr, this.input, this.readOnly, this.setInput, this.setTree, this.verdicts, this.triggerOptions, this.trigger], () => (
     <div className="flex min-w-0 flex-col gap-4">
-      <Input label={t('admin.rl_name')} value={input.name} disabled={readOnly}
-        onChange={e => set('name', e.target.value)} placeholder={t('admin.rl_name_ph')} />
-      <Textarea label={t('admin.rl_description')} value={input.description ?? ''} rows={3}
-        disabled={readOnly} onChange={e => set('description', e.target.value || null)}
-        hint={t('admin.rl_description_hint')} />
+      <Input label={this.tr('admin.rl_name')} value={this.input.name} disabled={this.readOnly}
+        onChange={e => this.set('name', e.target.value)} placeholder={this.tr('admin.rl_name_ph')} />
+      <Textarea label={this.tr('admin.rl_description')} value={this.input.description ?? ''} rows={3}
+        disabled={this.readOnly} onChange={e => this.set('description', e.target.value || null)}
+        hint={this.tr('admin.rl_description_hint')} />
       <div>
-        <label className="mb-1 block text-sm font-medium text-text-primary">{t('admin.rl_trigger')}</label>
-        <Combobox value={input.trigger || null} onChange={setTrigger} options={triggerOptions}
-          disabled={readOnly} placeholder={t('admin.rl_trigger_ph')}
-          aria-label={t('admin.rl_trigger')} />
-        {trigger && (
+        <label className="mb-1 block text-sm font-medium text-text-primary">{this.tr('admin.rl_trigger')}</label>
+        <Combobox value={this.input.trigger || null} onChange={this.setTrigger.bind(this)} options={this.triggerOptions}
+          disabled={this.readOnly} placeholder={this.tr('admin.rl_trigger_ph')}
+          aria-label={this.tr('admin.rl_trigger')} />
+        {this.trigger && (
           <p className="mt-1.5 text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {trigger.description} · <span className="font-mono">{trigger.event_type}</span>
+            {this.trigger.description} · <span className="font-mono">{this.trigger.event_type}</span>
           </p>
         )}
-        {!trigger && (
+        {!this.trigger && (
           <p className="mt-1.5 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('admin.rl_trigger_hint')}
+            {this.tr('admin.rl_trigger_hint')}
           </p>
         )}
       </div>
     </div>
-  )
+  ))
+  }
 
-  const conditions = (
+  get conditions() {
+    return this.memo('conditions', [this.triggerOk, this.tr, this.isMobile, this.tree, this.setTree, this.leafCtx, this.verdicts, this.readOnly, this.trigger, this.limits, this.wire], () => {
+      const limits = this.limits
+      const overDepth = wireDepth(this.wire) > limits.condition_depth
+      const overLeaves = wireLeaves(this.wire) > limits.condition_leaves
+      return (
     <div className="flex min-w-0 flex-col gap-4">
-      {!triggerOk && <Callout variant="info">{t('admin.rl_conditions_need_trigger')}</Callout>}
+      {!this.triggerOk && <Callout variant="info">{this.tr('admin.rl_conditions_need_trigger')}</Callout>}
       {(overDepth || overLeaves) && (
-        <Callout variant="danger" title={t('admin.rl_over_limit_title')}>
+        <Callout variant="danger" title={this.tr('admin.rl_over_limit_title')}>
           {overDepth
-            ? t('admin.rl_over_depth', { max: limits.condition_depth })
-            : t('admin.rl_over_leaves', { max: limits.condition_leaves })}
+            ? this.tr('admin.rl_over_depth', { max: limits.condition_depth })
+            : this.tr('admin.rl_over_leaves', { max: limits.condition_leaves })}
         </Callout>
       )}
-      {isMobile ? (
+      {this.isMobile ? (
         // The tree builder is disabled on a phone, deliberately.
-        <Callout variant="info" title={t('admin.rl_mobile_tree_title')}>
-          {t('admin.rl_mobile_tree_body')}
+        <Callout variant="info" title={this.tr('admin.rl_mobile_tree_title')}>
+          {this.tr('admin.rl_mobile_tree_body')}
         </Callout>
       ) : (
-        triggerOk && (
+        this.triggerOk && (
           <>
-            <ConditionTree root={tree} onChange={setTree} ctx={leafCtx} limits={limits}
-              verdicts={verdicts ?? undefined} disabled={readOnly} />
-            <Card title={t('admin.rl_test_title')} icon={<FlaskConical size={15} />} dense>
-              <ConditionTester root={tree} ctx={leafCtx} trigger={trigger} onVerdicts={setVerdicts} />
+            <ConditionTree root={this.tree} onChange={this.setTree} ctx={this.leafCtx} limits={limits}
+              verdicts={this.verdicts ?? undefined} disabled={this.readOnly} />
+            <Card title={this.tr('admin.rl_test_title')} icon={<FlaskConical size={15} />} dense>
+              <ConditionTester root={this.tree} ctx={this.leafCtx} trigger={this.trigger} onVerdicts={this.setVerdicts.bind(this)} />
             </Card>
           </>
         )
       )}
     </div>
   )
+    })
+  }
 
-  const actionsPane = (
+  get actionsPane() {
+    return this.memo('actionsPane', [this.input, this.setInput, this.catalog, this.limits, this.readOnly, this.tr], () => (
     <div className="flex min-w-0 flex-col gap-4">
-      <ActionsEditor value={input.actions} onChange={v => set('actions', v)}
-        catalogue={catalog.data?.actions ?? []} maxActions={limits.actions} disabled={readOnly} />
+      <ActionsEditor value={this.input.actions} onChange={v => this.set('actions', v)}
+        catalogue={this.catalog.data?.actions ?? []} maxActions={this.limits.actions} disabled={this.readOnly} />
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-sm font-medium text-text-primary">{t('admin.rl_severity')}</label>
-          <Combobox value={input.severity} onChange={v => set('severity', v as typeof input.severity)}
-            options={SEVERITIES.map(s => ({ value: s, label: severityLabel(t, s) }))}
-            disabled={readOnly} aria-label={t('admin.rl_severity')} />
+          <label className="mb-1 block text-sm font-medium text-text-primary">{this.tr('admin.rl_severity')}</label>
+          <Combobox value={this.input.severity} onChange={v => this.set('severity', v as typeof this.input.severity)}
+            options={SEVERITIES.map(s => ({ value: s, label: severityLabel(this.tr, s) }))}
+            disabled={this.readOnly} aria-label={this.tr('admin.rl_severity')} />
           <p className="mt-1 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('admin.rl_severity_hint')}
+            {this.tr('admin.rl_severity_hint')}
           </p>
         </div>
-        <Input label={t('admin.rl_priority')} type="number" value={String(input.priority)}
-          disabled={readOnly} onChange={e => set('priority', Number(e.target.value) || 0)}
-          hint={t('admin.rl_priority_hint')} />
+        <Input label={this.tr('admin.rl_priority')} type="number" value={String(this.input.priority)}
+          disabled={this.readOnly} onChange={e => this.set('priority', Number(e.target.value) || 0)}
+          hint={this.tr('admin.rl_priority_hint')} />
       </div>
     </div>
-  )
+  ))
+  }
 
-  const scopePane = (
+  get scopePane() {
+    return this.memo('scopePane', [this.input, this.setInput, this.dir, this.limits, this.readOnly, this.tr], () => (
     <div className="flex min-w-0 flex-col gap-5">
-      <ScopeEditor value={input.scope} onChange={v => set('scope', v)} dir={dir}
-        maxRefs={limits.scope_refs} disabled={readOnly} />
+      <ScopeEditor value={this.input.scope} onChange={v => this.set('scope', v)} dir={this.dir}
+        maxRefs={this.limits.scope_refs} disabled={this.readOnly} />
 
-      <Card title={t('admin.rl_threshold_title')} dense>
+      <Card title={this.tr('admin.rl_threshold_title')} dense>
         <p className="mb-3 text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {t('admin.rl_threshold_hint')}
+          {this.tr('admin.rl_threshold_hint')}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Input label={t('admin.rl_threshold_count')} type="number" min={2} disabled={readOnly}
-            value={input.threshold_count === null ? '' : String(input.threshold_count)}
-            onChange={e => set('threshold_count', e.target.value === '' ? null : Number(e.target.value))} />
-          <Input label={t('admin.rl_threshold_window')} type="number" min={10} max={604800} disabled={readOnly}
-            value={input.threshold_window_s === null ? '' : String(input.threshold_window_s)}
-            onChange={e => set('threshold_window_s', e.target.value === '' ? null : Number(e.target.value))}
-            hint={t('admin.rl_threshold_window_hint')} />
+          <Input label={this.tr('admin.rl_threshold_count')} type="number" min={2} disabled={this.readOnly}
+            value={this.input.threshold_count === null ? '' : String(this.input.threshold_count)}
+            onChange={e => this.set('threshold_count', e.target.value === '' ? null : Number(e.target.value))} />
+          <Input label={this.tr('admin.rl_threshold_window')} type="number" min={10} max={604800} disabled={this.readOnly}
+            value={this.input.threshold_window_s === null ? '' : String(this.input.threshold_window_s)}
+            onChange={e => this.set('threshold_window_s', e.target.value === '' ? null : Number(e.target.value))}
+            hint={this.tr('admin.rl_threshold_window_hint')} />
         </div>
       </Card>
 
-      <Card title={t('admin.rl_rollout_title')} dense>
+      <Card title={this.tr('admin.rl_rollout_title')} dense>
         <p className="mb-3 text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {t('admin.rl_rollout_hint')}
+          {this.tr('admin.rl_rollout_hint')}
         </p>
-        <Input type="number" min={0} max={100} disabled={readOnly}
-          value={String(input.rollout_percent)} className="max-w-[8rem]"
-          onChange={e => set('rollout_percent', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
-          aria-label={t('admin.rl_rollout_title')} />
+        <Input type="number" min={0} max={100} disabled={this.readOnly}
+          value={String(this.input.rollout_percent)} className="max-w-[8rem]"
+          onChange={e => this.set('rollout_percent', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+          aria-label={this.tr('admin.rl_rollout_title')} />
       </Card>
     </div>
-  )
+  ))
+  }
 
-  const modePane = (
+  get modePane() {
+    return this.memo('modePane', [this.input, this.setInput, this.catalog, this.readOnly], () => (
     <div className="flex min-w-0 flex-col gap-4">
-      <ModePicker value={input.mode} onChange={v => set('mode', v)}
-        modes={catalog.data?.modes ?? ['inactive', 'simulate', 'monitor', 'enforce']}
-        hasActions={input.actions.length > 0} disabled={readOnly} />
+      <ModePicker value={this.input.mode} onChange={v => this.set('mode', v)}
+        modes={this.catalog.data?.modes ?? ['inactive', 'simulate', 'monitor', 'enforce']}
+        hasActions={this.input.actions.length > 0} disabled={this.readOnly} />
     </div>
-  )
+  ))
+  }
 
-  const impactPane = (
-    <ImpactPanel ruleId={ruleId} previous={detail.data?.backtests ?? []} />
-  )
+  get impactPane() {
+    return this.memo('impactPane', [this.props, this.detail], () => (
+    <ImpactPanel ruleId={this.props.ruleId} previous={this.detail.data?.backtests ?? []} />
+  ))
+  }
 
-  const historyPane = (
+  get historyPane() {
+    return this.memo('historyPane', [this.detail, this.tr, this.i18n], () => (
     <div className="flex min-w-0 flex-col gap-2">
-      {(detail.data?.versions ?? []).length === 0 && (
+      {(this.detail.data?.versions ?? []).length === 0 && (
         <p className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {t('admin.rl_history_empty')}
+          {this.tr('admin.rl_history_empty')}
         </p>
       )}
-      {(detail.data?.versions ?? []).map(v => (
+      {(this.detail.data?.versions ?? []).map(v => (
         <div key={v.version} className="rounded-lg border border-border bg-surface-0 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default" size="sm">v{v.version}</Badge>
             <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {formatWhen(v.created_at, i18n.language)}
+              {formatWhen(v.created_at, this.i18n.language)}
             </span>
             <span className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {v.changed_by_label ?? t('admin.rl_history_unknown_author')}
+              {v.changed_by_label ?? this.tr('admin.rl_history_unknown_author')}
             </span>
           </div>
           {v.change_note && (
@@ -326,140 +356,262 @@ export default function RuleEditor({ ruleId, onClose, canWrite, initialPane }: P
         </div>
       ))}
     </div>
-  )
-
-  const PANES: Record<Pane, React.ReactNode> = {
-    basics, conditions, actions: actionsPane, scope: scopePane,
-    mode: modePane, impact: impactPane, history: historyPane,
+  ))
   }
 
-  // ── Chrome ─────────────────────────────────────────────────────────────────
-
-  const wizardSteps: Pane[] = ['basics', 'conditions', 'actions', 'scope', 'mode']
-  const steps: StepDef[] = wizardSteps.map(id => ({
-    id,
-    label: t(`admin.rl_pane_${id}`),
-    status: id === 'basics' && !nameOk && pane !== 'basics' ? 'error' : undefined,
+  get PANES(): Record<Pane, React.ReactNode> {
+    return this.memo('PANES', [this.basics, this.conditions, this.actionsPane, this.scopePane, this.modePane, this.impactPane, this.historyPane], () => ({
+    basics: this.basics, conditions: this.conditions, actions: this.actionsPane, scope: this.scopePane,
+    mode: this.modePane, impact: this.impactPane, history: this.historyPane,
   }))
+  }
 
-  const tabs = (['basics', 'conditions', 'actions', 'scope', 'mode', 'impact', 'history'] as Pane[])
-    .map(id => ({ id, label: t(`admin.rl_pane_${id}`) }))
+  get wizardSteps(): Pane[] {
+    return this.memo('wizardSteps', [], () => ['basics', 'conditions', 'actions', 'scope', 'mode'])
+  }
 
-  // The trail carries the rule, so « Règles » is the way back. The wizard's own
-  // « Précédent » walks the steps and is a different affordance — it stays.
-  useAdminCrumbs(useMemo(
-    () => [{ label: isNew ? t('admin.rl_new_title') : (input.name || t('admin.rl_edit_title')) }],
-    [isNew, input.name, t],
-  ))
+  get steps(): StepDef[] {
+    return this.memo('steps', [this.wizardSteps, this.tr, this.nameOk, this.pane], () => this.wizardSteps.map(id => ({
+    id,
+    label: this.tr(`admin.rl_pane_${id}`),
+    status: id === 'basics' && !this.nameOk && this.pane !== 'basics' ? 'error' : undefined,
+  })))
+  }
 
-  const stepIndex = Math.max(0, wizardSteps.indexOf(pane))
-  const busy = create.isPending || update.isPending
+  get tabs(): { id: Pane; label: string; }[] {
+    return this.memo('tabs', [this.tr], () => (['basics', 'conditions', 'actions', 'scope', 'mode', 'impact', 'history'] as Pane[])
+    .map(id => ({ id, label: this.tr(`admin.rl_pane_${id}`) })))
+  }
 
-  const header = (
+  get stepIndex(): number {
+    return Math.max(0, this.wizardSteps.indexOf(this.pane))
+  }
+
+  get busy(): boolean {
+    return this.create.isPending || this.update.isPending
+  }
+
+  get header() {
+    return this.memo('header', [this.isNew, this.tr, this.input, this.detail, this.busy, this.error, this.wire, this.toast, this.create, this.props, this.update, this.nameOk, this.triggerOk, this.overDepth, this.overLeaves, this.leafProblems], () => {
+      const canWrite = this.props.canWrite
+      const canSave = this.nameOk && this.triggerOk && !this.overDepth && !this.overLeaves
+    && this.leafProblems.length === 0 && canWrite
+      return (
     <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
       <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-        {isNew ? t('admin.rl_new_title') : (input.name || t('admin.rl_edit_title'))}
+        {this.isNew ? this.tr('admin.rl_new_title') : (this.input.name || this.tr('admin.rl_edit_title'))}
       </h1>
-      {!isNew && detail.data && (
-        <Badge variant="default" size="sm">v{detail.data.rule.version}</Badge>
+      {!this.isNew && this.detail.data && (
+        <Badge variant="default" size="sm">v{this.detail.data.rule.version}</Badge>
       )}
       <div className="ms-auto flex items-center gap-2">
         {canWrite && (
-          <Button variant="primary" size="sm" icon={isNew ? <Sparkles size={14} /> : <Save size={14} />}
-            disabled={!canSave} loading={busy} onClick={save}>
-            {isNew ? t('admin.rl_create') : t('admin.rl_save')}
+          <Button variant="primary" size="sm" icon={this.isNew ? <Sparkles size={14} /> : <Save size={14} />}
+            disabled={!canSave} loading={this.busy} onClick={this.save.bind(this)}>
+            {this.isNew ? this.tr('admin.rl_create') : this.tr('admin.rl_save')}
           </Button>
         )}
       </div>
     </div>
   )
-
-  if (catalog.isLoading || (!isNew && detail.isLoading)) {
-    return <div className="py-10 text-center text-text-tertiary">{t('common.loading')}</div>
-  }
-  if (catalog.isError) {
-    return <Callout variant="danger">{t('admin.rl_catalog_error')}</Callout>
+    })
   }
 
-  return (
-    <div className="min-w-0">
-      {header}
+  get show_case_1() {
+    return !!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))
+  }
 
-      {readOnly && (
-        <div className="mb-4">
-          <Callout variant="info" title={t('admin.rl_readonly_title')}>{t('admin.rl_readonly_body')}</Callout>
-        </div>
-      )}
-      {error && (
-        <div className="mb-4">
-          <Callout variant="danger" title={t('admin.rl_save_failed')}>{error}</Callout>
-        </div>
-      )}
-      {/* Shown whichever pane is open: it is why the save button is greyed out,
-          and an operator on the "Mode" step must not have to hunt for it. Each
-          line is a refusal the server would return — a threshold that can never
-          be met is exactly the state a console must not let somebody reach. */}
-      {leafProblems.length > 0 && (
-        <div className="mb-4">
-          <Callout variant="danger" title={t('admin.rl_leaf_problems_title')}>
-            <ul className="list-disc ps-4">
-              {leafProblems.map((message, i) => <li key={i}>{message}</li>)}
-            </ul>
-          </Callout>
-        </div>
-      )}
+  get show_case_2() {
+    return !(this.catalog.isLoading || (!this.isNew && this.detail.isLoading)) && !!(this.catalog.isError)
+  }
 
-      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="min-w-0">
-          {isNew ? (
-            <Stepper
-              steps={steps}
-              current={stepIndex}
-              onStepChange={id => setPane(id as Pane)}
-              allowForward
-              t={t}
-            >
-              <div className="pt-4">{PANES[pane]}</div>
-            </Stepper>
-          ) : (
-            <>
-              <Tabs tabs={tabs} value={pane} onChange={v => setPane(v as Pane)} size="sm" t={t} />
-              <div className="pt-4">{PANES[pane]}</div>
-            </>
-          )}
+  get show_main() {
+    return !(this.catalog.isLoading || (!this.isNew && this.detail.isLoading)) && !(this.catalog.isError)
+  }
 
-          {isNew && (
-            <div className="mt-5 flex flex-wrap items-center gap-2">
-              <Button variant="secondary" size="sm" disabled={stepIndex === 0}
-                onClick={() => setPane(wizardSteps[Math.max(0, stepIndex - 1)])}>
-                {t('admin.rl_step_prev')}
-              </Button>
-              {stepIndex < wizardSteps.length - 1 ? (
-                <Button variant="secondary" size="sm"
-                  onClick={() => setPane(wizardSteps[stepIndex + 1])}>
-                  {t('admin.rl_step_next')}
-                </Button>
-              ) : (
-                <Button variant="primary" size="sm" icon={<Check size={14} />}
-                  disabled={!canSave} loading={busy} onClick={save}>
-                  {t('admin.rl_create')}
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
 
-        <RuleSummaryPanel input={{ ...input, conditions: wire }} tree={tree} ctx={summaryCtx}
-          preview={preview} flat={isMobile} />
-      </div>
+  get content_header() {
+    return this.memo('content_header', [this.header, this.catalog, this.isNew, this.detail], () => {
+      if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError))) return undefined as never
+      return ({ children: this.header })
+    })
+  }
 
-      {/* On a phone the summary IS the condition surface, so it is repeated at
-          the bottom of the conditions pane where the builder would have been. */}
-      {isMobile && pane === 'conditions' && (
-        <div className="mt-4 rounded-xl border border-border bg-surface-1 p-4">
-          <RuleSentence input={{ ...input, conditions: wire }} tree={tree} ctx={summaryCtx} />
-        </div>
-      )}
-    </div>
-  )
+  get show_error() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError))) return undefined as never
+    return !!(this.error)
+  }
+
+  get show_leaf_problems() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError))) return undefined as never
+    return this.leafProblems.length > 0
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.tr, this.leafProblems, this.catalog, this.isNew, this.detail], () => {
+      if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.leafProblems.length > 0)) return undefined as never
+      return ({ t: this.tr, leafProblems: this.leafProblems })
+    })
+  }
+
+  /** A part of the screen still written in React (<Callout> with element children). */
+  get Part1() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.leafProblems.length > 0)) return undefined as never
+    return __parts.Part1
+  }
+
+  get show_not_is_new() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError))) return undefined as never
+    return !(this.isNew)
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.steps, this.stepIndex, this.setPane, this.tr, this.PANES, this.pane, this.catalog, this.isNew, this.detail], () => {
+      if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew)) return undefined as never
+      return ({ steps: this.steps, stepIndex: this.stepIndex, setPane: this.setPane, t: this.tr, PANES: this.PANES, pane: this.pane })
+    })
+  }
+
+  /** A part of the screen still written in React (<Stepper> steps: no .kbview property). */
+  get Part2() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew)) return undefined as never
+    return __parts.Part2
+  }
+
+  get part3_props() {
+    return this.memo('part3_props', [this.tabs, this.pane, this.setPane, this.tr, this.catalog, this.isNew, this.detail], () => {
+      if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(!(this.isNew))) return undefined as never
+      return ({ tabs: this.tabs, pane: this.pane, setPane: this.setPane, t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<Tabs> tabs: no .kbview property). */
+  get Part3() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(!(this.isNew))) return undefined as never
+    return __parts.Part3
+  }
+
+  get content_panes_pane() {
+    return this.memo('content_panes_pane', [this.PANES, this.pane, this.catalog, this.isNew, this.detail], () => {
+      if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(!(this.isNew))) return undefined as never
+      return ({ children: this.PANES[this.pane] })
+    })
+  }
+
+  get enabled_unless_step_index() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew)) return undefined as never
+    return !(this.stepIndex === 0)
+  }
+
+  get show_step_index_wizard_steps() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew)) return undefined as never
+    return this.stepIndex < this.wizardSteps.length - 1
+  }
+
+  get show_not_step_index_wizard_steps() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew)) return undefined as never
+    return !(this.stepIndex < this.wizardSteps.length - 1)
+  }
+
+  get enabled_unless_can_save() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew) || !(!(this.stepIndex < this.wizardSteps.length - 1))) return undefined as never
+    return !(!this.canSave)
+  }
+
+  /** `<RuleSummaryPanel>`, rendered by a ReactHost. */
+  get RuleSummaryPanel() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError))) return undefined as never
+    return RuleSummaryPanel
+  }
+
+  get rule_summary_panel_props() {
+    return this.memo('rule_summary_panel_props', [this.input, this.wire, this.tree, this.summaryCtx, this.preview, this.isMobile, this.catalog, this.isNew, this.detail], () => {
+      if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError))) return undefined as never
+      return ({ input: { ...this.input, conditions: this.wire }, tree: this.tree, ctx: this.summaryCtx, preview: this.preview, flat: this.isMobile })
+    })
+  }
+
+  get show_is_mobile_pane_conditions() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError))) return undefined as never
+    return this.isMobile && this.pane === 'conditions'
+  }
+
+  /** `<RuleSentence>`, rendered by a ReactHost. */
+  get RuleSentence() {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isMobile && this.pane === 'conditions')) return undefined as never
+    return RuleSentence
+  }
+
+  get rule_sentence_props() {
+    return this.memo('rule_sentence_props', [this.input, this.wire, this.tree, this.summaryCtx, this.catalog, this.isNew, this.detail, this.isMobile, this.pane], () => {
+      if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isMobile && this.pane === 'conditions')) return undefined as never
+      return ({ input: { ...this.input, conditions: this.wire }, tree: this.tree, ctx: this.summaryCtx })
+    })
+  }
+
+  set<K extends keyof RuleInput>(key: K, value: RuleInput[K]) {
+    return this.setInput(prev => ({ ...prev, [key]: value }))
+  }
+
+  setTrigger(key: string) {
+    this.setInput(prev => ({ ...prev, trigger: key }))
+    this.setTree(fromWire({ type: 'all', of: [] }))
+    this.verdicts = null
+  }
+
+  payload(): RuleInput {
+    return ({ ...this.input, conditions: this.wire })
+  }
+
+  save() {
+    this.error = null
+    const body = this.payload()
+    const onError = (e: unknown) => {
+      const message = (e as { response?: { data?: { error?: string; message?: string } } })
+        ?.response?.data?.error
+        ?? apiErrorDetail(e)
+        ?? this.tr('admin.rl_save_failed')
+      this.error = message
+      this.toast.error(this.tr('admin.rl_save_failed'))
+    }
+    if (this.isNew) {
+      this.create.mutate(body, {
+        onSuccess: () => { this.toast.success(this.tr('admin.rl_toast_created')); this.props.onClose() },
+        onError,
+      })
+    } else if (this.props.ruleId) {
+      this.update.mutate({ id: this.props.ruleId, input: body }, {
+        onSuccess: () => { this.toast.success(this.tr('admin.rl_toast_saved')); this.props.onClose() },
+        onError,
+      })
+    }
+  }
+
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew)) return undefined as never
+    this.setPane(this.wizardSteps[Math.max(0, this.stepIndex - 1)])
+  }
+
+  button_click2(_sender: unknown, _args: MouseEventArgs) {
+    if (!(!(this.catalog.isLoading || (!this.isNew && this.detail.isLoading))) || !(!(this.catalog.isError)) || !(this.isNew) || !(this.stepIndex < this.wizardSteps.length - 1)) return undefined as never
+    this.setPane(this.wizardSteps[this.stepIndex + 1])
+  }
+
+  /** `setVerdicts` of the TSX: a value, or an update of the previous one. */
+  setVerdicts(value: Record<string, Verdict> | null | ((prev: Record<string, Verdict> | null) => Record<string, Verdict> | null)) {
+    this.verdicts = typeof value === 'function' ? (value as (prev: Record<string, Verdict> | null) => Record<string, Verdict> | null)(this.verdicts) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type RuleEditorStores = ReturnType<RuleEditor['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type RuleEditorHooks = ReturnType<RuleEditor['useHooks']>
+
+export default RuleEditor.component()

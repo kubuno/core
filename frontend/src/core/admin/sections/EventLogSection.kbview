@@ -1,0 +1,31 @@
+<!-- EventLogSection — converted from EventLogSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack Gap="16" Class="min-w-0">
+  <Panel HtmlTag="P" ForeColor="TextSecondary" Class="flex items-center gap-2 [font-size:var(--kb-text-body)]">
+    <Icon Name="Radio" Size="15" Class="shrink-0 text-text-tertiary"/>
+    <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.el_desc}"/>
+  </Panel>
+  <Callout Title="{Res admin.el_vs_audit_title}" Body="{Res admin.el_vs_audit_desc}"/>
+  <Stack Gap="12">
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" WrapContents="true">
+      <!-- TODO(views-migrate): <ComboBox> width, searchPlaceholder: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.el_types_hint}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.el_loaded, Total={Binding rows.length}}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="ml-auto tabular-nums [font-size:var(--kb-text-meta)]"/>
+    </Stack>
+    <!-- TODO(views-migrate): <DataTable> t, columns, rowKey, skeletonRows, onRetry, filtered, onClearFilters, manualSort, configurableColumns, minTableWidth, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    <Panel Visible="{Binding hasNextPage}" Class="text-center">
+      <Button Variant="Secondary" Enabled="{Binding enabled_unless_is_fetching}" Text="{Binding button_text}" OnClick="button_click"/>
+    </Panel>
+  </Stack>
+</Stack>

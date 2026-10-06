@@ -1,75 +1,100 @@
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Globe2, Search, X } from 'lucide-react'
-import {
-  Button, Callout, Combobox, DataTable, EmptyState, Input, useToast,
-  type ComboboxOption, type DataTableColumn,
-} from '@ui'
-import { formatAgo, formatWhen } from '../sections/format'
-import type { AdminSectionProps } from '../sections/registry'
-import { useAdminSessions } from '../../devices/useDevices'
-import { authStrengthLabel, clientKindLabel, sessionName } from '../../devices/labels'
-import { EMPTY_SESSION_FILTERS, type DeviceSession, type SessionFilters } from '../../devices/types'
-
 /**
- * Devices ▸ Networks — every live session of the instance, and where it comes
- * from.
- *
- * ── Why this page did not exist ──────────────────────────────────────────────
- * Until now the only way to answer "who is signed in right now" was to open
- * each account in turn. A question that costs one click per user is a question
- * nobody asks, which is why an instance could carry a forgotten session for a
- * year without anyone noticing.
- *
- * ── The 2FA filter earns its place ───────────────────────────────────────────
- * "Sessions that never passed a second factor" is the one query an operator
- * runs after tightening the policy, and the tri-state rule applies to it too:
- * a session whose strength is unknown counts as NOT having passed 2FA. The
- * server does that narrowing, not this component.
+ * Code-behind of `NetworksSection.kbview` (converted from `NetworksSection.tsx` by @kubuno/views-migrate).
  */
-export default function NetworksSection({ params }: AdminSectionProps) {
-  const { t, i18n } = useTranslation()
-  const toast = useToast()
+import { useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { Search, X } from "lucide-react"
+import { Button, Combobox, Input, useToast, type ComboboxOption, type DataTableColumn } from "@ui"
+import { formatAgo, formatWhen } from "../sections/format"
+import { useAdminSessions } from "../../devices/useDevices"
+import { authStrengthLabel, clientKindLabel, sessionName } from "../../devices/labels"
+import { EMPTY_SESSION_FILTERS, type DeviceSession, type SessionFilters } from "../../devices/types"
 
-  const [filters, setFilters] = useState<SessionFilters>(() => ({
-    ...EMPTY_SESSION_FILTERS,
-    q: params.get('q') ?? '',
-  }))
-  const [draft, setDraft] = useState(() => params.get('q') ?? '')
+import { ViewBase } from './NetworksSection.kbview'
+import * as __parts from './NetworksSection.parts'
 
-  const { data, isLoading, isError, refetch } = useAdminSessions(filters)
-  const set = <K extends keyof SessionFilters>(key: K, value: SessionFilters[K]) =>
-    setFilters(f => ({ ...f, [key]: value }))
+export class NetworksSection extends ViewBase {
+  tr!: NetworksSectionStores['t']
+  i18n!: NetworksSectionStores['i18n']
+  toast!: NetworksSectionStores['toast']
+  filters!: SessionFilters
+  setFilters!: NetworksSectionHooks['setFilters']
+  draft!: NetworksSectionHooks['draft']
+  setDraft!: NetworksSectionHooks['setDraft']
+  data!: NetworksSectionHooks['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: NetworksSectionHooks['refetch']
+  origins!: [string, number][]
 
-  const rows = data?.sessions ?? []
-  const anyFilter = Object.values(filters).some(Boolean)
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t, i18n } = useTranslation()
+    const toast = useToast()
+    return { t, i18n, toast }
+  }
 
-  /** Distinct origins present, so "where do people connect from" is one glance. */
-  const origins = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const session of rows) {
-      const key = session.country ?? ''
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])
-  }, [rows])
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const [filters, setFilters] = useState<SessionFilters>(() => ({
+      ...EMPTY_SESSION_FILTERS,
+      q: this.props.params.get('q') ?? '',
+    }))
+    this.publish({ filters, setFilters })
+    const [draft, setDraft] = useState<string>(() => this.props.params.get('q') ?? '')
+    this.publish({ draft, setDraft })
+    const { data, isLoading, isError, refetch } = useAdminSessions(filters)
+    this.publish({ data, isLoading, isError, refetch })
+    const origins = useMemo(() => {
+      const counts = new Map<string, number>()
+      for (const session of this.rows) {
+        const key = session.country ?? ''
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+      return [...counts.entries()].sort((a, b) => b[1] - a[1])
+    }, [this.rows])
+    this.publish({ origins })
+    return { filters, setFilters, draft, setDraft, data, isLoading, isError, refetch, origins }
+  }
 
-  const clients: ComboboxOption[] = [
-    { value: '', label: t('devices.filter_all_clients') },
-    { value: 'web', label: clientKindLabel(t, 'web') },
-    { value: 'native', label: clientKindLabel(t, 'native') },
-    { value: 'desktop', label: clientKindLabel(t, 'desktop') },
-    { value: 'api', label: clientKindLabel(t, 'api') },
-  ]
-  const twoFactor: ComboboxOption[] = [
-    { value: '', label: t('devices.filter_all_sessions') },
-    { value: 'true', label: t('devices.filter_without_2fa') },
-  ]
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, i18n: s.i18n, toast: s.toast })
+    const h = this.useHooks()
+    this.publish({ filters: h.filters, setFilters: h.setFilters, draft: h.draft, setDraft: h.setDraft, data: h.data, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch, origins: h.origins })
+  }
 
-  const columns: DataTableColumn<DeviceSession>[] = [
+  get rows(): DeviceSession[] {
+    return this.memo('rows', [this.data], () => this.data?.sessions ?? [])
+  }
+
+  get anyFilter(): boolean {
+    return Object.values(this.filters).some(Boolean)
+  }
+
+  get clients(): ComboboxOption[] {
+    return this.memo('clients', [this.tr], () => [
+    { value: '', label: this.tr('devices.filter_all_clients') },
+    { value: 'web', label: clientKindLabel(this.tr, 'web') },
+    { value: 'native', label: clientKindLabel(this.tr, 'native') },
+    { value: 'desktop', label: clientKindLabel(this.tr, 'desktop') },
+    { value: 'api', label: clientKindLabel(this.tr, 'api') },
+  ])
+  }
+
+  get twoFactor(): ComboboxOption[] {
+    return this.memo('twoFactor', [this.tr], () => [
+    { value: '', label: this.tr('devices.filter_all_sessions') },
+    { value: 'true', label: this.tr('devices.filter_without_2fa') },
+  ])
+  }
+
+  get columns(): DataTableColumn<DeviceSession>[] {
+    return this.memo('columns', [this.tr, this.i18n], () => [
     {
       id: 'account',
-      header: t('devices.col_account'),
+      header: this.tr('devices.col_account'),
       primary: true,
       required: true,
       minWidth: 180,
@@ -77,7 +102,7 @@ export default function NetworksSection({ params }: AdminSectionProps) {
         <div className="min-w-0">
           <div className="truncate text-text-primary">{s.user_label ?? '—'}</div>
           <div className="truncate text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {sessionName(t, s)}
+            {sessionName(this.tr, s)}
           </div>
         </div>
       ),
@@ -85,125 +110,116 @@ export default function NetworksSection({ params }: AdminSectionProps) {
     },
     {
       id: 'ip',
-      header: t('devices.field_last_ip'),
+      header: this.tr('devices.field_last_ip'),
       width: 160,
       cell: (s) => <span className="truncate text-text-secondary">{s.ip_address ?? '—'}</span>,
       sortValue: (s) => s.ip_address ?? '',
     },
     {
       id: 'country',
-      header: t('devices.col_country'),
+      header: this.tr('devices.col_country'),
       width: 90,
       cell: (s) => <span className="text-text-secondary">{s.country ?? '—'}</span>,
       sortValue: (s) => s.country ?? '',
     },
     {
       id: 'client',
-      header: t('devices.field_client'),
+      header: this.tr('devices.field_client'),
       width: 120,
-      cell: (s) => <span className="text-text-secondary">{clientKindLabel(t, s.client_type)}</span>,
+      cell: (s) => <span className="text-text-secondary">{clientKindLabel(this.tr, s.client_type)}</span>,
       sortValue: (s) => s.client_type ?? '',
     },
     {
       id: 'auth',
-      header: t('devices.col_auth'),
+      header: this.tr('devices.col_auth'),
       width: 150,
-      cell: (s) => <span className="text-text-secondary">{authStrengthLabel(t, s.auth_strength)}</span>,
+      cell: (s) => <span className="text-text-secondary">{authStrengthLabel(this.tr, s.auth_strength)}</span>,
       sortValue: (s) => s.auth_strength ?? '',
     },
     {
       id: 'last_used',
-      header: t('devices.col_last_seen'),
+      header: this.tr('devices.col_last_seen'),
       width: 150,
       cell: (s) => (
-        <span className="whitespace-nowrap text-text-secondary" title={formatWhen(s.last_used_at, i18n.language)}>
+        <span className="whitespace-nowrap text-text-secondary" title={formatWhen(s.last_used_at, this.i18n.language)}>
           {formatAgo(s.last_used_at)}
         </span>
       ),
       sortValue: (s) => new Date(s.last_used_at),
     },
-  ]
+  ])
+  }
 
-  const toolbar = (
+  get toolbar() {
+    return this.memo('toolbar', [this.setFilters, this.draft, this.setDraft, this.tr, this.clients, this.twoFactor, this.filters], () => {
+      const filters = this.filters
+      const anyFilter = Object.values(filters).some(Boolean)
+      return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <form className="flex items-center" onSubmit={e => { e.preventDefault(); set('q', draft) }}>
-        <Input value={draft} onChange={e => setDraft(e.target.value)}
-          placeholder={t('devices.sessions_search_ph')} leftIcon={<Search size={15} />} className="w-52 pl-9" />
+      <form className="flex items-center" onSubmit={e => { e.preventDefault(); this.set('q', this.draft) }}>
+        <Input value={this.draft} onChange={e => this.setDraft(e.target.value)}
+          placeholder={this.tr('devices.sessions_search_ph')} leftIcon={<Search size={15} />} className="w-52 pl-9" />
       </form>
-      <Combobox value={filters.client_type} onChange={v => set('client_type', v)} options={clients}
-        width={150} aria-label={t('devices.field_client')} />
-      <Combobox value={filters.without_2fa} onChange={v => set('without_2fa', v)} options={twoFactor}
-        width={220} aria-label={t('devices.col_auth')} />
+      <Combobox value={filters.client_type} onChange={v => this.set('client_type', v)} options={this.clients}
+        width={150} aria-label={this.tr('devices.field_client')} />
+      <Combobox value={filters.without_2fa} onChange={v => this.set('without_2fa', v)} options={this.twoFactor}
+        width={220} aria-label={this.tr('devices.col_auth')} />
       {anyFilter && (
         <Button variant="ghost" size="sm" icon={<X size={14} />}
-          onClick={() => { setFilters(EMPTY_SESSION_FILTERS); setDraft('') }}>
-          {t('devices.reset_filters')}
+          onClick={() => { this.setFilters(EMPTY_SESSION_FILTERS); this.setDraft('') }}>
+          {this.tr('devices.reset_filters')}
         </Button>
       )}
     </div>
   )
+    })
+  }
 
-  return (
-    <div className="min-w-0">
-      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-          {t('admin.nav_networks')}
-        </h1>
-        {data && (
-          <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('devices.sessions_count', { count: data.total })}
-          </span>
-        )}
-      </div>
+  get show_data() {
+    return this.memo('show_data', [this.data], () => !!(this.data))
+  }
 
-      <Callout variant="info" className="mb-4">{t('devices.networks_intro')}</Callout>
+  get sessions_count_count() {
+    if (!(this.data)) return undefined as never
+    return this.data.total
+  }
 
-      {origins.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          {origins.map(([code, count]) => (
-            <button key={code || 'unknown'} type="button"
-              onClick={() => set('country', code)}
-              className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-0.5
-                         text-text-secondary hover:text-text-primary
-                         focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {code || t('devices.country_unknown')}
-              <span className="tabular-nums text-text-tertiary">{count}</span>
-            </button>
-          ))}
-        </div>
-      )}
+  get show_origins() {
+    return this.origins.length > 0
+  }
 
-      <DataTable
-        rows={rows}
-        columns={columns}
-        rowKey={r => r.id}
-        loading={isLoading}
-        error={isError ? t('devices.error') : undefined}
-        onRetry={() => void refetch()}
-        filtered={anyFilter}
-        onClearFilters={() => { setFilters(EMPTY_SESSION_FILTERS); setDraft('') }}
-        toolbar={toolbar}
-        configurableColumns
-        pageSize={25}
-        t={t}
-        emptyState={
-          <EmptyState
-            icon={<Globe2 size={26} />}
-            variant="first-use"
-            title={t('devices.sessions_empty_title')}
-            description={t('devices.sessions_empty_body')}
-            action={{
-              label: t('devices.retry'),
-              variant: 'secondary',
-              onClick: () => {
-                void refetch()
-                toast.success(t('devices.sessions_refreshed'))
-              },
-            }}
-          />
-        }
-      />
-    </div>
-  )
+  get part1_props() {
+    return this.memo('part1_props', [this.origins, this.setFilters, this.tr], () => {
+      if (!(this.origins.length > 0)) return undefined as never
+      return ({ origins: this.origins, set: this.set.bind(this), t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (a list callback destructuring its item). */
+  get Part1() {
+    if (!(this.origins.length > 0)) return undefined as never
+    return __parts.Part1
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.anyFilter, this.setFilters, this.setDraft, this.toolbar, this.toast], () => ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, anyFilter: this.anyFilter, setFilters: this.setFilters, setDraft: this.setDraft, toolbar: this.toolbar, toast: this.toast }))
+  }
+
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, configurableColumns, t, emptyState: no .kbview property). */
+  get Part2() {
+    return __parts.Part2
+  }
+
+  set<K extends keyof SessionFilters>(key: K, value: SessionFilters[K]) {
+    return this.setFilters(f => ({ ...f, [key]: value }))
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type NetworksSectionStores = ReturnType<NetworksSection['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type NetworksSectionHooks = ReturnType<NetworksSection['useHooks']>
+
+export default NetworksSection.component()

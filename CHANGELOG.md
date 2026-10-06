@@ -50,6 +50,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Administration ▸ operations pages are views**: the dashboard and its charts, devices and networks, the alert centre, audit and event logs, reports (with their document view), administration rules (list, editor, run log) and content detectors — editable in the Visual Studio designer, checked identical to the previous screens.
 - **Administration ▸ Directory pages are views**: organisational units (panel, picker, scope panel), target audiences, buildings and resources (all tabs and dialogs), directory settings, public holidays and domains (detail, diagnostics, add dialog) — editable in the Visual Studio designer, checked identical to the previous screens.
 - **Administration ▸ Storage and the security pages are views**: storage (volume, accounts, growth, consumers, quota policy, reconciliation, the account usage dialog), the security dashboard, instance health (and the header's health chip), authentication & SSO, LDAP directories and admin roles (list, detail, create and assign dialogs) — editable in the Visual Studio designer, checked identical to the previous screens.
 - **Administration ▸ settings pages are views**: the identity, session policy, access and data and service protection pages, a module's settings pages, their setting rows, scope bar and tree, provenance line and side panel — editable in the Visual Studio designer, checked identical to the previous screens.

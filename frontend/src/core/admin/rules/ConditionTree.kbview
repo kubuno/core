@@ -1,0 +1,25 @@
+<!-- ConditionTree — converted from ConditionTree.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="Props" Class="min-w-0">
+  <Panel Class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 [font-size:var(--kb-text-meta)]">
+    <Label HtmlTag="Span"
+           Text="{Res admin.rl_depth_counter, Used={Binding depth}, Max={Binding props.limits.condition_depth}}"
+           Overflow="Wrap"
+           InheritFontSize="true"
+           Class="{Binding span_class}"/>
+    <Label HtmlTag="Span"
+           Text="{Res admin.rl_leaves_counter, Used={Binding leaves}, Max={Binding props.limits.condition_leaves}}"
+           Overflow="Wrap"
+           InheritFontSize="true"
+           Class="{Binding span_class2}"/>
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_quotas}">
+      <Label HtmlTag="Span" Text="{Binding q.label}" Overflow="Wrap" InheritFontSize="true" Class="{Binding span_class}"/>
+    </Repeater>
+    <Label HtmlTag="Span"
+           Text="{Res admin.rl_nodes_counter, Count={Binding nodes}}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"/>
+  </Panel>
+  <!-- TODO(views-migrate): <TreeNode> is no .kbview element (a local or dynamic component) -->
+  <ReactHost Component="{Binding TreeNode}" Props="{Binding tree_node_props}"/>
+</Panel>

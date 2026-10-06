@@ -1,82 +1,8 @@
 import { useTranslation } from 'react-i18next'
-import type { ReactNode } from 'react'
 import type { BreakdownRow, ReportModel } from './model'
 import type { FlowItem } from './paged/types'
-
-/**
- * The figures, as tables.
- *
- * ## Why the tables are the point
- *
- * A chart says a shape; a report is handed to somebody who was not in the room
- * and has to answer questions the shape does not. So every bucket gets a row and
- * every slice gets a row — including the ones a card folds away, because "top
- * six" is a drawing decision and a report that inherited it would quietly omit
- * the seventh account without ever saying so.
- *
- * ## Printing
- *
- * `<thead>` repeats on every sheet (`display: table-header-group`, set in the
- * print stylesheet) and no row is allowed to break across a page. Both are in
- * `index.css` rather than here: they apply to every table inside a report, and a
- * rule attached to the document rather than to one component cannot be forgotten
- * by the next table somebody adds.
- */
-
-/**
- * A section of the document — a card on screen, a block on paper.
- *
- * `table` is not decoration: it tells the print stylesheet that this block MAY
- * be split across sheets. Blocks are otherwise kept whole (`break-inside:
- * avoid`), which is right for a heading over three figures and wrong for a
- * table of two thousand rows — a block taller than a page cannot be kept whole,
- * and asking for it only makes the engine start it on a fresh sheet, leaving
- * the previous one half empty. A table that may split is also the only kind
- * whose repeated `<thead>` means anything.
- */
-export function ReportBlock({
-  title, children, note, table,
-}: {
-  title:    string
-  children: ReactNode
-  note?:    ReactNode
-  /** This block contains a table that is allowed to run over several sheets. */
-  table?:   boolean
-}) {
-  return (
-    <section
-      data-report-card={table ? 'table' : ''}
-      className="mt-4 rounded-xl border border-border bg-surface-0 p-4"
-    >
-      <h2 className="mb-3 text-text-primary" style={{ fontSize: 'var(--kb-text-heading)' }}>
-        {title}
-      </h2>
-      {children}
-      {note && (
-        <p className="mt-3 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {note}
-        </p>
-      )}
-    </section>
-  )
-}
-
-/**
- * A sentence where a table would have been, when there is nothing to tabulate.
- *
- * Exported so the detail section (`ReportDetail.tsx`) states its own absences in
- * exactly the same voice: "there is nothing here" has to look the same wherever
- * it is said, or a reader starts wondering whether it means two different
- * things.
- */
-export function Nothing({ children }: { children: ReactNode }) {
-  return (
-    <p className="text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-      {children}
-    </p>
-  )
-}
-
+import ReportBlock from './ReportBlock'
+import Nothing from './Nothing'
 /**
  * The cell and heading classes of every table in the document.
  *

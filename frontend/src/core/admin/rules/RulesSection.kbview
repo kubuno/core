@@ -1,0 +1,39 @@
+<!-- RulesSection — converted from RulesSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <RuleEditor> is no .kbview element (./RuleEditor#default) -->
+  <ReactHost Component="{Binding RuleEditor}" Props="{Binding rule_editor_props}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+      <Label HtmlTag="H1"
+             Text="{Res admin.nav_rules}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.rl_counts, Count={Binding rules.length}, Armed={Binding armed}, Simulating={Binding simulating}}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Visible="{Binding show_data}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Stack Direction="LeftToRight" CrossAlign="Center" Class="ms-auto">
+        <Button Variant="Secondary" Size="Sm" IconSize="14" Icon="ScrollText" Text="{Res admin.nav_rules_log}" OnClick="button_click"/>
+        <Button Size="Sm" IconSize="14" Icon="Plus" Text="{Res admin.rl_new}" Visible="{Binding canWrite}" OnClick="button_click2"/>
+      </Stack>
+    </Panel>
+    <Panel Visible="{Binding show_data_data_engine}" Class="mb-3">
+      <Callout Variant="Warning" Title="{Res admin.rl_engine_off_title}" Body="{Res admin.rl_engine_off_body}"/>
+    </Panel>
+    <Panel Visible="{Binding show_data_data_indexed}" Class="mb-3">
+      <Callout Body="{Res admin.rl_indexed_note, Count={Binding rl_indexed_note_count}, Active={Binding rl_indexed_note_active}}"/>
+    </Panel>
+    <Panel Visible="{Binding show_can_write}" Class="mb-3">
+      <Callout Title="{Res admin.rl_readonly_title}" Body="{Res admin.rl_readonly_body}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, rowActions, onRowClick, configurableColumns, t, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

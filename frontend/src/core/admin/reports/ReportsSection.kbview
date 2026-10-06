@@ -1,0 +1,12 @@
+<!-- ReportsSection — converted from ReportsSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <ReportIndex> is no .kbview element (a local or dynamic component) -->
+  <ReactHost Component="{Binding ReportIndex}" Props="{Binding report_index_props}" Visible="{Binding show_case_1}"/>
+  <EmptyState IconSize="28"
+              Icon="Info"
+              Title="{Res admin.rep_unknown_title}"
+              Description="{Res admin.rep_unknown_body, Id={Binding panelId}}"
+              Visible="{Binding show_case_2}"/>
+  <!-- TODO(views-migrate): <OneReport> is no .kbview element (a local or dynamic component) -->
+  <ReactHost Component="{Binding OneReport}" Props="{Binding one_report_props}" Visible="{Binding show_main}"/>
+</Panel>

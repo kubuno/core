@@ -1,0 +1,110 @@
+<!-- ImpactPanel — converted from ImpactPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="Props" Class="contents">
+  <Callout Title="{Res admin.rl_impact_title}" Body="{Binding callout_text}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true" Class="mb-3">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_windows}">
+        <Button Variant="{Binding variant}" Size="Sm" Text="{Res admin.rl_impact_days, N={Binding d}}" OnClick="button_click"/>
+      </Repeater>
+      <Button Size="Sm" IconSize="14" Icon="Play" Loading="{Binding running}" Text="{Res admin.rl_impact_run}" OnClick="launch"/>
+    </Stack>
+    <Label Text="{Res admin.rl_impact_retention, Days={Binding rl_impact_retention_days}}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Class="mb-3 [font-size:var(--kb-text-meta)]"/>
+    <Callout Variant="Danger" Title="{Res admin.rl_impact_failed}" Body="{Binding callout_text2}" Visible="{Binding start.isError}"/>
+    <Stack Direction="LeftToRight"
+           CrossAlign="Center"
+           ForeColor="TextSecondary"
+           BackColor="Surface1"
+           Visible="{Binding show_row_running}"
+           Class="rounded-lg border border-border px-3 py-3">
+      <Spinner Size="Sm"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.rl_impact_running}"
+             Overflow="Wrap"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-meta)]"/>
+    </Stack>
+    <Callout Variant="Danger" Title="{Res admin.rl_impact_failed}" Body="{Binding callout_text3}" Visible="{Binding show_row_status_failed}"/>
+    <Panel Visible="{Binding show_row_status_done}" Class="min-w-0">
+      <Panel ForeColor="TextTertiary" Class="mb-2 flex flex-wrap items-center gap-2 [font-size:var(--kb-text-meta)]">
+        <Icon Name="History" Size="13"/>
+        <Label HtmlTag="Span"
+               InheritFontSize="true"
+               Overflow="Wrap"
+               Text="{Res admin.rl_impact_window, From={Binding rl_impact_window_from}, To={Binding rl_impact_window_to}}"/>
+      </Panel>
+      <Panel Class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Figure}" Props="{Binding figure_props}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Figure}" Props="{Binding figure_props2}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Figure}" Props="{Binding figure_props3}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Figure}" Props="{Binding figure_props4}"/>
+      </Panel>
+      <Panel Class="mt-3">
+        <!-- TODO(views-migrate): <ProgressBar> formatValue: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+      <Panel Visible="{Binding show_report_by_org}" Class="mt-4 min-w-0">
+        <Label HtmlTag="H4"
+               Text="{Res admin.rl_impact_by_unit}"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="mb-1.5"/>
+        <Stack Gap="4">
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+            <Stack Direction="LeftToRight" CrossAlign="Center" Class="min-w-0">
+              <Label HtmlTag="Span"
+                     Text="{Binding u.unit}"
+                     ForeColor="TextSecondary"
+                     InheritFontSize="true"
+                     Class="min-w-0 flex-1 [font-size:var(--kb-text-meta)]"/>
+              <Label HtmlTag="Span"
+                     Text="{Binding u.count}"
+                     Overflow="Wrap"
+                     ForeColor="TextPrimary"
+                     InheritFontSize="true"
+                     Class="tabular-nums [font-size:var(--kb-text-meta)]"/>
+            </Stack>
+          </Repeater>
+        </Stack>
+      </Panel>
+      <Panel Visible="{Binding show_report_by_day}" Class="mt-4 min-w-0">
+        <Panel HtmlTag="H4" ForeColor="TextPrimary" Class="mb-1.5 flex items-center gap-1.5">
+          <Icon Name="BarChart3" Size="14"/>
+          <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.rl_impact_by_day}"/>
+        </Panel>
+        <Stack Direction="LeftToRight" Gap="4" CrossAlign="End" Class="min-w-0 overflow-x-auto">
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_items2}">
+            <Stack Gap="4" CrossAlign="Center" ToolTip="{Binding tooltip}" Class="w-8 shrink-0">
+              <!-- TODO(views-migrate): <div> with a computed style -->
+              <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+              <Label HtmlTag="Span"
+                     Text="{Binding span_text}"
+                     Overflow="Wrap"
+                     ForeColor="TextTertiary"
+                     InheritFontSize="true"
+                     Class="[font-size:var(--kb-text-micro)]"/>
+            </Stack>
+          </Repeater>
+        </Stack>
+      </Panel>
+      <Panel Class="mt-4">
+        <!-- TODO(views-migrate): <Callout> icon: a value the property converts (null-when-false) -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+      </Panel>
+    </Panel>
+    <Label Text="{Res admin.rl_impact_never_run}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Visible="{Binding show_row_running_start}"
+           Class="[font-size:var(--kb-text-meta)]"/>
+  </Panel>
+</Panel>

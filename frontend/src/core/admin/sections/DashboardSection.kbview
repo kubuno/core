@@ -1,0 +1,78 @@
+<!-- DashboardSection — converted from DashboardSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <EmptyState IconSize="28"
+              Icon="Info"
+              Title="{Res admin.dash_forbidden}"
+              Description="{Res admin.dash_forbidden_desc}"
+              Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}">
+    <Panel Class="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding StatCard}" Props="{Binding stat_card_props}"/>
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding StatCard}" Props="{Binding stat_card_props2}"/>
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding StatCard}" Props="{Binding stat_card_props3}"/>
+    </Panel>
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="End" Justify="SpaceBetween" WrapContents="true" Class="mb-4">
+      <Label Text="{Res admin.dash_intro}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="max-w-2xl [font-size:var(--kb-text-body)]"/>
+      <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true">
+        <!-- TODO(views-migrate): <Dropdown> width, focusable: no .kbview property -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+        <!-- TODO(views-migrate): <Button Icon>: an icon that is not a Lucide icon -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+      </Stack>
+    </Stack>
+    <Callout Variant="Danger" Body="{Binding callout_text}" Visible="{Binding isError}" Class="mb-4"/>
+    <!-- TODO(views-migrate): <ReachNotice> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding ReachNotice}" Props="{Binding reach_notice_props}" Visible="{Binding show_data}"/>
+    <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding isLoading}" Class="py-16">
+      <Spinner/>
+    </Stack>
+    <Panel Visible="{Binding show_data_visible}" Class="grid grid-cols-1 gap-10 md:grid-cols-2 xl:grid-cols-3">
+      <!-- TODO(views-migrate): a list whose item is not a single element -->
+      <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <EmptyState> action.variant: no .kbview property -->
+    <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}" Visible="{Binding show_data_visible2}"/>
+    <Panel BackColor="Surface1" Visible="{Binding show_editing_data}" Class="mt-10 rounded-xl border border-border p-4">
+      <Stack Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" WrapContents="true" Class="mb-3">
+        <Label HtmlTag="H2"
+               Text="{Res admin.sec_hidden_panels}"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-heading)]"/>
+        <Button Variant="Ghost" IconSize="14" Icon="RotateCcw" Text="{Res admin.sec_reset}" OnClick="button_click"/>
+      </Stack>
+      <Label Text="{Res admin.sec_nothing_hidden}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_hidden_available}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Panel HtmlTag="Ul" Visible="{Binding show_not_hidden_available}" Class="flex flex-wrap gap-2">
+        <!-- TODO(views-migrate): a list whose item is not a single element -->
+        <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+      </Panel>
+    </Panel>
+    <Label Text="{Res admin.sec_withheld, Count={Binding withheldCount}}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Visible="{Binding show_data_withheld_count}"
+           Class="mt-4 [font-size:var(--kb-text-meta)]"/>
+    <Panel Class="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <!-- TODO(views-migrate): <Slot> is no .kbview element (../../slots/SlotRegistry#Slot) -->
+      <ReactHost Component="{Binding Slot}" Props="{Binding slot_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <Slot> is no .kbview element (../../slots/SlotRegistry#Slot) -->
+    <ReactHost Component="{Binding Slot}" Props="{Binding slot_props2}"/>
+  </Panel>
+</Panel>

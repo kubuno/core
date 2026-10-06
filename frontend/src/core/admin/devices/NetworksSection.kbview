@@ -1,0 +1,25 @@
+<!-- NetworksSection — converted from NetworksSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="min-w-0">
+  <Panel Class="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+    <Label HtmlTag="H1"
+           Text="{Res admin.nav_networks}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+    <Label HtmlTag="Span"
+           Text="{Res devices.sessions_count, Count={Binding sessions_count_count}}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Visible="{Binding show_data}"
+           Class="[font-size:var(--kb-text-meta)]"/>
+  </Panel>
+  <Callout Body="{Res devices.networks_intro}" Class="mb-4"/>
+  <Stack Direction="LeftToRight" Gap="6" CrossAlign="Center" WrapContents="true" Visible="{Binding show_origins}" Class="mb-4">
+    <!-- TODO(views-migrate): a list callback destructuring its item -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Stack>
+  <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, configurableColumns, t, emptyState: no .kbview property -->
+  <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+</Panel>

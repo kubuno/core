@@ -1,0 +1,60 @@
+<!-- PagedPreview — converted from PagedPreview.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="PagedPreviewProps" Class="contents">
+  <!-- TODO(views-migrate): <style> has no .kbview element yet -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  <Panel AccessibleHidden="true" Class="no-print [position:absolute] [width:0px] [height:0px] [overflow:hidden]">
+    <!-- TODO(views-migrate): <div ref data-admin-report data-paged-measure>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    <!-- TODO(views-migrate): <div ref>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+  </Panel>
+  <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start">
+    <!-- TODO(views-migrate): <div ref data-sheets-frame>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+    <!-- TODO(views-migrate): <aside> with a computed style -->
+    <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}" Visible="{Binding show_total}"/>
+  </Stack>
+  <!-- TODO(views-migrate): <ContextMenu> pos, onClose: no .kbview property -->
+  <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}" Visible="{Binding show_menu_pos}"/>
+  <Panel Class="no-print fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-full bg-[#202124]/95 px-4 py-2 text-white shadow-lg backdrop-blur [font-size:var(--kb-text-body)]">
+    <Panel HtmlTag="Span" Class="flex items-center gap-2">
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.rep_page_label}"/>
+      <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+      <ReactHost Component="{Binding Part7}" Props="{Binding part7_props}"/>
+      <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" InheritFontSize="true" Class="text-white/70"/>
+    </Panel>
+    <Panel HtmlTag="Span" Class="h-4 w-px bg-white/25"/>
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           ToolTip="{Res admin.rep_print}"
+           Class="rounded-full p-1 hover:bg-white/15"
+           OnClick="panel_click">
+      <Icon Name="Printer" Size="16"/>
+    </Panel>
+    <Panel HtmlTag="Span" Class="h-4 w-px bg-white/25"/>
+    <Panel HtmlTag="Span" Class="flex items-center gap-1">
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             ToolTip="{Res admin.rep_zoom_out}"
+             Class="rounded-full p-1 hover:bg-white/15"
+             OnClick="panel_click2">
+        <Icon Name="Minus" Size="16"/>
+      </Panel>
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             ToolTip="{Res admin.rep_fit}"
+             Class="min-w-14 rounded px-1 py-0.5 tabular-nums hover:bg-white/15"
+             OnClick="panel_click3">
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" %"/>
+      </Panel>
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             ToolTip="{Res admin.rep_zoom_in}"
+             Class="rounded-full p-1 hover:bg-white/15"
+             OnClick="panel_click4">
+        <Icon Name="Plus" Size="16"/>
+      </Panel>
+    </Panel>
+  </Panel>
+</Panel>

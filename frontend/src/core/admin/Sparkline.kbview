@@ -1,0 +1,3 @@
+<!-- Sparkline — converted from Sparkline.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<!-- TODO(views-migrate): <svg> has no .kbview element yet -->
+<ReactHost x:Props="SparklineProps" Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_main}"/>

@@ -1,0 +1,66 @@
+<!-- AlertsCard — converted from AlertsCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="rounded-xl border border-border bg-[#F0F4F9] p-5">
+  <Stack Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" Class="mb-3">
+    <Stack Direction="LeftToRight" Gap="10" CrossAlign="Center" Class="min-w-0">
+      <Icon Name="Bell" Class="shrink-0 text-text-secondary"/>
+      <Label HtmlTag="H3"
+             Text="{Res admin.home_alerts_title}"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-body)]"/>
+      <Label HtmlTag="Span"
+             Text="{Binding span_text}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             BackColor="DangerLight"
+             InheritFontSize="true"
+             Visible="{Binding show_summary_summary_open}"
+             Class="shrink-0 rounded-full px-1.5 py-0.5 [font-size:var(--kb-text-micro)]"/>
+    </Stack>
+    <!-- TODO(views-migrate): <Link style> -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Stack>
+  <Label Text="{Res common.loading}"
+         TextAlign="TopCenter"
+         Overflow="Wrap"
+         ForeColor="TextTertiary"
+         InheritFontSize="true"
+         Visible="{Binding isLoading}"
+         Class="py-4 [font-size:var(--kb-text-meta)]"/>
+  <Stack Gap="6" CrossAlign="Center" Justify="Center" Visible="{Binding visible}" Class="py-5 text-center">
+    <Icon Name="PartyPopper" Size="24" Class="text-success"/>
+    <Label Text="{Res admin.al_empty_title}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-meta)]"/>
+    <Label Text="{Binding p_text}" Overflow="Wrap" ForeColor="TextTertiary" InheritFontSize="true" Class="[font-size:var(--kb-text-micro)]"/>
+  </Stack>
+  <Panel HtmlTag="Ul" Visible="{Binding visible2}" Class="min-w-0 space-y-2">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_top}">
+      <Panel HtmlTag="Li" Class="min-w-0">
+        <Panel Href="{Binding href}"
+               Class="flex min-w-0 items-start gap-2 rounded-md px-1 py-1 hover:bg-surface-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+               OnClick="panel_click">
+          <Panel HtmlTag="Span" AccessibleHidden="true" Class="{Binding span_class}"/>
+          <Panel HtmlTag="Span" Class="min-w-0 flex-1">
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text}"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="block [font-size:var(--kb-text-meta)]"/>
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text2}"
+                   ForeColor="TextTertiary"
+                   InheritFontSize="true"
+                   Class="block [font-size:var(--kb-text-micro)]"/>
+          </Panel>
+        </Panel>
+      </Panel>
+    </Repeater>
+    <Panel HtmlTag="Li" Visible="{Binding show_summary_summary_open2}">
+      <!-- TODO(views-migrate): <Link style> -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Panel>
+  </Panel>
+</Panel>

@@ -1,0 +1,31 @@
+<!-- DetectorsSection — converted from DetectorsSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <DetectorEditor> is no .kbview element (./DetectorEditor#default) -->
+  <ReactHost Component="{Binding DetectorEditor}" Props="{Binding detector_editor_props}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Label HtmlTag="H1"
+           Text="{Res admin.det_title}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+    <Label Text="{Res admin.det_intro}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="mt-1 max-w-3xl [font-size:var(--kb-text-body)]"/>
+    <Label Text="{Binding error}"
+           Overflow="Wrap"
+           ForeColor="Danger"
+           InheritFontSize="true"
+           AccessibleRole="Alert"
+           Visible="{Binding show_error}"
+           Class="mt-3 [font-size:var(--kb-text-body)]"/>
+    <Panel Class="mt-4">
+      <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, rowActions, onRowClick, configurableColumns, t, toolbar, emptyState: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

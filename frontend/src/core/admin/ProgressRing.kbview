@@ -1,0 +1,6 @@
+<!-- ProgressRing — converted from ProgressRing.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="ProgressRingProps" Gap="0" CrossAlign="Center" Justify="Center">
+  <!-- TODO(views-migrate): <div> with a computed style -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  <Label HtmlTag="Span" Text="{Binding props.sub}" Overflow="Wrap" ForeColor="TextSecondary" Visible="{Binding show_sub}" Class="mt-2"/>
+</Stack>
