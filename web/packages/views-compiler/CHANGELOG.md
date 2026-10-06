@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-06
+
 ### Changed
 
 - **The WebAssembly compiler is built from the core repository.** Kubuno Desktop, which holds the `.kbview`

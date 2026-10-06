@@ -17,6 +17,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   Studio's colours. The design host build (`npm run build:design-host`) now ends by writing
   `packages/host-runtime/dist/design-host.json` (its file list and the hash of the host registry it embeds), which
   the Visual Studio extension's build checks. `@kubuno/host-runtime` 0.1.2.
+- **`@kubuno/views-compiler` 0.1.3** is published with the WebAssembly compiler built from the core repository
+  (tag `web-views-compiler-core-v0.2.1`); it compiles views exactly as 0.1.2.
 - **The repository is organised by platform: the server moves to `server/`, the shared crates to `common/`.**
   `server/` holds `kubuno-core` (its sources, `migrations/`, the `.sqlx` query cache, `config.toml.example`, the man
   page) as a Cargo workspace of its own; `common/` holds the crates the modules share (`kubuno-db`,
