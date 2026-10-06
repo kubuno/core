@@ -105,6 +105,18 @@ export function splitFile(cfg, sf) {
     // ts-morph paths (forward slashes on every OS).
     const dir = file.slice(0, file.lastIndexOf('/'));
     const movedNames = new Set(toMove.map((c) => c.name));
+    // The project's files importing this one, with the specifiers they use for it (read now: rewriting the file below
+    // may change what its specifier resolves to).
+    const importerSpecs = new Map();
+    for (const other of cfg.project.getSourceFiles()) {
+        for (const imp of other.getImportDeclarations()) {
+            if (imp.getModuleSpecifierSourceFile() !== sf)
+                continue;
+            const set = importerSpecs.get(other.getFilePath()) ?? new Set();
+            set.add(imp.getModuleSpecifierValue());
+            importerSpecs.set(other.getFilePath(), set);
+        }
+    }
     const stmtOf = new Map(toMove.map((c) => [c.name, topStatement(sf, c.fn)]));
     const created = {};
     const edits = {};
@@ -218,7 +230,8 @@ export function splitFile(cfg, sf) {
             continue;
         const lines = [];
         for (const imp of [...other.getImportDeclarations()]) {
-            if (imp.getModuleSpecifierSourceFile() !== sf)
+            // Resolved before the old file was rewritten (emptied of its exports, it may no longer resolve as a module).
+            if (!importerSpecs.get(other.getFilePath())?.has(imp.getModuleSpecifierValue()))
                 continue;
             for (const n of imp.getNamedImports()) {
                 if (!movedNames.has(n.getName()))

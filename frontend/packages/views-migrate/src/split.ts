@@ -116,6 +116,17 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
   // ts-morph paths (forward slashes on every OS).
   const dir = file.slice(0, file.lastIndexOf('/'))
   const movedNames = new Set(toMove.map((c) => c.name))
+  // The project's files importing this one, with the specifiers they use for it (read now: rewriting the file below
+  // may change what its specifier resolves to).
+  const importerSpecs = new Map<string, Set<string>>()
+  for (const other of cfg.project.getSourceFiles()) {
+    for (const imp of other.getImportDeclarations()) {
+      if (imp.getModuleSpecifierSourceFile() !== sf) continue
+      const set = importerSpecs.get(other.getFilePath()) ?? new Set<string>()
+      set.add(imp.getModuleSpecifierValue())
+      importerSpecs.set(other.getFilePath(), set)
+    }
+  }
   const stmtOf = new Map(toMove.map((c) => [c.name, topStatement(sf, c.fn as unknown as Node)!] as const))
   const created: Record<string, string> = {}
   const edits: Record<string, string> = {}
@@ -210,7 +221,8 @@ export function splitFile(cfg: MigrateConfig, sf: SourceFile): SplitResult | und
     if (other === sf) continue
     const lines: string[] = []
     for (const imp of [...other.getImportDeclarations()] as ImportDeclaration[]) {
-      if (imp.getModuleSpecifierSourceFile() !== sf) continue
+      // Resolved before the old file was rewritten (emptied of its exports, it may no longer resolve as a module).
+      if (!importerSpecs.get(other.getFilePath())?.has(imp.getModuleSpecifierValue())) continue
       for (const n of imp.getNamedImports()) {
         if (!movedNames.has(n.getName())) continue
         const spec = sibling(imp.getModuleSpecifierValue(), stem, n.getName())

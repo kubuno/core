@@ -142,3 +142,10 @@ describe('collections filled by statements of the body', () => {
     expect(f.code).toMatch(/if \(this\.root\) walk\(this\.root, 0\)\s*return rows/)
   })
 })
+
+describe('aliased conditions', () => {
+  it('declares the condition and what it narrows as constants of the getter', () => {
+    const a = convert('Alias.tsx')
+    expect(a.code).toMatch(/get delta\(\)[^\n]*\n\s*const previous = this\.props\.previous\s*\n\s*const snapshot = previous === null\s*\n\s*return !snapshot && previous > 0/)
+  })
+})

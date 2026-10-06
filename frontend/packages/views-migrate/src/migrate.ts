@@ -402,8 +402,20 @@ class Migration {
    */
   deps(text: string): string[] {
     const methods = new Set([...this.methods.map((x) => x.name), ...[...this.usedSetters].map((l) => l.member)])
+    const bodies = new Map(this.methods.map((x) => [x.name, x.body] as const))
     const deps = new Set<string>()
-    for (const m of text.matchAll(/this\.([A-Za-z_$][\w$]*)\b/g)) if (!methods.has(m[1])) deps.add(m[1])
+    // What a method the text calls reads counts too (`{body()}` re-renders when `isLoading` changes).
+    const seen = new Set<string>()
+    const scan = (t: string): void => {
+      for (const m of t.matchAll(/this\.([A-Za-z_$][\w$]*)\b/g)) {
+        if (!methods.has(m[1])) deps.add(m[1])
+        else if (!seen.has(m[1])) {
+          seen.add(m[1])
+          scan(bodies.get(m[1]) ?? '')
+        }
+      }
+    }
+    scan(text)
     return [...deps]
   }
 
@@ -886,6 +898,32 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
       const init = l.decl.initializer
       if (ts.isIdentifier(l.decl.name)) {
         const bare = nestedNullables(m, init)
+        // An aliased condition (`const snapshot = previous == null` then `!snapshot && previous > 0`): TypeScript
+        // narrows `previous` through `snapshot` only between constants, so both are local constants of the getter.
+        const condPre: string[] = []
+        const condBare = new Set<Local>()
+        const direct = (n: ts.Node): Set<Local> => {
+          const out = new Set<Local>()
+          const v = (x: ts.Node): void => {
+            if (ts.isIdentifier(x) && !(ts.isPropertyAccessExpression(x.parent) && x.parent.name === x)) {
+              const o = m.localOf(x)
+              if (o && (o.kind === 'derived' || o.kind === 'state' || o.kind === 'prop' || o.kind === 'hook-data')) out.add(o)
+            }
+            ts.forEachChild(x, v)
+          }
+          v(n)
+          return out
+        }
+        const reads = direct(init)
+        for (const r of reads) {
+          if (r.kind !== 'derived' || !ts.isVariableDeclaration(r.decl) || !r.decl.initializer || !m.isBooleanType(r.decl.initializer)) continue
+          const shared = [...direct(r.decl.initializer)].filter((s) => reads.has(s) && s !== r)
+          if (!shared.length) continue
+          for (const s of shared) if (!condBare.has(s) && !bare.has(s)) { condBare.add(s); condPre.push(`const ${s.name} = ${refText(m, s)}`) }
+          condPre.push(`const ${r.name} = ${m.rewrite(r.decl.initializer, { bare: new Set(shared) })}`)
+          condBare.add(r)
+        }
+        for (const x of condBare) bare.add(x)
         let body = m.rewrite(init, { bare })
         if (l.fill?.length) {
           // Filled by statements: they run here, in their order, on a fresh collection (the other collections they
@@ -901,7 +939,7 @@ function convert(m: Migration, target: FoundComponent): { outputs: Record<string
         // Its type written out (the TSX inferred it): a getter typed from hooks typed from getters would otherwise
         // depend on itself.
         const inferred = l.type ?? declaredType(m, l.decl.name)
-        m.getters.push({ name: l.member, body, memo: m.isObjectValue(init), type: inferred, guards: guardsOf(l.decl), prelude: bare.size && !l.fill?.length ? [...bare].map((x) => `const ${x.name} = ${refText(m, x)}`) : undefined })
+        m.getters.push({ name: l.member, body, memo: m.isObjectValue(init), type: inferred, guards: guardsOf(l.decl), prelude: bare.size && !l.fill?.length ? [...condPre, ...[...bare].filter((x) => !condBare.has(x)).map((x) => `const ${x.name} = ${refText(m, x)}`)] : undefined })
         m.stats.getters++
       }
     } else if (l.kind === 'derived' && ts.isBindingElement(l.decl)) {
@@ -2554,11 +2592,13 @@ function partsFile(m: Migration): string {
     candidates.push({ names, text: st.getText().replace(/^export\s+/, '') })
   }
   const kept = new Set<number>()
+  const partProps = new Set(m.parts.flatMap((p) => p.props.map((x) => x.name)))
   for (let changed = true; changed;) {
     changed = false
     const all = text + '\n' + [...kept].map((k) => candidates[k].text).join('\n')
     candidates.forEach((c, k) => {
-      if (!kept.has(k) && c.names.some((n) => n && uses(n, all))) {
+      // A part's prop of the same name shadows a module-level helper (`Bucket` the local component, `type Bucket`).
+      if (!kept.has(k) && c.names.some((n) => n && !partProps.has(n) && uses(n, all))) {
         kept.add(k)
         changed = true
       }
