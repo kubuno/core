@@ -34,7 +34,7 @@ export interface DetectorLimits {
     sample_bytes: number;
     compiled_bytes: number;
 }
-interface DetectorList {
+export interface DetectorList {
     detectors: Detector[];
     kinds: DetectorKind[];
     checksums: ChecksumAlgo[];

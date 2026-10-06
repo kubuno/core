@@ -1,4 +1,4 @@
-interface Props {
+export interface Props {
     codes: string[];
     /** Shown once acknowledged; omit to keep the panel permanent. */
     onDone?: () => void;
@@ -12,4 +12,3 @@ interface Props {
  * file. A dialog that only offered "close" would be a trap.
  */
 export declare function BackupCodesPanel({ codes, onDone }: Props): import("react").JSX.Element;
-export {};

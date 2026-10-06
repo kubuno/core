@@ -1,15 +1,27 @@
-import type { LicenceInfo } from './api';
-/**
- * What this software is held under — a fact, not a purchase.
- *
- * The card leads with the SPDX identifier the repository actually declares
- * (`LICENSE` at the root, `license = "AGPL-3.0"` in every module manifest), then
- * says in two sentences what the licence grants and what it asks in return. The
- * second sentence matters more than the first here: the AGPL's network clause is
- * the one obligation an operator of a *self-hosted, modified* instance can
- * breach without noticing, and a page about licensing that omitted it would be
- * decorative.
- */
-export default function LicenceCard({ licence }: {
+import type { LicenceInfo } from "./api";
+import { ViewBase } from './LicenceCard.kbview';
+import * as __parts from './LicenceCard.parts';
+export type LicenceCardProps = {
     licence: LicenceInfo;
-}): import("react").JSX.Element;
+};
+export declare class LicenceCard extends ViewBase {
+    tr: LicenceCardStores['t'];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get part1_props(): {
+        licence: LicenceInfo;
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** A part of the screen still written in React (<ExternalLink> is no .kbview element (./ExternalLink#ExternalLink)). */
+    get Part1(): typeof __parts.Part1;
+    /** A part of the screen still written in React (<ExternalLink> is no .kbview element (./ExternalLink#ExternalLink)). */
+    get Part2(): typeof __parts.Part2;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type LicenceCardStores = ReturnType<LicenceCard['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<LicenceCardProps>>;
+export default _default;

@@ -1,19 +1,8 @@
-import type { ReportModel } from '../model';
-/**
- * The front sheet — optional, and off by default.
- *
- * A report that circulates outside the console (a board pack, an audit file, a
- * printout handed across a desk) is read by somebody who needs to know what
- * they are holding before they see a single figure. A report consulted for two
- * minutes and thrown away does not, and a cover would just be a sheet of paper
- * to skip. So it is a switch, next to the paper format, and the operator
- * decides — which is what "ajouter ou retirer une page de garde" means.
- *
- * It carries nothing the document does not already state on page 1. That is
- * deliberate: a cover holding a fact of its own would be a second source for
- * it, and the two would eventually disagree.
- */
-export default function CoverSheet({ instance, title, about, periodLabel, generatedAt, generatedBy, model, }: {
+import { InstanceLogo } from "../../../shell/InstanceLogo";
+import type { ReportModel } from "../model";
+import { ViewBase } from './CoverSheet.kbview';
+import * as __parts from './CoverSheet.parts';
+export type CoverSheetProps = {
     instance: string;
     title: string;
     about: string;
@@ -21,4 +10,32 @@ export default function CoverSheet({ instance, title, about, periodLabel, genera
     generatedAt: string;
     generatedBy: string;
     model: ReportModel;
-}): import("react").JSX.Element;
+};
+export declare class CoverSheet extends ViewBase {
+    tr: CoverSheetStores['t'];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    /** `<InstanceLogo>`, rendered by a ReactHost. */
+    get InstanceLogo(): typeof InstanceLogo;
+    get instance_logo_props(): {
+        size: number;
+        className: string;
+    };
+    get p_text(): string;
+    get part1_props(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        model: ReportModel;
+        generatedAt: string;
+        generatedBy: string;
+    };
+    /** A part of the screen still written in React (<dl> has no .kbview element yet). */
+    get Part1(): typeof __parts.Part1;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type CoverSheetStores = ReturnType<CoverSheet['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<CoverSheetProps>>;
+export default _default;

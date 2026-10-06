@@ -1,18 +1,7 @@
-import type { TableItem } from './types';
-/**
- * A table block, whole or in slices.
- *
- * The same component draws the measuring pass (every row, `slice` omitted) and
- * each fragment on a sheet. One renderer for both is not tidiness: a fragment
- * drawn by different code than the one that was measured would be a different
- * height, and the cut would land somewhere other than where the preview showed
- * it.
- *
- * The columns are PINNED (`widths`), for the reason given on that prop: a table
- * whose columns are recomputed per fragment is a different table on every sheet,
- * and the heights the cut was computed from stop being the heights on the page.
- */
-export default function TableFragment({ item, slice, widths }: {
+import type { TableItem } from "./types";
+import { ViewBase } from './TableFragment.kbview';
+import * as __parts from './TableFragment.parts';
+export type TableFragmentProps = {
     item: TableItem;
     /** Which rows this fragment shows, and whether it is the first/last one. */
     slice?: {
@@ -32,4 +21,37 @@ export default function TableFragment({ item, slice, widths }: {
      * of a table continued overleaf.
      */
     widths?: number[];
-}): import("react").JSX.Element;
+};
+export declare class TableFragment extends ViewBase {
+    tr: TableFragmentStores['t'];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get from(): number;
+    get to(): number;
+    get last(): boolean;
+    get h2_text(): string;
+    get part1_props(): {
+        item: TableItem;
+        widths: number[] | undefined;
+        from: number;
+        to: number;
+        last: boolean;
+        item_foot: import("react").ReactNode;
+    };
+    /** A part of the screen still written in React (<table> has no .kbview element yet). */
+    get Part1(): typeof __parts.Part1;
+    get show_last_item_note(): boolean;
+    /** `React.Fragment`: renders the elements an expression holds. */
+    get Fragment(): import("react").ExoticComponent<import("react").FragmentProps>;
+    get content_item_note(): {
+        children: string | number | bigint | true | import("react").ReactElement<unknown, string | import("react").JSXElementConstructor<any>> | Iterable<import("react").ReactNode> | import("react").ReactPortal | Promise<string | number | bigint | boolean | import("react").ReactPortal | import("react").ReactElement<unknown, string | import("react").JSXElementConstructor<any>> | Iterable<import("react").ReactNode> | null | undefined>;
+    };
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type TableFragmentStores = ReturnType<TableFragment['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<TableFragmentProps>>;
+export default _default;

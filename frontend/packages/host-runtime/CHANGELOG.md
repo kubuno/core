@@ -6,6 +6,13 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-06
+
+### Changed
+
+- Built with the `@kubuno/views` runtime of this core: a component hosted by `ReactHost` renders again with its
+  view, and an element in a `display: contents` wrapper keeps its parent's spacing (see `@kubuno/views`).
+
 ### Fixed
 
 - **The Visual Studio designer's bundled page compiles with the project's own element registry.** The page accepts

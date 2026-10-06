@@ -1,31 +1,29 @@
-import type { User } from '../../../types';
 /**
- * Profile tab — everything the server knows about the account, and everything it
- * accepts back.
- *
- * The tab is only a layout now: each card owns its own reading state, its own
- * edit state, its own privilege check and its own `PATCH`. That split is the
- * point of the redesign. The console used to answer "Modifier" with a floating
- * window that knew five fields — name, role, quota, activation, unit — while
- * this tab displayed twenty; the six personal columns in particular were
- * readable here and writable nowhere. Every value the server accepts is now
- * edited in the card that shows it (see `cards/`), and there is no second form
- * left to drift from this one.
- *
- * Strictly limited to what `GET /admin/users/:id` serialises: the model hides
- * `password_hash`, `totp_secret` and `totp_pending_secret`, so nothing here can
- * leak them. `preferences` is deliberately absent: a free JSON blob owned by the
- * user, not administrative data.
- *
- * The "personal profile" card is the **only** administrative surface where the
- * six fields of migration `000114` are read, and the only place at all where
- * `gender` and `birthday` are shown to somebody other than their owner. That is
- * a deliberate boundary, not an oversight of the other screens: the directory
- * search and every people picker in every module answer name, username and
- * photo, because `handlers::users::DIRECTORY_COLUMNS` says so. A sheet somebody
- * opened on purpose is where a personal datum belongs; a dropdown of colleagues
- * is not.
+ * Code-behind of `ProfileTab.kbview` (converted from `ProfileTab.tsx` by @kubuno/views-migrate).
  */
-export default function ProfileTab({ user }: {
+import type { User } from "../../../types";
+import IdentityCard from "./cards/IdentityCard";
+import OrganisationCard from "./cards/OrganisationCard";
+import PersonalCard from "./cards/PersonalCard";
+import StorageCard from "./cards/StorageCard";
+import { ViewBase } from './ProfileTab.kbview';
+export type ProfileTabProps = {
     user: User;
-}): import("react").JSX.Element;
+};
+export declare class ProfileTab extends ViewBase {
+    /** `<IdentityCard>`, rendered by a ReactHost. */
+    get IdentityCard(): typeof IdentityCard;
+    get identity_card_props(): {
+        user: User;
+    };
+    /** `<OrganisationCard>`, rendered by a ReactHost. */
+    get OrganisationCard(): typeof OrganisationCard;
+    /** `<PersonalCard>`, rendered by a ReactHost. */
+    get PersonalCard(): typeof PersonalCard;
+    /** `<StorageCard>`, rendered by a ReactHost. */
+    get StorageCard(): typeof StorageCard;
+    /** `<LifecycleCard>`, rendered by a ReactHost. */
+    get LifecycleCard(): import("react").FunctionComponent<Readonly<import("./cards/LifecycleCard").LifecycleCardProps>>;
+}
+declare const _default: import("react").FunctionComponent<Readonly<ProfileTabProps>>;
+export default _default;

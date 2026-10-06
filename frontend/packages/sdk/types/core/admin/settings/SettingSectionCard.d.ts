@@ -1,4 +1,9 @@
-import type { ReactNode } from 'react';
+/**
+ * Code-behind of `SettingSectionCard.kbview` (converted from `SettingSectionCard.tsx` by @kubuno/views-migrate).
+ */
+import type { ReactNode } from "react";
+import { ViewBase } from './SettingSectionCard.kbview';
+import * as __parts from './SettingSectionCard.parts';
 export interface SettingSectionCardProps {
     title: ReactNode;
     /**
@@ -29,4 +34,37 @@ export interface SettingSectionCardProps {
     children: ReactNode;
     className?: string;
 }
-export default function SettingSectionCard({ title, status, description, icon, aside, footer, open, onToggle, children, className, }: SettingSectionCardProps): import("react").JSX.Element;
+export declare class SettingSectionCard extends ViewBase {
+    bodyId: string;
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        bodyId: string;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get className(): string;
+    get section_class(): string;
+    get part1_props(): {
+        onToggle: () => void;
+        open: boolean;
+        bodyId: string;
+        icon: ReactNode;
+        title: ReactNode;
+        description: ReactNode;
+        status: ReactNode;
+    };
+    /** A part of the screen still written in React (<button aria-expanded aria-controls>: attribute(s) without a .kbview property). */
+    get Part1(): typeof __parts.Part1;
+    get part2_props(): {
+        bodyId: string;
+        aside: ReactNode;
+        children: ReactNode;
+        footer: ReactNode;
+    };
+    /** A part of the screen still written in React (<div id>: attribute(s) without a .kbview property). */
+    get Part2(): typeof __parts.Part2;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type SettingSectionCardStores = ReturnType<SettingSectionCard['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<SettingSectionCardProps>>;
+export default _default;

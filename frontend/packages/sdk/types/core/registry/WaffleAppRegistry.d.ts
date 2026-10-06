@@ -11,7 +11,7 @@ export interface WaffleApp {
     moduleId?: string;
     moduleLabel?: string;
 }
-interface WaffleModuleEntry {
+export interface WaffleModuleEntry {
     moduleId: string;
     label: string;
     apps: WaffleApp[];
@@ -36,4 +36,3 @@ export declare const WaffleAppRegistry: {
      *  l'app au préfixe de chemin le plus long. `null` si aucun module ne correspond. */
     resolveByPath(pathname: string): ResolvedApp | null;
 };
-export {};

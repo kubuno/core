@@ -1,16 +1,30 @@
-import type { InstalledModule } from './api';
-/**
- * What is installed, at which version, under which licence.
- *
- * The licence column is not decoration: a module is a separate repository with
- * its own manifest, so "the platform is AGPL" is a statement about the core and
- * nothing more. What each module declares is read back from `core.modules`,
- * where the manifest it shipped landed — so a module that ever declares
- * something else shows it here rather than being quietly assumed to match.
- *
- * The version column is the other half of a support request: "which version"
- * is the first question anybody answering one asks.
- */
-export default function ModulesLicenceCard({ modules }: {
+import { type DataTableColumn } from "@ui";
+import type { InstalledModule } from "./api";
+import { ViewBase } from './ModulesLicenceCard.kbview';
+import * as __parts from './ModulesLicenceCard.parts';
+export type ModulesLicenceCardProps = {
     modules: InstalledModule[];
-}): import("react").JSX.Element;
+};
+export declare class ModulesLicenceCard extends ViewBase {
+    tr: ModulesLicenceCardStores['t'];
+    columns: DataTableColumn<InstalledModule>[];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        i18n: import("i18next").i18n;
+        columns: DataTableColumn<InstalledModule>[];
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get part1_props(): {
+        modules: InstalledModule[];
+        columns: DataTableColumn<InstalledModule>[];
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** A part of the screen still written in React (<DataTable> columns, rowKey, defaultSort, t: no .kbview property). */
+    get Part1(): typeof __parts.Part1;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ModulesLicenceCardStores = ReturnType<ModulesLicenceCard['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<ModulesLicenceCardProps>>;
+export default _default;

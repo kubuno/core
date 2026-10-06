@@ -1,4 +1,6 @@
 import React from 'react';
+/** Renders the calling component again whenever a slot, an override or a module admin section is (un)registered. */
+export declare function useSlotRegistryVersion(): number;
 export type SlotName = 'sidebar-new-actions' | 'topbar-actions' | 'settings-sections' | 'admin-panels' | 'search-providers' | 'user-menu-items' | 'dashboard-widgets' | 'dashboard-stats-cards' | 'context-menu-items' | 'sidebar-storage' | 'help-menu-items' | 'header-search' | 'header-leading' | 'header-actions-right' | 'sidebar-footer' | 'module-toolbar' | 'left-rail-icons' | 'right-rail-icons' | 'app-dialogs' | 'global-services' | (string & Record<never, never>);
 /**
  * Slot name of a module's own admin page — `/admin/modules/<id>`.
@@ -74,10 +76,10 @@ export declare const ModuleAdminRegistry: {
 interface SlotEntry {
     moduleId: string;
     Component: React.ComponentType;
-    /** Prédicat optionnel d'applicabilité. Quand il est fourni, le consommateur du
-     *  slot peut filtrer les contributeurs qui ne s'appliquent pas à un contexte
-     *  donné (ex. « files-open-with » : ne garder que les modules capables d'ouvrir
-     *  le fichier visé). L'argument est défini par le consommateur du slot. */
+    /** Optional applicability predicate. When given, the slot's consumer can leave
+     *  out the contributors that do not apply to a given context (e.g.
+     *  "files-open-with": keep only the modules able to open the file at hand).
+     *  The argument is defined by the slot's consumer. */
     match?: (arg?: unknown) => boolean;
 }
 export declare const SlotRegistry: {
@@ -147,5 +149,9 @@ export declare function useHasSlot(name: SlotName): boolean;
  * still be loaded in this tab, and rendering its panel would say it is running.
  */
 export declare function useModuleAdminSections(moduleId: string): ModuleAdminSection[];
+/**
+ * Renders what the active modules contribute to `name`. It subscribes to the registry: a contribution registered
+ * after the first render (a module bundle loaded later) shows up without anything else rendering again.
+ */
 export declare function Slot({ name, fallback, ...ctx }: SlotProps): React.JSX.Element;
 export {};

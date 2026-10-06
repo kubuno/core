@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
-import { type SettingItem } from './moduleSettingSchema';
+import type { ReactNode } from "react";
+import { type SettingItem } from "./moduleSettingSchema";
+import { ViewBase } from './ModuleSettingRow.kbview';
 export interface ModuleSettingRowProps {
     item: SettingItem;
     value: unknown;
@@ -31,4 +32,45 @@ export interface ModuleSettingRowProps {
     onChange: (v: unknown) => void;
     onReset: () => void;
 }
-export default function ModuleSettingRow({ item, value, modified, pending, invalid, readOnly, showFactoryReset, statusPill, provenance, onChange, onReset, }: ModuleSettingRowProps): import("react").JSX.Element;
+export declare class ModuleSettingRow extends ViewBase {
+    tr: ModuleSettingRowStores['t'];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get readOnly(): boolean;
+    get showFactoryReset(): boolean;
+    get inline(): boolean;
+    get caption(): import("react").JSX.Element;
+    get trailer(): import("react").JSX.Element;
+    get control(): import("react").JSX.Element;
+    get div_class(): string;
+    get show_not_inline(): boolean;
+    /** `React.Fragment`: renders the elements an expression holds. */
+    get Fragment(): import("react").ExoticComponent<import("react").FragmentProps>;
+    get content_control(): {
+        children: import("react").JSX.Element;
+    };
+    get content_caption(): {
+        children: import("react").JSX.Element;
+    };
+    get content_trailer(): {
+        children: import("react").JSX.Element;
+    };
+    get content_caption2(): {
+        children: import("react").JSX.Element;
+    };
+    get content_control2(): {
+        children: import("react").JSX.Element;
+    };
+    get content_trailer2(): {
+        children: import("react").JSX.Element;
+    };
+    describeDefault(): string;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ModuleSettingRowStores = ReturnType<ModuleSettingRow['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<ModuleSettingRowProps>>;
+export default _default;

@@ -1,26 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 /**
- * "You may not open this section" — the explicit state a refusal must produce.
- *
- * Reached two ways: the tab was filtered out of the navigation and someone typed
- * its URL anyway, or the section itself hit a refusal deeper in. Either way the
- * answer is a sentence, never a blank page.
- */
-export declare function AdminForbidden({ titleKey }: {
-    titleKey?: string;
-}): import("react").JSX.Element;
-/**
- * "That address names no section" — what `/admin/nawak` produces.
- *
- * Since the section lives in the PATH, a typo (or a link to a section this build
- * no longer has) is a reachable URL that resolves to nothing. Redirecting to the
- * landing would silently pretend the address was right; a blank page would say
- * nothing at all. This says what happened and offers the way back.
- */
-export declare function AdminSectionNotFound({ tab }: {
-    tab: string;
-}): import("react").JSX.Element;
-/**
  * Keeps one section's failure inside that section.
  *
  * A delegated administrator sees the console but not every surface, and a panel

@@ -94,6 +94,9 @@ export type HostMessage = ({
     type: 'projectComponents';
     components: ComponentEntry[];
 } | {
+    type: 'setHostRegistry';
+    text: string;
+} | {
     type: 'setText';
     text: string;
     baseDir: string | null;
@@ -265,4 +268,12 @@ export interface Channel {
 }
 /** The channel of this page: WebView2 when hosted, else `window.__kbDesign`. */
 export declare function openChannel(win?: Window): Channel;
+/**
+ * The registry texts a page compiles with once the designer sent the project's host registry (`setHostRegistry`):
+ * the bundled page (no `project.json`) replaces the host registry it was built with — older than the project's
+ * whenever the project upgraded `@kubuno/ui` after the extension was built, which made the designer report
+ * « `Label` has no property `HtmlTag` » where `kbview-tsc` compiles clean — and keeps the project registries.
+ * `null` when nothing changes (the project-mode page already has the project's registry, or the same text).
+ */
+export declare function withHostRegistry(texts: readonly string[], projectLoaded: boolean, host: string): string[] | null;
 export {};

@@ -1,4 +1,3 @@
-import { type ReactNode } from 'react';
 /**
  * Slots of the categorical scale, in fixed order. Never cycled.
  *
@@ -35,41 +34,7 @@ export interface Segment {
      */
     track?: boolean;
 }
-/**
- * One horizontal bar split into parts of a whole, with its legend underneath.
- *
- * Used for the two part-to-whole readings the page has real numbers for: what
- * fills the data volume, and how the accounts split across quota states. A
- * segment narrower than the gap is dropped from the bar rather than rendered as
- * a sliver that reads as a rendering artefact — its number stays in the legend,
- * which is where it is read anyway.
- */
-export declare function CompositionBar({ segments, total, ariaLabel, format, }: {
-    segments: Segment[];
-    total: number;
-    ariaLabel: string;
-    format?: (n: number) => string;
-}): import("react").JSX.Element;
 export interface TrendDatum {
     day: string;
     value: number;
 }
-/**
- * A single-series line over time. No legend — one series, and the card title
- * already names it.
- *
- * Days with no sample are absent from `data` rather than zero-filled: a core
- * that was switched off for a week measured nothing that week, and drawing a
- * dip to zero would report a mass deletion that never happened. Points are laid
- * out by their **date**, so a gap in the samples is a gap on the axis.
- */
-export declare function TrendChart({ data, height, label, }: {
-    data: TrendDatum[];
-    height?: number;
-    label: string;
-}): import("react").JSX.Element;
-/** A figure and its caption, side by side, for the row under a chart. */
-export declare function Figure({ label, children }: {
-    label: string;
-    children: ReactNode;
-}): import("react").JSX.Element;

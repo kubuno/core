@@ -1,23 +1,36 @@
-import type { AdminSectionProps } from '../sections/registry';
-/**
- * `/admin/reports` — the printable documents behind the dashboards.
- *
- * ## Two screens, one section
- *
- * With a panel in the address (`/admin/reports/<panel>`) this renders that
- * report; without one, the catalogue of everything that can be reported on. The
- * catalogue is not padding: a report is normally reached from the card that
- * summarises it, but "produce the storage report for last month" is a task
- * somebody arrives with, and a console where the only way to a document is
- * through the picture of it is a console where the document is not really a
- * feature.
- *
- * ## Why the panel is a path segment
- *
- * `adminNav.ts` declares `entity: 'panel'` for this section, so the address is
- * `/admin/reports/storage?source=dashboard&period=last_30_days` and the reader
- * in `adminRoute.ts` republishes the segment as `params.get('panel')`. The
- * window and the catalogue the id came from identify no place, so they stay in
- * the query string — the rule that file states.
- */
-export default function ReportsSection({ params, navigate }: AdminSectionProps): import("react").JSX.Element;
+import type { AdminSectionProps } from "../sections/registry";
+import { ViewBase } from './ReportsSection.kbview';
+import * as __parts from './ReportsSection.parts';
+export type { AdminSectionProps };
+export declare class ReportsSection extends ViewBase {
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get panelId(): string;
+    get asked(): string | null;
+    get found(): import("../panels/catalog").CataloguedPanel | null;
+    get show_case_1(): boolean;
+    /** `<ReportIndex>`, rendered by a ReactHost. */
+    get ReportIndex(): typeof __parts.ReportIndex;
+    get report_index_props(): {
+        navigate: import("react-router").NavigateFunction;
+    };
+    get show_case_2(): boolean;
+    get show_main(): boolean;
+    /** `<OneReport>`, rendered by a ReactHost. */
+    get OneReport(): typeof __parts.OneReport;
+    get one_report_props(): {
+        source: import("../panels/report").PanelSource;
+        panelId: string;
+        def: import("../panels/types").PanelDef;
+        params: URLSearchParams;
+        navigate: import("react-router").NavigateFunction;
+    };
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ReportsSectionStores = ReturnType<ReportsSection['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<AdminSectionProps>>;
+export default _default;

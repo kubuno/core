@@ -1,38 +1,63 @@
-import { type Consumer } from './api';
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * PRIVACY — the hard line this sheet is built around.
- *
- * This sheet shows VOLUMES, OBJECT COUNTS and TECHNICAL CATEGORIES. It must
- * NEVER show a file name, a folder name, a path, a MIME type, an extension or a
- * document title, and no such field may be added to it or to the endpoint it
- * reads. An administrator has to be able to size a server and settle a quota
- * dispute; they must not be able to reconstruct a person's life from the
- * administration console. "How much" is operations. "What" is surveillance.
- *
- * The server sends nothing of the sort today. If it ever does, this component
- * drops it rather than renders it.
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * ## What the four figures mean, and why they can disagree
- *
- *  * **Counter** — `used_bytes` on the account. The number enforcement reads:
- *    it, and nothing else, decides whether the next upload is refused.
- *  * **Billed by the modules** — what the modules say they charge this account.
- *    Content, bin and versions: what the person can free themselves.
- *  * **Actually held** — everything stored for them, charged or not. Thumbnails,
- *    indexes and caches live here and nowhere else. It is the disk figure.
- *  * **The gap** — counter minus billed, either way round. Both directions are
- *    reported and neither is hidden: bytes counted that no module claims mean a
- *    module went quiet or a deletion was never declared; bytes claimed that were
- *    never counted mean the counter under-reports and the account is writing
- *    past a ceiling it has already passed.
- *
- * `delegated` appears in none of them, on purpose — see `CategoryBreakdown`.
+ * Code-behind of `AccountUsageDialog.kbview` (converted from `AccountUsageDialog.tsx` by @kubuno/views-migrate).
  */
-export default function AccountUsageDialog({ account, onClose, onEditQuota, }: {
+import { type MouseEventArgs } from '@kubuno/views';
+import { type Consumer } from "./api";
+import { ViewBase } from './AccountUsageDialog.kbview';
+import * as __parts from './AccountUsageDialog.parts';
+export type AccountUsageDialogProps = {
     account: Consumer;
     onClose: () => void;
     /** Offered only where the caller can actually write the quota. */
     onEditQuota?: () => void;
-}): import("react").JSX.Element;
+};
+export declare class AccountUsageDialog extends ViewBase {
+    tr: AccountUsageDialogStores['t'];
+    data: AccountUsageDialogHooks['data'];
+    isLoading: boolean;
+    isError: boolean;
+    refetch: AccountUsageDialogHooks['refetch'];
+    rules: AccountUsageDialogHooks['rules'];
+    reading: AccountUsageDialogHooks['reading'];
+    modules: AccountUsageDialogHooks['modules'];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+    };
+    /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+    useHooks(): {
+        data: NoInfer<import("./api").AccountUsage> | undefined;
+        isLoading: boolean;
+        isError: boolean;
+        refetch: (options?: import("@tanstack/query-core").RefetchOptions) => Promise<import("@tanstack/query-core").QueryObserverResult<NoInfer<import("./api").AccountUsage>, Error>>;
+        rules: import("./categories").CategoryRules;
+        reading: import("./categories").CategoryReading;
+        modules: import("./api").AccountModuleUsage[];
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get name(): string;
+    get part1_props(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        name: string;
+        onClose: () => void;
+        onEditQuota: (() => void) | undefined;
+        isLoading: boolean;
+        isError: boolean;
+        refetch: (options?: import("@tanstack/query-core").RefetchOptions) => Promise<import("@tanstack/query-core").QueryObserverResult<NoInfer<import("./api").AccountUsage>, Error>>;
+        data: NoInfer<import("./api").AccountUsage> | undefined;
+        account: Consumer;
+        reading: import("./categories").CategoryReading;
+        modules: import("./api").AccountModuleUsage[];
+        rules: import("./categories").CategoryRules;
+    };
+    /** A part of the screen still written in React (<FloatingWindow> actions.confirm: no .kbview property). */
+    get Part1(): typeof __parts.Part1;
+    panel_mouse_down(_sender: unknown, args: MouseEventArgs): void;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type AccountUsageDialogStores = ReturnType<AccountUsageDialog['useStores']>;
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type AccountUsageDialogHooks = ReturnType<AccountUsageDialog['useHooks']>;
+declare const _default: import("react").FunctionComponent<Readonly<AccountUsageDialogProps>>;
+export default _default;

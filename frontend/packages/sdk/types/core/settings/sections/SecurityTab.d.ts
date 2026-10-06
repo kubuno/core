@@ -2,7 +2,6 @@
  * Code-behind of `SecurityTab.kbview` (converted from `SecurityTab.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs } from '@kubuno/views';
-import { TwoFactorSection } from "./TwoFactorSection";
 import { ViewBase } from './SecurityTab.kbview';
 export declare class SecurityTab extends ViewBase {
     accessor form: {
@@ -29,7 +28,7 @@ export declare class SecurityTab extends ViewBase {
     }[];
     get show_error(): boolean;
     /** `<TwoFactorSection>`, rendered by a ReactHost. */
-    get TwoFactorSection(): typeof TwoFactorSection;
+    get TwoFactorSection(): import("react").FunctionComponent<Readonly<{}>>;
     handleSubmit(e: React.FormEvent): Promise<void>;
     panel_submit(_sender: unknown, args: EventArgs): Promise<void>;
     text_field_text_changed(_sender: unknown, args: EventArgs): void;

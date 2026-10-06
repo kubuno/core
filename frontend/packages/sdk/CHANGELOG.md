@@ -6,6 +6,26 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-10-06
+
+### Changed
+
+- **Type surface of the migrated core.** The declarations follow the core screens now written as `.kbview` views
+  (administration, settings, shell, sign-in): their code-behinds and generated view declarations replace the TSX
+  components' types that 0.1.12 still described.
+
+### Added
+
+- `useSlotRegistryVersion()`: renders the calling component again whenever a slot, an override, a module admin
+  section, a settings route or a notification group is registered or removed. `<Slot>`, `useHasSlot()` and
+  `useModuleAdminSections()` use it.
+
+### Fixed
+
+- **`<Slot>` shows what a module contributes after the first render** (it read the registry without subscribing to
+  it). It also keys each contribution by module and rank, so a module contributing several components to one slot
+  (drive: six app dialogs) no longer gives React duplicate keys.
+
 ## [0.1.12] - 2026-10-05
 
 ### Changed

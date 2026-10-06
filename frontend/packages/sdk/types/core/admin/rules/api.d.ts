@@ -9,7 +9,7 @@ export declare const EXEC_KEY: readonly ["admin-rules-executions"];
  */
 export declare function useRuleCatalog(enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<Catalog>, Error>;
 export declare function useRules(enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<RulesListResponse>, Error>;
-interface RuleDetail {
+export interface RuleDetail {
     rule: Rule;
     versions: VersionRow[];
     backtests: BacktestRow[];
@@ -89,4 +89,3 @@ export declare function useUsersLite(enabled?: boolean, limit?: number): import(
     total: number;
 }>, Error>;
 export declare function useGroupMembers(ids: string[], enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<Record<string, string[]>>, Error>;
-export {};

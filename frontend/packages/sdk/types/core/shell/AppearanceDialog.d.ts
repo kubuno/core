@@ -2,7 +2,7 @@
  * Code-behind of `AppearanceDialog.kbview` (converted from `AppearanceDialog.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs } from '@kubuno/views';
-import { type AppearanceMode } from "../store/appearanceStore";
+import { APPEARANCE_DEFAULT, type AppearanceMode } from "../store/appearanceStore";
 import { ViewBase } from './AppearanceDialog.kbview';
 import * as __parts from './AppearanceDialog.parts';
 export type AppearanceDialogProps = {
@@ -12,6 +12,7 @@ export type AppearanceDialogProps = {
 export declare class AppearanceDialog extends ViewBase {
     tr: AppearanceDialogStores['t'];
     setPref: AppearanceDialogStores['setPref'];
+    current: typeof APPEARANCE_DEFAULT;
     /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
     useStores(): {
         t: import("i18next").TFunction<"translation", undefined>;
@@ -19,7 +20,6 @@ export declare class AppearanceDialog extends ViewBase {
     };
     /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
     use(): void;
-    get current(): import("../store/appearanceStore").ModuleAppearance;
     get modes(): {
         id: AppearanceMode;
         label: string;

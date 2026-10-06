@@ -1,5 +1,3 @@
-import GettingStartedCard from "../health/GettingStartedCard";
-import AlertsCard from "../alerts/AlertsCard";
 import { ViewBase } from './HomeSection.kbview';
 import * as __parts from './HomeSection.parts';
 export declare class HomeSection extends ViewBase {
@@ -21,7 +19,7 @@ export declare class HomeSection extends ViewBase {
     get storageQuota(): number;
     get storagePct(): number;
     /** `<GettingStartedCard>`, rendered by a ReactHost. */
-    get GettingStartedCard(): typeof GettingStartedCard;
+    get GettingStartedCard(): import("react").FunctionComponent<Readonly<{}>>;
     get show_sees_users(): boolean;
     get part1_props(): {
         t: import("i18next").TFunction<"translation", undefined>;
@@ -58,7 +56,7 @@ export declare class HomeSection extends ViewBase {
     get Part4(): typeof __parts.Part4;
     get show_sees_alerts(): boolean;
     /** `<AlertsCard>`, rendered by a ReactHost. */
-    get AlertsCard(): typeof AlertsCard;
+    get AlertsCard(): import("react").FunctionComponent<Readonly<{}>>;
     get show_sees_groups(): boolean;
     get part5_props(): {
         t: import("i18next").TFunction<"translation", undefined>;

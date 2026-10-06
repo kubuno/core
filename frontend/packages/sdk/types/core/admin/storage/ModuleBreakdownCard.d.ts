@@ -1,57 +1,136 @@
-import type { ModuleBreakdown } from './api';
-/**
- * Where the consumed bytes came from.
- *
- * ## The one rule this card exists to obey
- *
- * **Nothing here is inferred from `used_bytes`.** Every figure is something a
- * module said about itself through `POST /internal/storage/usage`. A module that
- * never declared is drawn as *unknown*, never as zero — the two are different
- * facts and telling them apart is the entire point. Whatever the declarations
- * do not cover is its own named slice ("not attributed"), so the gap in the
- * picture is visible rather than absorbed into whichever module happens to be
- * biggest.
- *
- * ## Two readings, and why they do not add up to each other
- *
- * The **first bar is what is charged**: the share of each module's declaration
- * that counts against a quota, plus the part nobody claimed. It answers "why is
- * this account full".
- *
- * The **second reading is what is occupied**: everything the modules physically
- * hold, split by category, billed or not. It answers "how big a disk do I need".
- * It is legitimately larger than the first — thumbnails, indexes and caches take
- * room without being charged to anyone, on purpose: a user never asked for them
- * and cannot delete them.
- *
- * `delegated` sits in neither. It is bytes one module caused and another module
- * stores, and the one that stores them already counts them; it is drawn as a
- * separate note precisely so the anti-double-count rule is visible instead of
- * being an invisible subtraction.
- *
- * ## Colour
- *
- * Series identity comes from the fixed categorical scale `--kb-chart-1..8`,
- * assigned **by module id in a stable order** and never by rank: a module that
- * grows past another must not swap colours with it, or the reader learns that
- * the colours mean nothing. Past the scale's eight slots the remainder folds
- * into one "other modules" entry rather than inventing a ninth hue.
- *
- * The dark steps are a separate, separately-validated set rather than a filter
- * over the light ones, and they are chosen here in JS: Kubuno's themes are
- * applied by writing variables from the theme store, not through
- * `prefers-color-scheme`, so a CSS-only switch would stay light on a
- * hand-picked dark theme. `useUiTheme` is the same answer `MenuDropdown` uses.
- *
- * The residual slice is deliberately *not* on that scale: it is not an identity,
- * it is the absence of one, and giving it a series colour would make it read as
- * a module called "unattributed". It takes the same neutral the volume bar uses
- * for unaccounted content.
- *
- * Three of the light-mode series sit under 3:1 against a white card, which is
- * legal only because the legend names every series with its value beside it —
- * colour is never the only way to tell two slices apart here.
- */
-export default function ModuleBreakdownCard({ data }: {
+import { type Segment } from "./charts";
+import type { ModuleBreakdown, ModuleUsage } from "./api";
+import { ViewBase } from './ModuleBreakdownCard.kbview';
+import * as __parts from './ModuleBreakdownCard.parts';
+export type ModuleBreakdownCardProps = {
     data: ModuleBreakdown;
-}): import("react").JSX.Element;
+};
+export declare class ModuleBreakdownCard extends ViewBase {
+    accessor open: string | null;
+    tr: ModuleBreakdownCardStores['t'];
+    series: readonly string[];
+    rules: ModuleBreakdownCardHooks['rules'];
+    reading: ModuleBreakdownCardHooks['reading'];
+    declaring: (ModuleUsage & {
+        used_bytes: number;
+    })[];
+    silent: ModuleUsage[];
+    colorOf: (id: string) => string;
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        series: readonly string[];
+    };
+    /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+    useHooks(): {
+        rules: import("./categories").CategoryRules;
+        reading: import("./categories").CategoryReading;
+        declaring: (ModuleUsage & {
+            used_bytes: number;
+        })[];
+        silent: ModuleUsage[];
+        colorOf: (id: string) => string;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get withBytes(): (ModuleUsage & {
+        used_bytes: number;
+    })[];
+    get shown(): (ModuleUsage & {
+        used_bytes: number;
+    })[];
+    get folded(): (ModuleUsage & {
+        used_bytes: number;
+    })[];
+    get foldedBytes(): number;
+    get total(): number;
+    get segments(): Segment[];
+    get nothingDeclared(): boolean;
+    get show_not_nothing_declared(): boolean;
+    /** `<CompositionBar>`, rendered by a ReactHost. */
+    get CompositionBar(): import("react").FunctionComponent<Readonly<import("./CompositionBar").CompositionBarProps>>;
+    get composition_bar_props(): {
+        segments: Segment[];
+        total: number;
+        ariaLabel: string;
+    };
+    get show_declaring(): boolean;
+    /** A part of the screen still written in React (<button aria-expanded>: attribute(s) without a .kbview property). */
+    get Part1(): typeof __parts.Part1;
+    /** `React.Fragment`: renders the elements an expression holds. */
+    get Fragment(): import("react").ExoticComponent<import("react").FragmentProps>;
+    /** `<CategoryRows>`, rendered by a ReactHost. */
+    get CategoryRows(): import("react").FunctionComponent<Readonly<import("./CategoryRows").CategoryRowsProps>>;
+    /** `<DelegatedNote>`, rendered by a ReactHost. */
+    get DelegatedNote(): import("react").FunctionComponent<Readonly<import("./DelegatedNote").DelegatedNoteProps>>;
+    /** The rows of the Repeater over `declaring`. */
+    get rows_declaring(): {
+        m: ModuleUsage & {
+            used_bytes: number;
+        };
+        cats: import("./api").CategoryUsage[];
+        expandable: boolean;
+        isOpen: boolean;
+        meta: string;
+        identity: import("react").JSX.Element;
+        show_not_expandable: boolean | undefined;
+        part1_props: {
+            isOpen: boolean;
+            setOpen: (value: string | null | ((prev: string | null) => string | null)) => void;
+            m: ModuleUsage & {
+                used_bytes: number;
+            };
+            identity: import("react").JSX.Element;
+        } | undefined;
+        content_identity: {
+            children: import("react").JSX.Element;
+        } | undefined;
+        span_text: string | undefined;
+        category_rows_props: {
+            rows: import("./api").CategoryUsage[];
+            rules: import("./categories").CategoryRules;
+        } | undefined;
+        delegated_note_props: {
+            bytes: number;
+            objects: number;
+            scope: string;
+            className: string;
+        } | undefined;
+        key: string;
+    }[];
+    get part2_props(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        data: ModuleBreakdown;
+    };
+    /** A part of the screen still written in React (<Figure> is no .kbview element (./Figure#default)). */
+    get Part2(): typeof __parts.Part2;
+    /** A part of the screen still written in React (<Figure> is no .kbview element (./Figure#default)). */
+    get Part3(): typeof __parts.Part3;
+    /** A part of the screen still written in React (<Figure> is no .kbview element (./Figure#default)). */
+    get Part4(): typeof __parts.Part4;
+    /** `<CategoryComposition>`, rendered by a ReactHost. */
+    get CategoryComposition(): import("react").FunctionComponent<Readonly<import("./CategoryComposition").CategoryCompositionProps>>;
+    get category_composition_props(): {
+        reading: import("./categories").CategoryReading;
+        heldBytes: number;
+        ariaLabel: string;
+        delegatedBytes: number;
+        delegatedObjects: number;
+    };
+    get show_silent(): boolean;
+    /** The rows of the Repeater over `silent`. */
+    get rows_silent(): {
+        m: ModuleUsage;
+        key: string;
+    }[];
+    get show_data_over_declared(): boolean;
+    get sto_mod_over_bytes(): string;
+    /** `setOpen` of the TSX: a value, or an update of the previous one. */
+    setOpen(value: string | null | ((prev: string | null) => string | null)): void;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ModuleBreakdownCardStores = ReturnType<ModuleBreakdownCard['useStores']>;
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type ModuleBreakdownCardHooks = ReturnType<ModuleBreakdownCard['useHooks']>;
+declare const _default: import("react").FunctionComponent<Readonly<ModuleBreakdownCardProps>>;
+export default _default;

@@ -1,4 +1,4 @@
-interface Props {
+export interface Props {
     open: boolean;
     onClose: () => void;
     /** Re-connecting a « Déconnecté » row: its email, locked in the form. */
@@ -7,4 +7,3 @@ interface Props {
     slot?: number;
 }
 export default function AddAccountModal({ open, onClose, prefillEmail, slot }: Props): import("react").JSX.Element;
-export {};

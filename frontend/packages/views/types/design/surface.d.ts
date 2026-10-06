@@ -12,6 +12,8 @@ export interface ProjectInfo {
     viewsAbi: number;
     compiler: string;
     themes?: string[];
+    /** Project modules imported before the first render (`design.setup`: the project's stylesheet, translations). */
+    setup?: string[];
 }
 export interface SurfaceConfig {
     readonly mode: 'project' | 'bundled';
@@ -77,6 +79,8 @@ export declare class DesignSurface {
     private editing;
     constructor(config: SurfaceConfig);
     start(): Promise<void>;
+    /** Imports the project's setup modules in order; one that fails is logged and the others still load. */
+    private importSetup;
     private userControls;
     /** (Re)opens a compiler session over the current registries and user controls. */
     private openCompiler;

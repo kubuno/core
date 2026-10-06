@@ -1,8 +1,17 @@
-/**
- * Landing page of an SSO sign-in. The server's callback has already opened the
- * session and set the HttpOnly refresh cookie; the app's bootstrap
- * (`initialize()`, a same-origin refresh) turns it into an access token held in
- * memory. Nothing is read from a cookie here: the access token never travels in
- * a script-readable cookie.
- */
-export default function OAuthCallback(): import("react").JSX.Element;
+import { ViewBase } from './OAuthCallback.kbview';
+export declare class OAuthCallback extends ViewBase {
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        params: URLSearchParams;
+        navigate: import("react-router").NavigateFunction;
+        isInitialized: boolean;
+        user: import("../types").User | null;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type OAuthCallbackStores = ReturnType<OAuthCallback['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<{}>>;
+export default _default;

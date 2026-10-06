@@ -6,6 +6,14 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-10-06
+
+### Changed
+
+- Rebuilt with the core of this release: the module list the bundle carries asks the live `.kbview` views to
+  compute again what they memoized once module bundles have loaded (`invalidateViews` of `@kubuno/views`). No
+  change to the components or their props.
+
 ## [0.1.16] - 2026-10-06
 
 ### Added

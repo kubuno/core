@@ -12,7 +12,7 @@ export declare const ALERTS_KEY: readonly ["admin-alerts"];
 export declare const SUMMARY_KEY: readonly ["admin-alerts-summary"];
 export declare const FACETS_KEY: readonly ["admin-alerts-facets"];
 export declare const VIEWS_KEY: readonly ["admin-alerts-views"];
-interface AlertPage {
+export interface AlertPage {
     alerts: Alert[];
     next_cursor: string | null;
 }
@@ -28,7 +28,7 @@ export declare function useAlerts(filters: AlertFilters, enabled?: boolean): imp
  */
 export declare function useAlertSummary(enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<AlertSummary>, Error>;
 export declare function useAlertFacets(enabled?: boolean): import("@tanstack/react-query").UseQueryResult<NoInfer<AlertFacets>, Error>;
-interface AlertDetail {
+export interface AlertDetail {
     alert: Alert;
     timeline: AlertEvent[];
     related: Alert[];
@@ -66,4 +66,3 @@ export declare function useSaveAlertView(): import("@tanstack/react-query").UseM
     filters: Record<string, string>;
 }, unknown>;
 export declare function useDeleteAlertView(): import("@tanstack/react-query").UseMutationResult<import("axios").AxiosResponse<any, any, {}>, Error, string, unknown>;
-export {};

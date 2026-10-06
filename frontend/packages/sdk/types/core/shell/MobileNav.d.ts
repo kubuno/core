@@ -1,16 +1,36 @@
-/**
- * Primary mobile navigation. Two placements share one set of destinations:
- *  · `variant="bottom"` (default) — a fixed bottom bar, used in portrait.
- *  · `variant="rail"` — a vertical left rail rendered in the shell's flex flow,
- *    used in landscape where a bottom bar would eat the already-short height
- *    (mirrors the Google Drive tablet/landscape layout).
- *
- * Destinations come from the active module's `mobileTabs` (Drive: Home /
- * Starred / Shared / Files). NO fallback: outside a module that declares tabs
- * there is no bar at all (the drawer + waffle FAB carry the navigation) — a
- * generic Home/Modules/Settings bar was pure clutter. Modules never render
- * their own bar — that would stack two of them.
- */
-export default function MobileNav({ variant }: {
+import { type MobileNavTab } from "../store/sidebarStore";
+import { ViewBase } from './MobileNav.kbview';
+export type MobileNavProps = {
     variant?: 'bottom' | 'rail';
-}): import("react").JSX.Element | null;
+};
+export declare class MobileNav extends ViewBase {
+    pathname: string;
+    configs: MobileNavStores['configs'];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        pathname: string;
+        configs: import("../store/sidebarStore").SidebarConfig[];
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get variant(): "bottom" | "rail";
+    get active(): import("../store/sidebarStore").SidebarConfig | null;
+    get tabs(): MobileNavTab[] | undefined;
+    get items(): import("react").JSX.Element[];
+    get show_case_1(): boolean;
+    get show_case_2(): boolean;
+    get show_case_3(): boolean;
+    /** `React.Fragment`: renders the elements an expression holds. */
+    get Fragment(): import("react").ExoticComponent<import("react").FragmentProps>;
+    get content_items(): {
+        children: import("react").JSX.Element[];
+    };
+    get show_main(): boolean;
+    get content_items2(): {
+        children: import("react").JSX.Element[];
+    };
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type MobileNavStores = ReturnType<MobileNav['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<MobileNavProps>>;
+export default _default;

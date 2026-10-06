@@ -4,7 +4,9 @@
  *
  * Granularity: every element subscribes to its view's store and recomputes the values it reads; it
  * re-renders only when one of them changed (elements are memoised, a parent's render does not re-render
- * them). The view root re-renders on every change, to run the code-behind's `use()`.
+ * them). The view root re-renders on every change, to run the code-behind's `use()`. The one exception is
+ * `ReactHost`: the React component it hosts renders again with its view root, as it did as a child of the TSX
+ * screen the view replaces (it may read state nothing notifies the view of — a registry a module fills later).
  */
 import { type ComponentType, type ReactNode } from 'react';
 import { type Scope } from './binding';

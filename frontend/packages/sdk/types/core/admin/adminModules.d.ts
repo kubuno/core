@@ -83,7 +83,7 @@ export type ModuleLiveState = 'disabled' | 'unreachable' | 'running' | 'unknown'
 export declare function useModuleLiveState(): (module: AdminModule) => ModuleLiveState;
 /** i18n key of a live state, for a chip or a menu row title. */
 export declare const LIVE_STATE_KEY: Record<ModuleLiveState, string>;
-interface ToggleResult {
+export interface ToggleResult {
     id: string;
     is_enabled: boolean;
     also_disabled: string[];

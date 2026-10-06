@@ -3,9 +3,7 @@
  */
 import { type MouseEventArgs } from '@kubuno/views';
 import { Slot } from "../slots/SlotRegistry";
-import { MobileSettingsIndex, type Tab } from "./navigation";
-import { ApiTokensTab } from "./sections/ApiTokensTab";
-import { MyDataTab } from "./sections/my-data/MyDataTab";
+import { type Tab } from "./navigation";
 import { ViewBase } from './SettingsPage.kbview';
 export declare class SettingsPage extends ViewBase {
     tr: SettingsPageStores['t'];
@@ -28,7 +26,7 @@ export declare class SettingsPage extends ViewBase {
     get current(): import("./navigation").NavItem | undefined;
     get show_case_1(): boolean;
     /** `<MobileSettingsIndex>`, rendered by a ReactHost. */
-    get MobileSettingsIndex(): typeof MobileSettingsIndex;
+    get MobileSettingsIndex(): import("react").FunctionComponent<Readonly<{}>>;
     get show_main(): boolean;
     get show_not_is_mobile(): boolean;
     get span_text(): string;
@@ -53,10 +51,10 @@ export declare class SettingsPage extends ViewBase {
     get SessionsTab(): import("react").FunctionComponent<Readonly<{}>>;
     get show_tab_api_tokens(): boolean;
     /** `<ApiTokensTab>`, rendered by a ReactHost. */
-    get ApiTokensTab(): typeof ApiTokensTab;
+    get ApiTokensTab(): import("react").FunctionComponent<Readonly<{}>>;
     get show_tab_my_data(): boolean;
     /** `<MyDataTab>`, rendered by a ReactHost. */
-    get MyDataTab(): typeof MyDataTab;
+    get MyDataTab(): import("react").FunctionComponent<Readonly<{}>>;
     get show_is_mobile(): boolean;
     /** `<Slot>`, rendered by a ReactHost. */
     get Slot(): typeof Slot;

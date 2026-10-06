@@ -23,11 +23,3 @@ export declare const SETTINGS_NAV: NavItem[];
  * rather than true in two places out of three.
  */
 export declare function useSettingsNav(): NavItem[];
-/**
- * Section index (mobile only). The section nav lives in the left panel, which on
- * a phone is an off-canvas drawer — so a mobile user landing on /settings would
- * see "Profile" and no hint that six other sections exist. Below `lg`, /settings
- * (with no ?tab=) becomes a plain list of sections, and picking one drills into
- * it with a back row. Same URLs, so links and the desktop layout are untouched.
- */
-export declare function MobileSettingsIndex(): import("react").JSX.Element;

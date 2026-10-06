@@ -1,13 +1,26 @@
-/**
- * Where the rest went.
- *
- * The instance profile used to carry every setting of the instance, in one
- * scroll. It now carries what identifies the instance, and each subsystem's
- * knobs live on the page that shows their consequences. An operator who knew
- * the old page would otherwise conclude the settings were removed, so the page
- * names their destinations instead of leaving them to the menu.
- *
- * Only destinations this caller may actually open are listed: naming a page
- * somebody is refused is a worse answer than not naming it.
- */
-export default function SettingsMovedNotice(): import("react").JSX.Element | null;
+import { ViewBase } from './SettingsMovedNotice.kbview';
+import * as __parts from './SettingsMovedNotice.parts';
+export declare class SettingsMovedNotice extends ViewBase {
+    tr: SettingsMovedNoticeStores['t'];
+    can: SettingsMovedNoticeStores['can'];
+    /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+    useStores(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        can: import("../../authz/types").CanFn;
+    };
+    /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+    use(): void;
+    get targets(): string[];
+    get show_case_1(): boolean;
+    get show_main(): boolean;
+    get part1_props(): {
+        t: import("i18next").TFunction<"translation", undefined>;
+        targets: string[];
+    };
+    /** A part of the screen still written in React (<Callout> with element children). */
+    get Part1(): typeof __parts.Part1;
+}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type SettingsMovedNoticeStores = ReturnType<SettingsMovedNotice['useStores']>;
+declare const _default: import("react").FunctionComponent<Readonly<{}>>;
+export default _default;

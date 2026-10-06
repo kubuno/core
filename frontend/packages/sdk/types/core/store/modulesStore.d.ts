@@ -3,15 +3,14 @@ interface ModulesState {
     activeModules: ActiveModule[];
     sidebarItems: SidebarItem[];
     isLoading: boolean;
-    /** `false` jusqu'à ce que le PREMIER chargement des modules soit terminé.
-     *  Sur un rechargement dur d'une route de module (F5 sur /drive), les bundles
-     *  UI sont chargés à l'exécution de façon asynchrone : tant que ce flag est
-     *  faux, le routeur ne doit PAS afficher 404 (la route du module n'est pas
-     *  encore enregistrée) mais un écran de chargement. */
+    /** `false` until the FIRST load of the modules has finished. On a hard
+     *  reload of a module route (F5 on /drive), the UI bundles are loaded at run
+     *  time, asynchronously: while this flag is false the router must NOT show a
+     *  404 (the module's route is not registered yet) but a loading screen. */
     modulesReady: boolean;
-    /** Incrémenté chaque fois qu'un bundle de module est chargé à l'exécution.
-     *  Les composants qui lisent des registries non-réactifs (RouteRegistry) s'y
-     *  abonnent pour se re-rendre après l'enregistrement des routes du module. */
+    /** Incremented each time a module bundle is loaded at run time. Components
+     *  reading non-reactive registries (RouteRegistry) subscribe to it to render
+     *  again once the module's routes are registered. */
     loadedVersion: number;
     fetchModules: () => Promise<void>;
 }
