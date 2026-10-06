@@ -1,26 +1,26 @@
 import { create } from 'zustand'
+import { invalidateViews } from '@kubuno/views'
 import { modulesApi } from '../api/modules'
 import { loadRemoteModules } from '../modules/loadRemoteModules'
 import type { ActiveModule, SidebarItem } from '../types'
 
-// Le panneau de gauche n'a plus d'item par défaut : ni modules, ni « Accueil »
-// (la home reste accessible via le logo). Le panneau ne s'affiche donc que
-// lorsqu'un module fournit sa propre navigation ; sinon il est caché/enroulé.
+// The left panel has no default item any more: neither modules nor "Home" (the
+// home page stays reachable through the logo). The panel therefore only shows
+// when a module provides its own navigation; otherwise it is hidden/collapsed.
 const CORE_ITEMS: SidebarItem[] = []
 
 interface ModulesState {
   activeModules: ActiveModule[]
   sidebarItems: SidebarItem[]
   isLoading: boolean
-  /** `false` jusqu'à ce que le PREMIER chargement des modules soit terminé.
-   *  Sur un rechargement dur d'une route de module (F5 sur /drive), les bundles
-   *  UI sont chargés à l'exécution de façon asynchrone : tant que ce flag est
-   *  faux, le routeur ne doit PAS afficher 404 (la route du module n'est pas
-   *  encore enregistrée) mais un écran de chargement. */
+  /** `false` until the FIRST load of the modules has finished. On a hard
+   *  reload of a module route (F5 on /drive), the UI bundles are loaded at run
+   *  time, asynchronously: while this flag is false the router must NOT show a
+   *  404 (the module's route is not registered yet) but a loading screen. */
   modulesReady: boolean
-  /** Incrémenté chaque fois qu'un bundle de module est chargé à l'exécution.
-   *  Les composants qui lisent des registries non-réactifs (RouteRegistry) s'y
-   *  abonnent pour se re-rendre après l'enregistrement des routes du module. */
+  /** Incremented each time a module bundle is loaded at run time. Components
+   *  reading non-reactive registries (RouteRegistry) subscribe to it to render
+   *  again once the module's routes are registered. */
   loadedVersion: number
 
   fetchModules: () => Promise<void>
@@ -37,16 +37,22 @@ export const useModulesStore = create<ModulesState>((set) => ({
     set({ isLoading: true })
     try {
       const { data } = await modulesApi.list()
-      // Les modules ne sont plus affichés dans le panneau de gauche par défaut :
-      // on garde uniquement les items du core. Les modules restent enregistrés
-      // (`activeModules`) pour le routage et le chargement de leurs bundles UI.
+      // Modules are no longer shown in the left panel by default: only the core
+      // items are kept. The modules stay registered (`activeModules`) for routing
+      // and for loading their UI bundles.
       set({ activeModules: data.modules, sidebarItems: CORE_ITEMS })
-      // Charge les bundles UI des modules à l'exécution (no-op pour ceux déjà
-      // chargés). Bump loadedVersion si de nouvelles routes/slots sont apparus.
+      // Loads the modules' UI bundles at run time (a no-op for those already
+      // loaded). Bumps loadedVersion when new routes/slots appeared.
       const n = await loadRemoteModules(data.modules)
-      if (n > 0) set((s) => ({ loadedVersion: s.loadedVersion + 1 }))
+      if (n > 0) {
+        set((s) => ({ loadedVersion: s.loadedVersion + 1 }))
+        // The live `.kbview` screens compute again what they memoized from the registries the modules just filled
+        // (home widgets, notification groups, the top bar's settings override): a TSX screen recomputed those on
+        // the re-render this bump causes, a view keeps its memos until told — as after a language change.
+        invalidateViews()
+      }
     } catch {
-      // Garder les core items si l'API échoue
+      // Keep the core items if the API fails
     } finally {
       set({ isLoading: false, modulesReady: true })
     }

@@ -4,13 +4,16 @@
  *
  * Granularity: every element subscribes to its view's store and recomputes the values it reads; it
  * re-renders only when one of them changed (elements are memoised, a parent's render does not re-render
- * them). The view root re-renders on every change, to run the code-behind's `use()`.
+ * them). The view root re-renders on every change, to run the code-behind's `use()`. The one exception is
+ * `ReactHost`: the React component it hosts renders again with its view root, as it did as a child of the TSX
+ * screen the view replaces (it may read state nothing notifies the view of — a registry a module fills later).
  */
 import {
   Fragment,
   createContext,
   createElement,
   memo,
+  use,
   useContext,
   useEffect,
   useLayoutEffect,
@@ -32,6 +35,13 @@ type Props = Record<string, unknown>
 type AnyComponent = ComponentType<Props>
 
 const ViewContext = createContext<Internals | null>(null)
+/**
+ * How many times the nearest view root has rendered. Only `ReactHost` elements read it: a context change reaches
+ * them through the memoised elements, so the hosted component renders again whenever its view root does — the
+ * re-render a TSX child got from its parent, which a hosted component may depend on (`<Slot>` reads its registry
+ * on render: a dialog a module registers after the first render appears on the next render of the screen).
+ */
+const RootRender = createContext(0)
 const dev = (): boolean => (import.meta as { env?: { DEV?: boolean } }).env?.DEV !== false
 
 // ── Plan helpers ──
@@ -558,6 +568,9 @@ function build(
 export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNode {
   const i = useContext(ViewContext)
   if (!i) throw new Error('[views] an element rendered outside its view')
+  // A hosted React component renders again with its view root (`RootRender`); `use` may be called conditionally,
+  // and a node's element kind never changes for a given KbNode.
+  if (node.el === 'ReactHost') use(RootRender)
   const cache = useRef<unknown[] | null>(null)
   const props = snapshotProps(i, node)
   const getSnapshot = (): unknown[] => {
@@ -585,6 +598,8 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
 
   const built = build(i, node, scope, values, pending, setPending, [selected, setSelected])
   const rootRef = useRef<HTMLElement | null>(null)
+  /** The `display: contents` wrapper, when the element needs one to reach its DOM root. */
+  const wrapRef = useRef<HTMLElement | null>(null)
   const applied = useRef<{ attrs: string[]; classes: string[]; style: string[] }>({ attrs: [], classes: [], style: [] })
 
   useLayoutEffect(() => {
@@ -609,6 +624,28 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
     for (const [s, v] of Object.entries(built.dom.style)) {
       el.style.setProperty(s, v)
       now.style.push(s)
+    }
+    const wrap = wrapRef.current
+    if (wrap && wrap !== el && wrap.isConnected) {
+      // The `display: contents` wrapper sits among the parent's children, where the parent's child selectors
+      // (`space-y-*`, `divide-y`) give it margins and borders it never draws: the element it wraps takes them, on the
+      // sides it sets none of its own (its own classes win over the parent's, as they did without a wrapper).
+      const w = getComputedStyle(wrap)
+      const own = getComputedStyle(el)
+      for (const side of ['top', 'right', 'bottom', 'left']) {
+        const m = `margin-${side}`
+        if (parseFloat(w.getPropertyValue(m)) && !parseFloat(own.getPropertyValue(m)) && !el.style.getPropertyValue(m)) {
+          el.style.setProperty(m, w.getPropertyValue(m))
+          now.style.push(m)
+        }
+        const bw = `border-${side}-width`
+        if (parseFloat(w.getPropertyValue(bw)) && w.getPropertyValue(`border-${side}-style`) !== 'none' && !parseFloat(own.getPropertyValue(bw)) && !el.style.getPropertyValue(bw)) {
+          for (const p of [bw, `border-${side}-style`, `border-${side}-color`]) {
+            el.style.setProperty(p, w.getPropertyValue(p))
+            now.style.push(p)
+          }
+        }
+      }
     }
     applied.current = now
     const off: (() => void)[] = []
@@ -666,7 +703,10 @@ export const KbNode = memo(function KbNode({ node, scope }: NodeProps): ReactNod
     if (built.needsDom) {
       element = createElement('div', {
         style: { display: 'contents' },
-        ref: (el: HTMLElement | null) => { rootRef.current = (el?.firstElementChild as HTMLElement | null) ?? el },
+        ref: (el: HTMLElement | null) => {
+          wrapRef.current = el
+          rootRef.current = (el?.firstElementChild as HTMLElement | null) ?? el
+        },
       }, element)
     }
   }
@@ -900,9 +940,11 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
       setLive(i, false)
     }
   }, [cell, i])
+  const renders = useRef(0)
+  renders.current++
   const content = createElement(KbNode, { node: plan.root, scope: i.scope })
   const body = responsive ? createElement('div', { ref: rootEl, style: { display: 'contents' } }, content) : content
-  return createElement(ViewContext.Provider, { value: i }, body)
+  return createElement(ViewContext.Provider, { value: i }, createElement(RootRender.Provider, { value: renders.current }, body))
 }
 
 setComponentFactory((cell, cls) => {

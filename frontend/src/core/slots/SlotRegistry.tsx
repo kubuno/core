@@ -1,5 +1,28 @@
-import React from 'react'
+import React, { useSyncExternalStore } from 'react'
 import { useModulesStore } from '../store/modulesStore'
+
+// ── Change notification ─────────────────────────────────────────────────────────
+// Modules register their contributions when their bundle loads, which is usually AFTER the shell's first render
+// (and a module may register more later). Whatever renders from these registries subscribes here, so it renders
+// again on its own instead of depending on an unrelated re-render of a parent (which a `.kbview` screen, whose
+// elements are memoised, does not give its hosted React components the way a TSX parent did).
+let registryVersion = 0
+const registryListeners = new Set<() => void>()
+
+function registryChanged(): void {
+  registryVersion++
+  for (const l of [...registryListeners]) l()
+}
+
+function subscribeRegistry(listener: () => void): () => void {
+  registryListeners.add(listener)
+  return () => { registryListeners.delete(listener) }
+}
+
+/** Renders the calling component again whenever a slot, an override or a module admin section is (un)registered. */
+export function useSlotRegistryVersion(): number {
+  return useSyncExternalStore(subscribeRegistry, () => registryVersion, () => registryVersion)
+}
 
 // Core reserves these well-known slot names. Modules may use any string as a slot
 // name for inter-module contributions (e.g. "files-open-with") — those are defined
@@ -105,6 +128,7 @@ export const ModuleAdminRegistry = {
     )
     if (i >= 0) moduleAdminSections[i] = section
     else moduleAdminSections.push(section)
+    registryChanged()
   },
 
   /** What `moduleId` contributes, in display order. */
@@ -118,10 +142,10 @@ export const ModuleAdminRegistry = {
 interface SlotEntry {
   moduleId: string
   Component: React.ComponentType
-  /** Prédicat optionnel d'applicabilité. Quand il est fourni, le consommateur du
-   *  slot peut filtrer les contributeurs qui ne s'appliquent pas à un contexte
-   *  donné (ex. « files-open-with » : ne garder que les modules capables d'ouvrir
-   *  le fichier visé). L'argument est défini par le consommateur du slot. */
+  /** Optional applicability predicate. When given, the slot's consumer can leave
+   *  out the contributors that do not apply to a given context (e.g.
+   *  "files-open-with": keep only the modules able to open the file at hand).
+   *  The argument is defined by the slot's consumer. */
   match?: (arg?: unknown) => boolean
 }
 
@@ -138,6 +162,7 @@ export const SlotRegistry = {
   register(slot: SlotName, moduleId: string, Component: React.ComponentType, match?: (arg?: unknown) => boolean) {
     if (!registry.has(slot)) registry.set(slot, [])
     registry.get(slot)!.push({ moduleId, Component, match })
+    registryChanged()
   },
 
   getSlot(slot: SlotName): SlotEntry[] {
@@ -157,6 +182,7 @@ export const SlotRegistry = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   registerOverride(key: string, moduleId: string, Component: React.ComponentType<any>) {
     overrides.set(key, { moduleId, Component })
+    registryChanged()
   },
 
   // Returns the override component if its owning module is active, otherwise null.
@@ -181,6 +207,7 @@ export const SlotRegistry = {
     for (let i = moduleAdminSections.length - 1; i >= 0; i--) {
       if (moduleAdminSections[i].moduleId === moduleId) moduleAdminSections.splice(i, 1)
     }
+    registryChanged()
   },
 }
 
@@ -199,6 +226,7 @@ const settingsRoutes = new Map<string, SettingsRoutes>()
 
 function setRoute(moduleId: string, patch: SettingsRoutes) {
   settingsRoutes.set(moduleId, { ...settingsRoutes.get(moduleId), ...patch })
+  registryChanged()
 }
 
 export const ModuleSettingsRegistry = {
@@ -268,6 +296,7 @@ export const NotificationRegistry = {
     const i = notifGroups.findIndex(g => g.moduleId === group.moduleId && g.title === group.title)
     if (i >= 0) notifGroups[i] = group
     else notifGroups.push(group)
+    registryChanged()
   },
   /** Groups to display: core groups always, module groups only when active. */
   getGroups(activeIds: Set<string>): NotifGroup[] {
@@ -280,10 +309,10 @@ export const NotificationRegistry = {
 interface SlotProps {
   name: SlotName
   fallback?: React.ReactNode
-  /* Contexte de rendu transmis aux contributions des modules — notamment `dark`,
-   * pour qu'un bouton de la topbar s'adapte aux barres teintées des applications à
-   * ruban au lieu d'y afficher du texte sombre illisible. Un module qui ignore ces
-   * props n'en souffre pas. */
+  /* Rendering context passed to the modules' contributions — notably `dark`, so
+   * that a top bar button adapts to the tinted bars of ribbon applications instead
+   * of drawing unreadable dark text there. A module ignoring these props is not
+   * affected. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [prop: string]: any
 }
@@ -292,6 +321,7 @@ interface SlotProps {
  *  active module list changes, so a page laid out around a contribution follows
  *  a module being switched off. */
 export function useHasSlot(name: SlotName): boolean {
+  useSlotRegistryVersion()
   const activeModules = useModulesStore(s => s.activeModules)
   return SlotRegistry.hasActive(name, new Set(activeModules.map(m => m.module_id)))
 }
@@ -302,12 +332,18 @@ export function useHasSlot(name: SlotName): boolean {
  * still be loaded in this tab, and rendering its panel would say it is running.
  */
 export function useModuleAdminSections(moduleId: string): ModuleAdminSection[] {
+  useSlotRegistryVersion()
   const activeModules = useModulesStore(s => s.activeModules)
   const active = activeModules.some(m => m.module_id === moduleId)
   return active ? ModuleAdminRegistry.sectionsFor(moduleId) : []
 }
 
+/**
+ * Renders what the active modules contribute to `name`. It subscribes to the registry: a contribution registered
+ * after the first render (a module bundle loaded later) shows up without anything else rendering again.
+ */
 export function Slot({ name, fallback, ...ctx }: SlotProps) {
+  useSlotRegistryVersion()
   const activeModules = useModulesStore(s => s.activeModules)
   const activeIds = new Set(activeModules.map(m => m.module_id))
 
@@ -315,8 +351,10 @@ export function Slot({ name, fallback, ...ctx }: SlotProps) {
   if (entries.length === 0) return <>{fallback}</>
   return (
     <>
-      {entries.map(({ moduleId, Component }) => (
-        <Component key={moduleId} {...ctx} />
+      {/* A module may contribute several components to one slot (drive: open, save, folder picker…): the key
+          is the module and the rank of its contribution, unique and stable while the module stays loaded. */}
+      {entries.map(({ moduleId, Component }, k) => (
+        <Component key={`${moduleId}:${entries.slice(0, k).filter(e => e.moduleId === moduleId).length}`} {...ctx} />
       ))}
     </>
   )

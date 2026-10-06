@@ -151,3 +151,41 @@ describe('memos and the language', () => {
     expect(container.querySelector('.label-fr')).not.toBeNull()
   })
 })
+
+describe('display: contents wrappers', () => {
+  it("gives the wrapped element the margin its parent's child selectors give the wrapper (space-y-*)", async () => {
+    const style = document.createElement('style')
+    style.textContent = '.stacked > :not(:last-child) { margin-bottom: 8px; }'
+    document.head.appendChild(style)
+    try {
+      function Column(props: { children?: ReactNode }): ReactNode {
+        return createElement('div', { className: 'stacked' }, props.children)
+      }
+      // A control whose root is a wrapper of its own (`TextField`: a div around the input) and takes no ref.
+      function Field(): ReactNode {
+        return createElement('div', { className: 'field' }, createElement('input'))
+      }
+      registerElements('bulk-ui', { Column, Field })
+      const Base = createViewBase({
+        abi: 1, file: 'test/Wrapped.kbview', kind: 'view', names: {}, handlers: ['keyed'],
+        root: {
+          id: '', el: 'Column', at: [1, 1], m: 'bulk-ui', x: 'Column', content: 'children',
+          children: [
+            // A DOM event: the runtime needs the element's DOM root, hence the wrapper.
+            { id: '0', el: 'TextField', at: [2, 1], m: 'bulk-ui', x: 'Field', events: [{ n: 'OnKeyDown', h: 'keyed', from: { dom: 'keydown', args: 'key' }, args_type: 'KeyEventArgs', at: [2, 20] }] },
+            { id: '1', el: 'TextField', at: [3, 1], m: 'bulk-ui', x: 'Field' },
+          ],
+        },
+      } as ViewPlan)
+      class V extends (Base as unknown as new () => Record<string, unknown>) { keyed(): void {} }
+      const { container } = render(createElement(KbView, { view: V as never }))
+      const wrapper = container.querySelector('.stacked')!.firstElementChild as HTMLElement
+      expect(wrapper.style.display).toBe('contents')
+      expect((wrapper.firstElementChild as HTMLElement).style.marginBottom).toBe('8px')
+      // The last child gets nothing (the selector does not match it), as without the wrapper.
+      expect((container.querySelector('.stacked')!.lastElementChild as HTMLElement).style.marginBottom).toBe('')
+    } finally {
+      style.remove()
+    }
+  })
+})

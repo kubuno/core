@@ -9,6 +9,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **Module dialogs appear again.** Since the shell became a view, the dialogs a module adds once it has loaded —
+  drive's « Select a file », « Save », folder picker, audio player, paint editor and remote storage — never opened:
+  the shell's dialog area read the module contributions once and never looked again. It now follows them as they are
+  registered, and every React part of a converted screen renders again with its screen, as it did before.
+- **Contributions of modules loaded after a screen is shown are taken into account**: the home page's module widgets,
+  the notification settings' module groups and a module's replacement of the top bar's settings button are computed
+  again once the modules' bundles have loaded (they kept the empty list of the first render).
+- **Spacing under a text field inside a view**: a field (or any control drawn inside its own wrapper) in a vertical
+  list kept no space below it; it gets the list's spacing again.
+
 ### Added
 
 - **Modules' web views in the Visual Studio designer, with their own code.** The designer's page is now also

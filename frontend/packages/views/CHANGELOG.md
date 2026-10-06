@@ -6,6 +6,21 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-06
+
+### Fixed
+
+- **A component hosted by `ReactHost` renders again with its view.** A converted screen's elements only render again
+  when what they read changes, so a hosted React component lost the re-render it got from its TSX parent: whatever it
+  read on render without subscribing (the shell's `<Slot name="app-dialogs">` reading the slot registry) stayed as
+  the first render left it — the dialogs a module registers once its bundle has loaded (Files open / save / folder
+  picker, audio player, paint, remote storage) never appeared. It now renders whenever its view root does.
+- **An element inside a `display: contents` wrapper keeps the spacing its parent gives it.** An element that needs
+  its DOM root (a DOM event, a name, attributes) and whose component has a wrapper root of its own (`TextField`) sits
+  in a `display: contents` box, where the parent's `space-y-*` margin or `divide-y` border landed without being
+  drawn (8 px missing under a drive label field). The wrapped element now takes them, on the sides where it sets none
+  of its own.
+
 ## [0.1.3] - 2026-10-06
 
 ### Fixed
