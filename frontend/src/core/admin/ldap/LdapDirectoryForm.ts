@@ -1,5 +1,5 @@
 /**
- * Code-behind of `LdapDirectoryForm.kbview` (converted from `LdapDirectoryForm.tsx` by @kubuno/views-migrate).
+ * Code-behind of `LdapDirectoryForm.kbcontrol` (converted from `LdapDirectoryForm.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useMemo } from "react"
@@ -11,7 +11,7 @@ import { api } from "../../api/client"
 import type { OrgUnit } from "../../types"
 import { DEFAULT_PORT, IS_DEFAULT_PORT, PRESETS, type DirectoryForm } from "./types"
 
-import { ViewBase } from './LdapDirectoryForm.kbview'
+import { ViewBase } from './LdapDirectoryForm.kbcontrol'
 import * as __parts from './LdapDirectoryForm.parts'
 
 export const StepIcons = { Network, KeyRound, Users, RefreshCw }

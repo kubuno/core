@@ -1,5 +1,5 @@
 /**
- * Code-behind of `CategoryComposition.kbview` (converted from `CategoryComposition.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CategoryComposition.kbcontrol` (converted from `CategoryComposition.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { formatBytes } from "../sections/format"
@@ -8,7 +8,7 @@ import { type CategoryReading } from "./categories"
 import DelegatedNote from "./DelegatedNote"
 import CompositionBar from "./CompositionBar"
 
-import { ViewBase } from './CategoryComposition.kbview'
+import { ViewBase } from './CategoryComposition.kbcontrol'
 import * as __parts from './CategoryComposition.parts'
 
 export type CategoryCompositionProps = {

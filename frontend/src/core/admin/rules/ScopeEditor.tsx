@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ScopeEditor.kbview` (converted from `ScopeEditor.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ScopeEditor.kbcontrol` (converted from `ScopeEditor.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { Plus } from "lucide-react"
@@ -7,7 +7,7 @@ import { Button, Combobox, MenuDropdown, useMenuDropdown, type MenuItem } from "
 import type { Scope, ScopeRef } from "./types"
 import type { Directory } from "./useDirectory"
 
-import { ViewBase } from './ScopeEditor.kbview'
+import { ViewBase } from './ScopeEditor.kbcontrol'
 import * as __parts from './ScopeEditor.parts'
 import { RefRow } from './ScopeEditor.parts'
 

@@ -1,5 +1,5 @@
 /**
- * Code-behind of `RoleDetail.kbview` (converted from `RoleDetail.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RoleDetail.kbcontrol` (converted from `RoleDetail.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { formatDate } from "../../../core/intl/datetime"
@@ -12,13 +12,13 @@ import { useConfirm } from "../../hooks/useConfirm"
 import { PRIV, type Privilege, type Role, type RoleAssignment } from "../../authz/types"
 import { useAuthzLabels } from "../../authz/labels"
 import { usePrivileges } from "../../authz/usePrivileges"
-import { useAdminCrumbs } from "../AdminBreadcrumb"
+import { useAdminCrumbs } from "../pages/AdminBreadcrumb"
 import { errorMessage, useAssignments, useDeleteAssignment } from "./api"
 import AssignRoleDialog from "./AssignRoleDialog"
 import RoleIdentityCard from "./RoleIdentityCard"
 import RolePrivilegesCard from "./RolePrivilegesCard"
 
-import { ViewBase } from './RoleDetail.kbview'
+import { ViewBase } from './RoleDetail.kbcontrol'
 import * as __parts from './RoleDetail.parts'
 
 export type RoleDetailProps = {

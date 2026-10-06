@@ -1,0 +1,97 @@
+<!-- QuotaPolicyCard — converted from QuotaPolicyCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="QuotaPolicyCardProps">
+  <Card Title="{Res admin.sto_policy_title}" Subtitle="{Res admin.sto_policy_sub}">
+    <Card.Actions>
+      <Button Variant="Secondary"
+              Size="Sm"
+              IconSize="14"
+              Icon="Plus"
+              Text="{Res admin.sto_policy_add_unit}"
+              Visible="{Binding canManage}"
+              OnClick="button_click"/>
+    </Card.Actions>
+    <Panel Class="contents">
+      <Panel HtmlTag="Ul" Class="flex flex-col divide-y divide-border">
+        <Panel HtmlTag="Li" Class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 first:pt-0">
+          <Label HtmlTag="Span"
+                 Text="{Res admin.sto_policy_instance}"
+                 ForeColor="TextPrimary"
+                 InheritFontSize="true"
+                 Class="min-w-0 flex-1 [font-size:var(--kb-text-body)]"/>
+          <Label HtmlTag="Span"
+                 Text="{Binding span_text}"
+                 Overflow="Wrap"
+                 ForeColor="TextPrimary"
+                 InheritFontSize="true"
+                 Class="tabular-nums [font-size:var(--kb-text-body)]"/>
+          <!-- TODO(views-migrate): <Lock aria-label>: an icon attribute without a property -->
+          <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding policy.instance_locked}"/>
+          <Button Variant="Ghost"
+                  Size="Sm"
+                  IconSize="14"
+                  Icon="Pencil"
+                  Text="{Res admin.sto_policy_edit}"
+                  Visible="{Binding canManage}"
+                  OnClick="button_click2"/>
+        </Panel>
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_units}">
+          <Panel HtmlTag="Li" Class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+            <Label HtmlTag="Span"
+                   Text="{Binding u.unit_name}"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="min-w-0 flex-1 [font-size:var(--kb-text-body)]"/>
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text}"
+                   Overflow="Wrap"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="tabular-nums [font-size:var(--kb-text-body)]"/>
+            <!-- TODO(views-migrate): <Lock aria-label>: an icon attribute without a property -->
+            <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding u.locked}"/>
+            <Button Variant="Ghost"
+                    Size="Sm"
+                    IconSize="14"
+                    Icon="Pencil"
+                    Text="{Res admin.sto_policy_edit}"
+                    Visible="{Binding show_can_manage_u_unit}"
+                    OnClick="button_click3"/>
+            <Button Variant="Ghost"
+                    Size="Sm"
+                    IconSize="14"
+                    Icon="RotateCcw"
+                    Text="{Res admin.sto_policy_revert}"
+                    Visible="{Binding show_can_manage_u_unit}"
+                    OnClick="button_click4"/>
+          </Panel>
+        </Repeater>
+      </Panel>
+      <Label Text="{Res admin.sto_policy_no_unit}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_policy_units}"
+             Class="mt-3 [font-size:var(--kb-text-meta)]"/>
+      <Label Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             InheritFontSize="true"
+             AccessibleRole="Alert"
+             Visible="{Binding show_error}"
+             Class="mt-3 [font-size:var(--kb-text-body)]"/>
+      <Panel BackColor="Surface1" Visible="{Binding show_editing}" Class="mt-4 rounded-lg border border-border p-3">
+        <!-- TODO(views-migrate): <QuotaField> is no .kbview element (./QuotaField#default) -->
+        <ReactHost Component="{Binding QuotaField}" Props="{Binding quota_field_props}"/>
+        <Callout Body="{Res admin.sto_policy_new_only}" Class="mt-3"/>
+        <Stack Direction="LeftToRight" Justify="End" Class="mt-3">
+          <Button Variant="Ghost" Text="{Res admin.sto_cancel}" OnClick="button_click5"/>
+          <Button Enabled="{Binding enabled_unless_save_is_pending}" Text="{Res admin.sto_save}" OnClick="button_click6"/>
+        </Stack>
+      </Panel>
+      <!-- TODO(views-migrate): <OrgUnitPicker> is no .kbview element (../OrgUnitPicker#default) -->
+      <ReactHost Component="{Binding OrgUnitPicker}" Props="{Binding org_unit_picker_props}" Visible="{Binding picking}"/>
+      <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+      <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+    </Panel>
+  </Card>
+</UserControl>

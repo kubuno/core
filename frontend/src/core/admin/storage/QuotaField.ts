@@ -1,9 +1,9 @@
 /**
- * Code-behind of `QuotaField.kbview` (converted from `QuotaField.tsx` by @kubuno/views-migrate).
+ * Code-behind of `QuotaField.kbcontrol` (converted from `QuotaField.tsx` by @kubuno/views-migrate).
  */
 import { useMemo } from "react"
 
-import { ViewBase } from './QuotaField.kbview'
+import { ViewBase } from './QuotaField.kbcontrol'
 import * as __parts from './QuotaField.parts'
 
 const UNITS = [

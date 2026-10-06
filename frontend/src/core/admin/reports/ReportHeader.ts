@@ -1,11 +1,11 @@
 /**
- * Code-behind of `ReportHeader.kbview` (converted from `ReportHeader.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ReportHeader.kbcontrol` (converted from `ReportHeader.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
-import { InstanceLogo } from "../../shell/InstanceLogo"
+import { InstanceLogo } from "../../shell/controls/InstanceLogo"
 import type { ReportModel } from "./model"
 
-import { ViewBase } from './ReportHeader.kbview'
+import { ViewBase } from './ReportHeader.kbcontrol'
 import * as __parts from './ReportHeader.parts'
 
 export type ReportHeaderProps = {

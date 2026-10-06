@@ -1,0 +1,7 @@
+<!-- LeftRail — converted from LeftRail.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Stack Gap="2" CrossAlign="Center" BackColor="Background" Visible="{Binding show_main}" Class="w-14 flex-shrink-0 pt-2 pb-2 rounded-xl">
+    <!-- TODO(views-migrate): a list callback destructuring its item -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Stack>
+</UserControl>

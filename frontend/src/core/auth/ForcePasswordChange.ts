@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next"
 import { api } from "../api/client"
 import { useAuthStore } from "../store/authStore"
 import { passwordStrength } from "./passwordStrength"
-import { InstanceLogo } from "../shell/InstanceLogo"
+import { InstanceLogo } from "../shell/controls/InstanceLogo"
 
 import { ViewBase } from './ForcePasswordChange.kbview'
 import * as __parts from './ForcePasswordChange.parts'

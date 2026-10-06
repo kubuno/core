@@ -1,0 +1,19 @@
+<!-- SettingRows — converted from SettingsBlocks.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="SettingRowsProps">
+  <Panel Class="contents">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_basic_map_render_row}"/>
+    <Panel Visible="{Binding show_advanced}" Class="border-t border-border">
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             Class="flex w-full items-center gap-2 px-5 py-3 text-left text-text-tertiary transition-colors hover:bg-surface-1 hover:text-text-secondary [font-size:var(--kb-text-meta)]"
+             OnClick="panel_click">
+        <Icon Name="ChevronDown" Size="14" Visible="{Binding props.advancedOpen}" Class="flex-shrink-0"/>
+        <Icon Name="ChevronRight" Size="14" Visible="{Binding show_not_advanced_open}" Class="flex-shrink-0"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+      </Panel>
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_advanced_open_advanced_map}"/>
+    </Panel>
+  </Panel>
+</UserControl>

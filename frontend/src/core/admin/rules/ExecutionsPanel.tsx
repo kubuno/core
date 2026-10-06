@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ExecutionsPanel.kbview` (converted from `ExecutionsPanel.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ExecutionsPanel.kbcontrol` (converted from `ExecutionsPanel.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { Fragment } from 'react'
@@ -12,7 +12,7 @@ import { isSimulated, modeLabel, modeVariant, outcomeLabel, outcomeVariant, seve
 import { formatWhen } from "../sections/format"
 import type { Outcome } from "./types"
 
-import { ViewBase } from './ExecutionsPanel.kbview'
+import { ViewBase } from './ExecutionsPanel.kbcontrol'
 import * as __parts from './ExecutionsPanel.parts'
 import { Detail } from './ExecutionsPanel.parts'
 

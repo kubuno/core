@@ -1,0 +1,8 @@
+<!-- MockFolderCard — converted from MockFolderCard.tsx by @kubuno/views-migrate. -->
+<UserControl x:Props="MockFolderCardProps">
+  <Panel Class="{Binding div_class}">
+    <Icon Name="Folder" Class="shrink-0 text-text-secondary"/>
+    <Label HtmlTag="Span" Text="{Binding name}" ForeColor="TextPrimary" Class="flex-1"/>
+    <Icon Name="MoreVertical" Size="14" Class="shrink-0 text-text-secondary opacity-0 group-hover:opacity-100"/>
+  </Panel>
+</UserControl>

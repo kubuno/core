@@ -1,0 +1,34 @@
+<!-- BackupCodesSection — converted from BackupCodesSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel Class="contents">
+    <Panel Visible="{Binding show_case_1}" Class="space-y-3">
+      <Label HtmlTag="H3" Text="{Res settings.bc_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+      <!-- TODO(views-migrate): <BackupCodesPanel> is no .kbview element (./BackupCodesPanel#BackupCodesPanel) -->
+      <ReactHost Component="{Binding BackupCodesPanel}" Props="{Binding backup_codes_panel_props}"/>
+    </Panel>
+    <Panel Visible="{Binding show_main}" Class="space-y-3">
+      <Label HtmlTag="H3" Text="{Res settings.bc_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+      <Callout Variant="Warning"
+               Title="{Res settings.bc_low_title}"
+               Body="{Res settings.bc_low_desc, Count={Binding bc_low_desc_count}}"
+               Visible="{Binding show_status_status_low}"/>
+      <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" BackColor="Surface1" Class="px-4 py-3 rounded-lg border border-border">
+        <Icon Name="KeyRound" Size="18" Class="text-text-tertiary shrink-0"/>
+        <Panel>
+          <Label Text="{Res settings.bc_remaining, Count={Binding bc_remaining_count}, Total={Binding bc_remaining_total}}"
+                 Overflow="Wrap"
+                 ForeColor="TextPrimary"/>
+          <Label Text="{Res settings.bc_desc}" Role="Meta" Overflow="Wrap" ForeColor="TextSecondary" Class="mt-0.5"/>
+        </Panel>
+      </Stack>
+      <Label Text="{Binding error}" Overflow="Wrap" ForeColor="Danger" Visible="{Binding show_error}"/>
+      <Button Variant="Secondary"
+              Size="Sm"
+              IconSize="14"
+              Icon="RefreshCw"
+              Loading="{Binding busy}"
+              Text="{Res settings.bc_regenerate}"
+              OnClick="regenerate"/>
+    </Panel>
+  </Panel>
+</UserControl>

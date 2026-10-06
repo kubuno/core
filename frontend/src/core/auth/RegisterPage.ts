@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { authApi } from "../api/auth"
 import { passwordStrength } from "./passwordStrength"
-import { InstanceLogo } from "../shell/InstanceLogo"
+import { InstanceLogo } from "../shell/controls/InstanceLogo"
 
 import { ViewBase } from './RegisterPage.kbview'
 import * as __parts from './RegisterPage.parts'

@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
 import { FaviconRegistry } from '../registry/FaviconRegistry'
-import { AdminLogo } from './AdminLogo'
+import { AdminLogo } from './pages/AdminLogo'
 
 /** The console's id in the app registry. Not a module id: no process answers to it. */
 export const ADMIN_APP_ID = 'core-admin'

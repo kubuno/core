@@ -1,0 +1,52 @@
+<!-- ServicePicker — converted from ServicePicker.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ServicePickerProps">
+  <Panel>
+    <Label Text="{Res settings.mde_pick_intro}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-body)]"/>
+    <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true" Class="mt-3">
+      <Button Variant="Text" Size="Sm" Text="{Res settings.mde_select_all}" OnClick="button_click"/>
+      <Button Variant="Text" Size="Sm" Text="{Res settings.mde_select_none}" OnClick="button_click2"/>
+    </Stack>
+    <Panel Class="mt-3 rounded-lg border border-border divide-y divide-border overflow-hidden">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_groups}">
+        <Panel BackColor="Surface">
+          <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" Class="px-4 py-3">
+            <CheckBox Checked="{Binding all}"
+                      CheckState="{Binding check_state}"
+                      Enabled="{Binding enabled_unless_group_items_every}"
+                      OnCheckedChanged="check_box_checked_changed"/>
+            <Panel Class="min-w-0 flex-1">
+              <Label Text="{Binding p_text}"
+                     FontWeight="Medium"
+                     Overflow="Wrap"
+                     ForeColor="TextPrimary"
+                     InheritFontSize="true"
+                     Class="[font-size:var(--kb-text-body)]"/>
+              <Label Text="{Binding p_text2}"
+                     Overflow="Wrap"
+                     ForeColor="TextSecondary"
+                     InheritFontSize="true"
+                     Visible="{Binding show_splittable_head_description}"
+                     Class="mt-0.5 [font-size:var(--kb-text-meta)]"/>
+              <Label Text="{Res settings.mde_parts, N={Binding group.items.length}}"
+                     Overflow="Wrap"
+                     ForeColor="TextSecondary"
+                     InheritFontSize="true"
+                     Visible="{Binding splittable}"
+                     Class="mt-0.5 [font-size:var(--kb-text-meta)]"/>
+            </Panel>
+            <!-- TODO(views-migrate): <button aria-expanded>: attribute(s) without a .kbview property -->
+            <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding splittable}"/>
+          </Stack>
+          <Panel Visible="{Binding show_splittable_open}" Class="pb-3 pl-12 pr-4 space-y-2">
+            <!-- TODO(views-migrate): a list inside a list (nested Repeater) -->
+            <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+          </Panel>
+        </Panel>
+      </Repeater>
+    </Panel>
+  </Panel>
+</UserControl>

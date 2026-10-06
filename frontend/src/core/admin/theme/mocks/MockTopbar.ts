@@ -1,9 +1,9 @@
 /**
- * Code-behind of `MockTopbar.kbview` (converted from `MockTopbar.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MockTopbar.kbcontrol` (converted from `MockTopbar.tsx` by @kubuno/views-migrate).
  */
 import { KubunoLogo } from "@ui"
 
-import { ViewBase } from './MockTopbar.kbview'
+import { ViewBase } from './MockTopbar.kbcontrol'
 
 export class MockTopbar extends ViewBase {
   /** `<KubunoLogo>`, rendered by a ReactHost. */

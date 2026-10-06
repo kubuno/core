@@ -1,10 +1,10 @@
 /**
- * Code-behind of `ReportBlock.kbview` (converted from `ReportBlock.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ReportBlock.kbcontrol` (converted from `ReportBlock.tsx` by @kubuno/views-migrate).
  */
 import { Fragment } from 'react'
 import type { ReactNode } from "react"
 
-import { ViewBase } from './ReportBlock.kbview'
+import { ViewBase } from './ReportBlock.kbcontrol'
 
 export type ReportBlockProps = {
   title:    string

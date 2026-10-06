@@ -1,11 +1,11 @@
 /**
- * Code-behind of `StepperDemo.kbview` (converted from `StepperDemo.tsx` by @kubuno/views-migrate).
+ * Code-behind of `StepperDemo.kbcontrol` (converted from `StepperDemo.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { useStepper, type StepDef } from "@ui"
 
-import { ViewBase } from './StepperDemo.kbview'
+import { ViewBase } from './StepperDemo.kbcontrol'
 import * as __parts from './StepperDemo.parts'
 
 export class StepperDemo extends ViewBase {

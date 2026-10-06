@@ -1,5 +1,5 @@
 /**
- * Code-behind of `AlertsCard.kbview` (converted from `AlertsCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `AlertsCard.kbcontrol` (converted from `AlertsCard.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs } from '@kubuno/views'
 import { useNavigate } from 'react-router-dom'
@@ -10,7 +10,7 @@ import { useAlerts, useAlertSummary } from "./useAlerts"
 import { EMPTY_FILTERS } from "./types"
 import { adminUrl } from "../adminAction"
 
-import { ViewBase } from './AlertsCard.kbview'
+import { ViewBase } from './AlertsCard.kbcontrol'
 import * as __parts from './AlertsCard.parts'
 
 export class AlertsCard extends ViewBase {

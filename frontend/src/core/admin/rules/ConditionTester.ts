@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ConditionTester.kbview` (converted from `ConditionTester.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ConditionTester.kbcontrol` (converted from `ConditionTester.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useMemo } from "react"
@@ -8,7 +8,7 @@ import { flatten, verdictMap, type UiGroup, type Verdict } from "./condition"
 import { sampleOfLeaf, type LeafContext } from "./leafKinds"
 import type { TriggerRow } from "./types"
 
-import { ViewBase } from './ConditionTester.kbview'
+import { ViewBase } from './ConditionTester.kbcontrol'
 import * as __parts from './ConditionTester.parts'
 
 interface Props {

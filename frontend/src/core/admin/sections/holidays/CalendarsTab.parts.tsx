@@ -1,5 +1,5 @@
 /**
- * The parts of `CalendarsTab.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `CalendarsTab.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { Globe, Plus, Search } from "lucide-react"

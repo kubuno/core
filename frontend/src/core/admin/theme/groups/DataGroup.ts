@@ -1,9 +1,9 @@
 /**
- * Code-behind of `DataGroup.kbview` (converted from `DataGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `DataGroup.kbcontrol` (converted from `DataGroup.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './DataGroup.kbview'
+import { ViewBase } from './DataGroup.kbcontrol'
 import * as __parts from './DataGroup.parts'
 
 export class DataGroup extends ViewBase {

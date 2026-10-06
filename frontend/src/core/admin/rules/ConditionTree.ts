@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ConditionTree.kbview` (converted from `ConditionTree.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ConditionTree.kbcontrol` (converted from `ConditionTree.tsx` by @kubuno/views-migrate).
  */
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
@@ -7,7 +7,7 @@ import { flatten, toWire, wireDepth, wireLeaves, type UiGroup, type Verdict } fr
 import { leafQuotas, type LeafContext } from "./leafKinds"
 import type { CondNode, RuleLimits } from "./types"
 
-import { ViewBase } from './ConditionTree.kbview'
+import { ViewBase } from './ConditionTree.kbcontrol'
 import * as __parts from './ConditionTree.parts'
 
 interface Props {

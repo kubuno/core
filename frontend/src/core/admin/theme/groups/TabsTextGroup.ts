@@ -1,11 +1,11 @@
 /**
- * Code-behind of `TabsTextGroup.kbview` (converted from `TabsTextGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `TabsTextGroup.kbcontrol` (converted from `TabsTextGroup.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { RichText } from "@ui"
 
-import { ViewBase } from './TabsTextGroup.kbview'
+import { ViewBase } from './TabsTextGroup.kbcontrol'
 import * as __parts from './TabsTextGroup.parts'
 
 export class TabsTextGroup extends ViewBase {

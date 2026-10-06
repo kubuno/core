@@ -1,0 +1,17 @@
+<!-- DataGroup — converted from DataGroup.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Stack Gap="24">
+    <!-- TODO(views-migrate): <Block> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <Block> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <Block> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part3}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <Block> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part4}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <Block> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part5}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <Block> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part6}" Props="{Binding part1_props}"/>
+  </Stack>
+</UserControl>

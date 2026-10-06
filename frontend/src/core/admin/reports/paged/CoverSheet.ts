@@ -1,11 +1,11 @@
 /**
- * Code-behind of `CoverSheet.kbview` (converted from `CoverSheet.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CoverSheet.kbcontrol` (converted from `CoverSheet.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
-import { InstanceLogo } from "../../../shell/InstanceLogo"
+import { InstanceLogo } from "../../../shell/controls/InstanceLogo"
 import type { ReportModel } from "../model"
 
-import { ViewBase } from './CoverSheet.kbview'
+import { ViewBase } from './CoverSheet.kbcontrol'
 import * as __parts from './CoverSheet.parts'
 
 export type CoverSheetProps = {

@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ImpactPanel.kbview` (converted from `ImpactPanel.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ImpactPanel.kbcontrol` (converted from `ImpactPanel.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useEffect } from "react"
@@ -9,7 +9,7 @@ import { formatWhen } from "../sections/format"
 import { BACKTEST_MAX_WINDOW_DAYS, type BacktestRow } from "./types"
 import { apiErrorDetail } from "../../api/errorMessage"
 
-import { ViewBase } from './ImpactPanel.kbview'
+import { ViewBase } from './ImpactPanel.kbcontrol'
 import * as __parts from './ImpactPanel.parts'
 
 interface Props {

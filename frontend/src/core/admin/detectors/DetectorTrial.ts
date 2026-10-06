@@ -1,5 +1,5 @@
 /**
- * Code-behind of `DetectorTrial.kbview` (converted from `DetectorTrial.tsx` by @kubuno/views-migrate).
+ * Code-behind of `DetectorTrial.kbcontrol` (converted from `DetectorTrial.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useMemo } from "react"
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next"
 import { errorMessage, useTestDetector, type DetectorInput, type TestResult } from "./api"
 import { asPercent } from "./labels"
 
-import { ViewBase } from './DetectorTrial.kbview'
+import { ViewBase } from './DetectorTrial.kbcontrol'
 import * as __parts from './DetectorTrial.parts'
 
 interface Props {

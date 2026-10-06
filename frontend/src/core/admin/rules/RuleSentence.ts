@@ -1,12 +1,12 @@
 /**
- * Code-behind of `RuleSentence.kbview` (converted from `RuleSentence.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RuleSentence.kbcontrol` (converted from `RuleSentence.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { describeRule, splitEmphasis, type SummaryContext } from "./summary"
 import type { UiNode } from "./condition"
 import type { RuleInput } from "./types"
 
-import { ViewBase } from './RuleSentence.kbview'
+import { ViewBase } from './RuleSentence.kbcontrol'
 import * as __parts from './RuleSentence.parts'
 
 export type RuleSentenceProps = { input: RuleInput; tree: UiNode; ctx: SummaryContext }

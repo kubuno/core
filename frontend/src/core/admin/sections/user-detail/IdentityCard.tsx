@@ -1,5 +1,5 @@
 /**
- * Code-behind of `IdentityCard.kbview` (converted from `IdentityCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `IdentityCard.kbcontrol` (converted from `IdentityCard.tsx` by @kubuno/views-migrate).
  */
 import { Fragment } from 'react'
 import { useTranslation } from "react-i18next"
@@ -15,7 +15,7 @@ import RoleBadge from "./RoleBadge"
 import StatusBadge from "./StatusBadge"
 import { UserAvatar } from "./UserAvatar"
 
-import { ViewBase } from './IdentityCard.kbview'
+import { ViewBase } from './IdentityCard.kbcontrol'
 import * as __parts from './IdentityCard.parts'
 
 interface Props {

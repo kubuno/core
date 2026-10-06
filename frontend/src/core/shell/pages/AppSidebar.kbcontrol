@@ -1,0 +1,9 @@
+<!-- AppSidebar — converted from AppSidebar.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel Visible="{Binding show_main}" Class="contents lg:relative lg:flex lg:flex-shrink-0">
+    <!-- TODO(views-migrate): <aside> with a computed style -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <div aria-orientation onPointerDown onPointerMove onPointerUp onPointerCancel onLostPointerCapture>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding resizable}"/>
+  </Panel>
+</UserControl>

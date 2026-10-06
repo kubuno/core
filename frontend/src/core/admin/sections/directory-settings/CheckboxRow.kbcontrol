@@ -1,0 +1,22 @@
+<!-- CheckboxRow — converted from CheckboxRow.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="CheckboxRowProps">
+  <Panel Visible="{Binding show_main}" Class="py-3">
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start">
+      <CheckBox Checked="{Binding checked}"
+                Enabled="{Binding enabled_unless_row_disabled}"
+                Text="{Binding text}"
+                Description="{Binding description}"
+                OnCheckedChanged="check_box_checked_changed"/>
+      <Label HtmlTag="Span"
+             Text="{Binding span_text}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             BackColor="Surface2"
+             InheritFontSize="true"
+             Visible="{Binding show_personal}"
+             Class="ml-auto mt-0.5 shrink-0 rounded-full px-2 py-0.5 [font-size:var(--kb-text-micro)]"/>
+    </Stack>
+    <!-- TODO(views-migrate): <ProvenanceLine> is no .kbview element (../../settings/ProvenanceLine#default) -->
+    <ReactHost Component="{Binding ProvenanceLine}" Props="{Binding provenance_line_props}"/>
+  </Panel>
+</UserControl>

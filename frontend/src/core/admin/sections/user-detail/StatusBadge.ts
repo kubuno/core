@@ -1,8 +1,8 @@
 /**
- * Code-behind of `StatusBadge.kbview` (converted from `StatusBadge.tsx` by @kubuno/views-migrate).
+ * Code-behind of `StatusBadge.kbcontrol` (converted from `StatusBadge.tsx` by @kubuno/views-migrate).
  */
 
-import { ViewBase } from './StatusBadge.kbview'
+import { ViewBase } from './StatusBadge.kbcontrol'
 
 export type StatusBadgeProps = { active: boolean; label: string }
 

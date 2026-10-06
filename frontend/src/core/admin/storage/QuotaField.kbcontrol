@@ -1,0 +1,31 @@
+<!-- QuotaField — converted from QuotaField.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="QuotaFieldProps">
+  <Panel>
+    <Stack Direction="LeftToRight" CrossAlign="End">
+      <Panel Class="min-w-0 flex-1">
+        <!-- TODO(views-migrate): <TextField> inputMode, autoFocus: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+      <Stack Direction="LeftToRight"
+             Gap="0"
+             AccessibleRole="Grouping"
+             AccessibleName="{Binding props.label}"
+             Class="shrink-0 overflow-hidden rounded-md border border-border">
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_units}">
+          <!-- TODO(views-migrate): <button aria-pressed>: attribute(s) without a .kbview property -->
+          <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+        </Repeater>
+      </Stack>
+    </Stack>
+    <Panel HtmlTag="P" ForeColor="TextTertiary" Visible="{Binding show_hint_bytes}" Class="mt-1.5 [font-size:var(--kb-text-meta)]">
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding props.hint}"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+      <Label HtmlTag="Span"
+             Text="{Binding span_text}"
+             Overflow="Wrap"
+             InheritFontSize="true"
+             Visible="{Binding show_bytes}"
+             Class="tabular-nums"/>
+    </Panel>
+  </Panel>
+</UserControl>

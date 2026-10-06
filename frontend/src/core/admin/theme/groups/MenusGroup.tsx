@@ -1,12 +1,12 @@
 /**
- * Code-behind of `MenusGroup.kbview` (converted from `MenusGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MenusGroup.kbcontrol` (converted from `MenusGroup.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { FileText } from "lucide-react"
 import MockContextMenu from "../mocks/MockContextMenu"
 
-import { ViewBase } from './MenusGroup.kbview'
+import { ViewBase } from './MenusGroup.kbcontrol'
 
 export class MenusGroup extends ViewBase {
   @bind accessor sortVal = 'name'

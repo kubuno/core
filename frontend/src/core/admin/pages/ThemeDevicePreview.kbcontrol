@@ -1,0 +1,28 @@
+<!-- ThemeDevicePreview — converted from ThemeDevicePreview.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ThemeDevicePreviewProps">
+  <Panel>
+    <Panel BackColor="Surface2" Class="mb-3 inline-flex items-center gap-0.5 rounded-lg p-0.5">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_devices}">
+        <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click">
+          <Icon Name="{Binding icon}" Size="14"/>
+          <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+          <Label HtmlTag="Span"
+                 Text="{Binding span_text}"
+                 FontWeight="Regular"
+                 Overflow="Wrap"
+                 ForeColor="TextTertiary"
+                 InheritFontSize="true"
+                 Visible="{Binding show_d_w}"/>
+        </Panel>
+      </Repeater>
+    </Panel>
+    <Stack Direction="LeftToRight" Gap="0" Justify="Center" BackColor="Surface1" Class="rounded-xl border border-border p-4 overflow-x-auto">
+      <!-- TODO(views-migrate): <div> with a computed style -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_cur_w}"/>
+      <Panel Visible="{Binding show_not_cur_w}" Class="w-full">
+        <!-- TODO(views-migrate): <ThemePreviewGallery> is no .kbview element (./ThemePreviewGallery#default) -->
+        <ReactHost Component="{Binding ThemePreviewGallery}" Props="{Binding theme_preview_gallery_props}"/>
+      </Panel>
+    </Stack>
+  </Panel>
+</UserControl>

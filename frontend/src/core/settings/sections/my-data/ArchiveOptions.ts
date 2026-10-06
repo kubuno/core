@@ -1,11 +1,11 @@
 /**
- * Code-behind of `ArchiveOptions.kbview` (converted from `ArchiveOptions.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ArchiveOptions.kbcontrol` (converted from `ArchiveOptions.tsx` by @kubuno/views-migrate).
  */
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import type { MyExportPolicy } from "./api"
 
-import { ViewBase } from './ArchiveOptions.kbview'
+import { ViewBase } from './ArchiveOptions.kbcontrol'
 import * as __parts from './ArchiveOptions.parts'
 
 export interface ArchiveOptionsProps {

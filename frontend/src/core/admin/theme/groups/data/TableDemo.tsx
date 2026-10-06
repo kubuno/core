@@ -1,5 +1,5 @@
 /**
- * Code-behind of `TableDemo.kbview` (converted from `TableDemo.tsx` by @kubuno/views-migrate).
+ * Code-behind of `TableDemo.kbcontrol` (converted from `TableDemo.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useMemo } from "react"
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next"
 import { Badge, ProgressBar, type DataTableColumn } from "@ui"
 import { DEMO_MEMBERS, formatBytes, formatDate, type DemoMember } from "./fixtures"
 
-import { ViewBase } from './TableDemo.kbview'
+import { ViewBase } from './TableDemo.kbcontrol'
 import * as __parts from './TableDemo.parts'
 
 export class TableDemo extends ViewBase {

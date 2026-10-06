@@ -1,5 +1,5 @@
 /**
- * Code-behind of `RolesList.kbview` (converted from `RolesList.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RolesList.kbcontrol` (converted from `RolesList.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useMemo } from "react"
@@ -16,7 +16,7 @@ import { errorMessage, useDeleteRole } from "./api"
 import AssignRoleDialog from "./AssignRoleDialog"
 import RoleCreateDialog from "./RoleCreateDialog"
 
-import { ViewBase } from './RolesList.kbview'
+import { ViewBase } from './RolesList.kbcontrol'
 import * as __parts from './RolesList.parts'
 
 export type RolesListProps = {

@@ -1,10 +1,10 @@
 /**
- * Code-behind of `CalloutsAndProgress.kbview` (converted from `CalloutsAndProgress.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CalloutsAndProgress.kbcontrol` (converted from `CalloutsAndProgress.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './CalloutsAndProgress.kbview'
+import { ViewBase } from './CalloutsAndProgress.kbcontrol'
 
 export class CalloutsAndProgress extends ViewBase {
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */

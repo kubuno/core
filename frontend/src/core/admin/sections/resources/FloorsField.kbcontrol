@@ -1,0 +1,62 @@
+<!-- FloorsField — converted from FloorsField.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="FloorsFieldProps">
+  <Stack>
+    <Panel Class="flex items-baseline justify-between gap-2">
+      <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (./FieldLabel#default) -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.res_floors_hint}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-meta)]"/>
+    </Panel>
+    <Panel HtmlTag="Ul" Class="flex flex-col gap-2">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_floors}">
+        <Panel HtmlTag="Li" Class="flex items-center gap-1.5">
+          <Panel Class="min-w-0 flex-1">
+            <TextField Text="{Binding floor}"
+                       MaxLength="{Binding props.maxLength}"
+                       Enabled="{Binding enabled_unless_disabled}"
+                       AccessibleName="{Res admin.res_floor_rank, Rank={Binding res_floor_rank_rank}}"
+                       Placeholder="{Res admin.res_floor_placeholder}"
+                       OnTextChanged="text_field_text_changed"/>
+          </Panel>
+          <Panel AccessibleRole="PushButton"
+                 AutoSize="true"
+                 Enabled="{Binding enabled_unless_disabled_index}"
+                 AccessibleName="{Res admin.res_floor_up}"
+                 Class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary disabled:cursor-default disabled:text-text-tertiary disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                 OnClick="panel_click">
+            <Icon Name="ArrowUp" Size="15"/>
+          </Panel>
+          <Panel AccessibleRole="PushButton"
+                 AutoSize="true"
+                 Enabled="{Binding enabled_unless_disabled_index_floors}"
+                 AccessibleName="{Res admin.res_floor_down}"
+                 Class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary disabled:cursor-default disabled:text-text-tertiary disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                 OnClick="panel_click2">
+            <Icon Name="ArrowDown" Size="15"/>
+          </Panel>
+          <Panel AccessibleRole="PushButton"
+                 AutoSize="true"
+                 Enabled="{Binding enabled_unless_disabled}"
+                 AccessibleName="{Res admin.res_floor_remove}"
+                 Class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-2 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                 OnClick="panel_click3">
+            <Icon Name="X" Size="15"/>
+          </Panel>
+        </Panel>
+      </Repeater>
+    </Panel>
+    <Panel>
+      <Button Variant="Ghost"
+              Size="Sm"
+              Enabled="{Binding enabled_unless_disabled_floors_max_floors}"
+              IconSize="14"
+              Icon="Plus"
+              Text="{Res admin.res_floor_add}"
+              OnClick="button_click"/>
+    </Panel>
+  </Stack>
+</UserControl>

@@ -1,0 +1,30 @@
+<!-- NewTokenBanner — converted from NewTokenBanner.tsx by @kubuno/views-migrate. -->
+<UserControl x:Props="NewTokenBannerProps">
+  <Panel BackColor="SuccessLight" Class="mb-6 rounded-lg border border-success p-4">
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" Justify="SpaceBetween">
+      <Panel Class="flex-1 min-w-0">
+        <Label Text="{Res settings.tok_created}" FontWeight="Medium" Overflow="Wrap" ForeColor="Success" Class="mb-1"/>
+        <Stack Direction="LeftToRight" CrossAlign="Center" Class="mt-2">
+          <Label HtmlTag="Code"
+                 Text="{Binding props.token}"
+                 Role="Meta"
+                 Overflow="Wrap"
+                 ForeColor="TextPrimary"
+                 Class="flex-1 block px-3 py-2 bg-white rounded border border-border font-mono break-all select-all"/>
+          <Panel AccessibleRole="PushButton"
+                 AutoSize="true"
+                 ToolTip="{Res settings.copy}"
+                 Class="shrink-0 flex items-center gap-1 px-3 py-2 rounded border border-border bg-white text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 transition-colors"
+                 OnClick="copy">
+            <Icon Name="Check" Size="14" Visible="{Binding copied}" Class="text-success"/>
+            <Icon Name="Copy" Size="14" Visible="{Binding show_not_copied}"/>
+            <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+          </Panel>
+        </Stack>
+      </Panel>
+      <Panel AccessibleRole="PushButton" AutoSize="true" Class="text-text-tertiary hover:text-text-primary mt-0.5" OnClick="panel_click">
+        <Icon Name="X" Size="16"/>
+      </Panel>
+    </Stack>
+  </Panel>
+</UserControl>

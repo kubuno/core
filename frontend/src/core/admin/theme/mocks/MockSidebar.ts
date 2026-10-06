@@ -1,9 +1,9 @@
 /**
- * Code-behind of `MockSidebar.kbview` (converted from `MockSidebar.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MockSidebar.kbcontrol` (converted from `MockSidebar.tsx` by @kubuno/views-migrate).
  */
 import { Folder, House, Star, Trash2 } from "lucide-react"
 
-import { ViewBase } from './MockSidebar.kbview'
+import { ViewBase } from './MockSidebar.kbcontrol'
 import * as __parts from './MockSidebar.parts'
 
 export class MockSidebar extends ViewBase {

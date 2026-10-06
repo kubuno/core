@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ModuleBreakdownCard.kbview` (converted from `ModuleBreakdownCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ModuleBreakdownCard.kbcontrol` (converted from `ModuleBreakdownCard.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { Fragment } from 'react'
@@ -14,7 +14,7 @@ import CategoryRows from "./CategoryRows"
 import DelegatedNote from "./DelegatedNote"
 import CompositionBar from "./CompositionBar"
 
-import { ViewBase } from './ModuleBreakdownCard.kbview'
+import { ViewBase } from './ModuleBreakdownCard.kbcontrol'
 import * as __parts from './ModuleBreakdownCard.parts'
 
 export type ModuleBreakdownCardProps = { data: ModuleBreakdown }

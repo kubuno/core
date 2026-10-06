@@ -1,11 +1,11 @@
 /**
- * Code-behind of `TableFragment.kbview` (converted from `TableFragment.tsx` by @kubuno/views-migrate).
+ * Code-behind of `TableFragment.kbcontrol` (converted from `TableFragment.tsx` by @kubuno/views-migrate).
  */
 import { Fragment } from 'react'
 import { useTranslation } from "react-i18next"
 import type { TableItem } from "./types"
 
-import { ViewBase } from './TableFragment.kbview'
+import { ViewBase } from './TableFragment.kbcontrol'
 import * as __parts from './TableFragment.parts'
 
 export type TableFragmentProps = {

@@ -1,5 +1,0 @@
-<!-- RuleSentence — converted from RuleSentence.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<Panel x:Props="RuleSentenceProps" HtmlTag="P" ForeColor="TextPrimary" Class="leading-relaxed">
-  <!-- TODO(views-migrate): a list whose item is not a single element -->
-  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
-</Panel>

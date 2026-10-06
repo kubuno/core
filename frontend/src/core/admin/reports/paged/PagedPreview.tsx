@@ -1,5 +1,5 @@
 /**
- * Code-behind of `PagedPreview.kbview` (converted from `PagedPreview.tsx` by @kubuno/views-migrate).
+ * Code-behind of `PagedPreview.kbcontrol` (converted from `PagedPreview.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react"
@@ -16,7 +16,7 @@ import type { Orientation, PageGeometry, PaperFormat } from "./geometry"
 import { stampUrl } from "./watermark"
 import type { WatermarkSpec } from "./watermark"
 
-import { ViewBase } from './PagedPreview.kbview'
+import { ViewBase } from './PagedPreview.kbcontrol'
 import * as __parts from './PagedPreview.parts'
 
 const THUMB_W = 104

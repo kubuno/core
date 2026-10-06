@@ -1,0 +1,18 @@
+<!-- ConsumersCard — converted from ConsumersCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ConsumersCardProps">
+  <Panel Class="contents">
+    <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, rowActions, onRowClick, filtered, onClearFilters, defaultSort, minTableWidth, t, toolbar, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <Stack Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" WrapContents="true" Class="mt-2">
+      <Label Text="{Res admin.sto_scoped_notice}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_data_scoped}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Button Variant="Ghost" Size="Sm" Text="{Res admin.sto_show_more}" Visible="{Binding show_rows_limit_limit}" OnClick="button_click"/>
+    </Stack>
+    <!-- TODO(views-migrate): <AccountUsageDialog> is no .kbview element (./AccountUsageDialog#default) -->
+    <ReactHost Component="{Binding AccountUsageDialog}" Props="{Binding account_usage_dialog_props}" Visible="{Binding show_inspecting}"/>
+  </Panel>
+</UserControl>

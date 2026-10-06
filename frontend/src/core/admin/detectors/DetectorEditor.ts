@@ -1,5 +1,5 @@
 /**
- * Code-behind of `DetectorEditor.kbview` (converted from `DetectorEditor.tsx` by @kubuno/views-migrate).
+ * Code-behind of `DetectorEditor.kbcontrol` (converted from `DetectorEditor.tsx` by @kubuno/views-migrate).
  */
 import { bind, type EventArgs, type MouseEventArgs, type ValueChangedEventArgs } from '@kubuno/views'
 import { useEffect, useMemo, useState } from "react"
@@ -9,9 +9,9 @@ import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
 import { errorMessage, useCreateDetector, useDetector, useUpdateDetector, type ChecksumAlgo, type Detector, type DetectorInput, type DetectorKind, type DetectorLimits } from "./api"
 import DetectorTrial from "./DetectorTrial"
-import { useAdminCrumbs } from "../AdminBreadcrumb"
+import { useAdminCrumbs } from "../pages/AdminBreadcrumb"
 
-import { ViewBase } from './DetectorEditor.kbview'
+import { ViewBase } from './DetectorEditor.kbcontrol'
 import * as __parts from './DetectorEditor.parts'
 
 const KINDS: DetectorKind[] = ['regex', 'wordlist', 'checksum']

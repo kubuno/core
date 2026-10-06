@@ -1,0 +1,31 @@
+<!-- SessionsTab — converted from SessionsTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel Class="contents">
+    <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+      <Spinner/>
+    </Stack>
+    <!-- TODO(views-migrate): <EmptyState> action: an object value for a text property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_case_2}"/>
+    <Panel Visible="{Binding show_main}" Class="min-w-0 max-w-3xl space-y-4">
+      <Callout Title="{Res devices.me_title}" Body="{Res devices.me_body}"/>
+      <EmptyState Icon="MonitorSmartphone"
+                  Title="{Res devices.me_empty_title}"
+                  Description="{Res devices.me_empty_body}"
+                  Visible="{Binding show_data_devices}"/>
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_devices}" Visible="{Binding show_not_data_devices}">
+        <!-- TODO(views-migrate): <DeviceCard> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding DeviceCard}" Props="{Binding device_card_props}"/>
+      </Repeater>
+      <Card Dense="true"
+            Title="{Res devices.orphans_title}"
+            Subtitle="{Res devices.orphans_body}"
+            Flush="true"
+            Visible="{Binding show_orphans}">
+        <!-- TODO(views-migrate): <SessionList> is no .kbview element (../../devices/panels#SessionList) -->
+        <ReactHost Component="{Binding SessionList}" Props="{Binding session_list_props}"/>
+      </Card>
+      <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding show_confirm_state}"/>
+    </Panel>
+  </Panel>
+</UserControl>

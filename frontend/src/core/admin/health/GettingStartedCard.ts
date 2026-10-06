@@ -1,5 +1,5 @@
 /**
- * Code-behind of `GettingStartedCard.kbview` (converted from `GettingStartedCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `GettingStartedCard.kbcontrol` (converted from `GettingStartedCard.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs } from '@kubuno/views'
 import { useNavigate } from 'react-router-dom'
@@ -8,7 +8,7 @@ import { openTasks, useHealthChecks } from "./useHealthChecks"
 import { type HealthCheck } from "./types"
 import { adminUrl } from "../adminAction"
 
-import { ViewBase } from './GettingStartedCard.kbview'
+import { ViewBase } from './GettingStartedCard.kbcontrol'
 import * as __parts from './GettingStartedCard.parts'
 
 const MAX_TASKS = 4

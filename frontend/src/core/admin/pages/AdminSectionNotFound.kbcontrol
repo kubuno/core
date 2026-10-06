@@ -1,0 +1,9 @@
+<!-- AdminSectionNotFound — converted from AdminSectionNotFound.tsx by @kubuno/views-migrate. -->
+<UserControl x:Props="AdminSectionNotFoundProps">
+  <EmptyState ActionLabel="{Res admin.unknown_section_action}"
+              Variant="NoResults"
+              Icon="Compass"
+              Title="{Res admin.unknown_section_title}"
+              Description="{Res admin.unknown_section_desc, Section={Binding props.tab}}"
+              OnAction="empty_state_action"/>
+</UserControl>

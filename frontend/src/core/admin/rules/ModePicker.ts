@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ModePicker.kbview` (converted from `ModePicker.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ModePicker.kbcontrol` (converted from `ModePicker.tsx` by @kubuno/views-migrate).
  */
 import { type ValueChangedEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -7,7 +7,7 @@ import { Ban, Eye, FlaskConical, ShieldAlert } from "lucide-react"
 import { MODE_FACTS, MODE_ORDER, modeLabel, modeVariant } from "./labels"
 import type { Mode } from "./types"
 
-import { ViewBase } from './ModePicker.kbview'
+import { ViewBase } from './ModePicker.kbcontrol'
 import * as __parts from './ModePicker.parts'
 
 const GLYPH: Record<Mode, typeof Eye> = {

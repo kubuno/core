@@ -1,5 +1,5 @@
 /**
- * Code-behind of `AlertDetail.kbview` (converted from `AlertDetail.tsx` by @kubuno/views-migrate).
+ * Code-behind of `AlertDetail.kbcontrol` (converted from `AlertDetail.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useMemo } from "react"
@@ -11,9 +11,9 @@ import { usePrivileges } from "../../authz/usePrivileges"
 import { useAlert, useAlertFacets, useAlertVerb, useAssignAlert, useCommentAlert, useSetAlertStatus } from "./useAlerts"
 import { alertSummary, alertTitle, severityLabel, skinOf, statusLabel } from "./labels"
 import { isOpen, type AlertStatus } from "./types"
-import { useAdminCrumbs } from "../AdminBreadcrumb"
+import { useAdminCrumbs } from "../pages/AdminBreadcrumb"
 
-import { ViewBase } from './AlertDetail.kbview'
+import { ViewBase } from './AlertDetail.kbcontrol'
 import * as __parts from './AlertDetail.parts'
 
 export type AlertDetailProps = { id: string; onBack: () => void }

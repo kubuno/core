@@ -1,0 +1,85 @@
+<!-- RequestStatus — converted from RequestStatus.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="RequestStatusProps">
+  <Panel Class="space-y-4">
+    <Panel BackColor="Surface1" Visible="{Binding show_active}" Class="rounded-lg border border-border p-4">
+      <Stack Direction="LeftToRight" CrossAlign="Center">
+        <Icon Name="Clock" Size="18" Class="shrink-0 text-text-secondary"/>
+        <Label Text="{Res settings.mde_building}"
+               FontWeight="Medium"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-body)]"/>
+      </Stack>
+      <Panel Class="mt-3">
+        <ProgressBar Value="{Binding value}" Variant="Primary" Indeterminate="{Binding indeterminate}"/>
+      </Panel>
+      <Label Text="{Res settings.mde_building_desc}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-3 [font-size:var(--kb-text-meta)]"/>
+    </Panel>
+    <Panel BackColor="Surface1" Visible="{Binding show_latest}" Class="rounded-lg border border-border p-4">
+      <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true">
+        <Icon Name="CheckCircle2" Size="18" Class="shrink-0 text-success"/>
+        <Label Text="{Res settings.mde_ready}"
+               FontWeight="Medium"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-body)]"/>
+        <!-- TODO(views-migrate): <StatusBadge> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding StatusBadge}" Props="{Binding status_badge_props}"/>
+      </Stack>
+      <!-- TODO(views-migrate): <dl> has no .kbview element yet -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <Stack Direction="LeftToRight" WrapContents="true" Class="mt-4">
+        <Button IconSize="16" Icon="Download" Text="{Res settings.mde_download}" OnClick="button_click"/>
+        <Button Variant="Secondary" Text="{Res settings.mde_new}" Visible="{Binding show_active2}" OnClick="button_click2"/>
+      </Stack>
+      <Label Text="{Res settings.mde_keep_safe}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-3 [font-size:var(--kb-text-meta)]"/>
+    </Panel>
+    <EmptyState ActionLabel="{Res settings.mde_new}"
+                IconSize="26"
+                Icon="Download"
+                Title="{Res settings.mde_none}"
+                Description="{Res settings.mde_none_desc}"
+                Visible="{Binding show_active_latest}"
+                OnAction="empty_state_action"/>
+    <Panel Visible="{Binding show_past}">
+      <Label Text="{Res settings.mde_history}"
+             FontWeight="Medium"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mb-2 [font-size:var(--kb-text-body)]"/>
+      <Panel HtmlTag="Ul" Class="rounded-lg border border-border divide-y divide-border overflow-hidden">
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_past}">
+          <Panel HtmlTag="Li" BackColor="Surface" Class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text}"
+                   Overflow="Wrap"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="[font-size:var(--kb-text-meta)]"/>
+            <!-- TODO(views-migrate): <StatusBadge> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding StatusBadge2}" Props="{Binding status_badge_props}"/>
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text2}"
+                   Overflow="Wrap"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Class="ml-auto [font-size:var(--kb-text-meta)]"/>
+          </Panel>
+        </Repeater>
+      </Panel>
+    </Panel>
+    <!-- TODO(views-migrate): <Callout> icon: a value the property converts (null-when-false) -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding show_data_history_status}"/>
+  </Panel>
+</UserControl>

@@ -1,10 +1,10 @@
 /**
- * Code-behind of `ResizeHandleDemo.kbview` (converted from `ResizeHandleDemo.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ResizeHandleDemo.kbcontrol` (converted from `ResizeHandleDemo.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { ResizeHandle } from "@ui"
 
-import { ViewBase } from './ResizeHandleDemo.kbview'
+import { ViewBase } from './ResizeHandleDemo.kbcontrol'
 import * as __parts from './ResizeHandleDemo.parts'
 
 export class ResizeHandleDemo extends ViewBase {

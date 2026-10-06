@@ -1,5 +1,5 @@
 /**
- * Code-behind of `CalendarDetail.kbview` (converted from `CalendarDetail.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CalendarDetail.kbcontrol` (converted from `CalendarDetail.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs, type ValueChangedEventArgs } from '@kubuno/views'
 import { useMemo, useState } from "react"
@@ -11,9 +11,9 @@ import { useConfirm } from "../../../hooks/useConfirm"
 import HolidayDialog from "./HolidayDialog"
 import { formatDate, observanceText, ruleText } from "./ruleText"
 import { errorMessage, useCalendarDetail, useDeleteHoliday, useResetHoliday, useSetExclusions, useSetHolidayEnabled, type Holiday } from "./api"
-import { useAdminCrumbs } from "../../AdminBreadcrumb"
+import { useAdminCrumbs } from "../../pages/AdminBreadcrumb"
 
-import { ViewBase } from './CalendarDetail.kbview'
+import { ViewBase } from './CalendarDetail.kbcontrol'
 import * as __parts from './CalendarDetail.parts'
 
 export type CalendarDetailProps = {

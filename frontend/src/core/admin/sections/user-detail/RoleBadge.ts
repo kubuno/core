@@ -1,8 +1,8 @@
 /**
- * Code-behind of `RoleBadge.kbview` (converted from `RoleBadge.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RoleBadge.kbcontrol` (converted from `RoleBadge.tsx` by @kubuno/views-migrate).
  */
 
-import { ViewBase } from './RoleBadge.kbview'
+import { ViewBase } from './RoleBadge.kbcontrol'
 
 const ROLE_VARIANT: Record<string, 'danger' | 'primary' | 'default'> = {
   admin: 'danger',

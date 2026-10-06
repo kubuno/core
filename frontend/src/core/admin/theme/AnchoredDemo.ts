@@ -1,9 +1,9 @@
 /**
- * Code-behind of `AnchoredDemo.kbview` (converted from `AnchoredDemo.tsx` by @kubuno/views-migrate).
+ * Code-behind of `AnchoredDemo.kbcontrol` (converted from `AnchoredDemo.tsx` by @kubuno/views-migrate).
  */
 import { useRef } from "react"
 
-import { ViewBase } from './AnchoredDemo.kbview'
+import { ViewBase } from './AnchoredDemo.kbcontrol'
 import * as __parts from './AnchoredDemo.parts'
 
 export class AnchoredDemo extends ViewBase {

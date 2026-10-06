@@ -1,11 +1,11 @@
 /**
- * Code-behind of `InstanceCard.kbview` (converted from `InstanceCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `InstanceCard.kbcontrol` (converted from `InstanceCard.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import type { AccountCounts, InstanceInfo } from "./api"
 
-import { ViewBase } from './InstanceCard.kbview'
+import { ViewBase } from './InstanceCard.kbcontrol'
 import * as __parts from './InstanceCard.parts'
 
 export type InstanceCardProps = {

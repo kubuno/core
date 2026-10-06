@@ -1,0 +1,9 @@
+<!-- ReportDocument — converted from ReportDocument.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ReportDocumentProps">
+  <Panel>
+    <!-- TODO(views-migrate): <div ref>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <PagedPreview> is no .kbview element (./paged/PagedPreview#default) -->
+    <ReactHost Component="{Binding PagedPreview}" Props="{Binding paged_preview_props}"/>
+  </Panel>
+</UserControl>

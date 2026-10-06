@@ -2,7 +2,7 @@
  * Code-behind of `UsersSection.kbview` (converted from `UsersSection.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
-import UsersPanel from "../UsersPanel"
+import UsersPanel from "../pages/UsersPanel"
 import UserDetailSection from "./user-detail/UserDetailSection"
 import type { AdminSectionProps } from "./registry"
 

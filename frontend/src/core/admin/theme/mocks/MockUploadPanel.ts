@@ -1,8 +1,8 @@
 /**
- * Code-behind of `MockUploadPanel.kbview` (converted from `MockUploadPanel.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MockUploadPanel.kbcontrol` (converted from `MockUploadPanel.tsx` by @kubuno/views-migrate).
  */
 
-import { ViewBase } from './MockUploadPanel.kbview'
+import { ViewBase } from './MockUploadPanel.kbcontrol'
 
 export class MockUploadPanel extends ViewBase {
 }

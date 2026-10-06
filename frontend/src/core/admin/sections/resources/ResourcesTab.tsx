@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ResourcesTab.kbview` (converted from `ResourcesTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ResourcesTab.kbcontrol` (converted from `ResourcesTab.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -9,7 +9,7 @@ import { useConfirm } from "../../../hooks/useConfirm"
 import ResourceDialog from "./ResourceDialog"
 import { errorMessage, useDeleteResource, useResources, type Resource } from "./api"
 
-import { ViewBase } from './ResourcesTab.kbview'
+import { ViewBase } from './ResourcesTab.kbcontrol'
 import * as __parts from './ResourcesTab.parts'
 
 export type ResourcesTabProps = { canManage: boolean }

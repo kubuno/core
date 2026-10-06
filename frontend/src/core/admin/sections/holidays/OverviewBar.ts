@@ -1,11 +1,11 @@
 /**
- * Code-behind of `OverviewBar.kbview` (converted from `OverviewBar.tsx` by @kubuno/views-migrate).
+ * Code-behind of `OverviewBar.kbcontrol` (converted from `OverviewBar.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { useHolidaysOverview, useReloadDataset } from "./api"
 
-import { ViewBase } from './OverviewBar.kbview'
+import { ViewBase } from './OverviewBar.kbcontrol'
 import * as __parts from './OverviewBar.parts'
 
 export type OverviewBarProps = { canManage: boolean }

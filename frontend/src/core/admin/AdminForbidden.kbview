@@ -1,6 +1,0 @@
-<!-- AdminForbidden — converted from AdminForbidden.tsx by @kubuno/views-migrate. -->
-<EmptyState x:Props="AdminForbiddenProps"
-            Variant="Unavailable"
-            Icon="Lock"
-            Title="{Res admin.forbidden_title}"
-            Description="{Binding description}"/>

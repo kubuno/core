@@ -1,10 +1,10 @@
 /**
- * Code-behind of `CompositionBar.kbview` (converted from `CompositionBar.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CompositionBar.kbcontrol` (converted from `CompositionBar.tsx` by @kubuno/views-migrate).
  */
 import { formatBytes } from "../sections/format"
 import { type Segment } from "./charts"
 
-import { ViewBase } from './CompositionBar.kbview'
+import { ViewBase } from './CompositionBar.kbcontrol'
 import * as __parts from './CompositionBar.parts'
 
 export type CompositionBarProps = {

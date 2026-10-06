@@ -1,9 +1,9 @@
 /**
- * Code-behind of `ComingSoon.kbview` (converted from `ComingSoon.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ComingSoon.kbcontrol` (converted from `ComingSoon.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './ComingSoon.kbview'
+import { ViewBase } from './ComingSoon.kbcontrol'
 
 export type ComingSoonProps = { titleKey: string }
 

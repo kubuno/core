@@ -1,12 +1,12 @@
 /**
- * The parts of `SupportCard.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `SupportCard.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { useTranslation } from "react-i18next"
 import { BadgeCheck, ShieldQuestion, Users } from "lucide-react"
 import { Badge, Callout, Textarea } from "@ui"
 import { formatDay } from "../format"
-import Field from "./Field"
+import Field from "./SubscriptionField"
 import { type SupportInfo } from "./api"
 import { ExternalLink } from "./ExternalLink"
 import type { SupportCard } from './SupportCard'

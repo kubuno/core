@@ -1,8 +1,8 @@
 /**
- * Code-behind of `ColorsGroup.kbview` (converted from `ColorsGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ColorsGroup.kbcontrol` (converted from `ColorsGroup.tsx` by @kubuno/views-migrate).
  */
 
-import { ViewBase } from './ColorsGroup.kbview'
+import { ViewBase } from './ColorsGroup.kbcontrol'
 import * as __parts from './ColorsGroup.parts'
 
 export class ColorsGroup extends ViewBase {

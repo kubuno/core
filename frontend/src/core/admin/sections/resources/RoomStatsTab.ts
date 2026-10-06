@@ -1,5 +1,5 @@
 /**
- * Code-behind of `RoomStatsTab.kbview` (converted from `RoomStatsTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RoomStatsTab.kbcontrol` (converted from `RoomStatsTab.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useMemo } from "react"
@@ -8,7 +8,7 @@ import { CalendarCheck2, Clock, Gauge, ThumbsUp } from "lucide-react"
 import { useChartSeries } from "../../DashboardCharts"
 import { useRoomStats, errorMessage } from "./api"
 
-import { ViewBase } from './RoomStatsTab.kbview'
+import { ViewBase } from './RoomStatsTab.kbcontrol'
 import * as __parts from './RoomStatsTab.parts'
 
 const PERIODS: Record<string, number> = {

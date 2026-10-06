@@ -1,0 +1,11 @@
+<!-- VisToggle — converted from VisToggle.tsx by @kubuno/views-migrate. -->
+<UserControl x:Props="VisToggleProps">
+  <Panel AccessibleRole="PushButton"
+         AutoSize="true"
+         ToolTip="{Binding tooltip}"
+         Class="text-text-tertiary hover:text-text-secondary transition-colors"
+         OnClick="panel_click">
+    <Icon Name="Users" Size="13" Visible="{Binding isPublic}"/>
+    <Icon Name="Lock" Size="13" Visible="{Binding show_not_is_public}"/>
+  </Panel>
+</UserControl>

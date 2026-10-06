@@ -1,2 +1,0 @@
-<!-- StatusBadge — converted from StatusBadge.tsx by @kubuno/views-migrate. -->
-<Badge x:Props="StatusBadgeProps" Variant="{Binding variant}" Dot="true" Text="{Binding props.label}"/>

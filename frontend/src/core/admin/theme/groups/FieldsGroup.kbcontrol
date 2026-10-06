@@ -1,0 +1,34 @@
+<!-- FieldsGroup — converted from FieldsGroup.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="FieldsGroupProps">
+  <Stack Direction="LeftToRight" Gap="16" CrossAlign="End" WrapContents="true">
+    <Panel Class="w-36">
+      <NumericField Value="{Binding num, Mode=TwoWay}" Label="{Res admin.t_prev_quantity}" Maximum="10"/>
+    </Panel>
+    <Panel Class="w-56">
+      <!-- TODO(views-migrate): <TextArea> rows: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Panel>
+    <Stack Gap="6">
+      <Label HtmlTag="Span" Text="{Res admin.t_prev_font}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <!-- TODO(views-migrate): <FontPicker> is no .kbview element (@ui#FontPicker) -->
+      <ReactHost Component="{Binding FontPicker}" Props="{Binding font_picker_props}"/>
+    </Stack>
+    <Stack Gap="6" CrossAlign="Center">
+      <Label HtmlTag="Span" Text="{Res admin.t_prev_select_obj}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <Panel BackColor="Surface2" Class="relative w-10 h-10 rounded-lg border border-border">
+        <!-- TODO(views-migrate): <FloatCheckbox> is no .kbview element (@ui#FloatCheckbox) -->
+        <ReactHost Component="{Binding FloatCheckbox}" Props="{Binding float_checkbox_props}"/>
+      </Panel>
+    </Stack>
+    <Stack Gap="6">
+      <Label HtmlTag="Span" Text="{Res admin.t_prev_color}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <!-- TODO(views-migrate): <ColorField> C: no .kbview property -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Stack>
+    <Stack Gap="6">
+      <Label HtmlTag="Span" Text="{Res admin.t_prev_gradient}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <!-- TODO(views-migrate): <GradientField> value: a value the property converts (gradient-css) -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    </Stack>
+  </Stack>
+</UserControl>

@@ -7,7 +7,7 @@ import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { api } from "../api/client"
 import { passwordStrength } from "./passwordStrength"
-import { InstanceLogo } from "../shell/InstanceLogo"
+import { InstanceLogo } from "../shell/controls/InstanceLogo"
 import { apiErrorDetail } from "../api/errorMessage"
 
 import { ViewBase } from './ResetPasswordPage.kbview'

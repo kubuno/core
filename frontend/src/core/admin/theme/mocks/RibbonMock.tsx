@@ -1,11 +1,11 @@
 /**
- * Code-behind of `RibbonMock.kbview` (converted from `RibbonMock.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RibbonMock.kbcontrol` (converted from `RibbonMock.tsx` by @kubuno/views-migrate).
  */
 import { Fragment } from 'react'
 import type { ReactNode } from "react"
 import { Copy, FileText, Pencil } from "lucide-react"
 
-import { ViewBase } from './RibbonMock.kbview'
+import { ViewBase } from './RibbonMock.kbcontrol'
 import * as __parts from './RibbonMock.parts'
 
 export class RibbonMock extends ViewBase {

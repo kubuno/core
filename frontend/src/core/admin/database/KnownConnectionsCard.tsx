@@ -1,5 +1,5 @@
 /**
- * Code-behind of `KnownConnectionsCard.kbview` (converted from `KnownConnectionsCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `KnownConnectionsCard.kbcontrol` (converted from `KnownConnectionsCard.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { Fragment } from 'react'
@@ -13,7 +13,7 @@ import { apiErrorMessage } from "../../api/errorMessage"
 import { useConfirm } from "../../hooks/useConfirm"
 import { usePrivileges } from "../../authz/usePrivileges"
 
-import { ViewBase } from './KnownConnectionsCard.kbview'
+import { ViewBase } from './KnownConnectionsCard.kbcontrol'
 
 interface Conn {
   id: string

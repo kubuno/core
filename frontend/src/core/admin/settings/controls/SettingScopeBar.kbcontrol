@@ -1,0 +1,32 @@
+<!-- SettingScopeBar — converted from SettingScopeBar.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="SettingScopeBarProps">
+  <Panel Class="contents">
+    <Panel Class="{Binding div_class}">
+      <Panel BackColor="Surface1" Class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border px-3 py-2">
+        <Icon Name="Building2" Size="16" Class="shrink-0 text-text-tertiary"/>
+        <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click">
+          <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.scope_instance}"/>
+        </Panel>
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_path}">
+          <Panel HtmlTag="Span" Class="flex min-w-0 items-center gap-1">
+            <Icon Name="ChevronRight" Size="14" Class="shrink-0 text-text-tertiary"/>
+            <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click2">
+              <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding u.name}"/>
+            </Panel>
+          </Panel>
+        </Repeater>
+        <Panel AccessibleRole="PushButton"
+               AutoSize="true"
+               ForeColor="Primary"
+               Class="ml-auto flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-sm hover:bg-surface-2"
+               OnClick="panel_click3">
+          <Icon Name="Pencil" Size="14"/>
+          <Label HtmlTag="Span" Text="{Res admin.scope_change}" Overflow="Wrap" InheritFontSize="true" Class="hidden sm:inline"/>
+        </Panel>
+      </Panel>
+      <Label Text="{Binding p_text}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary" Class="mt-1.5 px-1"/>
+    </Panel>
+    <!-- TODO(views-migrate): <OrgUnitPicker> is no .kbview element (../OrgUnitPicker#default) -->
+    <ReactHost Component="{Binding OrgUnitPicker}" Props="{Binding org_unit_picker_props}" Visible="{Binding picking}"/>
+  </Panel>
+</UserControl>

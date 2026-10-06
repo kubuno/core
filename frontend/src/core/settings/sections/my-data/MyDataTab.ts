@@ -1,5 +1,5 @@
 /**
- * Code-behind of `MyDataTab.kbview` (converted from `MyDataTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MyDataTab.kbcontrol` (converted from `MyDataTab.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next"
 import { useStepper, useToast, type StepDef } from "@ui"
 import { errorMessage, useMyExport, useRequestMyExport } from "./api"
 
-import { ViewBase } from './MyDataTab.kbview'
+import { ViewBase } from './MyDataTab.kbcontrol'
 import * as __parts from './MyDataTab.parts'
 
 export class MyDataTab extends ViewBase {

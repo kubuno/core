@@ -4,4 +4,4 @@
  * (`inline-edit/Field`) and is re-exported here for the tabs that already
  * import it from this file.
  */
-export { orDash, default as Field } from '../../inline-edit/Field'
+export { orDash, default as Field } from '../../inline-edit/InlineEditField'

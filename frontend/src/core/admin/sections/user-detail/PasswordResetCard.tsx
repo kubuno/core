@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'
 import { Button, Card } from '@ui'
 import type { User } from '../../../types'
-import ResetPasswordDialog from '../../ResetPasswordDialog'
+import ResetPasswordDialog from '../../dialogs/ResetPasswordDialog'
 import { useAdminAction } from '../../adminAction'
 
 /**

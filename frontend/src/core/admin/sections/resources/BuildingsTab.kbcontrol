@@ -1,0 +1,18 @@
+<!-- BuildingsTab — converted from BuildingsTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="BuildingsTabProps">
+  <Panel Class="min-w-0">
+    <Label Text="{Binding error}"
+           Overflow="Wrap"
+           ForeColor="Danger"
+           InheritFontSize="true"
+           AccessibleRole="Alert"
+           Visible="{Binding show_error}"
+           Class="mb-3 [font-size:var(--kb-text-body)]"/>
+    <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, rowActions, onRowClick, configurableColumns, t, toolbar, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <BuildingDialog> is no .kbview element (./BuildingDialog#default) -->
+    <ReactHost Component="{Binding BuildingDialog}" Props="{Binding building_dialog_props}" Visible="{Binding show_editing}"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</UserControl>

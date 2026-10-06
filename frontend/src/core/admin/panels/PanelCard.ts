@@ -1,5 +1,5 @@
 /**
- * Code-behind of `PanelCard.kbview` (converted from `PanelCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `PanelCard.kbcontrol` (converted from `PanelCard.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs } from '@kubuno/views'
 import { useCallback, useMemo } from "react"
@@ -8,13 +8,13 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react"
 import { fmtBytes, useChartSeries } from "../DashboardCharts"
 import { bucketLabel } from "./bucketLabel"
 import type { DashboardPanel, PanelBucket, PanelDef } from "./types"
-import { AreaChart } from "../AreaChart"
-import { BarChart } from "../BarChart"
-import DonutChart from "../DonutChart"
-import HBarList from "../HBarList"
-import ProgressRing from "../ProgressRing"
+import { AreaChart } from "../pages/AreaChart"
+import { BarChart } from "../controls/BarChart"
+import DonutChart from "../controls/DonutChart"
+import HBarList from "../controls/HBarList"
+import ProgressRing from "../controls/ProgressRing"
 
-import { ViewBase } from './PanelCard.kbview'
+import { ViewBase } from './PanelCard.kbcontrol'
 import * as __parts from './PanelCard.parts'
 
 interface Props {

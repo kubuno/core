@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ActivityTab.kbview` (converted from `ActivityTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ActivityTab.kbcontrol` (converted from `ActivityTab.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useMemo } from "react"
@@ -12,7 +12,7 @@ import type { User } from "../../../types"
 import { AUDIT_OUTCOME_STYLE, type AuditEntry } from "../auditTypes"
 import { formatWhen } from "../format"
 
-import { ViewBase } from './ActivityTab.kbview'
+import { ViewBase } from './ActivityTab.kbcontrol'
 import * as __parts from './ActivityTab.parts'
 
 const SCOPE_LIMIT = 100

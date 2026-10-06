@@ -1,12 +1,12 @@
 /**
- * Code-behind of `MobileSettingsIndex.kbview` (converted from `MobileSettingsIndex.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MobileSettingsIndex.kbcontrol` (converted from `MobileSettingsIndex.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { Slot } from "../slots/SlotRegistry"
 import { useSettingsNav } from "./navigation"
 
-import { ViewBase } from './MobileSettingsIndex.kbview'
+import { ViewBase } from './MobileSettingsIndex.kbcontrol'
 import * as __parts from './MobileSettingsIndex.parts'
 
 export class MobileSettingsIndex extends ViewBase {

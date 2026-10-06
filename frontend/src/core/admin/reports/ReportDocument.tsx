@@ -1,12 +1,12 @@
 /**
- * Code-behind of `ReportDocument.kbview` (converted from `ReportDocument.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ReportDocument.kbcontrol` (converted from `ReportDocument.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useChartSeries } from "../DashboardCharts"
 import { useAdminModules } from "../adminModules"
-import { useAdminCrumbs } from "../AdminBreadcrumb"
+import { useAdminCrumbs } from "../pages/AdminBreadcrumb"
 import type { PanelDef, PanelPeriod } from "../panels/types"
 import type { ReportPanel } from "./api"
 import { csvFilename, downloadCsv, reportRows, toCsv } from "./csv"
@@ -22,15 +22,15 @@ import PagedPreview from "./paged/PagedPreview"
 import { PAPER } from "./paged/geometry"
 import type { Orientation } from "./paged/geometry"
 import type { FlowItem } from "./paged/types"
-import DonutChart from "../DonutChart"
-import HBarList from "../HBarList"
-import ProgressRing from "../ProgressRing"
-import { ReportSeriesChart } from "../ReportSeriesChart"
+import DonutChart from "../controls/DonutChart"
+import HBarList from "../controls/HBarList"
+import ProgressRing from "../controls/ProgressRing"
+import { ReportSeriesChart } from "../pages/ReportSeriesChart"
 import { CaveatBlock } from "./CaveatBlock"
 import { MethodBlock } from "./MethodBlock"
 import ReportBlock from "./ReportBlock"
 
-import { ViewBase } from './ReportDocument.kbview'
+import { ViewBase } from './ReportDocument.kbcontrol'
 import * as __parts from './ReportDocument.parts'
 
 const CHART_ENTRIES = 10

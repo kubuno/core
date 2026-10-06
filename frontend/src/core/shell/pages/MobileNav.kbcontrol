@@ -1,0 +1,21 @@
+<!-- MobileNav — converted from MobileNav.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="MobileNavProps">
+  <Panel Class="contents">
+    <Panel HtmlTag="Nav"
+           DataAttributes="app-chrome"
+           Visible="{Binding show_case_3}"
+           Class="flex flex-col items-stretch gap-1 py-2 w-[68px] h-full overflow-y-auto rounded-xl bg-white border border-border">
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_items}"/>
+    </Panel>
+    <Panel HtmlTag="Nav"
+           DataAttributes="app-chrome"
+           Visible="{Binding show_main}"
+           Class="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-border lg:hidden [padding-bottom:env(safe-area-inset-bottom)]">
+      <Panel Class="flex justify-around items-center h-14">
+        <!-- TODO(views-migrate): elements held in an expression -->
+        <ReactHost Component="{Binding Fragment}" Props="{Binding content_items2}"/>
+      </Panel>
+    </Panel>
+  </Panel>
+</UserControl>

@@ -1,5 +1,5 @@
 /**
- * Code-behind of `RuleSummaryPanel.kbview` (converted from `RuleSummaryPanel.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RuleSummaryPanel.kbcontrol` (converted from `RuleSummaryPanel.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { type SummaryContext } from "./summary"
@@ -9,7 +9,7 @@ import type { RuleInput } from "./types"
 import type { ScopePreview } from "./useDirectory"
 import RuleSentence from "./RuleSentence"
 
-import { ViewBase } from './RuleSummaryPanel.kbview'
+import { ViewBase } from './RuleSummaryPanel.kbcontrol'
 import * as __parts from './RuleSummaryPanel.parts'
 
 interface Props {

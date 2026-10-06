@@ -1,11 +1,11 @@
 /**
- * Code-behind of `PickersGroup.kbview` (converted from `PickersGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `PickersGroup.kbcontrol` (converted from `PickersGroup.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { ColorPicker, ColorSwatchPicker, GradientPicker, type Gradient, type PickerTheme } from "@ui"
 
-import { ViewBase } from './PickersGroup.kbview'
+import { ViewBase } from './PickersGroup.kbcontrol'
 
 export type PickersGroupProps = {
   pickerTheme: PickerTheme

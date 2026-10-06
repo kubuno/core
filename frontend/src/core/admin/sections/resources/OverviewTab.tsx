@@ -1,5 +1,5 @@
 /**
- * Code-behind of `OverviewTab.kbview` (converted from `OverviewTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `OverviewTab.kbcontrol` (converted from `OverviewTab.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -7,7 +7,7 @@ import { Building2, CalendarRange, DoorOpen, Users } from "lucide-react"
 import { useResourceOverview } from "./api"
 import type { ResourcePane } from "./panes"
 
-import { ViewBase } from './OverviewTab.kbview'
+import { ViewBase } from './OverviewTab.kbcontrol'
 import * as __parts from './OverviewTab.parts'
 
 export type OverviewTabProps = { onGo: (pane: ResourcePane) => void }

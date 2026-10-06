@@ -1,12 +1,12 @@
 /**
- * The parts of `RoomStatsTab.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `RoomStatsTab.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { type ReactNode } from "react"
 import { Clock } from "lucide-react"
 import { Dropdown } from "@ui"
-import { BarChart } from "../../BarChart"
-import HBarList from "../../HBarList"
+import { BarChart } from "../../controls/BarChart"
+import HBarList from "../../controls/HBarList"
 import type { RoomStatsTab } from './RoomStatsTab'
 
 function StatCard({

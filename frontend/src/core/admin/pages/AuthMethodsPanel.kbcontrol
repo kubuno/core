@@ -1,0 +1,69 @@
+<!-- AuthMethodsPanel — converted from AuthMethodsPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel Class="contents">
+    <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-10">
+      <Spinner/>
+    </Stack>
+    <Panel Visible="{Binding show_case_2}" Class="max-w-3xl">
+      <Callout Variant="Warning" Body="{Res authmethods.no_access}"/>
+    </Panel>
+    <Panel Visible="{Binding show_main}" Class="max-w-3xl">
+      <!-- TODO(views-migrate): <SettingScopeBar> is no .kbview element (./settings/SettingScopeBar#default) -->
+      <ReactHost Component="{Binding SettingScopeBar}" Props="{Binding setting_scope_bar_props}"/>
+      <Card Title="{Res authmethods.title}" IconSize="17" Icon="ShieldCheck">
+        <Panel Class="space-y-4">
+          <Label Text="{Res authmethods.subtitle}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Class="[font-size:var(--kb-text-body)]"/>
+          <Callout Body="{Binding callout_text}" Visible="{Binding show_scope_type_org}"/>
+          <Callout Variant="Warning" Body="{Res authmethods.locked_above}" Visible="{Binding lockedAbove}"/>
+          <Panel Class="space-y-4">
+            <!-- TODO(views-migrate): <MethodRow> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding MethodRow}" Props="{Binding method_row_props}"/>
+            <!-- TODO(views-migrate): <MethodRow> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding MethodRow}" Props="{Binding method_row_props2}"/>
+            <!-- TODO(views-migrate): <MethodRow> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding MethodRow}" Props="{Binding method_row_props3}"/>
+          </Panel>
+          <Button Variant="Ghost"
+                  Size="Sm"
+                  Loading="{Binding revert.isPending}"
+                  Text="{Res authmethods.revert}"
+                  Visible="{Binding show_scope_type_org2}"
+                  OnClick="button_click"/>
+        </Panel>
+      </Card>
+      <Panel Class="mt-4">
+        <Card Title="{Res authmethods.fallback_title}" IconSize="17" Icon="KeyRound">
+          <Panel Class="space-y-4">
+            <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start" Justify="SpaceBetween">
+              <Panel Class="min-w-0">
+                <Label Text="{Res authmethods.fallback_label}"
+                       FontWeight="Medium"
+                       Overflow="Wrap"
+                       ForeColor="TextPrimary"
+                       InheritFontSize="true"
+                       Class="[font-size:var(--kb-text-body)]"/>
+                <Label Text="{Res authmethods.fallback_desc}"
+                       Overflow="Wrap"
+                       ForeColor="TextTertiary"
+                       InheritFontSize="true"
+                       Class="mt-0.5 [font-size:var(--kb-text-meta)]"/>
+              </Panel>
+              <Switch On="{Binding fallback}"
+                      Enabled="{Binding enabled_unless_fallback_setting_locked_above}"
+                      OnCheckedChanged="switch_checked_changed"/>
+            </Stack>
+            <Callout Variant="Warning" Body="{Res authmethods.fallback_off_warning}" Visible="{Binding show_fallback}"/>
+            <!-- TODO(views-migrate): <Callout> with element children -->
+            <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+          </Panel>
+        </Card>
+      </Panel>
+      <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+      <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+    </Panel>
+  </Panel>
+</UserControl>

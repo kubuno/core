@@ -1,5 +1,5 @@
 /**
- * Code-behind of `AudienceSheet.kbview` (converted from `AudienceSheet.tsx` by @kubuno/views-migrate).
+ * Code-behind of `AudienceSheet.kbcontrol` (converted from `AudienceSheet.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useMemo } from "react"
@@ -9,9 +9,9 @@ import ConfirmDialog from "@ui/ConfirmDialog"
 import { useAudience, useAudienceMutations, type AudienceMember } from "./api"
 import IdentityCard from "./IdentityCard"
 import MemberPicker from "./MemberPicker"
-import { useAdminCrumbs } from "../../AdminBreadcrumb"
+import { useAdminCrumbs } from "../../pages/AdminBreadcrumb"
 
-import { ViewBase } from './AudienceSheet.kbview'
+import { ViewBase } from './AudienceSheet.kbcontrol'
 import * as __parts from './AudienceSheet.parts'
 
 function errMessage(err: unknown): string | undefined {

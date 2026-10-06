@@ -1,6 +1,0 @@
-<!-- RoleIcon — converted from RoleIcon.tsx by @kubuno/views-migrate. -->
-<Panel x:Props="RoleIconProps" Class="contents">
-  <Icon Name="ShieldCheck" Size="{Binding size}" Visible="{Binding show_case_1}" Class="text-danger shrink-0"/>
-  <Icon Name="UserCog" Size="{Binding size}" Visible="{Binding show_case_2}" Class="text-primary shrink-0"/>
-  <Icon Name="UserCog" Size="{Binding size}" Visible="{Binding show_main}" Class="text-text-secondary shrink-0"/>
-</Panel>

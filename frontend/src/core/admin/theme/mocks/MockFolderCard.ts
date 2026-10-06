@@ -1,8 +1,8 @@
 /**
- * Code-behind of `MockFolderCard.kbview` (converted from `MockFolderCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MockFolderCard.kbcontrol` (converted from `MockFolderCard.tsx` by @kubuno/views-migrate).
  */
 
-import { ViewBase } from './MockFolderCard.kbview'
+import { ViewBase } from './MockFolderCard.kbcontrol'
 
 export type MockFolderCardProps = { name?: string | undefined; selected?: boolean | undefined; }
 

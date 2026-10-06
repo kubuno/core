@@ -1,0 +1,38 @@
+<!-- UserDetailSection — converted from UserDetailSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="UserDetailSectionProps">
+  <Panel Class="contents">
+    <Stack Gap="16" Visible="{Binding show_case_1}">
+      <!-- TODO(views-migrate): <DataTableSkeleton> is no .kbview element (@ui#DataTableSkeleton) -->
+      <ReactHost Component="{Binding DataTableSkeleton}" Props="{Binding data_table_skeleton_props}"/>
+    </Stack>
+    <Stack Gap="16" Visible="{Binding show_case_2}">
+      <EmptyState ActionLabel="{Res ui.retry}"
+                  SecondaryActionLabel="{Res admin.ud_back}"
+                  Variant="Error"
+                  IconSize="24"
+                  Icon="UserX"
+                  Title="{Res admin.ud_load_error}"
+                  Description="{Res admin.ud_load_error_desc}"
+                  OnAction="empty_state_action"
+                  OnSecondaryAction="empty_state_secondary_action"/>
+    </Stack>
+    <Stack Gap="16" Visible="{Binding show_main}" Class="min-w-0">
+      <Panel Class="{Binding div_class}">
+        <!-- TODO(views-migrate): <IdentityCard> is no .kbview element (./IdentityCard#default) -->
+        <ReactHost Component="{Binding IdentityCard}" Props="{Binding identity_card_props}"/>
+        <Stack Gap="16" Class="min-w-0 flex-1">
+          <!-- TODO(views-migrate): <Tabs> tabs: no .kbview property -->
+          <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+          <!-- TODO(views-migrate): <ProfileTab> is no .kbview element (./ProfileTab#default) -->
+          <ReactHost Component="{Binding ProfileTab}" Props="{Binding profile_tab_props}" Visible="{Binding show_pane_profile}"/>
+          <!-- TODO(views-migrate): <SecurityTab> is no .kbview element (./SecurityTab#default) -->
+          <ReactHost Component="{Binding SecurityTab}" Props="{Binding security_tab_props}" Visible="{Binding show_pane_security}"/>
+          <!-- TODO(views-migrate): <ActivityTab> is no .kbview element (./ActivityTab#default) -->
+          <ReactHost Component="{Binding ActivityTab}" Props="{Binding activity_tab_props}" Visible="{Binding show_pane_activity}"/>
+        </Stack>
+      </Panel>
+      <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+      <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+    </Stack>
+  </Panel>
+</UserControl>

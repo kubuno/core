@@ -1,5 +1,5 @@
 /**
- * Code-behind of `DomainDetail.kbview` (converted from `DomainDetail.tsx` by @kubuno/views-migrate).
+ * Code-behind of `DomainDetail.kbcontrol` (converted from `DomainDetail.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useMemo } from "react"
@@ -7,11 +7,11 @@ import { useTranslation } from "react-i18next"
 import { useToast } from "@ui"
 import ConfirmDialog from "@ui/ConfirmDialog"
 import { useConfirm } from "../../../hooks/useConfirm"
-import { useAdminCrumbs } from "../../AdminBreadcrumb"
+import { useAdminCrumbs } from "../../pages/AdminBreadcrumb"
 import DomainDiagnosticsCard from "./DomainDiagnosticsCard"
 import { errorMessage, useDomainDetail, usePromoteDomain, useRemoveDomain, useVerifyDomain } from "./api"
 
-import { ViewBase } from './DomainDetail.kbview'
+import { ViewBase } from './DomainDetail.kbcontrol'
 import * as __parts from './DomainDetail.parts'
 
 export type DomainDetailProps = {

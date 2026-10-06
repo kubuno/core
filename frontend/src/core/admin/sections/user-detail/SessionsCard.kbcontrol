@@ -1,0 +1,25 @@
+<!-- SessionsCard — converted from SessionsCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="SessionsCardProps">
+  <Card Title="{Res admin.ud_card_sessions}"
+        IconSize="16"
+        Icon="MonitorSmartphone"
+        Subtitle="{Res admin.ud_sessions_desc}"
+        Flush="true">
+    <Card.Actions>
+      <Button Size="Sm"
+              Variant="Secondary"
+              IconSize="14"
+              Icon="LogOut"
+              Loading="{Binding revokeAll.isPending}"
+              Text="{Res admin.ud_ses_revoke_all}"
+              Visible="{Binding show_sessions}"
+              OnClick="button_click"/>
+    </Card.Actions>
+    <Panel Class="contents">
+      <!-- TODO(views-migrate): <DataTable> t, columns, rowKey, skeletonRows, onRetry, configurableColumns, minTableWidth, rowActions, emptyState: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+      <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+    </Panel>
+  </Card>
+</UserControl>

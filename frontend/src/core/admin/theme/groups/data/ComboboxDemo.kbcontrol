@@ -1,0 +1,34 @@
+<!-- ComboboxDemo — converted from ComboboxDemo.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Stack Gap="12">
+    <Label Text="{Res admin.t_prev_cb_hint}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-meta)]"/>
+    <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start" WrapContents="true">
+      <Panel Class="w-64">
+        <Label HtmlTag="Label"
+               Text="{Res admin.t_prev_cb_unit}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="mb-1 block [font-size:var(--kb-text-meta)]"/>
+        <!-- TODO(views-migrate): <ComboBox> clearable, onClear: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+      <Panel Class="w-64">
+        <Label HtmlTag="Label"
+               Text="{Res admin.t_prev_cb_empty}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="mb-1 block [font-size:var(--kb-text-meta)]"/>
+        <ComboBox SelectedValue="{Binding free, Mode=TwoWay}"
+                  HostStrings="true"
+                  ItemsSource="{Binding items_source}"
+                  Placeholder="{Res admin.t_prev_cb_ph2}"/>
+      </Panel>
+    </Stack>
+  </Stack>
+</UserControl>

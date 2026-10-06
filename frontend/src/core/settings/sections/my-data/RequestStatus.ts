@@ -1,5 +1,5 @@
 /**
- * Code-behind of `RequestStatus.kbview` (converted from `RequestStatus.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RequestStatus.kbcontrol` (converted from `RequestStatus.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -7,7 +7,7 @@ import { formatBytes, formatDay } from "../../../admin/sections/format"
 import { downloadUrl, type MyExportOverview, type MyExportRun } from "./api"
 import { signedUrl } from "../../../api/signedUrl"
 
-import { ViewBase } from './RequestStatus.kbview'
+import { ViewBase } from './RequestStatus.kbcontrol'
 import * as __parts from './RequestStatus.parts'
 
 export interface RequestStatusProps {

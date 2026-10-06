@@ -1,5 +1,5 @@
 /**
- * Code-behind of `BuildingsTab.kbview` (converted from `BuildingsTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `BuildingsTab.kbcontrol` (converted from `BuildingsTab.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -9,7 +9,7 @@ import { useConfirm } from "../../../hooks/useConfirm"
 import BuildingDialog from "./BuildingDialog"
 import { errorMessage, useBuildings, useDeleteBuilding, type Building } from "./api"
 
-import { ViewBase } from './BuildingsTab.kbview'
+import { ViewBase } from './BuildingsTab.kbcontrol'
 import * as __parts from './BuildingsTab.parts'
 
 export type BuildingsTabProps = { canManage: boolean }

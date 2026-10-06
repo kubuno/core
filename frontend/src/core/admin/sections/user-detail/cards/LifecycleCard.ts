@@ -1,10 +1,10 @@
 /**
- * Code-behind of `LifecycleCard.kbview` (converted from `LifecycleCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `LifecycleCard.kbcontrol` (converted from `LifecycleCard.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import type { User } from "../../../../types"
 
-import { ViewBase } from './LifecycleCard.kbview'
+import { ViewBase } from './LifecycleCard.kbcontrol'
 import * as __parts from './LifecycleCard.parts'
 
 export type LifecycleCardProps = { user: User }

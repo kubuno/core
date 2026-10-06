@@ -1,0 +1,14 @@
+<!-- StepperDemo — converted from StepperDemo.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Stack Gap="12">
+    <!-- TODO(views-migrate): <Stepper> steps: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true">
+      <Button Size="Sm" Variant="Secondary" Enabled="{Binding enabled_unless_wizard_is_first}" Text="{Res common.back}" OnClick="button_click"/>
+      <Button Size="Sm" Enabled="{Binding enabled_unless_wizard_is_last}" Text="{Res admin.t_prev_st_next}" OnClick="button_click2"/>
+      <Button Size="Sm" Variant="Ghost" Text="{Binding button_text}" OnClick="button_click3"/>
+    </Stack>
+    <!-- TODO(views-migrate): <Stepper> steps: no .kbview property -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+  </Stack>
+</UserControl>

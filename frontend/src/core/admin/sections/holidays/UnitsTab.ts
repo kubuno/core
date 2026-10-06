@@ -1,14 +1,14 @@
 /**
- * Code-behind of `UnitsTab.kbview` (converted from `UnitsTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `UnitsTab.kbcontrol` (converted from `UnitsTab.tsx` by @kubuno/views-migrate).
  */
 import { bind, type EventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../../../api/client"
-import OrgUnitPicker from "../../OrgUnitPicker"
+import OrgUnitPicker from "../../dialogs/OrgUnitPicker"
 import { errorMessage, useHolidayCalendars, useSetUnitPref, useUnitOverlay } from "./api"
 
-import { ViewBase } from './UnitsTab.kbview'
+import { ViewBase } from './UnitsTab.kbcontrol'
 import * as __parts from './UnitsTab.parts'
 
 export type UnitsTabProps = { canManage: boolean }

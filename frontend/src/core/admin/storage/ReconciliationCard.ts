@@ -1,10 +1,10 @@
 /**
- * Code-behind of `ReconciliationCard.kbview` (converted from `ReconciliationCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ReconciliationCard.kbcontrol` (converted from `ReconciliationCard.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import type { ModuleUsage, Reconciliation, ReconciliationBlocker } from "./api"
 
-import { ViewBase } from './ReconciliationCard.kbview'
+import { ViewBase } from './ReconciliationCard.kbcontrol'
 import * as __parts from './ReconciliationCard.parts'
 
 const BLOCKER_KEY: Record<ReconciliationBlocker, string> = {

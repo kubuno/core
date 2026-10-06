@@ -1,11 +1,11 @@
 /**
- * Code-behind of `CategoryRows.kbview` (converted from `CategoryRows.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CategoryRows.kbcontrol` (converted from `CategoryRows.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { categoryLabel, type CategoryRules } from "./categories"
 import type { CategoryUsage } from "./api"
 
-import { ViewBase } from './CategoryRows.kbview'
+import { ViewBase } from './CategoryRows.kbcontrol'
 import * as __parts from './CategoryRows.parts'
 
 export type CategoryRowsProps = {

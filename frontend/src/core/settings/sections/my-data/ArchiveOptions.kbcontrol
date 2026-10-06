@@ -1,0 +1,42 @@
+<!-- ArchiveOptions — converted from ArchiveOptions.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ArchiveOptionsProps">
+  <Panel Class="space-y-5">
+    <Panel>
+      <Label Text="{Res settings.mde_opt_format}"
+             FontWeight="Medium"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-body)]"/>
+      <Label Text="{Res settings.mde_opt_format_desc, Format={Binding mde_opt_format_desc_format}}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-1 [font-size:var(--kb-text-meta)]"/>
+    </Panel>
+    <Panel>
+      <!-- TODO(views-migrate): <label htmlFor>: attribute(s) without a .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <Label Text="{Res settings.mde_opt_size_desc}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-1 mb-2 [font-size:var(--kb-text-meta)]"/>
+      <!-- TODO(views-migrate): <ComboBox> id, width: no .kbview property -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Panel>
+    <Panel>
+      <Label Text="{Res settings.mde_opt_once}"
+             FontWeight="Medium"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-body)]"/>
+      <Label Text="{Binding p_text}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-1 [font-size:var(--kb-text-meta)]"/>
+    </Panel>
+  </Panel>
+</UserControl>

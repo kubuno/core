@@ -1,12 +1,12 @@
 /**
- * Code-behind of `ServicePicker.kbview` (converted from `ServicePicker.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ServicePicker.kbcontrol` (converted from `ServicePicker.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs, type ValueChangedEventArgs } from '@kubuno/views'
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import type { MyExportService } from "./api"
 
-import { ViewBase } from './ServicePicker.kbview'
+import { ViewBase } from './ServicePicker.kbcontrol'
 import * as __parts from './ServicePicker.parts'
 
 export interface ServicePickerProps {

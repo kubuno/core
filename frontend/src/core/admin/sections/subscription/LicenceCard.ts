@@ -1,10 +1,10 @@
 /**
- * Code-behind of `LicenceCard.kbview` (converted from `LicenceCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `LicenceCard.kbcontrol` (converted from `LicenceCard.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import type { LicenceInfo } from "./api"
 
-import { ViewBase } from './LicenceCard.kbview'
+import { ViewBase } from './LicenceCard.kbcontrol'
 import * as __parts from './LicenceCard.parts'
 
 export type LicenceCardProps = { licence: LicenceInfo }

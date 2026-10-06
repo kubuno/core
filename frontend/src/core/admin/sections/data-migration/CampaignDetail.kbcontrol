@@ -1,0 +1,74 @@
+<!-- CampaignDetail — converted from CampaignDetail.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="CampaignDetailProps">
+  <Panel Class="contents">
+    <Label Text="{Binding p_text}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Visible="{Binding show_case_1}"
+           Class="[font-size:var(--kb-text-body)]"/>
+    <Stack Gap="16" Visible="{Binding show_main}" Class="min-w-0">
+      <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" WrapContents="true">
+        <Panel Class="min-w-0 flex-1">
+          <Label HtmlTag="H1"
+                 Text="{Binding h1_text}"
+                 ForeColor="TextPrimary"
+                 InheritFontSize="true"
+                 Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+          <Label Text="{Res admin.migr_detail_sub, Service={Binding migr_detail_sub_service}, Host={Binding migr_detail_sub_host}}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Class="mt-1 [font-size:var(--kb-text-body)]"/>
+        </Panel>
+        <Stack Direction="LeftToRight" CrossAlign="Center" Visible="{Binding props.canManage}">
+          <!-- TODO(views-migrate): <Button> with element children -->
+          <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_campaign_status_running}"/>
+          <!-- TODO(views-migrate): <Button> with element children -->
+          <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding show_not_campaign_status_running}"/>
+          <!-- TODO(views-migrate): <Button> with element children -->
+          <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        </Stack>
+      </Stack>
+      <Callout Variant="Warning" Body="{Binding callout_text}" Visible="{Binding show_campaign_error}"/>
+      <Card>
+        <Stack Gap="12" Class="p-4">
+          <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" WrapContents="true">
+            <Badge Variant="{Binding variant}" Text="{Binding badge_text}"/>
+            <Label HtmlTag="Span"
+                   Text="{Res admin.migr_accounts_summary, Done={Binding tally.done}, Total={Binding tally.accounts}, Failed={Binding tally.failed}}"
+                   Overflow="Wrap"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Class="[font-size:var(--kb-text-meta)]"/>
+            <Label HtmlTag="Span"
+                   Text="{Res admin.migr_since_summary, Date={Binding migr_since_summary_date}}"
+                   Overflow="Wrap"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Visible="{Binding show_campaign_since_date}"
+                   Class="[font-size:var(--kb-text-meta)]"/>
+            <Label HtmlTag="Span"
+                   Text="{Res admin.migr_excluded_summary, Folders={Binding migr_excluded_summary_folders}}"
+                   Overflow="Wrap"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Visible="{Binding show_campaign_exclude_folders}"
+                   Class="[font-size:var(--kb-text-meta)]"/>
+          </Stack>
+          <ProgressBar Value="{Binding progress}"/>
+          <Label HtmlTag="Span"
+                 Text="{Binding span_text}"
+                 Overflow="Wrap"
+                 ForeColor="TextTertiary"
+                 InheritFontSize="true"
+                 Class="[font-size:var(--kb-text-meta)]"/>
+        </Stack>
+      </Card>
+      <!-- TODO(views-migrate): <DataTable> t, columns, rowKey, onRetry: no .kbview property -->
+      <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+      <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+      <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+    </Stack>
+  </Panel>
+</UserControl>

@@ -1,8 +1,8 @@
 /**
- * Code-behind of `MockFileRow.kbview` (converted from `MockFileRow.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MockFileRow.kbcontrol` (converted from `MockFileRow.tsx` by @kubuno/views-migrate).
  */
 
-import { ViewBase } from './MockFileRow.kbview'
+import { ViewBase } from './MockFileRow.kbcontrol'
 
 export type MockFileRowProps = { name?: string | undefined; size?: string | undefined; selected?: boolean | undefined; }
 

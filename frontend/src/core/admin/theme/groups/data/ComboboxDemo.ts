@@ -1,11 +1,11 @@
 /**
- * Code-behind of `ComboboxDemo.kbview` (converted from `ComboboxDemo.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ComboboxDemo.kbcontrol` (converted from `ComboboxDemo.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { DEMO_UNITS } from "./fixtures"
 
-import { ViewBase } from './ComboboxDemo.kbview'
+import { ViewBase } from './ComboboxDemo.kbcontrol'
 import * as __parts from './ComboboxDemo.parts'
 
 export class ComboboxDemo extends ViewBase {

@@ -1,5 +1,5 @@
 /**
- * Code-behind of `SchemaPrefixCard.kbview` (converted from `SchemaPrefixCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `SchemaPrefixCard.kbcontrol` (converted from `SchemaPrefixCard.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useEffect } from "react"
@@ -12,7 +12,7 @@ import { apiErrorMessage } from "../../api/errorMessage"
 import { useConfirm } from "../../hooks/useConfirm"
 import { usePrivileges } from "../../authz/usePrivileges"
 
-import { ViewBase } from './SchemaPrefixCard.kbview'
+import { ViewBase } from './SchemaPrefixCard.kbcontrol'
 import * as __parts from './SchemaPrefixCard.parts'
 
 const PRIMARY = 'var(--color-primary)'

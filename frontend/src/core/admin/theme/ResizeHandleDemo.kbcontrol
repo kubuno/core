@@ -1,0 +1,15 @@
+<!-- ResizeHandleDemo — converted from ResizeHandleDemo.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel Class="relative flex h-24 rounded-xl border border-border overflow-hidden bg-white [width:300px]">
+    <!-- TODO(views-migrate): <div> with a computed style -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <ResizeHandle> is no .kbview element (@ui#ResizeHandle) -->
+    <ReactHost Component="{Binding ResizeHandle}" Props="{Binding resize_handle_props}"/>
+    <Label HtmlTag="Div"
+           Text="Contenu"
+           Role="Meta"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           Class="flex-1 h-full flex items-center justify-center"/>
+  </Panel>
+</UserControl>

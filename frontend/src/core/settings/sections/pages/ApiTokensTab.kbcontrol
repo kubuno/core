@@ -1,0 +1,111 @@
+<!-- ApiTokensTab — converted from ApiTokensTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel Class="max-w-2xl">
+    <Panel Class="mb-5">
+      <Label HtmlTag="H3" Text="{Res settings.tok_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+      <Label Text="{Res settings.tok_desc}" Role="Meta" Overflow="Wrap" ForeColor="TextSecondary" Class="mt-1"/>
+    </Panel>
+    <!-- TODO(views-migrate): <NewTokenBanner> is no .kbview element (./NewTokenBanner#default) -->
+    <ReactHost Component="{Binding NewTokenBanner}" Props="{Binding new_token_banner_props}" Visible="{Binding show_new_token}"/>
+    <Panel Visible="{Binding show_legacy}" Class="mb-5">
+      <!-- TODO(views-migrate): <Callout> with element children -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <CreateTokenForm> is no .kbview element (./CreateTokenForm#default) -->
+    <ReactHost Component="{Binding CreateTokenForm}" Props="{Binding create_token_form_props}"/>
+    <Label Text="{Res common.loading}" Overflow="Wrap" ForeColor="TextSecondary" Visible="{Binding isLoading}" Class="py-4"/>
+    <EmptyState IconSize="26" Icon="Key" Title="{Res settings.tok_none}" Compact="true" Visible="{Binding show_tokens_tokens}"/>
+    <Panel Visible="{Binding show_tokens_tokens2}" Class="space-y-2">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_tokens}">
+        <Panel Class="{Binding div_class}">
+          <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start" Justify="SpaceBetween">
+            <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" Class="min-w-0">
+              <!-- TODO(views-migrate): an icon with a computed className -->
+              <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+              <Panel Class="min-w-0">
+                <Panel HtmlTag="P" ForeColor="TextPrimary" Class="text-sm font-medium truncate flex items-center gap-2">
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding tok.name}"/>
+                  <Badge Variant="Warning" Size="Sm" Text="{Res settings.tok_legacy_badge}" Visible="{Binding tok.is_legacy}"/>
+                </Panel>
+                <Panel HtmlTag="P" ForeColor="TextTertiary" Class="text-xs mt-0.5">
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res settings.tok_created_prefix}"/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" "/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" · " Visible="{Binding show_tok_last_used}"/>
+                  <Label HtmlTag="Span"
+                         InheritFontSize="true"
+                         Overflow="Wrap"
+                         Text="{Res settings.tok_used_prefix}"
+                         Visible="{Binding show_tok_last_used}"/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" " Visible="{Binding show_tok_last_used}"/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text2}" Visible="{Binding show_tok_last_used}"/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" · " Visible="{Binding show_tok_last_used2}"/>
+                  <Label HtmlTag="Span"
+                         InheritFontSize="true"
+                         Overflow="Wrap"
+                         Text="{Res settings.tok_never_used}"
+                         Visible="{Binding show_tok_last_used2}"/>
+                </Panel>
+              </Panel>
+            </Stack>
+            <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Class="shrink-0">
+              <Label HtmlTag="Span"
+                     Text="{Binding span_text}"
+                     Overflow="Wrap"
+                     Visible="{Binding show_tok_expires_at}"
+                     Class="{Binding span_class}"/>
+              <Label HtmlTag="Span"
+                     Text="{Res settings.tok_no_expiration}"
+                     Role="Meta"
+                     Overflow="Wrap"
+                     ForeColor="TextSecondary"
+                     BackColor="Surface2"
+                     Visible="{Binding show_not_tok_expires_at}"
+                     Class="px-2 py-0.5 rounded-full"/>
+              <Panel AccessibleRole="PushButton"
+                     AutoSize="true"
+                     ToolTip="{Res settings.tok_revoke}"
+                     Class="p-1.5 rounded-md text-text-tertiary hover:text-danger hover:bg-danger-light transition-colors"
+                     OnClick="panel_click">
+                <Icon Name="Trash2" Size="14"/>
+              </Panel>
+            </Stack>
+          </Stack>
+          <Panel Class="mt-2 pl-[26px]">
+            <Label Text="{Res settings.tok_scopes_label}" Role="Meta" Overflow="Wrap" ForeColor="TextSecondary" Class="mb-1"/>
+            <!-- TODO(views-migrate): <TokenScopeList> is no .kbview element (./TokenScopeList#default) -->
+            <ReactHost Component="{Binding TokenScopeList}" Props="{Binding token_scope_list_props}"/>
+            <Label Text="{Binding p_text}"
+                   Role="Meta"
+                   Overflow="Wrap"
+                   ForeColor="Warning"
+                   Visible="{Binding show_tok_is_legacy}"
+                   Class="mt-1.5"/>
+          </Panel>
+        </Panel>
+      </Repeater>
+    </Panel>
+    <Panel BackColor="Surface1" Class="mt-6 p-3 rounded-lg border border-border">
+      <Panel HtmlTag="P" ForeColor="TextSecondary" Class="text-xs">
+        <Label HtmlTag="Strong" Text="{Res settings.tok_cli}" Overflow="Wrap" ForeColor="TextPrimary" InheritFontSize="true"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" "/>
+        <Label HtmlTag="Code"
+               Text="kubuno &lt;module&gt;:&lt;commande&gt; --token kubuno_xxx"
+               Overflow="Wrap"
+               BackColor="Surface2"
+               InheritFontSize="true"
+               Class="font-mono px-1 py-0.5 rounded"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" "/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res settings.tok_or_env}"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" "/>
+        <Label HtmlTag="Code"
+               Text="KUBUNO_TOKEN"
+               Overflow="Wrap"
+               BackColor="Surface2"
+               InheritFontSize="true"
+               Class="font-mono px-1 py-0.5 rounded"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="."/>
+      </Panel>
+    </Panel>
+  </Panel>
+</UserControl>

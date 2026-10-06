@@ -1,10 +1,10 @@
 /**
- * Code-behind of `UnstoredFieldRow.kbview` (converted from `UnstoredFieldRow.tsx` by @kubuno/views-migrate).
+ * Code-behind of `UnstoredFieldRow.kbcontrol` (converted from `UnstoredFieldRow.tsx` by @kubuno/views-migrate).
  */
 import { type ValueChangedEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './UnstoredFieldRow.kbview'
+import { ViewBase } from './UnstoredFieldRow.kbcontrol'
 
 export type UnstoredFieldRowProps = { field: string }
 

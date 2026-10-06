@@ -1,5 +1,5 @@
 /**
- * The parts of `RoleDetail.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `RoleDetail.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { Building2, Clock, Globe2, Trash2, UserPlus, Users } from "lucide-react"

@@ -1,8 +1,8 @@
 /**
- * Code-behind of `MockFileCard.kbview` (converted from `MockFileCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MockFileCard.kbcontrol` (converted from `MockFileCard.tsx` by @kubuno/views-migrate).
  */
 
-import { ViewBase } from './MockFileCard.kbview'
+import { ViewBase } from './MockFileCard.kbcontrol'
 
 export type MockFileCardProps = { name?: string | undefined; ext?: string | undefined; selected?: boolean | undefined; }
 

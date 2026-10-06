@@ -1,11 +1,11 @@
 /**
- * The parts of `InstanceCard.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `InstanceCard.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { Check, Copy } from "lucide-react"
 import { Button } from "@ui"
 import { formatDay } from "../format"
-import Field from "./Field"
+import Field from "./SubscriptionField"
 import type { InstanceCard } from './InstanceCard'
 
 export function Part1({ t, instance }: { t: NonNullable<InstanceCard['tr']>; instance: NonNullable<InstanceCard['props']['instance']> }) {

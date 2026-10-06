@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import '../../settings/ProvenanceLine'
-import { settingDescription, settingLabel } from '../../settings/SettingControl'
+import '../../settings/controls/ProvenanceLine'
+import { settingDescription, settingLabel } from '../../settings/pages/SettingControl'
 import type { ResolvedSetting } from '../../settings/scopeTypes'
 import type { DirectoryPolicy } from './useDirectoryPolicy'
 

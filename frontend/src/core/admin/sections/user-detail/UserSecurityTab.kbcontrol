@@ -1,0 +1,21 @@
+<!-- SecurityTab — converted from SecurityTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="SecurityTabProps">
+  <Stack Gap="16">
+    <Card Title="{Res admin.ud_card_2fa}" IconSize="16" Icon="ShieldCheck">
+      <Callout Variant="{Binding variant}" Title="{Binding title}" Body="{Binding callout_text}"/>
+    </Card>
+    <Card Title="{Res admin.ud_card_credentials}" IconSize="16" Icon="KeyRound">
+      <Panel Class="contents">
+        <!-- TODO(views-migrate): <dl> has no .kbview element yet -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <Callout Variant="Warning" Body="{Res admin.ud_must_change_pw_desc}" Visible="{Binding show_user_must_change}" Class="mt-3"/>
+      </Panel>
+    </Card>
+    <!-- TODO(views-migrate): <PasswordResetCard> is no .kbview element (./PasswordResetCard#default) -->
+    <ReactHost Component="{Binding PasswordResetCard}" Props="{Binding password_reset_card_props}"/>
+    <!-- TODO(views-migrate): <RequirePasswordChangeCard> is no .kbview element (./RequirePasswordChangeCard#default) -->
+    <ReactHost Component="{Binding RequirePasswordChangeCard}" Props="{Binding password_reset_card_props}"/>
+    <!-- TODO(views-migrate): <SessionsCard> is no .kbview element (./SessionsCard#default) -->
+    <ReactHost Component="{Binding SessionsCard}" Props="{Binding password_reset_card_props}"/>
+  </Stack>
+</UserControl>

@@ -1,12 +1,12 @@
 /**
- * Code-behind of `AdminSearchPanel.kbview` (converted from `AdminSearchPanel.tsx` by @kubuno/views-migrate).
+ * Code-behind of `AdminSearchPanel.kbcontrol` (converted from `AdminSearchPanel.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { groupRuns, type AdminResult } from "./adminSearchIndex"
 import type { RecentTarget } from "./adminSearchRecents"
 import { ResultRow } from "./ResultRow"
 
-import { ViewBase } from './AdminSearchPanel.kbview'
+import { ViewBase } from './AdminSearchPanel.kbcontrol'
 import * as __parts from './AdminSearchPanel.parts'
 
 export interface RowProps {

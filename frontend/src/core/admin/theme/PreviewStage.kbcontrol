@@ -1,0 +1,8 @@
+<!-- PreviewStage — converted from PreviewStage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="PreviewStageProps">
+  <Stack Gap="6">
+    <Label HtmlTag="Span" Text="{Binding props.title}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+    <!-- TODO(views-migrate): <div ref>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Stack>
+</UserControl>

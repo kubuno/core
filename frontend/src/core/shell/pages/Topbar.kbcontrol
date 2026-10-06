@@ -1,0 +1,61 @@
+<!-- Topbar — converted from Topbar.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel HtmlTag="Header"
+         Class="fixed top-0 left-0 right-0 h-14 z-50 flex items-center px-4 gap-4 bg-white [border-bottom:1px_solid_#dadce0] [box-shadow:0_1px_2px_rgba(0,0,0,0.06)]">
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           ForeColor="TextSecondary"
+           AccessibleName="Menu"
+           Class="lg:hidden w-9 h-9 flex items-center justify-center hover:bg-surface-2 rounded-full transition-colors"
+           OnClick="panel_click">
+      <Icon Name="Menu"/>
+    </Panel>
+    <Panel Href="/"
+           ForeColor="TextPrimary"
+           Class="flex items-center gap-2 shrink-0 hover:opacity-80 transition-opacity"
+           OnClick="panel_click2">
+      <!-- TODO(views-migrate): <KubunoLogo> is no .kbview element (@ui#KubunoLogo) -->
+      <ReactHost Component="{Binding KubunoLogo}" Props="{Binding kubuno_logo_props}"/>
+      <Label HtmlTag="Span" Text="Kubuno" FontWeight="SemiBold" Overflow="Wrap" Class="text-lg hidden sm:block"/>
+    </Panel>
+    <Panel Class="flex-1 max-w-xl mx-4">
+      <Panel Class="relative">
+        <Icon Name="Search" Size="16" Class="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"/>
+        <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+        <ReactHost Component="{Binding Part1}"/>
+        <Label HtmlTag="Span"
+               Text="/"
+               Role="Meta"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               BackColor="Surface3"
+               Class="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded hidden sm:block"/>
+      </Panel>
+    </Panel>
+    <Stack Direction="LeftToRight" Gap="4" CrossAlign="Center" Class="ml-auto">
+      <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+      <ReactHost Component="{Binding Slot}" Props="{Binding slot_props}"/>
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             ForeColor="TextSecondary"
+             Class="w-9 h-9 rounded-full flex items-center justify-center hover:bg-surface-2 transition-colors relative">
+        <Icon Name="Bell"/>
+      </Panel>
+      <!-- TODO(views-migrate): <SettingsButtonOverride> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding show_settings_button_override}"/>
+      <Panel Href="/settings"
+             ForeColor="TextSecondary"
+             Visible="{Binding show_not_settings_button_override}"
+             Class="w-9 h-9 rounded-full flex items-center justify-center hover:bg-surface-2 transition-colors"
+             OnClick="panel_click3">
+        <Icon Name="Settings"/>
+      </Panel>
+      <!-- TODO(views-migrate): <DropdownMenu.Root> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part3}"/>
+      <!-- TODO(views-migrate): <DropdownMenu.Root> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+    </Stack>
+    <!-- TODO(views-migrate): <AddAccountModal> is no .kbview element (../components/AddAccountModal#default) -->
+    <ReactHost Component="{Binding AddAccountModal}" Props="{Binding add_account_modal_props}"/>
+  </Panel>
+</UserControl>

@@ -1,5 +1,0 @@
-<!-- Nothing — converted from Nothing.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<Panel x:Props="NothingProps" HtmlTag="P" ForeColor="TextSecondary" Class="[font-size:var(--kb-text-body)]">
-  <!-- TODO(views-migrate): elements held in an expression -->
-  <ReactHost Component="{Binding Fragment}" Props="{Binding content_children}"/>
-</Panel>

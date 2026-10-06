@@ -1,5 +1,5 @@
 /**
- * Code-behind of `HealthTopbarChip.kbview` (converted from `HealthTopbarChip.tsx` by @kubuno/views-migrate).
+ * Code-behind of `HealthTopbarChip.kbcontrol` (converted from `HealthTopbarChip.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs } from '@kubuno/views'
 import { useCallback, useState } from "react"
@@ -11,7 +11,7 @@ import { useHealthChecks } from "./useHealthChecks"
 import { adminUrl } from "../adminAction"
 import { SNOOZE_DAYS, isSnoozed, snooze } from "./snooze"
 
-import { ViewBase } from './HealthTopbarChip.kbview'
+import { ViewBase } from './HealthTopbarChip.kbcontrol'
 import * as __parts from './HealthTopbarChip.parts'
 
 export class HealthTopbarChip extends ViewBase {

@@ -1,5 +1,5 @@
 /**
- * Code-behind of `UserDetailSection.kbview` (converted from `UserDetailSection.tsx` by @kubuno/views-migrate).
+ * Code-behind of `UserDetailSection.kbcontrol` (converted from `UserDetailSection.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs } from '@kubuno/views'
 import { useMemo } from "react"
@@ -12,13 +12,13 @@ import { useConfirm } from "../../../hooks/useConfirm"
 import type { User } from "../../../types"
 import { confirmLeave } from "../../inline-edit/unsaved"
 import { adminUrl, adminUrlWith } from "../../adminAction"
-import { useAdminCrumbs } from "../../AdminBreadcrumb"
+import { useAdminCrumbs } from "../../pages/AdminBreadcrumb"
 import IdentityCard from "./IdentityCard"
-import ProfileTab from "./ProfileTab"
-import SecurityTab from "./SecurityTab"
+import ProfileTab from "./UserProfileTab"
+import SecurityTab from "./UserSecurityTab"
 import ActivityTab from "./ActivityTab"
 
-import { ViewBase } from './UserDetailSection.kbview'
+import { ViewBase } from './UserDetailSection.kbcontrol'
 import * as __parts from './UserDetailSection.parts'
 
 type Pane = 'profile' | 'security' | 'activity'

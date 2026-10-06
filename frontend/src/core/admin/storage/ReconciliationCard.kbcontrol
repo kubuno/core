@@ -1,0 +1,63 @@
+<!-- ReconciliationCard — converted from ReconciliationCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ReconciliationCardProps">
+  <Card Title="{Res admin.sto_rec_title}" IconSize="16" Icon="Scale" Subtitle="{Res admin.sto_rec_sub}">
+    <Card.Actions>
+      <Badge Variant="{Binding variant}" Dot="true" Text="{Binding badge_text}"/>
+    </Card.Actions>
+    <Panel Class="contents">
+      <Label Text="{Binding p_text}" Overflow="Wrap" ForeColor="TextSecondary" InheritFontSize="true" Class="[font-size:var(--kb-text-body)]"/>
+      <Panel Class="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-4">
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part1_props}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+        <ReactHost Component="{Binding Part4}" Props="{Binding part1_props}"/>
+      </Panel>
+      <Label Text="{Res admin.sto_rec_job_note}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Class="mt-2 [font-size:var(--kb-text-meta)]"/>
+      <Panel Visible="{Binding show_blocks}" Class="mt-4 border-t border-border pt-4">
+        <Stack Direction="LeftToRight" CrossAlign="Center">
+          <Icon Name="PauseCircle" Size="15" Class="shrink-0 text-warning"/>
+          <Label Text="{Res admin.sto_rec_blocked_title, Count={Binding blocks.length}}"
+                 Overflow="Wrap"
+                 ForeColor="TextPrimary"
+                 InheritFontSize="true"
+                 Class="min-w-0 [font-size:var(--kb-text-body)]"/>
+        </Stack>
+        <Panel HtmlTag="Ul" Class="mt-2 flex flex-col gap-2">
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_blocks}">
+            <Panel HtmlTag="Li" Class="min-w-0">
+              <Label HtmlTag="Span"
+                     Text="{Binding span_text}"
+                     Overflow="Wrap"
+                     ForeColor="TextPrimary"
+                     InheritFontSize="true"
+                     Class="[font-size:var(--kb-text-body)]"/>
+              <Label Text="{Binding p_text}"
+                     Overflow="Wrap"
+                     ForeColor="TextSecondary"
+                     InheritFontSize="true"
+                     Class="[font-size:var(--kb-text-meta)]"/>
+            </Panel>
+          </Repeater>
+        </Panel>
+      </Panel>
+      <!-- TODO(views-migrate): <Callout> with element children -->
+      <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}" Visible="{Binding show_held}"/>
+      <Stack Direction="LeftToRight" CrossAlign="Start" Visible="{Binding show_blocks_held_data}" Class="mt-4">
+        <Icon Name="AlertTriangle" Size="15" Class="mt-0.5 shrink-0 text-warning"/>
+        <Label Text="{Res admin.sto_rec_drift_note, Count={Binding props.data.drifting_accounts}}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="min-w-0 [font-size:var(--kb-text-body)]"/>
+      </Stack>
+    </Panel>
+  </Card>
+</UserControl>

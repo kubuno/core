@@ -1,5 +1,5 @@
 /**
- * Code-behind of `RuleEditor.kbview` (converted from `RuleEditor.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RuleEditor.kbcontrol` (converted from `RuleEditor.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { Fragment } from 'react'
@@ -22,11 +22,11 @@ import { SEVERITIES, severityLabel } from "./labels"
 import { formatWhen } from "../sections/format"
 import type { SummaryContext } from "./summary"
 import { emptyRuleInput, ruleToInput, type RuleInput, type RuleLimits } from "./types"
-import { useAdminCrumbs } from "../AdminBreadcrumb"
+import { useAdminCrumbs } from "../pages/AdminBreadcrumb"
 import { apiErrorDetail } from "../../api/errorMessage"
 import RuleSentence from "./RuleSentence"
 
-import { ViewBase } from './RuleEditor.kbview'
+import { ViewBase } from './RuleEditor.kbcontrol'
 import * as __parts from './RuleEditor.parts'
 
 export type Pane = 'basics' | 'conditions' | 'actions' | 'scope' | 'mode' | 'impact' | 'history'

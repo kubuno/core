@@ -1,0 +1,20 @@
+<!-- MockTopbar — converted from MockTopbar.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Class="h-14 px-4 bg-white border border-border rounded-xl">
+    <!-- TODO(views-migrate): <KubunoLogo> is no .kbview element (@ui#KubunoLogo) -->
+    <ReactHost Component="{Binding KubunoLogo}" Props="{Binding kubuno_logo_props}"/>
+    <Panel Class="flex-1 max-w-md">
+      <Stack Direction="LeftToRight" CrossAlign="Center" ForeColor="TextSecondary" Class="h-9 px-3 rounded-full bg-search-bg">
+        <Icon Name="Search" Size="16"/>
+        <Label HtmlTag="Span" Text="Rechercher…" Overflow="Wrap"/>
+      </Stack>
+    </Panel>
+    <Label HtmlTag="Div"
+           Text="AK"
+           Role="Meta"
+           FontWeight="Medium"
+           Overflow="Wrap"
+           BackColor="Primary"
+           Class="w-8 h-8 rounded-full text-white flex items-center justify-center"/>
+  </Stack>
+</UserControl>

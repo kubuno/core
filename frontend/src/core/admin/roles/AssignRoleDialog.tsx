@@ -13,7 +13,7 @@ import { PRIV, type Privilege, type Role } from "../../authz/types"
 import { useAuthzLabels } from "../../authz/labels"
 import { usePrivileges } from "../../authz/usePrivileges"
 import type { OrgUnit, User, UserGroup } from "../../types"
-import OrgUnitPicker from "../OrgUnitPicker"
+import OrgUnitPicker from "../dialogs/OrgUnitPicker"
 import { errorMessage, useCreateAssignment } from "./api"
 
 import { ViewBase } from './AssignRoleDialog.kbview'

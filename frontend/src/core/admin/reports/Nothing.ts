@@ -1,10 +1,10 @@
 /**
- * Code-behind of `Nothing.kbview` (converted from `Nothing.tsx` by @kubuno/views-migrate).
+ * Code-behind of `Nothing.kbcontrol` (converted from `Nothing.tsx` by @kubuno/views-migrate).
  */
 import { Fragment } from 'react'
 import type { ReactNode } from "react"
 
-import { ViewBase } from './Nothing.kbview'
+import { ViewBase } from './Nothing.kbcontrol'
 
 export type NothingProps = { children: ReactNode }
 

@@ -1,10 +1,10 @@
 /**
- * Code-behind of `FloorsField.kbview` (converted from `FloorsField.tsx` by @kubuno/views-migrate).
+ * Code-behind of `FloorsField.kbcontrol` (converted from `FloorsField.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './FloorsField.kbview'
+import { ViewBase } from './FloorsField.kbcontrol'
 import * as __parts from './FloorsField.parts'
 
 export type FloorsFieldProps = {

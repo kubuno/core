@@ -1,10 +1,10 @@
 /**
- * Code-behind of `PrimitivesGroup.kbview` (converted from `PrimitivesGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `PrimitivesGroup.kbcontrol` (converted from `PrimitivesGroup.tsx` by @kubuno/views-migrate).
  */
 import { bind, type ValueChangedEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './PrimitivesGroup.kbview'
+import { ViewBase } from './PrimitivesGroup.kbcontrol'
 import * as __parts from './PrimitivesGroup.parts'
 
 export class PrimitivesGroup extends ViewBase {

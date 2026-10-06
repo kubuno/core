@@ -1,0 +1,17 @@
+<!-- AudienceRow — converted from AudienceRow.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="RowProps">
+  <Panel Visible="{Binding show_main}" Class="py-1">
+    <Panel Class="space-y-3">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_audience_options}">
+        <RadioButton SelectedValue="{Binding selected_value}"
+                     Value="true"
+                     Enabled="{Binding enabled_unless_disabled}"
+                     Text="{Binding text}"
+                     Description="{Binding description}"
+                     OnCheckedChanged="radio_button_checked_changed"/>
+      </Repeater>
+    </Panel>
+    <!-- TODO(views-migrate): <ProvenanceLine> is no .kbview element (../../settings/ProvenanceLine#default) -->
+    <ReactHost Component="{Binding ProvenanceLine}" Props="{Binding provenance_line_props}"/>
+  </Panel>
+</UserControl>

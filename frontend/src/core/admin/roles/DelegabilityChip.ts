@@ -1,10 +1,10 @@
 /**
- * Code-behind of `DelegabilityChip.kbview` (converted from `DelegabilityChip.tsx` by @kubuno/views-migrate).
+ * Code-behind of `DelegabilityChip.kbcontrol` (converted from `DelegabilityChip.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { type Role } from "../../authz/types"
 
-import { ViewBase } from './DelegabilityChip.kbview'
+import { ViewBase } from './DelegabilityChip.kbcontrol'
 
 export type DelegabilityChipProps = { role: Role }
 

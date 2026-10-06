@@ -1,0 +1,11 @@
+<!-- MobileFab — converted from MobileFab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Panel Class="contents">
+    <Panel AccessibleHidden="true"
+           DataAttributes="app-chrome"
+           Visible="{Binding visible}"
+           Class="lg:hidden fixed inset-0 z-[9998] [backdrop-filter:blur(12px)] [-webkit-backdrop-filter:blur(12px)] [background-color:rgba(0,0,0,0.1)]"/>
+    <!-- TODO(views-migrate): <div> with a computed style -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_main}"/>
+  </Panel>
+</UserControl>

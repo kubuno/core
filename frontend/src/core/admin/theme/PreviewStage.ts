@@ -1,10 +1,10 @@
 /**
- * Code-behind of `PreviewStage.kbview` (converted from `PreviewStage.tsx` by @kubuno/views-migrate).
+ * Code-behind of `PreviewStage.kbcontrol` (converted from `PreviewStage.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { type ReactNode } from "react"
 
-import { ViewBase } from './PreviewStage.kbview'
+import { ViewBase } from './PreviewStage.kbcontrol'
 import * as __parts from './PreviewStage.parts'
 
 export type PreviewStageProps = { title: string; width?: number; height?: number; children: ReactNode }

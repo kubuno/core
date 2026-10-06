@@ -1,11 +1,11 @@
 /**
- * Code-behind of `ToggleRow.kbview` (converted from `ToggleRow.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ToggleRow.kbcontrol` (converted from `ToggleRow.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs } from '@kubuno/views'
-import ProvenanceLine from "../../settings/ProvenanceLine"
+import ProvenanceLine from "../../settings/controls/ProvenanceLine"
 import { type RowProps, useRow } from "./PolicyRow"
 
-import { ViewBase } from './ToggleRow.kbview'
+import { ViewBase } from './ToggleRow.kbcontrol'
 
 export type { RowProps }
 

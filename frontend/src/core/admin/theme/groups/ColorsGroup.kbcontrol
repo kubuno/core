@@ -1,0 +1,21 @@
+<!-- ColorsGroup — converted from ColorsGroup.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Stack Direction="LeftToRight" Gap="12" WrapContents="true">
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props}"/>
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props2}"/>
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props3}"/>
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props4}"/>
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props5}"/>
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props6}"/>
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props7}"/>
+    <!-- TODO(views-migrate): <Swatch> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Swatch}" Props="{Binding swatch_props8}"/>
+  </Stack>
+</UserControl>

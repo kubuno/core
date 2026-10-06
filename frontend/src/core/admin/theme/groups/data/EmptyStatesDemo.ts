@@ -1,10 +1,10 @@
 /**
- * Code-behind of `EmptyStatesDemo.kbview` (converted from `EmptyStatesDemo.tsx` by @kubuno/views-migrate).
+ * Code-behind of `EmptyStatesDemo.kbcontrol` (converted from `EmptyStatesDemo.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './EmptyStatesDemo.kbview'
+import { ViewBase } from './EmptyStatesDemo.kbcontrol'
 import * as __parts from './EmptyStatesDemo.parts'
 
 export class EmptyStatesDemo extends ViewBase {

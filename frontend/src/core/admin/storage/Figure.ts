@@ -1,10 +1,10 @@
 /**
- * Code-behind of `Figure.kbview` (converted from `Figure.tsx` by @kubuno/views-migrate).
+ * Code-behind of `Figure.kbcontrol` (converted from `Figure.tsx` by @kubuno/views-migrate).
  */
 import { Fragment } from 'react'
 import { type ReactNode } from "react"
 
-import { ViewBase } from './Figure.kbview'
+import { ViewBase } from './Figure.kbcontrol'
 
 export type FigureProps = { label: string; children: ReactNode }
 

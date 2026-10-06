@@ -1,11 +1,11 @@
 /**
- * Code-behind of `ReportSummary.kbview` (converted from `ReportSummary.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ReportSummary.kbcontrol` (converted from `ReportSummary.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react"
 import type { ReportModel } from "./model"
 
-import { ViewBase } from './ReportSummary.kbview'
+import { ViewBase } from './ReportSummary.kbcontrol'
 import * as __parts from './ReportSummary.parts'
 
 export type ReportSummaryProps = { model: ReportModel }

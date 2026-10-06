@@ -1,5 +1,5 @@
 /**
- * The parts of `TabsTextGroup.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `TabsTextGroup.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { Tabs } from "@ui"

@@ -1,0 +1,45 @@
+<!-- ModuleDatabaseCard — converted from ModuleDatabaseCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ModuleDatabaseCardProps">
+  <Card Title="{Res admin.mdb_title}"
+        IconSize="16"
+        Icon="Database"
+        Subtitle="{Res admin.mdb_subtitle}"
+        Visible="{Binding show_main}"
+        Class="mb-4">
+    <Panel Class="contents">
+      <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding cfg.isLoading}" Class="py-6">
+        <Spinner/>
+      </Stack>
+      <!-- TODO(views-migrate): <Callout> icon: a value the property converts (null-when-false) -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding visible2}"/>
+      <Stack Visible="{Binding visible3}">
+        <RadioButton SelectedValue="{Binding selected_value}"
+                     Value="true"
+                     Text="{Res admin.mdb_inherit, Engine={Binding mdb_inherit_engine}}"
+                     Description="{Res admin.mdb_inherit_desc}"
+                     OnCheckedChanged="radio_button_checked_changed"/>
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_engines}">
+          <RadioButton SelectedValue="{Binding selected_value}"
+                       Value="true"
+                       Text="{Binding text}"
+                       OnCheckedChanged="radio_button_checked_changed2"/>
+        </Repeater>
+      </Stack>
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_fields}" Visible="{Binding visible3}"/>
+      <Panel Visible="{Binding visible4}" Class="mt-4">
+        <Callout Body="{Res admin.mdb_will_revert}" Class="mb-3"/>
+        <Button Variant="Secondary"
+                Size="Sm"
+                Loading="{Binding revertMut.isPending}"
+                Enabled="{Binding enabled_unless_busy}"
+                Text="{Res admin.mdb_revert}"
+                OnClick="button_click"/>
+      </Panel>
+      <Panel Class="mt-6 pt-6 border-t border-border">
+        <!-- TODO(views-migrate): <KnownConnectionsCard> is no .kbview element (./database/KnownConnectionsCard#default) -->
+        <ReactHost Component="{Binding KnownConnectionsCard}" Props="{Binding known_connections_card_props}"/>
+      </Panel>
+    </Panel>
+  </Card>
+</UserControl>

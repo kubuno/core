@@ -1,10 +1,10 @@
 /**
- * Code-behind of `StartPageDemo.kbview` (converted from `StartPageDemo.tsx` by @kubuno/views-migrate).
+ * Code-behind of `StartPageDemo.kbcontrol` (converted from `StartPageDemo.tsx` by @kubuno/views-migrate).
  */
 import { StartPage } from "@ui"
 import { noop } from "./PreviewDemos"
 
-import { ViewBase } from './StartPageDemo.kbview'
+import { ViewBase } from './StartPageDemo.kbcontrol'
 
 export class StartPageDemo extends ViewBase {
   /** `<StartPage>`, rendered by a ReactHost. */

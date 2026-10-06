@@ -1,5 +1,5 @@
 /**
- * Code-behind of `MainDbMigrationCard.kbview` (converted from `MainDbMigrationCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `MainDbMigrationCard.kbcontrol` (converted from `MainDbMigrationCard.tsx` by @kubuno/views-migrate).
  */
 import { bind, type ValueChangedEventArgs } from '@kubuno/views'
 import { useEffect, useRef } from "react"
@@ -14,7 +14,7 @@ import { useConfirm } from "../../hooks/useConfirm"
 import { usePrivileges } from "../../authz/usePrivileges"
 import KnownConnectionsCard from "./KnownConnectionsCard"
 
-import { ViewBase } from './MainDbMigrationCard.kbview'
+import { ViewBase } from './MainDbMigrationCard.kbcontrol'
 import * as __parts from './MainDbMigrationCard.parts'
 
 const PRIMARY = 'var(--color-primary)'

@@ -1,15 +1,15 @@
 /**
- * Code-behind of `CampaignDetail.kbview` (converted from `CampaignDetail.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CampaignDetail.kbcontrol` (converted from `CampaignDetail.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { RotateCw } from "lucide-react"
 import { Button, useToast, type DataTableColumn } from "@ui"
 import ConfirmDialog from "@ui/ConfirmDialog"
 import { useConfirm } from "../../../hooks/useConfirm"
-import { useAdminCrumbs } from "../../AdminBreadcrumb"
+import { useAdminCrumbs } from "../../pages/AdminBreadcrumb"
 import { errorMessage, useCampaignDetail, useDeleteCampaign, usePauseCampaign, useRetryAccount, useStartCampaign, type MigrationAccount } from "./api"
 
-import { ViewBase } from './CampaignDetail.kbview'
+import { ViewBase } from './CampaignDetail.kbcontrol'
 import * as __parts from './CampaignDetail.parts'
 import { StatusChip } from './CampaignDetail.parts'
 

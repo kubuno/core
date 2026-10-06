@@ -1,9 +1,9 @@
 /**
- * Code-behind of `RoleIcon.kbview` (converted from `RoleIcon.tsx` by @kubuno/views-migrate).
+ * Code-behind of `RoleIcon.kbcontrol` (converted from `RoleIcon.tsx` by @kubuno/views-migrate).
  */
 import { type Role } from "../../authz/types"
 
-import { ViewBase } from './RoleIcon.kbview'
+import { ViewBase } from './RoleIcon.kbcontrol'
 
 export type RoleIconProps = { role: Role; size?: number }
 

@@ -1,9 +1,9 @@
 /**
- * Code-behind of `OverlaysGroup.kbview` (converted from `OverlaysGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `OverlaysGroup.kbcontrol` (converted from `OverlaysGroup.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 
-import { ViewBase } from './OverlaysGroup.kbview'
+import { ViewBase } from './OverlaysGroup.kbcontrol'
 import * as __parts from './OverlaysGroup.parts'
 
 export class OverlaysGroup extends ViewBase {

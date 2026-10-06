@@ -1,0 +1,90 @@
+<!-- PanelCard — converted from PanelCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="Props">
+  <Panel HtmlTag="Section" BackColor="Surface" Class="flex min-w-0 flex-col rounded-xl border border-border p-4">
+    <Panel HtmlTag="Header" Class="mb-2 flex items-start gap-2">
+      <Panel HtmlTag="Span" BackColor="Surface2" Class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg">
+        <!-- TODO(views-migrate): <Icon> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+      <Panel Class="min-w-0 flex-1">
+        <Label HtmlTag="H3" Text="{Binding h3_text}" ForeColor="TextPrimary" InheritFontSize="true" Class="[font-size:var(--kb-text-body)]"/>
+        <Label Text="{Binding p_text}"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               InheritFontSize="true"
+               Class="mt-0.5 line-clamp-2 [font-size:var(--kb-text-meta)]"/>
+      </Panel>
+      <Stack Direction="LeftToRight" Gap="2" CrossAlign="Center" Visible="{Binding props.editing}" Class="shrink-0">
+        <!-- TODO(views-migrate): <ToolTip> label: no .kbview property -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+        <!-- TODO(views-migrate): <ToolTip> label: no .kbview property -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        <!-- TODO(views-migrate): <ToolTip> label: no .kbview property -->
+        <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+      </Stack>
+    </Panel>
+    <Panel Class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <Label HtmlTag="Span"
+             Text="{Binding span_text}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="tabular-nums [font-size:var(--kb-text-title)]"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.dash_snapshot}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding snapshot}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.sec_no_comparison}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding visible}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Panel HtmlTag="Span" Visible="{Binding visible2}" Class="{Binding span_class}">
+        <!-- TODO(views-migrate): <DeltaIcon> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding delta}"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" %"/>
+        <Label HtmlTag="Span" Text="{Res admin.sec_vs_previous}" Overflow="Wrap" ForeColor="TextTertiary" InheritFontSize="true"/>
+      </Panel>
+    </Panel>
+    <Panel Class="min-h-[132px]">
+      <Label Text="{Res admin.sec_nothing_counted}"
+             TextAlign="TopCenter"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding empty}"
+             Class="py-10 [font-size:var(--kb-text-meta)]"/>
+      <!-- TODO(views-migrate): <ProgressRing> is no .kbview element (../ProgressRing#default) -->
+      <ReactHost Component="{Binding ProgressRing}" Props="{Binding progress_ring_props}" Visible="{Binding visible12}"/>
+      <!-- TODO(views-migrate): <DonutChart> is no .kbview element (../DonutChart#default) -->
+      <ReactHost Component="{Binding DonutChart}" Props="{Binding donut_chart_props}" Visible="{Binding visible13}"/>
+      <!-- TODO(views-migrate): <HBarList> is no .kbview element (../HBarList#default) -->
+      <ReactHost Component="{Binding HBarList}" Props="{Binding hbar_list_props}" Visible="{Binding visible14}"/>
+      <!-- TODO(views-migrate): <AreaChart> is no .kbview element (../AreaChart#AreaChart) -->
+      <ReactHost Component="{Binding AreaChart}" Props="{Binding area_chart_props}" Visible="{Binding visible15}"/>
+      <!-- TODO(views-migrate): <BarChart> is no .kbview element (../BarChart#BarChart) -->
+      <ReactHost Component="{Binding BarChart}" Props="{Binding bar_chart_props}" Visible="{Binding visible16}"/>
+    </Panel>
+    <Label Text="{Binding caveat}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Visible="{Binding show_caveat}"
+           Class="mt-3 border-t border-border pt-2 [font-size:var(--kb-text-meta)]"/>
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           ForeColor="Primary"
+           Class="mt-3 inline-flex items-center gap-1.5 self-start rounded-md px-2 py-1 -ml-2 hover:bg-surface-1 [font-size:var(--kb-text-body)]"
+           OnClick="panel_click">
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.sec_show_report}"/>
+      <Icon Name="ArrowRight" Size="14"/>
+    </Panel>
+  </Panel>
+</UserControl>

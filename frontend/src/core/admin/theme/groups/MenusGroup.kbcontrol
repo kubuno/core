@@ -1,0 +1,14 @@
+<!-- MenusGroup — converted from MenusGroup.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl>
+  <Stack Direction="LeftToRight" Gap="24" CrossAlign="Start" WrapContents="true">
+    <Stack Gap="6">
+      <Label HtmlTag="Span" Text="{Res admin.t_prev_select}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <Dropdown SelectedValue="{Binding sortVal, Mode=TwoWay}" ItemsSource="{Binding items_source}"/>
+    </Stack>
+    <Stack Gap="6">
+      <Label HtmlTag="Span" Text="{Res admin.t_prev_ctxmenu}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+      <!-- TODO(views-migrate): <MockContextMenu> is no .kbview element (../mocks/MockContextMenu#default) -->
+      <ReactHost Component="{Binding MockContextMenu}"/>
+    </Stack>
+  </Stack>
+</UserControl>

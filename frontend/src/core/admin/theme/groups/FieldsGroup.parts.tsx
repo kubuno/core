@@ -1,5 +1,5 @@
 /**
- * The parts of `FieldsGroup.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `FieldsGroup.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { ColorField, GradientField, Textarea } from "@ui"

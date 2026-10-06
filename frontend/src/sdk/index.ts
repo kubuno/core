@@ -56,10 +56,10 @@ export {
 } from '../core/store/pendingDeletionStore'
 export type { DeletionKind, PendingItem, PendingBatch } from '../core/store/pendingDeletionStore'
 export { useConfirm } from '../core/hooks/useConfirm'
-export { useContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuProvider } from '../core/shell/ContextMenuProvider'
-export { SidebarNavItem } from '../core/shell/SidebarNavItem'
+export { useContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuProvider } from '../core/shell/pages/ContextMenuProvider'
+export { SidebarNavItem } from '../core/shell/pages/SidebarNavItem'
 export { useUiStore } from '../core/store/uiStore'
-export { default as HeaderActions } from '../core/shell/HeaderActions'
+export { default as HeaderActions } from '../core/shell/controls/HeaderActions'
 export { useChromelessHeader } from '../core/shell/useChromelessHeader'
 // Chrome standard des apps avancées (topbar unifiée) — partagé par les modules
 // WorkspaceShell (keestore, office, paintsharp…). `MenuItem` est ré-exposé sous

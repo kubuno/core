@@ -1,5 +1,5 @@
 /**
- * Code-behind of `SessionsCard.kbview` (converted from `SessionsCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `SessionsCard.kbcontrol` (converted from `SessionsCard.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -11,7 +11,7 @@ import { useConfirm } from "../../../hooks/useConfirm"
 import type { Session, User } from "../../../types"
 import { formatAgo, formatWhen } from "../format"
 
-import { ViewBase } from './SessionsCard.kbview'
+import { ViewBase } from './SessionsCard.kbcontrol'
 import * as __parts from './SessionsCard.parts'
 
 const DEVICE_ICON: Record<string, typeof MonitorSmartphone> = {

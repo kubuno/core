@@ -1,12 +1,12 @@
 /**
- * Code-behind of `ActionsEditor.kbview` (converted from `ActionsEditor.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ActionsEditor.kbcontrol` (converted from `ActionsEditor.tsx` by @kubuno/views-migrate).
  */
 import { type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { useMenuDropdown, type MenuItem } from "@ui"
 import type { ActionRow, ActionSpec } from "./types"
 
-import { ViewBase } from './ActionsEditor.kbview'
+import { ViewBase } from './ActionsEditor.kbcontrol'
 import * as __parts from './ActionsEditor.parts'
 
 interface Props {

@@ -1,13 +1,13 @@
 /**
- * Code-behind of `AudienceRow.kbview` (converted from `AudienceRow.tsx` by @kubuno/views-migrate).
+ * Code-behind of `AudienceRow.kbcontrol` (converted from `AudienceRow.tsx` by @kubuno/views-migrate).
  */
 import { type ValueChangedEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
-import ProvenanceLine from "../../settings/ProvenanceLine"
+import ProvenanceLine from "../../settings/controls/ProvenanceLine"
 import { AUDIENCE_OPTIONS } from "./keys"
 import { type RowProps } from "./PolicyRow"
 
-import { ViewBase } from './AudienceRow.kbview'
+import { ViewBase } from './AudienceRow.kbcontrol'
 
 export type { RowProps }
 

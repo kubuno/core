@@ -1,7 +1,0 @@
-<!-- AnchoredDemo — converted from AnchoredDemo.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<Panel Class="p-3">
-  <!-- TODO(views-migrate): <button ref>: attribute(s) without a .kbview property -->
-  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
-  <!-- TODO(views-migrate): <Popover> anchorRef: a value the property converts (element-ref) -->
-  <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
-</Panel>

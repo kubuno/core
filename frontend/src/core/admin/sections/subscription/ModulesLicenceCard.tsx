@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ModulesLicenceCard.kbview` (converted from `ModulesLicenceCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ModulesLicenceCard.kbcontrol` (converted from `ModulesLicenceCard.tsx` by @kubuno/views-migrate).
  */
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
@@ -8,7 +8,7 @@ import { formatDay } from "../format"
 import type { InstalledModule } from "./api"
 import { ExternalLink } from "./ExternalLink"
 
-import { ViewBase } from './ModulesLicenceCard.kbview'
+import { ViewBase } from './ModulesLicenceCard.kbcontrol'
 import * as __parts from './ModulesLicenceCard.parts'
 
 export type ModulesLicenceCardProps = { modules: InstalledModule[] }

@@ -1,5 +1,5 @@
 /**
- * Code-behind of `DeviceDetail.kbview` (converted from `DeviceDetail.tsx` by @kubuno/views-migrate).
+ * Code-behind of `DeviceDetail.kbcontrol` (converted from `DeviceDetail.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
 import { useMemo } from "react"
@@ -13,9 +13,9 @@ import { usePrivileges } from "../../authz/usePrivileges"
 import { useDevice, useForgetDevice, useSetApproval, useSignOutDevice } from "../../devices/useDevices"
 import { DeclaredSignals, DeviceFacts, DeviceTimeline, SessionList } from "../../devices/panels"
 import { approvalLabel, approvalSkin, deviceName } from "../../devices/labels"
-import { useAdminCrumbs } from "../AdminBreadcrumb"
+import { useAdminCrumbs } from "../pages/AdminBreadcrumb"
 
-import { ViewBase } from './DeviceDetail.kbview'
+import { ViewBase } from './DeviceDetail.kbcontrol'
 
 export type DeviceDetailProps = { id: string; onBack: () => void }
 

@@ -1,5 +1,5 @@
 /**
- * Code-behind of `FeaturesTab.kbview` (converted from `FeaturesTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `FeaturesTab.kbcontrol` (converted from `FeaturesTab.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -9,7 +9,7 @@ import { useConfirm } from "../../../hooks/useConfirm"
 import FeatureDialog from "./FeatureDialog"
 import { errorMessage, useDeleteFeature, useResourceFeatures, type ResourceFeature } from "./api"
 
-import { ViewBase } from './FeaturesTab.kbview'
+import { ViewBase } from './FeaturesTab.kbcontrol'
 import * as __parts from './FeaturesTab.parts'
 
 export type FeaturesTabProps = { canManage: boolean }

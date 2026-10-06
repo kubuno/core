@@ -1,5 +1,5 @@
 /**
- * Code-behind of `SupportCard.kbview` (converted from `SupportCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `SupportCard.kbcontrol` (converted from `SupportCard.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -7,7 +7,7 @@ import ConfirmDialog from "@ui/ConfirmDialog"
 import { useConfirm } from "../../../hooks/useConfirm"
 import { errorMessage, useRegisterSupportKey, useRemoveSupportKey, type SupportInfo } from "./api"
 
-import { ViewBase } from './SupportCard.kbview'
+import { ViewBase } from './SupportCard.kbcontrol'
 import * as __parts from './SupportCard.parts'
 
 export type SupportCardProps = {

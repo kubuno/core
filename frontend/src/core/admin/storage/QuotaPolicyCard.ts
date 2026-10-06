@@ -1,5 +1,5 @@
 /**
- * Code-behind of `QuotaPolicyCard.kbview` (converted from `QuotaPolicyCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `QuotaPolicyCard.kbcontrol` (converted from `QuotaPolicyCard.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -11,11 +11,11 @@ import ConfirmDialog from "@ui/ConfirmDialog"
 import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
 import { formatBytes } from "../sections/format"
-import OrgUnitPicker from "../OrgUnitPicker"
+import OrgUnitPicker from "../dialogs/OrgUnitPicker"
 import QuotaField, { splitQuota, toBytes, type QuotaUnit } from "./QuotaField"
 import { errorMessage, useSetDefaultQuota, type StorageOverview } from "./api"
 
-import { ViewBase } from './QuotaPolicyCard.kbview'
+import { ViewBase } from './QuotaPolicyCard.kbcontrol'
 import * as __parts from './QuotaPolicyCard.parts'
 
 export type QuotaPolicyCardProps = { overview: StorageOverview }

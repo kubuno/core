@@ -1,12 +1,12 @@
 /**
- * Code-behind of `PrivilegeList.kbview` (converted from `PrivilegeList.tsx` by @kubuno/views-migrate).
+ * Code-behind of `PrivilegeList.kbcontrol` (converted from `PrivilegeList.tsx` by @kubuno/views-migrate).
  */
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import type { Privilege } from "../../authz/types"
 import { useAuthzLabels } from "../../authz/labels"
 
-import { ViewBase } from './PrivilegeList.kbview'
+import { ViewBase } from './PrivilegeList.kbcontrol'
 import * as __parts from './PrivilegeList.parts'
 
 function unknownPrivilege(key: string): Privilege {

@@ -1,11 +1,11 @@
 /**
- * Code-behind of `FieldsGroup.kbview` (converted from `FieldsGroup.tsx` by @kubuno/views-migrate).
+ * Code-behind of `FieldsGroup.kbcontrol` (converted from `FieldsGroup.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { FloatCheckbox, FontPicker, type Gradient, type PickerTheme } from "@ui"
 
-import { ViewBase } from './FieldsGroup.kbview'
+import { ViewBase } from './FieldsGroup.kbcontrol'
 import * as __parts from './FieldsGroup.parts'
 
 export type FieldsGroupProps = {

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Tag } from 'lucide-react'
 import { Input, Textarea } from '@ui'
 import EditableCard from '../../inline-edit/EditableCard'
-import Field, { orDash } from '../../inline-edit/Field'
+import Field, { orDash } from '../../inline-edit/InlineEditField'
 import { useDraft } from '../../inline-edit/useDraft'
 import { useAudienceMutations, type Audience } from './api'
 

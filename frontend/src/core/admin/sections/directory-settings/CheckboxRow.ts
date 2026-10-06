@@ -1,11 +1,11 @@
 /**
- * Code-behind of `CheckboxRow.kbview` (converted from `CheckboxRow.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CheckboxRow.kbcontrol` (converted from `CheckboxRow.tsx` by @kubuno/views-migrate).
  */
 import { type ValueChangedEventArgs } from '@kubuno/views'
-import ProvenanceLine from "../../settings/ProvenanceLine"
+import ProvenanceLine from "../../settings/controls/ProvenanceLine"
 import { type RowProps, useRow } from "./PolicyRow"
 
-import { ViewBase } from './CheckboxRow.kbview'
+import { ViewBase } from './CheckboxRow.kbcontrol'
 
 export type CheckboxRowProps = RowProps & {
   /** Marks a field carrying personal data (`gender`, `birthday`). */

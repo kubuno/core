@@ -1,5 +1,5 @@
 /**
- * Code-behind of `CalendarsTab.kbview` (converted from `CalendarsTab.tsx` by @kubuno/views-migrate).
+ * Code-behind of `CalendarsTab.kbcontrol` (converted from `CalendarsTab.tsx` by @kubuno/views-migrate).
  */
 import { bind } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -9,7 +9,7 @@ import { useConfirm } from "../../../hooks/useConfirm"
 import CalendarDialog from "./CalendarDialog"
 import { errorMessage, useDeleteCalendar, useHolidayCalendars, useSetCalendarEnabled, type CalendarSummary } from "./api"
 
-import { ViewBase } from './CalendarsTab.kbview'
+import { ViewBase } from './CalendarsTab.kbcontrol'
 import * as __parts from './CalendarsTab.parts'
 
 export type CalendarsTabProps = {

@@ -1,0 +1,23 @@
+<!-- DelegabilityChip — converted from DelegabilityChip.tsx by @kubuno/views-migrate. -->
+<UserControl x:Props="DelegabilityChipProps">
+  <Panel Class="contents">
+    <Panel HtmlTag="Span"
+           ForeColor="Success"
+           BackColor="SuccessLight"
+           ToolTip="{Res admin.role_delegable_desc}"
+           Visible="{Binding props.role.ou_delegable}"
+           Class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap">
+      <Icon Name="Building2" Size="11"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.role_scope_ou}"/>
+    </Panel>
+    <Panel HtmlTag="Span"
+           ForeColor="TextSecondary"
+           BackColor="Surface2"
+           ToolTip="{Res admin.assign_scope_ou_blocked_short}"
+           Visible="{Binding show_not_role_ou_delegable}"
+           Class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full whitespace-nowrap">
+      <Icon Name="Globe2" Size="11"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.role_scope_instance}"/>
+    </Panel>
+  </Panel>
+</UserControl>

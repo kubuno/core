@@ -1,0 +1,50 @@
+<!-- ModePicker — converted from ModePicker.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="Props">
+  <Stack>
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_offered}">
+      <Panel HtmlTag="Label" Class="{Binding label_class}">
+        <RadioButton SelectedValue="{Binding selected}"
+                     Value="true"
+                     Enabled="{Binding enabled_unless_blocked_disabled}"
+                     OnCheckedChanged="radio_button_checked_changed"/>
+        <Panel Class="min-w-0 flex-1">
+          <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true">
+            <!-- TODO(views-migrate): <Glyph> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+            <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" ForeColor="TextPrimary" InheritFontSize="true"/>
+            <Badge Variant="{Binding variant}" Size="Sm" Text="{Binding badge_text}"/>
+          </Stack>
+          <Label Text="{Binding p_text}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Class="mt-1 [font-size:var(--kb-text-meta)]"/>
+          <Panel HtmlTag="Ul" ForeColor="TextTertiary" Class="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 [font-size:var(--kb-text-micro)]">
+            <Label HtmlTag="Li" Text="{Binding li_text}" Overflow="Wrap" InheritFontSize="true"/>
+            <Label HtmlTag="Li" Text="{Binding li_text2}" Overflow="Wrap" InheritFontSize="true"/>
+            <Label HtmlTag="Li" Text="{Binding li_text3}" Overflow="Wrap" InheritFontSize="true"/>
+            <Label HtmlTag="Li" Text="{Binding li_text4}" Overflow="Wrap" InheritFontSize="true"/>
+          </Panel>
+          <Panel HtmlTag="P"
+                 ForeColor="Warning"
+                 Visible="{Binding blocked}"
+                 Class="mt-1.5 flex items-center gap-1.5 [font-size:var(--kb-text-micro)]">
+            <Icon Name="AlertTriangle" Size="12"/>
+            <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.rl_mode_enforce_needs_action}"/>
+          </Panel>
+        </Panel>
+      </Panel>
+    </Repeater>
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" Class="mt-1 rounded-lg border border-dashed border-border px-3 py-2.5">
+      <Icon Name="History" Size="15" Class="mt-0.5 shrink-0 text-text-tertiary"/>
+      <Panel Class="min-w-0">
+        <Label HtmlTag="Span" Text="{Res admin.rl_mode_backtest}" Overflow="Wrap" ForeColor="TextSecondary" InheritFontSize="true"/>
+        <Label Text="{Res admin.rl_mode_backtest_desc}"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               InheritFontSize="true"
+               Class="mt-0.5 [font-size:var(--kb-text-meta)]"/>
+      </Panel>
+    </Stack>
+  </Stack>
+</UserControl>

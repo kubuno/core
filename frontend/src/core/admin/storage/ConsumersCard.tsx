@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ConsumersCard.kbview` (converted from `ConsumersCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ConsumersCard.kbcontrol` (converted from `ConsumersCard.tsx` by @kubuno/views-migrate).
  */
 import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useMemo, useState } from "react"
@@ -13,7 +13,7 @@ import { formatBytes } from "../sections/format"
 import AccountUsageDialog from "./AccountUsageDialog"
 import { useStorageConsumers, type Consumer, type ConsumerFilter, type ConsumerSort } from "./api"
 
-import { ViewBase } from './ConsumersCard.kbview'
+import { ViewBase } from './ConsumersCard.kbcontrol'
 import * as __parts from './ConsumersCard.parts'
 
 export type ConsumersCardProps = {

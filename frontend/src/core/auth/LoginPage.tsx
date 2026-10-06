@@ -13,7 +13,7 @@ import { authApi, type CaptchaChallenge } from "../api/auth"
 import { OutlinedField } from "@ui"
 import LoginAnimation from "./LoginAnimationGL"
 import { animTuning, parseAnimParams } from "./animTuning"
-import { InstanceLogo } from "../shell/InstanceLogo"
+import { InstanceLogo } from "../shell/controls/InstanceLogo"
 import { getPublicConfig } from "../api/publicConfig"
 
 import { ViewBase } from './LoginPage.kbview'

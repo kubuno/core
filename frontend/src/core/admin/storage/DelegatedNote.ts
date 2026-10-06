@@ -1,10 +1,10 @@
 /**
- * Code-behind of `DelegatedNote.kbview` (converted from `DelegatedNote.tsx` by @kubuno/views-migrate).
+ * Code-behind of `DelegatedNote.kbcontrol` (converted from `DelegatedNote.tsx` by @kubuno/views-migrate).
  */
 import { useTranslation } from "react-i18next"
 import { formatCount } from "./CategoryBreakdown"
 
-import { ViewBase } from './DelegatedNote.kbview'
+import { ViewBase } from './DelegatedNote.kbcontrol'
 
 export type DelegatedNoteProps = {
   bytes:    number

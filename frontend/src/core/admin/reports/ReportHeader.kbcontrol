@@ -1,0 +1,26 @@
+<!-- ReportHeader — converted from ReportHeader.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<UserControl x:Props="ReportHeaderProps">
+  <Panel HtmlTag="Header"
+         BackColor="Surface"
+         DataAttributes="report-card"
+         Class="rounded-xl border border-border p-4">
+    <Stack Direction="LeftToRight" CrossAlign="Center">
+      <!-- TODO(views-migrate): <InstanceLogo> is no .kbview element (../../shell/InstanceLogo#InstanceLogo) -->
+      <ReactHost Component="{Binding InstanceLogo}" Props="{Binding instance_logo_props}"/>
+      <Label Text="{Binding props.instance}" ForeColor="TextSecondary" InheritFontSize="true" Class="min-w-0 [font-size:var(--kb-text-body)]"/>
+    </Stack>
+    <Label HtmlTag="H1"
+           Text="{Binding props.title}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="mt-1 [font-size:var(--kb-text-page)]"/>
+    <Label Text="{Binding props.about}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="mt-1 max-w-3xl [font-size:var(--kb-text-body)]"/>
+    <!-- TODO(views-migrate): <dl> has no .kbview element yet -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Panel>
+</UserControl>

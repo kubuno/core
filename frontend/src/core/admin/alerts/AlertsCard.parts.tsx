@@ -1,5 +1,5 @@
 /**
- * The parts of `AlertsCard.kbview` still written in React (the codemod could not convert them; see the
+ * The parts of `AlertsCard.kbcontrol` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
 import { Link } from "react-router-dom"

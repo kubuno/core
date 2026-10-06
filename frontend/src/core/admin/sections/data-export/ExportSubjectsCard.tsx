@@ -1,5 +1,5 @@
 /**
- * Code-behind of `ExportSubjectsCard.kbview` (converted from `ExportSubjectsCard.tsx` by @kubuno/views-migrate).
+ * Code-behind of `ExportSubjectsCard.kbcontrol` (converted from `ExportSubjectsCard.tsx` by @kubuno/views-migrate).
  */
 import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
@@ -7,7 +7,7 @@ import { Badge, type DataTableColumn } from "@ui"
 import { formatBytes } from "../format"
 import { useExportSubjects, type ExportSubject } from "./api"
 
-import { ViewBase } from './ExportSubjectsCard.kbview'
+import { ViewBase } from './ExportSubjectsCard.kbcontrol'
 import * as __parts from './ExportSubjectsCard.parts'
 
 const STATUS_SKIN: Record<string, 'neutral' | 'success' | 'warning' | 'danger'> = {
