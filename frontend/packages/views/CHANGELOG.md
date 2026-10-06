@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-06
+
 ### Fixed
 
 - A `Visible` binding that gives no value (`undefined`, `null`, a path not found) hides its element, as `{cond && <X/>}` renders nothing (in the designer the element stays shown). An `@ui` element whose `className` lands on its root (`kbRootClass`: `Card`, `Callout`, `EmptyState`, `Badge`, `Separator`, `Spinner`, `ProgressBar`, `Toggle`) receives a view's `Class` directly, with no `display: contents` wrapper among its parent's children (`space-y-*` and `divide-y` reach it again). What a view memoized (`View.memo`) is computed again after a language or theme change (a module's name read from a registry kept the previous language).

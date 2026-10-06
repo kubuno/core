@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-06
+
 ### Fixed
 
 - A hook called inside an expression (`useLocation().pathname`, `useStore(sel) ?? fallback`) runs in `use()` on every render instead of a getter (React's hook order broke). A store hook the TSX called only to render again (`useModulesStore((s) => s.loadedVersion)`) keeps its value in a field every memoized getter depends on. A method or setter passed as a value is bound once per view (`ref={setNode}` updated without end). A part keeps the lines of its template literals as they are (a `<pre>`'s text moved). `--split`: a local component two screens render is copied into each new file and no longer left unused in the old one, and the old file's unused imports are all removed. A handler given only under a condition (`onClick={f ? () => f(id) : undefined}`) starts with that condition; an untyped event parameter keeps React's event type. A narrowed component written as a tag (`<config.Body />`) reaches its part as a capitalised prop. The screen's own `navigate` serves its links (no duplicate field). A function body that only assigns or calls setters gets no `return`; a literal of an enum with no `.kbview` value, a component re-exported by default, untyped destructured props and annotations reading `typeof state` no longer break the code-behind.

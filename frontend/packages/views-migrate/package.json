@@ -1,6 +1,6 @@
 {
   "name": "@kubuno/views-migrate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Codemod from React/TSX screens of Kubuno web modules to .kbview / .kbcontrol views with a TypeScript code-behind (vskubuno WEB-VIEWS.md §6.2, WV-11): @ui elements, Tailwind layout, i18next strings, state, handlers, lists and conditionals, with a per-file report and ReactHost parts for what does not convert.",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/views-migrate",

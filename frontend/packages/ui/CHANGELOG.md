@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-10-06
+
 ### Added
 
 - **Registry**: `DataAttributes` on `Panel` and `Stack` (web only, bindable): the element's `data-*` attributes.
