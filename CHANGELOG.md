@@ -16,7 +16,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   header and its menus — is a user control (`.kbcontrol`), with its properties and events. The core's screens were
   classified again and moved into role folders: the routed pages to `core/views/`, and the administration, the shell
   and the account settings tabs (the folders past a dozen screens) into `views/`, `dialogs/`, `pages/` and `controls/`.
-  Nothing changes on screen.
+  Nothing changes on screen. In Visual Studio each view or user control holds its code-behind and React parts
+  (`frontend/.filenesting.json`).
 - **User controls renamed so that each has its own element name** (a user control is an element named after its
   file): the inline-edit field (`InlineEditField`), the subscription page's field (`SubscriptionField`), the profile
   tab's field (`ProfileField`), the account sheet's profile and security tabs (`UserProfileTab`, `UserSecurityTab`)
