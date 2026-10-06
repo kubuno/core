@@ -20,9 +20,11 @@ PKG="$FE/packages"
 
 echo "==> 1/4  Building @kubuno/views-compiler (TypeScript; the committed .wasm is rebuilt by npm run build:wasm)"
 # First: kbview-tsc (below) runs from this package's dist/.
-node_modules/.bin/tsc -b packages/views-compiler
+# `--force`: an incremental build rewrites only the outputs whose sources changed, and publish_all.sh refuses a
+# dist/ holding any file older than the newest source.
+node_modules/.bin/tsc -b --force packages/views-compiler
 # The codemod (kbview-migrate), a Node library of its own.
-node_modules/.bin/tsc -b packages/views-migrate
+node_modules/.bin/tsc -b --force packages/views-migrate
 
 echo "==> 2/4  Emitting declarations (kbview-tsc -p tsconfig.emit.json)"
 # kbview-tsc, not plain tsc: it first generates the types of the .kbview / .kbcontrol views
