@@ -60,7 +60,7 @@ changer les couleurs — c'est le format historique, importable aussi en simple 
   origine** (`/api/v1/themes/<id>/…`). Une CSS de module ne doit cibler que
   `[data-module="<id>"] …` (l'hôte pose cet attribut sur la zone du module).
 - Les variables `--color-*`, `--body-bg`, `--radius-*`, `--font-family-*` du
-  thème de base (cf. `frontend/src/theme.css`) sont surchargeables.
+  thème de base (cf. `web/src/theme.css`) sont surchargeables.
 
 ## 4. Scripts d'override (HTML + JS des composants)
 
@@ -103,7 +103,7 @@ global → implémentation par défaut**.
 ## 5. Catalogue des clés thématisables
 
 Le contrat versionné des « objets » qu'un thème peut remplacer. Déclaré côté hôte
-via `themed('<clé>', Base)` (`frontend/src/ui/themeRegistry.tsx`).
+via `themed('<clé>', Base)` (`web/src/ui/themeRegistry.tsx`).
 
 | Clé | Objet | Statut |
 |---|---|---|

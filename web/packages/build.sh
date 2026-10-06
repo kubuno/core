@@ -14,7 +14,7 @@
 # bundles mark them `external`. The packages exist so modules can build & typecheck
 # standalone (npm), without a kubuno/core checkout next to them.
 set -euo pipefail
-cd "$(dirname "$0")/.."                     # → frontend/
+cd "$(dirname "$0")/.."                     # → web/ (the host app)
 FE="$(pwd)"
 PKG="$FE/packages"
 
@@ -51,14 +51,14 @@ rm -rf "$PKG/views/types"; mkdir -p "$PKG/views/types";     cp -r "$FE"/dist-typ
 
 echo "==> 3/4  Building @kubuno/ui ESM bundle"
 # ⚠️ The `cd` is load-bearing, not stylistic. Vite resolves `outDir` against the
-# CURRENT WORKING DIRECTORY, not against the config file. Run from frontend/ as
+# CURRENT WORKING DIRECTORY, not against the config file. Run from web/ as
 #     npx vite build --config packages/ui/vite.config.ts
-# and the library lands in `frontend/dist/` — where `emptyOutDir` first WIPES the
+# and the library lands in `web/dist/` — where `emptyOutDir` first WIPES the
 # host application build. Always build a package from inside the package.
 ( cd "$PKG/ui" && "$FE/node_modules/.bin/vite" build )
 
 echo "==> 4/4  Building @kubuno/host-runtime (bundled page, then the project-mode page + shared modules)"
-# vite.design-host.config.ts writes to an absolute outDir (packages/host-runtime/dist): safe from frontend/.
+# vite.design-host.config.ts writes to an absolute outDir (packages/host-runtime/dist): safe from web/.
 node_modules/.bin/vite build --config vite.design-host.config.ts
 node_modules/.bin/vite build --config vite.design-host.config.ts --mode project
 

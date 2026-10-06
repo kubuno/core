@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 24
       - name: build frontend host
-        working-directory: frontend
+        working-directory: web
         run: |
           npm ci
           npm run build
@@ -41,7 +41,7 @@ jobs:
       # hints, which runtime instrumentation (performance entries) cannot see.
       # The site's /security page invites visitors to verify this claim.
       - name: assert no Google font CDN references
-        working-directory: frontend
+        working-directory: web
         run: |
           if grep -RliE 'fonts\.googleapis\.com|fonts\.gstatic\.com' dist/; then
             echo '::error::Google font CDN reference found in built frontend — fonts must stay self-hosted'

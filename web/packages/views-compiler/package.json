@@ -3,11 +3,11 @@
   "version": "0.1.2",
   "description": "Build-time tooling of Kubuno .kbview web views: the WebAssembly build of the shared .kbview grammar and web compiler, the Vite plugin (plan, precompiled accessors, source maps, generated ViewBase declarations, HMR) and kbview-tsc (tsc with errors mapped back to the .kbview).",
   "license": "AGPL-3.0-or-later",
-  "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/views-compiler",
+  "homepage": "https://github.com/kubuno/core/tree/main/web/packages/views-compiler",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kubuno/core.git",
-    "directory": "frontend/packages/views-compiler"
+    "directory": "web/packages/views-compiler"
   },
   "type": "module",
   "sideEffects": false,

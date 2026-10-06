@@ -39,7 +39,7 @@ function stagePublic(): void {
   mkdirSync(join(STAGE, 'fonts'), { recursive: true })
   cpSync(here('./public/fonts'), join(STAGE, 'fonts'), { recursive: true })
   for (const id of THEMES) {
-    const src = here(`../themes/${id}`)
+    const src = here(`./themes/${id}`)
     const dst = join(STAGE, 'themes', id)
     mkdirSync(dst, { recursive: true })
     for (const name of readdirSync(src)) {

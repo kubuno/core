@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 /** The package root (packages/views-compiler). */
 export const PKG = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-/** core/frontend. */
+/** core/web (the host app). */
 export const FRONTEND = resolve(PKG, '..', '..')
 /** The real host registry (`@kubuno/ui`). */
 export const UI_REGISTRY = join(FRONTEND, 'packages', 'ui', 'kbview-registry.web.json')

@@ -13,14 +13,14 @@ dev-back:
 	cargo watch -q -c -w server -w common -x 'run --manifest-path server/Cargo.toml --bin kubuno-core'
 
 dev-front:
-	cd frontend && npm run dev
+	cd web && npm run dev
 
 # ── Build ────────────────────────────────────────────────
 build:
 	cd server && cargo build --release --bin kubuno-core
 
 build-front:
-	cd frontend && npm run build
+	cd web && npm run build
 
 # ── Paquet Debian ────────────────────────────────────────
 deb: check
@@ -35,17 +35,17 @@ test:
 lint:
 	cd server && cargo clippy --workspace -- -D warnings
 	cd common && cargo clippy --workspace -- -D warnings
-	cd frontend && npx eslint src/
+	cd web && npx eslint src/
 
 fmt:
 	cd server && cargo fmt --all
 	cd common && cargo fmt --all
-	cd frontend && npx prettier --write src/
+	cd web && npx prettier --write src/
 
 check:
 	cd server && cargo check --workspace
 	cd common && cargo check --workspace
-	cd frontend && npx tsc --noEmit
+	cd web && npx tsc --noEmit
 
 # ── Base de données ──────────────────────────────────────
 migrate:
@@ -62,4 +62,4 @@ migration:
 clean:
 	cd server && cargo clean
 	cd common && cargo clean
-	rm -rf frontend/dist frontend/node_modules data/ *.deb
+	rm -rf web/dist web/node_modules data/ *.deb

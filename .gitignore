@@ -11,11 +11,12 @@
 node_modules/
 **/node_modules/
 
-# Frontend — sorties de build
-/frontend/dist/
-/frontend/dist-gallery/
-/frontend/dist-modules/
-/frontend/dist-types/
+# Web host — build outputs (web/; frontend/ before the move)
+/web/dist/
+/web/dist-gallery/
+/web/dist-modules/
+/web/dist-types/
+/frontend/
 
 # Paquets Debian générés
 /dist/
@@ -49,7 +50,7 @@ nohup.out
 *.swp
 
 # Deliberately VERSIONED: server/Cargo.lock and common/Cargo.lock, server/.sqlx/ (the sqlx query cache,
-# needed to build without a database in CI), server/migrations/, themes/, server/man/
+# needed to build without a database in CI), server/migrations/, web/themes/, server/man/
 
 # symlink local éventuel
 node_modules
@@ -73,8 +74,8 @@ obj/
 **/.kubuno/views/
 # The running dev server's announcement for the Visual Studio web designer (written while `vite serve` listens).
 **/.kubuno/design-server.json
-/frontend/packages/views-compiler/wasm/target/
-/frontend/packages/views-compiler/tsconfig.tsbuildinfo
+/web/packages/views-compiler/wasm/target/
+/web/packages/views-compiler/tsconfig.tsbuildinfo
 
 # TypeScript incremental build state (per machine; tracked copies made every build "dirty")
 *.tsbuildinfo

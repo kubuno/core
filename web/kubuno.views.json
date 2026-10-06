@@ -3,5 +3,5 @@
   "hostRegistry": "packages/ui/kbview-registry.web.json",
   "registries": ["src/core/shell/menus/kbview-controls.json"],
   "sources": ["src"],
-  "design": { "entry": "src/views/design/entry.tsx", "themes": "../themes" }
+  "design": { "entry": "src/views/design/entry.tsx", "themes": "themes" }
 }

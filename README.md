@@ -70,9 +70,9 @@ This repository contains:
 | **[kubuno-seccomp](common/kubuno-seccomp/README.md)** | `common/kubuno-seccomp` | Execution sandbox (seccomp) — shared |
 | **[kubuno-modauth](common/kubuno-modauth/README.md)** | `common/kubuno-modauth` | Signed module ↔ core authentication — shared |
 | **[kubuno-mcp](common/kubuno-mcp/README.md)** | `common/kubuno-mcp` | MCP server building blocks — used by the core |
-| **Frontend host** | `frontend/` | React shell + shared libraries `@kubuno/sdk`, `@kubuno/ui`, `@kubuno/drive` |
+| **Web host** | `web/` | React shell + shared libraries `@kubuno/sdk`, `@kubuno/ui`, `@kubuno/drive` |
 | **Migrations** | `server/migrations/` | Core database schema |
-| **Themes** | `themes/` | Skin themes shipped with the platform (see [`THEMES.md`](THEMES.md)) |
+| **Themes** | `web/themes/` | Skin themes shipped with the platform (see [`THEMES.md`](THEMES.md)) |
 
 Shared crates are consumed by the **module repositories** via tagged git dependencies; the shared frontend libraries are published to npm under the **`@kubuno/*`** scope.
 
@@ -295,7 +295,7 @@ full reference (`users:*`, `groups:*`, `org-units:*`, `db:*`, `auth:recover`…)
 cargo build --release --bin kubuno-core
 
 # Frontend host
-cd frontend && npm ci && npm run build
+cd web && npm ci && npm run build
 
 # Dev (backend + frontend together)
 make dev

@@ -16,7 +16,7 @@
         "Action": "Start"
       },
       {
-        "Path": "frontend\\Kubuno.Core.Frontend.esproj",
+        "Path": "web\\Kubuno.Core.Frontend.esproj",
         "Action": "Start"
       }
     ]

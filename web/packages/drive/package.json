@@ -3,11 +3,11 @@
   "version": "0.1.7",
   "description": "Kubuno drive client surface (@kubuno/drive) — file browser, storage explorer and dialogs reused by file-backed modules. Provided by the host at runtime via the import map; this package ships the type surface.",
   "license": "AGPL-3.0-or-later",
-  "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/drive",
+  "homepage": "https://github.com/kubuno/core/tree/main/web/packages/drive",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kubuno/core.git",
-    "directory": "frontend/packages/drive"
+    "directory": "web/packages/drive"
   },
   "type": "module",
   "sideEffects": false,

@@ -28,6 +28,11 @@ number at release time, and CI publishes that section as the GitHub Release note
   `desktop/README.md` and `desktop/CHANGELOG.md`. Desktop apps take the framework from this repository by tag:
   `desktop-v0.1.1-alpha`, and `web-views-compiler-core-v0.2.1` for the web views compiler. New CI workflows
   check `desktop/` on Windows, Linux and macOS and release it on a `desktop-v*` tag.
+- **The web host moves to `web/`** (formerly `frontend/`, with its history), with the npm packages
+  (`web/packages/*`: `@kubuno/ui`, `@kubuno/sdk`, `@kubuno/drive`, `@kubuno/views`, `@kubuno/views-compiler`,
+  `@kubuno/views-migrate`, `@kubuno/host-runtime`, `@kubuno/vectors`) and the bundled themes (`web/themes`). The
+  repository now reads `common/`, `server/`, `web/`, `desktop/` and `mobile/`. The installed layout is unchanged
+  (`/usr/share/kubuno/frontend`, `/usr/share/kubuno/themes`); the tools of the workspace accept both layouts.
 - **The web views are sorted into views and user controls, like the desktop.** A page the router shows, a window or a
   dialog is a view (`.kbview`); a piece placed inside another screen — a pane, a section, a tab, a row, a card, the
   header and its menus — is a user control (`.kbcontrol`), with its properties and events. The core's screens were
