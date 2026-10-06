@@ -1,0 +1,62 @@
+<!-- HealthSection — converted from HealthSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <EmptyState ActionLabel="{Res admin.hc_retry}"
+              IconSize="26"
+              Icon="AlertTriangle"
+              Variant="Error"
+              Title="{Res admin.hc_error_title}"
+              Description="{Res admin.hc_error_body}"
+              Visible="{Binding show_case_2}"
+              OnAction="empty_state_action"/>
+  <EmptyState IconSize="26"
+              Icon="EyeOff"
+              Variant="Unavailable"
+              Title="{Res admin.hc_none_title}"
+              Description="{Res admin.hc_none_body}"
+              Visible="{Binding show_case_3}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Card IconSize="18" Icon="HeartPulse" Subtitle="{Res admin.hc_generated, When={Binding hc_generated_when}}" Class="mb-4">
+      <Card.Actions>
+        <Button Variant="Secondary"
+                Size="Sm"
+                IconSize="14"
+                Icon="RefreshCw"
+                Loading="{Binding refresh.isPending}"
+                Text="{Res admin.hc_recheck_all}"
+                OnClick="onRefreshAll"/>
+      </Card.Actions>
+      <Panel Class="contents">
+        <Panel Visible="{Binding show_score}" Class="mb-2 flex items-baseline gap-2">
+          <Label HtmlTag="Span"
+                 Text="{Binding score}"
+                 Overflow="Wrap"
+                 ForeColor="TextPrimary"
+                 InheritFontSize="true"
+                 Class="[font-size:var(--kb-text-page)]"/>
+          <Label HtmlTag="Span"
+                 Text="{Res admin.hc_score_of_100}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Class="[font-size:var(--kb-text-body)]"/>
+        </Panel>
+        <ProgressBar Value="{Binding score}" Variant="{Binding variant}" Visible="{Binding show_score}"/>
+        <Label Text="{Binding p_text}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="mt-3 [font-size:var(--kb-text-body)]"/>
+      </Panel>
+    </Card>
+    <Callout Variant="Danger"
+             Title="{Res admin.hc_banner_critical_title, N={Binding counts.critical}}"
+             Body="{Res admin.hc_banner_critical_body}"
+             Visible="{Binding show_counts_critical}"
+             Class="mb-4"/>
+    <!-- TODO(views-migrate): <Accordion> items, open, onOpenChange: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Panel>
+</Panel>

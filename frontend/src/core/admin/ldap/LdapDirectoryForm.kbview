@@ -1,0 +1,106 @@
+<!-- LdapDirectoryForm — converted from LdapDirectoryForm.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Card x:Props="LdapDirectoryFormProps" Title="{Binding title}" IconSize="17" Icon="Network">
+  <Panel Class="space-y-5">
+    <!-- TODO(views-migrate): <Stepper> steps: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <Panel Visible="{Binding show_step_connection}" Class="space-y-4">
+      <Stack Direction="LeftToRight" WrapContents="true">
+        <Button Variant="Ghost" Size="Sm" Text="{Res ldap.preset_standard}" OnClick="button_click"/>
+        <Button Variant="Ghost" Size="Sm" Text="{Res ldap.preset_ad}" OnClick="button_click2"/>
+      </Stack>
+      <Panel Class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+      </Panel>
+      <Panel Class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Panel Class="sm:col-span-2">
+          <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part4}" Props="{Binding part3_props}"/>
+        </Panel>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part5}" Props="{Binding part3_props}"/>
+      </Panel>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+      <Callout Variant="Warning" Body="{Res ldap.warn_plain}" Visible="{Binding show_form_security_none}"/>
+      <!-- TODO(views-migrate): <SwitchRow> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding SwitchRow}" Props="{Binding switch_row_props}" Visible="{Binding show_form_security_none2}"/>
+      <Callout Variant="Warning" Body="{Res ldap.warn_no_verify}" Visible="{Binding visible}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part7}" Props="{Binding part7_props}" Visible="{Binding visible2}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part8}" Props="{Binding part3_props}"/>
+    </Panel>
+    <Panel Visible="{Binding show_step_service}" Class="space-y-4">
+      <Callout Body="{Res ldap.service_intro}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part9}" Props="{Binding part9_props}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part10}" Props="{Binding part10_props}"/>
+      <Button Variant="Ghost"
+              Size="Sm"
+              Enabled="{Binding enabled_unless_saving}"
+              Text="{Res ldap.bind_password_clear}"
+              Visible="{Binding show_has_stored_password_on_clear_password}"
+              OnClick="button_click3"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part11}" Props="{Binding part9_props}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part12}" Props="{Binding part9_props}"/>
+      <Callout Variant="Danger" Body="{Res ldap.err_no_placeholder}" Visible="{Binding show_form_user_filter}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part13}" Props="{Binding part13_props}"/>
+    </Panel>
+    <Panel Visible="{Binding show_step_mapping}" Class="space-y-4">
+      <Callout Body="{Res ldap.mapping_intro}"/>
+      <Panel Class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part14}" Props="{Binding part14_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part15}" Props="{Binding part14_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part16}" Props="{Binding part14_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part17}" Props="{Binding part14_props}"/>
+      </Panel>
+    </Panel>
+    <Panel Visible="{Binding show_step_sync}" Class="space-y-4">
+      <!-- TODO(views-migrate): <SwitchRow> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding SwitchRow2}" Props="{Binding switch_row_props2}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part18}" Props="{Binding part18_props}"/>
+      <!-- TODO(views-migrate): <SwitchRow> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding SwitchRow2}" Props="{Binding switch_row_props3}"/>
+      <Panel Visible="{Binding props.form.sync_groups}" Class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part19}" Props="{Binding part19_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part20}" Props="{Binding part19_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part21}" Props="{Binding part19_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part22}" Props="{Binding part19_props}"/>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part23}" Props="{Binding part19_props}"/>
+      </Panel>
+      <!-- TODO(views-migrate): <SwitchRow> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding SwitchRow2}" Props="{Binding switch_row_props4}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part24}" Props="{Binding part24_props}" Visible="{Binding props.form.sync_enabled}"/>
+      <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part25}" Props="{Binding part25_props}"/>
+      <Callout Title="{Res ldap.never_delete_title}" Body="{Res ldap.never_delete_body}"/>
+      <!-- TODO(views-migrate): <SwitchRow> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding SwitchRow2}" Props="{Binding switch_row_props5}"/>
+    </Panel>
+    <Stack Direction="LeftToRight" Justify="End" WrapContents="true" Class="border-t border-border pt-4">
+      <Button Variant="Ghost" Text="{Res common.cancel}" OnClick="button_click4"/>
+      <Button Enabled="{Binding enabled_unless_can_save}"
+              Loading="{Binding props.saving}"
+              Text="{Binding button_text}"
+              OnClick="button_click5"/>
+    </Stack>
+  </Panel>
+</Card>

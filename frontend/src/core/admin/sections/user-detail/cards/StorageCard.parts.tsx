@@ -5,7 +5,7 @@
 import { Cloud, HardDrive } from "lucide-react"
 import { Callout, ProgressBar } from "@ui"
 import EditableCard from "../../../inline-edit/EditableCard"
-import { QuotaField } from "../../../storage/QuotaField"
+import QuotaField from "../../../storage/QuotaField"
 import { formatBytes } from "../../format"
 import { accountError } from "../useAccountEdit"
 import type { StorageCard } from './StorageCard'

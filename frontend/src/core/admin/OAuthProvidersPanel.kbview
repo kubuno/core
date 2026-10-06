@@ -1,0 +1,43 @@
+<!-- OAuthProvidersPanel — converted from OAuthProvidersPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="max-w-3xl">
+  <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="SpaceBetween" Class="mb-4">
+    <Panel>
+      <Panel HtmlTag="H2" Class="text-lg font-medium flex items-center gap-2">
+        <Icon Name="ShieldCheck" Class="text-primary"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" Fournisseurs SSO (OIDC)"/>
+      </Panel>
+      <Panel HtmlTag="P" ForeColor="TextSecondary" Class="text-sm mt-0.5">
+        <Label HtmlTag="Span"
+               InheritFontSize="true"
+               Overflow="Wrap"
+               Text="Connectez Keycloak, GitLab ou tout fournisseur OpenID Connect. La découverte des points d'accès est automatique ("/>
+        <Label HtmlTag="Code" Text=".well-known/openid-configuration" Overflow="Wrap" InheritFontSize="true"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=")."/>
+      </Panel>
+    </Panel>
+    <!-- TODO(views-migrate): <Button> with element children -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_editing}"/>
+  </Stack>
+  <Panel Visible="{Binding show_editing_new}" Class="mb-4">
+    <!-- TODO(views-migrate): <ProviderForm> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding ProviderForm}" Props="{Binding provider_form_props}"/>
+  </Panel>
+  <Label HtmlTag="Div" Text="Chargement…" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding isLoading}"/>
+  <Label HtmlTag="Div"
+         Text="Aucun fournisseur configuré. Cliquez sur « Ajouter » pour en créer un."
+         TextAlign="TopCenter"
+         Overflow="Wrap"
+         ForeColor="TextTertiary"
+         Visible="{Binding visible}"
+         Class="border border-dashed border-border rounded-xl p-8"/>
+  <Panel Visible="{Binding visible2}" Class="space-y-2">
+    <!-- TODO(views-migrate): a list whose item is not a single element -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+      <!-- TODO(views-migrate): <Callout> with element children -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    </Repeater>
+  </Panel>
+  <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+  <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+</Panel>

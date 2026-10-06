@@ -50,6 +50,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Administration ▸ Storage and the security pages are views**: storage (volume, accounts, growth, consumers, quota policy, reconciliation, the account usage dialog), the security dashboard, instance health (and the header's health chip), authentication & SSO, LDAP directories and admin roles (list, detail, create and assign dialogs) — editable in the Visual Studio designer, checked identical to the previous screens.
 - **Administration ▸ settings pages are views**: the identity, session policy, access and data and service protection pages, a module's settings pages, their setting rows, scope bar and tree, provenance line and side panel — editable in the Visual Studio designer, checked identical to the previous screens.
 - **Administration ▸ Groups, installed modules, a module's page and settings, and the marketplace are views** (editable in the Visual Studio designer), checked identical to the previous screens.
 - **Administration ▸ Users is made of views**: the accounts list, an account's sheet (identity card, profile, security and activity tabs, their cards) and the « Reset the password » dialog are `.kbview` views editable in the Visual Studio designer, checked identical to the previous screens (pixels, text, accessibility tree and keyboard order; light and dark, three languages, desktop and phone).

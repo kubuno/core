@@ -1,0 +1,16 @@
+<!-- AdminRolesPanel — converted from AdminRolesPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <!-- TODO(views-migrate): <AdminForbidden> is no .kbview element (./AdminSectionBoundary#AdminForbidden) -->
+  <ReactHost Component="{Binding AdminForbidden}" Props="{Binding admin_forbidden_props}" Visible="{Binding show_case_1}"/>
+  <!-- TODO(views-migrate): <RoleDetail> is no .kbview element (./roles/RoleDetail#default) -->
+  <ReactHost Component="{Binding RoleDetail}" Props="{Binding role_detail_props}" Visible="{Binding show_case_2}"/>
+  <!-- TODO(views-migrate): elements held in an expression -->
+  <ReactHost Component="{Binding Fragment}" Props="{Binding content_editor}" Visible="{Binding show_case_2}"/>
+  <Panel Visible="{Binding show_main}">
+    <Label HtmlTag="H1" Text="{Res admin.nav_admin_roles}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-xl mb-6"/>
+    <!-- TODO(views-migrate): <RolesList> is no .kbview element (./roles/RolesList#default) -->
+    <ReactHost Component="{Binding RolesList}" Props="{Binding roles_list_props}"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_editor2}"/>
+  </Panel>
+</Panel>

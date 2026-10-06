@@ -1,0 +1,83 @@
+<!-- SecurityDashboardSection — converted from SecurityDashboardSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <EmptyState IconSize="28"
+              Icon="Info"
+              Title="{Res admin.sec_forbidden}"
+              Description="{Res admin.sec_forbidden_desc}"
+              Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}">
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="End" Justify="SpaceBetween" WrapContents="true" Class="mb-6">
+      <Panel Class="min-w-0">
+        <Label HtmlTag="H1"
+               Text="{Res admin.nav_security_dashboard}"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-page)]"/>
+        <Label Text="{Res admin.sec_intro}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="mt-1 max-w-2xl [font-size:var(--kb-text-body)]"/>
+      </Panel>
+      <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true">
+        <!-- TODO(views-migrate): <Dropdown> width, focusable: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <!-- TODO(views-migrate): <Button Icon>: an icon that is not a Lucide icon -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+      </Stack>
+    </Stack>
+    <Callout Variant="Danger" Body="{Binding callout_text}" Visible="{Binding isError}" Class="mb-4"/>
+    <!-- TODO(views-migrate): <RetentionNotice> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding RetentionNotice}" Props="{Binding retention_notice_props}" Visible="{Binding show_data}"/>
+    <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding isLoading}" Class="py-16">
+      <Spinner/>
+    </Stack>
+    <Panel Visible="{Binding show_data_visible}" Class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <!-- TODO(views-migrate): a list whose item is not a single element -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <EmptyState> action.variant: no .kbview property -->
+    <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}" Visible="{Binding show_data_visible2}"/>
+    <Panel BackColor="Surface1" Visible="{Binding show_editing_data}" Class="mt-6 rounded-xl border border-border p-4">
+      <Stack Direction="LeftToRight" CrossAlign="Center" Justify="SpaceBetween" WrapContents="true" Class="mb-3">
+        <Label HtmlTag="H2"
+               Text="{Res admin.sec_hidden_panels}"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-heading)]"/>
+        <Button Variant="Ghost" IconSize="14" Icon="RotateCcw" Text="{Res admin.sec_reset}" OnClick="button_click"/>
+      </Stack>
+      <Label Text="{Res admin.sec_nothing_hidden}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_hidden_available}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Panel HtmlTag="Ul" Visible="{Binding show_not_hidden_available}" Class="flex flex-wrap gap-2">
+        <!-- TODO(views-migrate): a list whose item is not a single element -->
+        <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+      </Panel>
+    </Panel>
+    <Panel BackColor="Surface1" Visible="{Binding show_data}" Class="mt-6 rounded-xl border border-border p-4">
+      <Label HtmlTag="H2"
+             Text="{Res admin.sec_gaps_title}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="mb-1 [font-size:var(--kb-text-heading)]"/>
+      <Label Text="{Res admin.sec_gaps_body}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="max-w-3xl [font-size:var(--kb-text-body)]"/>
+      <Label Text="{Res admin.sec_withheld, Count={Binding withheldCount}}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_withheld_count}"
+             Class="mt-2 [font-size:var(--kb-text-meta)]"/>
+    </Panel>
+  </Panel>
+</Panel>

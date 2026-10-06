@@ -1,0 +1,8 @@
+<!-- Figure — converted from Figure.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="FigureProps" Class="min-w-0">
+  <Label HtmlTag="Div" Text="{Binding props.label}" ForeColor="TextTertiary" InheritFontSize="true" Class="[font-size:var(--kb-text-meta)]"/>
+  <Panel ForeColor="TextPrimary" Class="mt-0.5 truncate [font-size:var(--kb-text-heading)]">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_children}"/>
+  </Panel>
+</Panel>

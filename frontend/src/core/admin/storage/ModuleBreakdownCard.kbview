@@ -1,0 +1,107 @@
+<!-- ModuleBreakdownCard — converted from ModuleBreakdownCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Card x:Props="ModuleBreakdownCardProps" Title="{Res admin.sto_mod_title}" IconSize="16" Icon="PieChart" Subtitle="{Res admin.sto_mod_sub}">
+  <Panel Class="contents">
+    <Label Text="{Res admin.sto_mod_billed_lead}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-meta)]"/>
+    <Callout Body="{Res admin.sto_mod_none_desc}" Visible="{Binding nothingDeclared}" Class="mt-2"/>
+    <Panel Visible="{Binding show_not_nothing_declared}" Class="mt-2">
+      <!-- TODO(views-migrate): <CompositionBar> is no .kbview element (./CompositionBar#default) -->
+      <ReactHost Component="{Binding CompositionBar}" Props="{Binding composition_bar_props}"/>
+    </Panel>
+    <Panel HtmlTag="Ul" Visible="{Binding show_declaring}" Class="mt-5 flex flex-col divide-y divide-border border-t border-border">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_declaring}">
+        <Panel HtmlTag="Li">
+          <Panel Class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+            <!-- TODO(views-migrate): <button aria-expanded>: attribute(s) without a .kbview property -->
+            <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding expandable}"/>
+            <Stack Direction="LeftToRight" CrossAlign="Center" Visible="{Binding show_not_expandable}" Class="min-w-0 flex-1 py-1">
+              <Panel HtmlTag="Span" AccessibleHidden="true" Class="size-3.5 shrink-0"/>
+              <!-- TODO(views-migrate): elements held in an expression -->
+              <ReactHost Component="{Binding Fragment}" Props="{Binding content_identity}"/>
+            </Stack>
+            <Panel HtmlTag="Span"
+                   ForeColor="Warning"
+                   Visible="{Binding m.stale}"
+                   Class="inline-flex shrink-0 items-center gap-1 [font-size:var(--kb-text-meta)]">
+              <Icon Name="AlertTriangle" Size="13"/>
+              <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.sto_mod_stale}"/>
+            </Panel>
+            <Label HtmlTag="Span"
+                   Text="{Binding meta}"
+                   Overflow="Wrap"
+                   ForeColor="TextTertiary"
+                   InheritFontSize="true"
+                   Class="shrink-0 [font-size:var(--kb-text-meta)]"/>
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text}"
+                   Overflow="Wrap"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="shrink-0 tabular-nums [font-size:var(--kb-text-body)]"/>
+          </Panel>
+          <Panel Visible="{Binding isOpen}" Class="pb-3 pl-6">
+            <!-- TODO(views-migrate): <CategoryRows> is no .kbview element (./CategoryRows#default) -->
+            <ReactHost Component="{Binding CategoryRows}" Props="{Binding category_rows_props}"/>
+            <!-- TODO(views-migrate): <DelegatedNote> is no .kbview element (./DelegatedNote#default) -->
+            <ReactHost Component="{Binding DelegatedNote}" Props="{Binding delegated_note_props}"/>
+          </Panel>
+        </Panel>
+      </Repeater>
+    </Panel>
+    <Panel Class="mt-6 border-t border-border pt-4">
+      <Panel HtmlTag="H4" ForeColor="TextPrimary" Class="flex items-center gap-2 font-medium [font-size:var(--kb-text-body)]">
+        <Icon Name="HardDrive" Size="15" Class="shrink-0 text-text-secondary"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.sto_held_title}"/>
+      </Panel>
+      <Label Text="{Res admin.sto_held_sub}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-1 [font-size:var(--kb-text-meta)]"/>
+      <Panel Class="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part2_props}"/>
+        <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+        <ReactHost Component="{Binding Part4}" Props="{Binding part2_props}"/>
+      </Panel>
+      <Panel Class="mt-4">
+        <!-- TODO(views-migrate): <CategoryComposition> is no .kbview element (./CategoryComposition#default) -->
+        <ReactHost Component="{Binding CategoryComposition}" Props="{Binding category_composition_props}"/>
+      </Panel>
+    </Panel>
+    <Panel Visible="{Binding show_silent}" Class="mt-4 border-t border-border pt-4">
+      <Label Text="{Res admin.sto_mod_silent_intro, Count={Binding silent.length}}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-body)]"/>
+      <Panel HtmlTag="Ul" Class="mt-2 flex flex-col gap-1.5">
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_silent}">
+          <Panel HtmlTag="Li" Class="flex items-center gap-2">
+            <Icon Name="HelpCircle" Size="13" Class="shrink-0 text-text-tertiary"/>
+            <Label HtmlTag="Span"
+                   Text="{Binding m.display_name}"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Class="min-w-0 flex-1 [font-size:var(--kb-text-body)]"/>
+            <Label HtmlTag="Span"
+                   Text="{Res admin.sto_mod_undeclared}"
+                   Overflow="Wrap"
+                   ForeColor="TextTertiary"
+                   InheritFontSize="true"
+                   Class="shrink-0 [font-size:var(--kb-text-meta)]"/>
+          </Panel>
+        </Repeater>
+      </Panel>
+    </Panel>
+    <Callout Variant="Warning"
+             Body="{Res admin.sto_mod_over, Bytes={Binding sto_mod_over_bytes}}"
+             Visible="{Binding show_data_over_declared}"
+             Class="mt-4"/>
+  </Panel>
+</Card>

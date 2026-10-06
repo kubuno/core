@@ -1,0 +1,117 @@
+<!-- AssignRoleDialog — converted from AssignRoleDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<FloatingWindow x:Props="AssignRoleDialogProps"
+                ConfirmText="{Res admin.assign_submit}"
+                ConfirmEnabled="{Binding enabled_unless_subject_ready_scope_ready}"
+                ConfirmBusy="{Binding create.isPending}"
+                CancelText="{Res common.cancel}"
+                HostStrings="true"
+                Title="{Binding title}"
+                Width="620"
+                Modal="true"
+                OnConfirm="floating_window_confirm"
+                OnClose="floating_window_close">
+  <Panel Class="contents">
+    <Panel HtmlTag="Form" Class="flex flex-col max-h-[80vh]" OnSubmit="panel_submit">
+      <Panel Class="p-5 space-y-5 overflow-y-auto">
+        <Panel Class="space-y-2">
+          <Label Text="{Res admin.assign_subject}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+          <Stack Direction="LeftToRight">
+            <!-- TODO(views-migrate): elements held in an expression -->
+            <ReactHost Component="{Binding Fragment}" Props="{Binding content_kind_button_user_t}"/>
+            <!-- TODO(views-migrate): elements held in an expression -->
+            <ReactHost Component="{Binding Fragment}" Props="{Binding content_kind_button_group_t}"/>
+          </Stack>
+          <Stack Direction="LeftToRight"
+                 Gap="12"
+                 CrossAlign="Center"
+                 Visible="{Binding visible}"
+                 Class="border border-border rounded-lg px-3 py-2">
+            <!-- TODO(views-migrate): <Avatar> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding Avatar}" Props="{Binding avatar_props}"/>
+            <Panel HtmlTag="Span" Class="min-w-0 flex-1">
+              <Label HtmlTag="Span" Text="{Binding span_text}" ForeColor="TextPrimary" Class="block"/>
+              <Label HtmlTag="Span" Text="{Binding span_text2}" ForeColor="TextTertiary" Class="block"/>
+            </Panel>
+            <Panel AccessibleRole="PushButton" AutoSize="true" ForeColor="Primary" Class="text-sm hover:underline" OnClick="panel_click">
+              <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.assign_change}"/>
+            </Panel>
+          </Stack>
+          <Panel Visible="{Binding visible2}">
+            <TextField Text="{Binding query, Mode=TwoWay}" Placeholder="{Res admin.assign_find_user}"/>
+            <Panel Visible="{Binding show_debounced_found}"
+                   Class="mt-1 border border-border rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+              <Repeater ItemKey="key" ItemsSource="{Binding rows_found}">
+                <Panel AccessibleRole="PushButton"
+                       AutoSize="true"
+                       Class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface-2 transition-colors"
+                       OnClick="panel_click2">
+                  <!-- TODO(views-migrate): <Avatar> is no .kbview element (a local or dynamic component) -->
+                  <ReactHost Component="{Binding Avatar2}" Props="{Binding avatar_props}"/>
+                  <Panel HtmlTag="Span" Class="min-w-0">
+                    <Label HtmlTag="Span" Text="{Binding span_text}" ForeColor="TextPrimary" Class="block"/>
+                    <Label HtmlTag="Span" Text="{Binding u.email}" ForeColor="TextTertiary" Class="block"/>
+                  </Panel>
+                </Panel>
+              </Repeater>
+            </Panel>
+          </Panel>
+          <!-- TODO(views-migrate): <ComboBox> width: no .kbview property -->
+          <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_not_kind_user}"/>
+        </Panel>
+        <Panel Class="space-y-2">
+          <Label Text="{Res admin.assign_scope}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+          <Panel Class="border border-border rounded-lg divide-y divide-border">
+            <Panel HtmlTag="Label" Class="flex items-start gap-3 p-3 cursor-pointer">
+              <RadioButton SelectedValue="{Binding selected_value}" Value="true" OnCheckedChanged="radio_button_checked_changed"/>
+              <Panel HtmlTag="Span" Class="min-w-0">
+                <Panel HtmlTag="Span" ForeColor="TextPrimary" Class="flex items-center gap-1.5 text-sm">
+                  <Icon Name="Globe2" Size="14" Class="text-text-tertiary"/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.assign_scope_instance}"/>
+                </Panel>
+                <Label HtmlTag="Span"
+                       Text="{Res admin.assign_scope_instance_desc}"
+                       Overflow="Wrap"
+                       ForeColor="TextSecondary"
+                       Class="block mt-0.5"/>
+              </Panel>
+            </Panel>
+            <Panel HtmlTag="Label" ToolTip="{Binding tooltip}" Class="{Binding label_class}">
+              <RadioButton SelectedValue="{Binding selected_value2}"
+                           Value="true"
+                           Enabled="{Binding enabled_unless_role_ou_delegable}"
+                           OnCheckedChanged="radio_button_checked_changed2"/>
+              <Panel HtmlTag="Span" Class="min-w-0">
+                <Panel HtmlTag="Span" Class="{Binding span_class}">
+                  <Icon Name="Building2" Size="14" Visible="{Binding props.role.ou_delegable}" Class="text-text-tertiary"/>
+                  <Icon Name="Lock" Size="14" Visible="{Binding show_not_role_ou_delegable}"/>
+                  <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.assign_scope_ou}"/>
+                </Panel>
+                <Label HtmlTag="Span" Text="{Res admin.assign_scope_ou_desc}" Overflow="Wrap" ForeColor="TextSecondary" Class="block mt-0.5"/>
+                <Panel HtmlTag="Span" Visible="{Binding show_scope_org_unit}" Class="flex items-center gap-2 mt-2">
+                  <Label HtmlTag="Span" Text="{Binding span_text3}" Overflow="Wrap" ForeColor="TextSecondary"/>
+                  <Panel AccessibleRole="PushButton"
+                         AutoSize="true"
+                         ForeColor="Primary"
+                         Class="text-sm hover:underline"
+                         OnClick="panel_click3">
+                    <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+                  </Panel>
+                </Panel>
+              </Panel>
+            </Panel>
+          </Panel>
+          <!-- TODO(views-migrate): <Callout> with element children -->
+          <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding show_role_ou_delegable}"/>
+        </Panel>
+        <Panel Class="space-y-1.5">
+          <Label Text="{Res admin.assign_expiry}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+          <!-- TODO(views-migrate): <DatePicker> clearable, minDate: no .kbview property -->
+          <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        </Panel>
+        <Callout Variant="Danger" Body="{Binding error}" Visible="{Binding show_error}"/>
+      </Panel>
+    </Panel>
+    <!-- TODO(views-migrate): <OrgUnitPicker> is no .kbview element (../OrgUnitPicker#default) -->
+    <ReactHost Component="{Binding OrgUnitPicker}" Props="{Binding org_unit_picker_props}" Visible="{Binding pickerOpen}"/>
+  </Panel>
+</FloatingWindow>

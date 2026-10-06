@@ -1,0 +1,188 @@
+<!-- StorageSection — converted from StorageSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <EmptyState ActionLabel="{Res admin.sto_retry}"
+              IconSize="26"
+              Icon="Server"
+              Variant="Error"
+              Title="{Res admin.sto_load_failed}"
+              Description="{Res admin.sto_load_failed_desc}"
+              Visible="{Binding show_case_2}"
+              OnAction="empty_state_action"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Label HtmlTag="H1"
+           Text="{Res admin.sto_title}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+    <Label Text="{Res admin.sto_intro}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="mt-1 max-w-3xl [font-size:var(--kb-text-body)]"/>
+    <Callout ActionLabel="{Res admin.sto_banner_open_alerts}"
+             Variant="{Binding variant}"
+             Title="{Res admin.sto_banner_volume_title, Percent={Binding sto_banner_volume_title_percent}}"
+             Body="{Res admin.sto_banner_volume_desc}"
+             Visible="{Binding show_volume_free_ratio_volume_free_ratio}"
+             Class="mt-4"
+             OnAction="callout_action"/>
+    <Panel Class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <Card Title="{Res admin.sto_overview_title}" IconSize="16" Icon="Server">
+        <Panel Class="contents">
+          <Panel Class="flex items-baseline gap-2">
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text}"
+                   Overflow="Wrap"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="[font-size:40px] [line-height:1.1] [font-weight:600]"/>
+            <Label HtmlTag="Span"
+                   Text="{Res admin.sto_of_volume, Total={Binding sto_of_volume_total}}"
+                   Overflow="Wrap"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Visible="{Binding show_volume}"
+                   Class="[font-size:var(--kb-text-body)]"/>
+          </Panel>
+          <Panel Visible="{Binding show_volume}" Class="mt-4">
+            <!-- TODO(views-migrate): <CompositionBar> is no .kbview element (./CompositionBar#default) -->
+            <ReactHost Component="{Binding CompositionBar}" Props="{Binding composition_bar_props}"/>
+            <Label Text="{Binding p_text}" ForeColor="TextTertiary" InheritFontSize="true" Class="mt-3 [font-size:var(--kb-text-meta)]"/>
+          </Panel>
+          <Callout Body="{Res admin.sto_volume_unknown}" Visible="{Binding show_not_volume}" Class="mt-4"/>
+          <Panel Class="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4">
+            <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+            <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+            <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+            <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+          </Panel>
+          <Label Text="{Res admin.sto_overcommit, Allocated={Binding sto_overcommit_allocated}, Total={Binding sto_overcommit_total}}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Visible="{Binding overCommitted}"
+                 Class="mt-3 [font-size:var(--kb-text-meta)]"/>
+        </Panel>
+      </Card>
+      <Card Title="{Res admin.sto_states_title}"
+            IconSize="16"
+            Icon="Boxes"
+            Subtitle="{Res admin.sto_states_sub, Percent={Binding sto_states_sub_percent}}">
+        <Panel Class="contents">
+          <!-- TODO(views-migrate): <CompositionBar> is no .kbview element (./CompositionBar#default) -->
+          <ReactHost Component="{Binding CompositionBar2}" Props="{Binding composition_bar_props2}"/>
+          <Label Text="{Res admin.sto_states_all_clear}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Visible="{Binding show_states_full_states}"
+                 Class="mt-4 [font-size:var(--kb-text-body)]"/>
+          <Stack Direction="LeftToRight" CrossAlign="Start" Visible="{Binding show_not_states_full_states}" Class="mt-4">
+            <Icon Name="AlertTriangle" Size="16" Class="mt-0.5 shrink-0 text-warning"/>
+            <Label Text="{Res admin.sto_states_attention, Count={Binding states.full}, Near={Binding states.near}}"
+                   Overflow="Wrap"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Class="min-w-0 [font-size:var(--kb-text-body)]"/>
+          </Stack>
+        </Panel>
+      </Card>
+    </Panel>
+    <Panel Class="mt-4">
+      <Card Title="{Res admin.sto_trend_title}" IconSize="16" Icon="LineChart" Subtitle="{Res admin.sto_trend_sub}">
+        <Panel Class="contents">
+          <!-- TODO(views-migrate): <TrendChart> is no .kbview element (./TrendChart#default) -->
+          <ReactHost Component="{Binding TrendChart}" Props="{Binding trend_chart_props}" Visible="{Binding show_trend_data}"/>
+          <Panel Visible="{Binding show_trend_data}" Class="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
+            <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+            <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+            <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+            <ReactHost Component="{Binding Part4}" Props="{Binding part3_props}"/>
+            <!-- TODO(views-migrate): <Figure> is no .kbview element (./Figure#default) -->
+            <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}" Visible="{Binding show_projection}"/>
+          </Panel>
+          <Label Text="{Res admin.sto_forecast_caveat}"
+                 Overflow="Wrap"
+                 ForeColor="TextTertiary"
+                 InheritFontSize="true"
+                 Visible="{Binding visible}"
+                 Class="mt-3 [font-size:var(--kb-text-meta)]"/>
+          <EmptyState IconSize="26"
+                      Icon="LineChart"
+                      Variant="Unavailable"
+                      Compact="true"
+                      Title="{Res admin.sto_trend_empty_title}"
+                      Description="{Res admin.sto_trend_empty_desc, Count={Binding sto_trend_empty_desc_count}}"
+                      Visible="{Binding show_not_trend_data}"/>
+        </Panel>
+      </Card>
+    </Panel>
+    <Panel Visible="{Binding show_data_by_module}" Class="mt-4">
+      <!-- TODO(views-migrate): <ModuleBreakdownCard> is no .kbview element (./ModuleBreakdownCard#default) -->
+      <ReactHost Component="{Binding ModuleBreakdownCard}" Props="{Binding module_breakdown_card_props}"/>
+    </Panel>
+    <Panel Visible="{Binding show_data_reconciliation}" Class="mt-4">
+      <!-- TODO(views-migrate): <ReconciliationCard> is no .kbview element (./ReconciliationCard#default) -->
+      <ReactHost Component="{Binding ReconciliationCard}" Props="{Binding reconciliation_card_props}"/>
+    </Panel>
+    <Panel Class="mt-4">
+      <!-- TODO(views-migrate): <ConsumersCard> is no .kbview element (./ConsumersCard#default) -->
+      <ReactHost Component="{Binding ConsumersCard}" Props="{Binding consumers_card_props}"/>
+    </Panel>
+    <Panel Class="mt-4">
+      <Card Title="{Res admin.sto_units_title}" Subtitle="{Res admin.sto_units_sub}">
+        <Panel Class="contents">
+          <Label Text="{Res admin.sto_units_empty}"
+                 Overflow="Wrap"
+                 ForeColor="TextTertiary"
+                 InheritFontSize="true"
+                 Visible="{Binding show_data_by_unit}"
+                 Class="[font-size:var(--kb-text-body)]"/>
+          <Panel HtmlTag="Ul" Visible="{Binding show_not_data_by_unit}" Class="flex flex-col gap-3">
+            <Repeater ItemKey="key" ItemsSource="{Binding rows_by_unit}">
+              <Panel HtmlTag="Li">
+                <!-- TODO(views-migrate): <ProgressBar> label: an object value for a text property -->
+                <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+              </Panel>
+            </Repeater>
+          </Panel>
+        </Panel>
+      </Card>
+    </Panel>
+    <Panel Class="mt-4">
+      <!-- TODO(views-migrate): <QuotaPolicyCard> is no .kbview element (./QuotaPolicyCard#default) -->
+      <ReactHost Component="{Binding QuotaPolicyCard}" Props="{Binding quota_policy_card_props}"/>
+    </Panel>
+    <Panel Class="mt-4">
+      <Card Title="{Res admin.sto_threshold_title}" IconSize="16" Icon="Sliders" Subtitle="{Res admin.sto_threshold_sub}">
+        <Panel Class="contents">
+          <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" WrapContents="true">
+            <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+            <ReactHost Component="{Binding Part7}" Props="{Binding part7_props}"/>
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text2}"
+                   Overflow="Wrap"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="tabular-nums [font-size:var(--kb-text-heading)]"/>
+            <Stack Direction="LeftToRight" Visible="{Binding show_can_manage_settings_warn_draft_warn_draft}">
+              <Button Variant="Ghost" Size="Sm" Text="{Res admin.sto_cancel}" OnClick="button_click"/>
+              <Button Size="Sm" Enabled="{Binding enabled_unless_set_warn_is_pending}" Text="{Res admin.sto_save}" OnClick="button_click2"/>
+            </Stack>
+          </Stack>
+          <Label Text="{Binding error}"
+                 Overflow="Wrap"
+                 ForeColor="Danger"
+                 InheritFontSize="true"
+                 AccessibleRole="Alert"
+                 Visible="{Binding show_error}"
+                 Class="mt-3 [font-size:var(--kb-text-body)]"/>
+        </Panel>
+      </Card>
+    </Panel>
+  </Panel>
+</Panel>

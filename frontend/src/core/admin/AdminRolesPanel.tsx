@@ -1,70 +1,160 @@
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { PRIV } from '../authz/types'
-import { usePrivileges } from '../authz/usePrivileges'
-import { AdminForbidden } from './AdminSectionBoundary'
-import { useAdminAction } from './adminAction'
-import { useAdminParams } from './adminRoute'
-import { errorMessage, usePrivilegeCatalogue, useRoles } from './roles/api'
-import RoleDetail from './roles/RoleDetail'
-import RoleCreateDialog from './roles/RoleCreateDialog'
-import RolesList from './roles/RolesList'
-
 /**
- * Delegated administration: roles, their privileges and their assignments —
- * all of it server-backed (`/admin/roles`, `/admin/privileges`,
- * `/admin/role-assignments`). `/admin/admin-roles/<uuid>` opens one role's sheet.
- *
- * The catalogue is fetched alongside the roles because a role only carries
- * privilege *keys*: labels, orphan status and — the fact this whole screen turns
- * on — scopability, all live in the catalogue.
+ * Code-behind of `AdminRolesPanel.kbview` (converted from `AdminRolesPanel.tsx` by @kubuno/views-migrate).
  */
-export default function AdminRolesPanel() {
-  const { t } = useTranslation()
-  // The open role rides in the path (`/admin/admin-roles/<id>`); this hook is
-  // what republishes it under the `role` name the panel already asks for.
-  const params = useAdminParams()
-  const { can, isSuperuser } = usePrivileges()
+import { bind } from '@kubuno/views'
+import { Fragment } from 'react'
+import { useTranslation } from "react-i18next"
+import { PRIV } from "../authz/types"
+import { usePrivileges } from "../authz/usePrivileges"
+import { AdminForbidden } from "./AdminSectionBoundary"
+import { useAdminAction } from "./adminAction"
+import { useAdminParams } from "./adminRoute"
+import { errorMessage, usePrivilegeCatalogue, useRoles } from "./roles/api"
+import RoleDetail from "./roles/RoleDetail"
+import RoleCreateDialog from "./roles/RoleCreateDialog"
+import RolesList from "./roles/RolesList"
 
-  const mayRead = can(PRIV.ROLES_READ)
-  const roles     = useRoles(mayRead)
-  const catalogue = usePrivilegeCatalogue(mayRead)
+import { ViewBase } from './AdminRolesPanel.kbview'
 
-  // `/admin/admin-roles?action=create` opens the creation form.
-  // Mounted here rather than inside the list so the verb also works from the
-  // role sheet, and so the list stays a list.
-  const [creating, setCreating] = useState(false)
-  useAdminAction('create', () => { if (isSuperuser) setCreating(true) })
+export class AdminRolesPanel extends ViewBase {
+  @bind accessor creating = false
+  tr!: AdminRolesPanelStores['t']
+  params!: URLSearchParams
+  can!: AdminRolesPanelStores['can']
+  isSuperuser!: boolean
+  roles!: AdminRolesPanelHooks['roles']
+  catalogue!: AdminRolesPanelHooks['catalogue']
 
-  if (!mayRead) return <AdminForbidden titleKey="admin.nav_admin_roles" />
-
-  const list = roles.data ?? []
-  const selected = list.find(r => r.id === params.get('role'))
-
-  const editor = creating && (
-    <RoleCreateDialog catalogue={catalogue.data ?? []} onClose={() => setCreating(false)} />
-  )
-
-  if (selected) {
-    return (
-      <>
-        <RoleDetail role={selected} catalogue={catalogue.data ?? []} />
-        {editor}
-      </>
-    )
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const params = useAdminParams()
+    const { can, isSuperuser } = usePrivileges()
+    return { t, params, can, isSuperuser }
   }
 
-  return (
-    <div>
-      <h1 className="text-xl font-medium text-text-primary mb-6">{t('admin.nav_admin_roles')}</h1>
-      <RolesList
-        roles={list}
-        catalogue={catalogue.data ?? []}
-        loading={roles.isLoading || catalogue.isLoading}
-        error={roles.error ? errorMessage(roles.error, t('admin.roles_load_error')) : undefined}
-        onRetry={() => { roles.refetch(); catalogue.refetch() }}
-      />
-      {editor}
-    </div>
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const isSuperuser = this.isSuperuser
+    const roles     = useRoles(this.mayRead)
+    this.publish({ roles })
+    const catalogue = usePrivilegeCatalogue(this.mayRead)
+    this.publish({ catalogue })
+    useAdminAction('create', () => { if (isSuperuser) this.creating = true })
+    return { roles, catalogue }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, params: s.params, can: s.can, isSuperuser: s.isSuperuser })
+    const h = this.useHooks()
+    this.publish({ roles: h.roles, catalogue: h.catalogue })
+  }
+
+  get mayRead(): boolean {
+    return this.can(PRIV.ROLES_READ)
+  }
+
+  get list() {
+    return this.memo('list', [this.roles, this.mayRead], () => {
+      if (!(!(!this.mayRead))) return undefined as never
+      return this.roles.data ?? []
+    })
+  }
+
+  get selected() {
+    return this.memo('selected', [this.list, this.params, this.mayRead], () => {
+      if (!(!(!this.mayRead))) return undefined as never
+      return this.list.find(r => r.id === this.params.get('role'))
+    })
+  }
+
+  get editor() {
+    return this.memo('editor', [this.creating, this.catalogue, this.mayRead], () => {
+      if (!(!(!this.mayRead))) return undefined as never
+      return this.creating && (
+    <RoleCreateDialog catalogue={this.catalogue.data ?? []} onClose={() => this.creating = false} />
   )
+    })
+  }
+
+  get show_case_1() {
+    return !!(!this.mayRead)
+  }
+
+  /** `<AdminForbidden>`, rendered by a ReactHost. */
+  get AdminForbidden() {
+    if (!(!this.mayRead)) return undefined as never
+    return AdminForbidden
+  }
+
+  get admin_forbidden_props() {
+    return this.memo('admin_forbidden_props', [this.mayRead], () => {
+      if (!(!this.mayRead)) return undefined as never
+      return ({ titleKey: "admin.nav_admin_roles" })
+    })
+  }
+
+  get show_case_2() {
+    return !(!this.mayRead) && !!(this.selected)
+  }
+
+  /** `<RoleDetail>`, rendered by a ReactHost. */
+  get RoleDetail() {
+    if (!(!(!this.mayRead)) || !(this.selected)) return undefined as never
+    return RoleDetail
+  }
+
+  get role_detail_props() {
+    return this.memo('role_detail_props', [this.selected, this.catalogue, this.mayRead], () => {
+      if (!(!(!this.mayRead)) || !(this.selected)) return undefined as never
+      return ({ role: this.selected, catalogue: this.catalogue.data ?? [] })
+    })
+  }
+
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_editor() {
+    return this.memo('content_editor', [this.editor, this.mayRead, this.selected], () => {
+      if (!(!(!this.mayRead)) || !(this.selected)) return undefined as never
+      return ({ children: this.editor })
+    })
+  }
+
+  get show_main() {
+    return !(!this.mayRead) && !(this.selected)
+  }
+
+  /** `<RolesList>`, rendered by a ReactHost. */
+  get RolesList() {
+    if (!(!(!this.mayRead)) || !(!(this.selected))) return undefined as never
+    return RolesList
+  }
+
+  get roles_list_props() {
+    return this.memo('roles_list_props', [this.list, this.catalogue, this.roles, this.tr, this.mayRead, this.selected], () => {
+      if (!(!(!this.mayRead)) || !(!(this.selected))) return undefined as never
+      return ({ roles: this.list, catalogue: this.catalogue.data ?? [], loading: this.roles.isLoading || this.catalogue.isLoading, error: this.roles.error ? errorMessage(this.roles.error, this.tr('admin.roles_load_error')) : undefined, onRetry: () => { this.roles.refetch(); this.catalogue.refetch() } } as React.ComponentProps<typeof RolesList>)
+    })
+  }
+
+  get content_editor2() {
+    return this.memo('content_editor2', [this.editor, this.mayRead, this.selected], () => {
+      if (!(!(!this.mayRead)) || !(!(this.selected))) return undefined as never
+      return ({ children: this.editor })
+    })
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type AdminRolesPanelStores = ReturnType<AdminRolesPanel['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type AdminRolesPanelHooks = ReturnType<AdminRolesPanel['useHooks']>
+
+export default AdminRolesPanel.component()

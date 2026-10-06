@@ -1,0 +1,31 @@
+<!-- LdapSection — converted from LdapSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <Panel Visible="{Binding show_main}" Class="max-w-3xl space-y-4">
+    <Label Text="{Res ldap.subtitle}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-body)]"/>
+    <!-- TODO(views-migrate): <Callout> with element children -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <LdapDirectoryForm> is no .kbview element (./LdapDirectoryForm#default) -->
+    <ReactHost Component="{Binding LdapDirectoryForm}" Props="{Binding ldap_directory_form_props}" Visible="{Binding show_editing_new}"/>
+    <EmptyState ActionLabel="{Res ldap.add}"
+                IconSize="28"
+                Icon="Network"
+                Title="{Res ldap.empty_title}"
+                Description="{Res ldap.empty_desc}"
+                Visible="{Binding show_list_editing_new}"
+                OnAction="empty_state_action"/>
+    <Panel Visible="{Binding show_not_list_editing_new}" Class="space-y-3">
+      <!-- TODO(views-migrate): a list whose item is not a single element -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Panel>
+    <Button IconSize="16" Icon="Plus" Text="{Res ldap.add}" Visible="{Binding show_editing_list}" OnClick="button_click"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

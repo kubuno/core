@@ -1,0 +1,19 @@
+<!-- RoleDetail — converted from RoleDetail.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="RoleDetailProps">
+  <Panel Class="grid grid-cols-1 lg:grid-cols-[minmax(240px,320px)_1fr] gap-4 items-start">
+    <!-- TODO(views-migrate): <RoleIdentityCard> is no .kbview element (./RoleIdentityCard#default) -->
+    <ReactHost Component="{Binding RoleIdentityCard}" Props="{Binding role_identity_card_props}"/>
+    <Panel Class="space-y-4">
+      <Card Title="{Res admin.role_assignments}" IconSize="18" IconColor="TextTertiary" Icon="Users" Flush="true">
+        <!-- TODO(views-migrate): <DataTable> rowKey, emptyState, columns, rowActions, configurableColumns, t: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Card>
+      <!-- TODO(views-migrate): <RolePrivilegesCard> is no .kbview element (./RolePrivilegesCard#default) -->
+      <ReactHost Component="{Binding RolePrivilegesCard}" Props="{Binding role_privileges_card_props}"/>
+    </Panel>
+  </Panel>
+  <!-- TODO(views-migrate): <AssignRoleDialog> is no .kbview element (./AssignRoleDialog#default) -->
+  <ReactHost Component="{Binding AssignRoleDialog}" Props="{Binding assign_role_dialog_props}" Visible="{Binding assignOpen}"/>
+  <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+  <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+</Panel>
