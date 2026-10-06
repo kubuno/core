@@ -6,6 +6,28 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-06
+
+### Fixed
+
+- **Default texts reach the screen.** The `defaultValue`s of strings missing from the bundles went to
+  `src/views-defaults.json`, which nothing loads; a module with a generated catalogue (`src/i18n.data.json` and its
+  `i18n.ts`) now gets them in its fallback language, and `src/gen_i18n.mjs` is run again to regenerate `i18n.ts`.
+  Only texts with neither bundle nor catalogue still go to `views-defaults.json`, and the run says that nothing loads
+  it (`storeDefaults`, exported).
+- **A type the file names otherwise is written through its module**: a getter typed `Folder[]` (a module's
+  `Folder`) in a file importing the `Folder` icon is typed `import("@kubuno/drive").Folder[]`, and the icon is no
+  longer imported by the code-behind when only the view uses it.
+- **A helper used only inside a template literal is copied with the code using it** (`url('${absUrl(u)}')` in a
+  part's CSS): uses are found by TypeScript's parser instead of text patterns, so neither strings, comments nor JSX
+  text count as uses, and template expressions always do.
+- **A static `style` next to a computed `className` is kept** in the computed `Class` (`[background:#fff]`).
+- **Several text runs stay several text nodes**: `<span>{used} / {quota}</span>` gives the `Label` a list of runs,
+  rendered as React rendered them (the page's text and accessibility tree are the TSX's), instead of one string.
+- **A `<label>` around a checkbox (or any `<input>`, `<select>`, `<textarea>`) stays whole in React**: its text
+  stays a bare text node of the label (it became a `<span>`, which the accessibility tree exposes as LabelText +
+  StaticText).
+
 ## [0.1.1] - 2026-10-06
 
 ### Fixed

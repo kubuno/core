@@ -20,7 +20,7 @@
  * `<input>`, an unmapped prop…) is cut out as a part — a component in `X.parts.tsx` rendered through
  * `<ReactHost Component=… Props=…/>` — so the screen still renders the same; each cut is a reason in the report.
  */
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { Node, ts } from 'ts-morph';
 import { isSafeLiteral, cleanJsxText, decodeEntities } from './jsxtext.js';
 import { mapContainerClasses, mapLabelClasses, mapStackClasses, mapStaticStyle } from './classes.js';
@@ -131,8 +131,12 @@ class Migration {
             const type = this.checker.getTypeAtLocation(node);
             // Seen from the file itself: a type it does not import is written `import("…").T`.
             let text = this.checker.typeToString(type, this.sf.compilerNode, ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope);
+            text = this.qualifyShadowed(type, text);
             // `import("/abs/path").X` → a path relative to the code-behind.
             text = text.replace(/import\("([^"]+)"\)/g, (_m, p) => {
+                // A package specifier (`@kubuno/drive`) stays as written.
+                if (!isAbsolute(p))
+                    return _m;
                 let rel = relative(this.dir, p).split('\\').join('/');
                 if (!rel.startsWith('.'))
                     rel = './' + rel;
@@ -145,6 +149,83 @@ class Migration {
         catch {
             return undefined;
         }
+    }
+    /**
+     * A type printed by its bare name while the file names something else so (`Folder[]`, the `Folder` of
+     * `@kubuno/drive`, in a file importing lucide's `Folder` icon): written `import("…").Folder` instead, from the
+     * module the file imports it through when there is one, else from its declaration file.
+     */
+    qualifyShadowed(type, text) {
+        const named = new Map();
+        const seen = new Set();
+        const collect = (t, depth) => {
+            if (depth > 8 || seen.has(t))
+                return;
+            seen.add(t);
+            for (const s of [t.aliasSymbol, t.getSymbol()])
+                if (s)
+                    named.set(s.getName(), [...(named.get(s.getName()) ?? []), s]);
+            for (const a of t.aliasTypeArguments ?? [])
+                collect(a, depth + 1);
+            if (t.isUnionOrIntersection())
+                for (const u of t.types)
+                    collect(u, depth + 1);
+            if (t.flags & ts.TypeFlags.Object && t.objectFlags & ts.ObjectFlags.Reference) {
+                for (const a of this.checker.getTypeArguments(t))
+                    collect(a, depth + 1);
+            }
+        };
+        collect(type, 0);
+        if (!named.size)
+            return text;
+        const resolve = (s) => this.checker.getExportSymbolOfSymbol(s.flags & ts.SymbolFlags.Alias ? this.checker.getAliasedSymbol(s) : s);
+        const inScope = new Map();
+        for (const s of this.checker.getSymbolsInScope(this.sf.compilerNode, ts.SymbolFlags.Type | ts.SymbolFlags.Value | ts.SymbolFlags.Alias)) {
+            if (!inScope.has(s.getName()))
+                inScope.set(s.getName(), s);
+        }
+        const replacements = new Map();
+        for (const [name, cands] of named) {
+            if (!new RegExp(`(^|[^\\w$.])${name.replace(/\$/g, '\\$')}(?![\\w$])`).test(text.replace(/import\("[^"]*"\)\.[\w$.]+/g, '')))
+                continue;
+            const here = inScope.get(name);
+            // A name the file does not have is the caller's business (it keeps or drops a type it cannot write); only a
+            // name the file gives to something else is qualified.
+            if (!here)
+                continue;
+            const targets = cands.map(resolve);
+            if (targets.includes(resolve(here)))
+                continue;
+            const target = targets.find((t) => t.declarations?.length);
+            if (!target)
+                continue;
+            replacements.set(name, this.importTypeOf(target, name));
+        }
+        if (!replacements.size)
+            return text;
+        // Outside the `import("…").X` already written and outside member names (`a.Folder`).
+        return text.replace(/import\("[^"]*"\)\.[\w$.]+|[A-Za-z_$][\w$]*/g, (tok, offset, all) => {
+            if (tok.startsWith('import('))
+                return tok;
+            if (offset > 0 && all[offset - 1] === '.')
+                return tok;
+            return replacements.get(tok) ?? tok;
+        });
+    }
+    /** `import("<module>").Name` of a declared type: through one of the file's imports exporting it, else its file. */
+    importTypeOf(target, name) {
+        for (const imp of this.sf.getImportDeclarations()) {
+            const mod = this.checker.getSymbolAtLocation(imp.getModuleSpecifier().compilerNode);
+            if (!mod)
+                continue;
+            for (const e of this.checker.getExportsOfModule(mod)) {
+                const r = e.flags & ts.SymbolFlags.Alias ? this.checker.getAliasedSymbol(e) : e;
+                if (r === target)
+                    return `import(${JSON.stringify(imp.getModuleSpecifierValue())}).${e.getName()}`;
+            }
+        }
+        const file = target.declarations[0].getSourceFile().fileName.replace(/(\.d)?\.tsx?$/, '');
+        return `import(${JSON.stringify(file)}).${name}`;
     }
     isFunctionType(node) {
         const type = this.checker.getTypeAtLocation(node);
@@ -1043,8 +1124,19 @@ function valueOf(m, e, ctx, base, kind = 'any') {
         text = `!!(${text})`;
     return binding(m, x, text, ctx, base, [...bare].map((l) => `const ${l.name} = ${refText(m, l)}`));
 }
+/** A computed class name `e` followed by the static classes `extra`: a getter (or row field) building both. */
+function classWith(m, e, ctx, base, extra) {
+    const x = skipParens(e);
+    const bare = ctx.row ? new Set() : nestedNullables(m, x);
+    const text = m.rewrite(x, { rows: ctx.rows, bare });
+    // A template literal takes the classes at its end, as written by hand; anything else is joined to them.
+    const combined = ts.isTemplateExpression(x) || ts.isNoSubstitutionTemplateLiteral(x)
+        ? `${text.slice(0, -1)} ${extra.replace(/[`\\$]/g, '\\$&')}\``
+        : `[${text}, ${JSON.stringify(extra)}].filter(Boolean).join(' ')`;
+    return binding(m, x, combined, ctx, base, [...bare].map((l) => `const ${l.name} = ${refText(m, l)}`));
+}
 /** A `{Binding}` to a getter (page) or a row field (template) computing `text`. */
-function binding(m, node, text, ctx, base, prelude) {
+function binding(m, node, text, ctx, base, prelude, memo) {
     m.stats.bindings++;
     if (ctx.row && /\b__row\b/.test(text)) {
         // A row field (the rows getter computes it).
@@ -1056,7 +1148,7 @@ function binding(m, node, text, ctx, base, prelude) {
         ctx.row.fields.set(name, guards.length ? `(${guards.map((g) => `(${g})`).join(' && ')}) ? (${text}) : undefined` : text);
         return `{Binding ${name}}`;
     }
-    const g = m.getter(snake(base) || 'value', text, { memo: m.isObjectValue(node), guards: (ctx.guards ?? []).filter((c) => !/\b__row\b/.test(c)), prelude });
+    const g = m.getter(snake(base) || 'value', text, { memo: memo ?? m.isObjectValue(node), guards: (ctx.guards ?? []).filter((c) => !/\b__row\b/.test(c)), prelude });
     return `{Binding ${g}}`;
 }
 /**
@@ -1320,7 +1412,12 @@ function containsJsx(n) {
     return found;
 }
 /** The text of text-only children as one attribute value. */
-function textValue(m, children, ctx, base) {
+/**
+ * The text of an element's children. `runs`: the element renders its `Text` as React children (a `Label`, a
+ * `LinkLabel`), and several runs with a value among them (`{used} / {quota}`) stay several text nodes, as React
+ * rendered them — one list of runs rather than one string: the page's text and its accessibility tree are the TSX's.
+ */
+function textValue(m, children, ctx, base, runs = false) {
     const parts = [];
     for (const c of children) {
         if (ts.isJsxText(c)) {
@@ -1338,6 +1435,21 @@ function textValue(m, children, ctx, base) {
         if (p.text !== undefined)
             return isSafeLiteral(p.text) ? p.text : `{Binding ${m.getter(base, JSON.stringify(p.text))}}`;
         return valueOf(m, p.expr, ctx, base, 'text');
+    }
+    if (runs && parts.some((p) => p.expr)) {
+        // Several runs, one text node each: a list (memoized: a new list on every read would render without end), in
+        // which a value React prints nothing for (`null`, `undefined`, a boolean) is `null`.
+        const items = parts.map((p) => {
+            if (p.text !== undefined)
+                return JSON.stringify(p.text);
+            const res = resText(m, p.expr, ctx);
+            if (res)
+                return res;
+            const v = m.rewrite(p.expr, { rows: ctx.rows });
+            return `((v: unknown) => (v == null || typeof v === 'boolean' ? null : String(v)))(${v})`;
+        });
+        // Typed as the text it renders (`Text` is a String property; the element renders it as React children).
+        return binding(m, children[0], `[${items.join(', ')}] as unknown as string`, ctx, base, undefined, true);
     }
     // Several runs: one string built by a getter (the `{Res}` parts read through `this.t`).
     // `?? ''` only after a value that can be null or undefined (React prints nothing for them; TypeScript refuses an
@@ -1708,7 +1820,12 @@ function intrinsic(m, e, tag, ctx) {
     // A computed className: a Class bound to a getter (or a row field) building the same string.
     const cls = jsxAttr(e, 'className');
     const clsExpr = cls?.initializer && ts.isJsxExpression(cls.initializer) ? cls.initializer.expression : undefined;
-    const dynClass = cls && classValue(cls) === undefined && clsExpr ? valueOf(m, clsExpr, ctx, `${tag}_class`, 'text') : undefined;
+    // The classes a static `style={{…}}` becomes (`[background:#fff]`) join the computed ones: one `Class` holds both
+    // (the computed `Class` would otherwise replace them and the style be lost).
+    const styleClasses = cls && classValue(cls) === undefined && clsExpr ? (styleOf(m, e)?.classes ?? []) : [];
+    const dynClass = cls && classValue(cls) === undefined && clsExpr
+        ? (styleClasses.length ? classWith(m, clsExpr, ctx, `${tag}_class`, styleClasses.join(' ')) : valueOf(m, clsExpr, ctx, `${tag}_class`, 'text'))
+        : undefined;
     const node = intrinsicInner(m, e, tag, ctx);
     if (dynClass) {
         attr(node, 'Class', dynClass);
@@ -1775,6 +1892,11 @@ function intrinsicInner(m, e, tag, ctx) {
     }
     if (unsupported.length)
         throw new NeedsPart(`<${tag} ${unsupported.join(' ')}>: attribute(s) without a .kbview property`);
+    // `<label><input type="checkbox"/>Text</label>`: the input would become a part and the text a `<span>` of the view,
+    // and a label whose text sits in a span is exposed as LabelText + StaticText instead of the label's own text. The
+    // label stays whole in React, its text a bare text node as before.
+    if (tag === 'label' && containsFormControl(e))
+        throw new NeedsPart('<label> around an <input>/<select>/<textarea> (its text stays a bare text node of the label)');
     const style = styleOf(m, e);
     if (style === null)
         throw new NeedsPart(`<${tag}> with a computed style`);
@@ -1789,7 +1911,7 @@ function intrinsicInner(m, e, tag, ctx) {
         h.done.add('href');
         if (textOnly(children, m)) {
             h.node.el = 'LinkLabel';
-            attr(h.node, 'Text', textValue(m, children, ctx, 'link_text'));
+            attr(h.node, 'Text', textValue(m, children, ctx, 'link_text', true));
             attr(h.node, 'Href', hv);
             labelLike(m, h.node, className, style, true);
         }
@@ -1826,7 +1948,7 @@ function intrinsicInner(m, e, tag, ctx) {
         h.node.el = 'Label';
         if (TEXT_TAGS[tag] !== 'P')
             attr(h.node, 'HtmlTag', TEXT_TAGS[tag]);
-        attr(h.node, 'Text', textValue(m, children, ctx, `${tag}_text`));
+        attr(h.node, 'Text', textValue(m, children, ctx, `${tag}_text`, true));
         labelLike(m, h.node, className, style, false);
         m.stats.mapped++;
         commonAttrs(m, e, h, ctx);
@@ -1854,6 +1976,23 @@ function intrinsicInner(m, e, tag, ctx) {
     commonAttrs(m, e, h, ctx);
     h.node.children = convertChildren(m, children, { ...ctx, parentFlex: !!stack }, !!stack || isFlexBox(className));
     return h.node;
+}
+/** Whether an element holds an HTML form control (`<input>`, `<select>`, `<textarea>`) at any depth. */
+function containsFormControl(e) {
+    let found = false;
+    const visit = (n) => {
+        if (found)
+            return;
+        if (ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) {
+            if (ts.isIdentifier(n.tagName) && ['input', 'select', 'textarea'].includes(n.tagName.text)) {
+                found = true;
+                return;
+            }
+        }
+        ts.forEachChild(n, visit);
+    };
+    childrenOf(e).forEach(visit);
+    return found;
 }
 /** `style={{…}}` → properties / arbitrary classes; `null` when computed. */
 function styleOf(m, e) {
@@ -1971,7 +2110,7 @@ function routerLink(m, e, ctx) {
     const h = { node: { el: textOnly(children, m) ? 'LinkLabel' : 'Panel', attrs: [], children: [] }, done: new Set(['to', 'className', 'onClick']) };
     attr(h.node, 'Href', href);
     if (h.node.el === 'LinkLabel') {
-        attr(h.node, 'Text', textValue(m, children, ctx, 'link_text'));
+        attr(h.node, 'Text', textValue(m, children, ctx, 'link_text', true));
         labelLike(m, h.node, className, { props: {}, classes: [] }, true);
     }
     else {
@@ -2559,11 +2698,47 @@ function hostComponent(m, e, ctx, why) {
 // ── Output files ─────────────────────────────────────────────────────────────
 /** Whether `name` is used as an identifier in `text` (not as a property `x.name`). */
 function mentions(name, text) {
-    // Comments do not count (a getter's doc names the component it renders).
-    // Nor plain string literals (`'/api/x'` names no `api`).
-    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1').replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, "''").replace(/\.\.\./g, ' ');
-    // Nor a path segment of a template string (`${origin}/api/v1`).
-    return new RegExp('(^|[^\\w$./])' + name.replace(/\$/g, '\\$') + '(?![\\w$/])').test(code);
+    return namesIn(text).has(name);
+}
+const namesCache = new Map();
+/**
+ * The names `text` refers to: its identifiers, read by TypeScript's parser — so neither comments (a getter's doc names
+ * the component it renders), nor string contents (`'/api/x'` names no `api`), nor JSX text count, while the
+ * expressions of a template literal do (`url('${absUrl(v.url)}')` uses `absUrl`, though it sits between quotes of the
+ * CSS the template writes). The name of a member access (`x.api`) is no reference either.
+ */
+function namesIn(text) {
+    const known = namesCache.get(text);
+    if (known)
+        return known;
+    const out = new Set();
+    const sf = ts.createSourceFile('mentions.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const visit = (n) => {
+        if (ts.isIdentifier(n)) {
+            const p = n.parent;
+            // `x.name`, `A.B`'s `B`, and `import("…").Name` (a type named through its module, not through this file).
+            let q = n;
+            while (q.parent && ts.isQualifiedName(q.parent) && q.parent.left === q)
+                q = q.parent;
+            const member = p && ((ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isQualifiedName(p) && p.right === n) || (!!q.parent && ts.isImportTypeNode(q.parent) && q.parent.qualifier === q));
+            if (!member)
+                out.add(n.text);
+        }
+        else if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n) || ts.isJsxClosingElement(n)) {
+            // `<Foo.Bar>` refers to `Foo`; `<Foo>` to `Foo`.
+            let tag = n.tagName;
+            while (ts.isPropertyAccessExpression(tag))
+                tag = tag.expression;
+            if (ts.isIdentifier(tag))
+                out.add(tag.text);
+        }
+        ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    if (namesCache.size > 2000)
+        namesCache.clear();
+    namesCache.set(text, out);
+    return out;
 }
 /** The import lines of `sf` restricted to what `text` uses. */
 function importsUsedBy(sf, text) {
@@ -2988,7 +3163,7 @@ function convertChildren(m, children, ctx, flexBox) {
             attr(n, 'HtmlTag', 'Span');
             attr(n, 'InheritFontSize', 'true');
             attr(n, 'Overflow', 'Wrap');
-            attr(n, 'Text', textValue(m, run, ctx, 'text'));
+            attr(n, 'Text', textValue(m, run, ctx, 'text', true));
             out.push(n);
         }
         run = [];

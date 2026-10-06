@@ -232,3 +232,69 @@ describe('hooks called to render again', () => {
     expect(r.code).toMatch(/this\.memo\('hit', \[this\.pathname, this\.rerender1\]/)
   })
 })
+
+describe('defects found migrating drive (WEB-VIEWS §22.4)', () => {
+  let d: Converted
+  beforeAll(() => {
+    d = convert('Defects.tsx')
+  }, 120_000)
+
+  it('writes a type its file shadows (lucide `Folder` vs a module `Folder`) through its module', () => {
+    expect(d.code).toMatch(/get folders\(\): import\("\.\/defects-types"\)\.Folder\[\]/)
+    // The icon, used by the view only, is no import of the code-behind any more.
+    expect(d.code).not.toMatch(/import \{ Folder \} from "lucide-react"/)
+  })
+
+  it('copies a helper a part uses only inside a template literal', () => {
+    expect(d.parts).toMatch(/^const absUrl = /m)
+    expect(d.parts).toMatch(/^function embedCss\(/m)
+  })
+
+  it('keeps a static style next to a computed class in the same Class', () => {
+    expect(d.view).toMatch(/<Panel Class="\{Binding div_class\}"/)
+    expect(d.code).toContain("return `flex items-end ${this.mobile ? 'px-1' : 'px-4'} [background:#fff]`")
+  })
+
+  it('keeps several text runs as several text nodes (a list of runs)', () => {
+    expect(d.code).toMatch(/get span_text\(\) \{\n\s*return this\.memo\('span_text', \[this\.props\], \(\) => \[[^\n]*this\.props\.used\), " \/ ", [^\n]*this\.props\.quota\)\] as unknown as string\)/)
+  })
+
+  it('leaves a label around a checkbox whole in React, its text a bare text node', () => {
+    expect(d.view).not.toMatch(/HtmlTag="Label"/)
+    expect(d.parts).toMatch(/<label className="flex items-center gap-2 text-sm">\s*<input type="checkbox"[^\n]*\/>\s*Remember me\s*<\/label>/)
+  })
+})
+
+describe('default texts', () => {
+  it("writes them into a module's catalogue and generates its i18n.ts again", async () => {
+    const { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { storeDefaults } = await import('../src/cli.js')
+    const root = mkdtempSync(join(tmpdir(), 'kbview-defaults-'))
+    try {
+      mkdirSync(join(root, 'src'))
+      writeFileSync(join(root, 'src', 'i18n.data.json'), JSON.stringify({ en: { app: { title: 'Drive' } }, fr: { app: { title: 'Drive' } } }))
+      writeFileSync(join(root, 'src', 'i18n.ts'), "registerModuleTranslations('drive', {})\n")
+      writeFileSync(join(root, 'src', 'gen_i18n.mjs'), [
+        "import { readFileSync, writeFileSync } from 'node:fs'",
+        "const d = JSON.parse(readFileSync(new URL('./i18n.data.json', import.meta.url), 'utf8'))",
+        "writeFileSync(new URL('./i18n.ts', import.meta.url), `registerModuleTranslations('drive', ${JSON.stringify(d)})\n`)",
+      ].join('\n'))
+      const r = storeDefaults(root, [
+        { ns: 'drive', key: 'search.similar_to', value: 'Images similaires à « {{name}} »' },
+        { ns: 'drive', key: 'app.title', value: 'ignored: translated already' },
+        { ns: 'other', key: 'x', value: 'X' },
+      ])
+      const data = JSON.parse(readFileSync(join(root, 'src', 'i18n.data.json'), 'utf8'))
+      expect(data.en.search.similar_to).toBe('Images similaires à « {{name}} »')
+      expect(data.en.app.title).toBe('Drive')
+      expect(readFileSync(join(root, 'src', 'i18n.ts'), 'utf8')).toContain('similar_to')
+      // A namespace with neither bundle nor catalogue: views-defaults.json, and the log says nothing loads it.
+      expect(r.left.map((x) => x.key)).toEqual(['x'])
+      expect(existsSync(join(root, 'src', 'views-defaults.json'))).toBe(true)
+      expect(r.log.join('\n')).toMatch(/generated again[^]*NOTHING LOADS/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})

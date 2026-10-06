@@ -6,8 +6,10 @@
  * Without `--write` nothing is written: the report says what each file would become (converted, partial with the
  * reasons, or skipped). With `--write` the view, code-behind and parts are written next to the `.tsx`, the `.tsx` is
  * deleted, importers are switched to the default export, and the `defaultValue`s of strings missing from the
- * fallback bundle are collected into `<project>/src/views-defaults.json` (to review, then move into the bundles).
+ * fallback bundle are written into it (`locales/en/<ns>.json`, or a module's catalogue `src/i18n.data.json`, whose
+ * `i18n.ts` is then generated again); only what fits in neither goes to `<project>/src/views-defaults.json`.
  */
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { openProject } from './project.js';
@@ -139,57 +141,105 @@ export async function main(argv = process.argv.slice(2)) {
         }
     }
     if (write) {
-        const defaults = results.flatMap((r) => r.defaults);
-        if (defaults.length) {
-            // A `t('k', { defaultValue })` whose key no bundle has showed its default in every language: the default goes
-            // into the fallback language's bundle, which every language falls back to — the view shows the same text.
-            const left = [];
-            const byNs = new Map();
-            for (const d of defaults)
-                byNs.set(d.ns, [...(byNs.get(d.ns) ?? []), d]);
-            for (const [ns, list] of byNs) {
-                const file = fallbackBundle(root, ns);
-                if (!file) {
-                    left.push(...(list ?? []));
-                    continue;
-                }
-                const doc = JSON.parse(readFileSync(file, 'utf8'));
-                for (const d of list ?? []) {
-                    const path = d.key.split('.');
-                    let o = doc;
-                    let ok = true;
-                    for (const seg of path.slice(0, -1)) {
-                        const next = o[seg];
-                        if (next === undefined)
-                            o = (o[seg] = {});
-                        else if (next && typeof next === 'object')
-                            o = next;
-                        else
-                            ok = false;
-                        if (!ok)
-                            break;
-                    }
-                    if (ok && o[path[path.length - 1]] === undefined)
-                        o[path[path.length - 1]] = d.value;
-                    else if (!ok)
-                        left.push(d);
-                }
-                writeFileSync(file, JSON.stringify(doc, null, 2) + '\n');
-            }
-            if (left.length) {
-                const file = join(root, 'src', 'views-defaults.json');
-                const prev = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
-                for (const d of left)
-                    (prev[d.ns] ??= {})[d.key] = d.value;
-                writeFileSync(file, JSON.stringify(prev, null, 2) + '\n');
-            }
-        }
+        const done = storeDefaults(root, results.flatMap((r) => r.defaults));
+        for (const line of done.log)
+            console.log(line);
     }
     if (reportFile)
         writeFileSync(reportFile, JSON.stringify(summary(root, results), null, 2) + '\n');
     const s = summary(root, results);
     console.log(`\n${s.converted} converted, ${s.partial} partial, ${s.skipped} skipped (of ${results.length}); elements mapped ${s.elementsMapped}/${s.elements} (${s.elements ? Math.round((100 * s.elementsMapped) / s.elements) : 0} %), ${s.parts} part(s), ${s.classAttributes} Class attribute(s)`);
     return 0;
+}
+/** Sets `key` (dotted) in a nested bundle unless it holds a text already; `false` when a text sits on its path. */
+function setNested(doc, key, value) {
+    const path = key.split('.');
+    let o = doc;
+    for (const seg of path.slice(0, -1)) {
+        const next = o[seg];
+        if (next === undefined)
+            o = (o[seg] = {});
+        else if (next && typeof next === 'object')
+            o = next;
+        else
+            return false;
+    }
+    if (o[path[path.length - 1]] === undefined)
+        o[path[path.length - 1]] = value;
+    return true;
+}
+/**
+ * Writes the `defaultValue`s of `t('k', { defaultValue })` whose key no bundle has (the TSX showed the default in
+ * every language) where the project's strings are loaded from, in the fallback language every language falls back to
+ * — so the view shows the same text:
+ *  1. `src/**\/locales/<lang>/<ns>.json` (the core's bundles);
+ *  2. else a module's catalogue `src/i18n.data.json` (`{ <lang>: { … } }`) when its `src/i18n.ts` registers `ns`
+ *     (`registerModuleTranslations('<ns>', …)`); `i18n.ts` is generated from it, so its generator
+ *     (`src/gen_i18n.mjs`) runs again — without one, the log says to regenerate it;
+ *  3. else `src/views-defaults.json`, which nothing loads: the log says so, to move by hand.
+ */
+export function storeDefaults(root, defaults, lang = 'en') {
+    const log = [];
+    const files = [];
+    const left = [];
+    if (!defaults.length)
+        return { files, left, log };
+    const byNs = new Map();
+    for (const d of defaults)
+        byNs.set(d.ns, [...(byNs.get(d.ns) ?? []), d]);
+    const data = join(root, 'src', 'i18n.data.json');
+    const reg = join(root, 'src', 'i18n.ts');
+    const catalogueNs = existsSync(data) && existsSync(reg) ? /registerModuleTranslations\(\s*['"]([^'"]+)['"]/.exec(readFileSync(reg, 'utf8'))?.[1] : undefined;
+    let catalogueChanged = false;
+    for (const [ns, list] of byNs) {
+        const file = fallbackBundle(root, ns, lang);
+        if (file) {
+            const doc = JSON.parse(readFileSync(file, 'utf8'));
+            for (const d of list)
+                if (!setNested(doc, d.key, d.value))
+                    left.push(d);
+            writeFileSync(file, JSON.stringify(doc, null, 2) + '\n');
+            files.push(file);
+            continue;
+        }
+        if (ns === catalogueNs) {
+            const all = JSON.parse(readFileSync(data, 'utf8'));
+            const doc = (all[lang] ??= {});
+            for (const d of list)
+                if (!setNested(doc, d.key, d.value))
+                    left.push(d);
+            writeFileSync(data, JSON.stringify(all, null, 2) + '\n');
+            if (!files.includes(data))
+                files.push(data);
+            catalogueChanged = true;
+            continue;
+        }
+        left.push(...list);
+    }
+    if (catalogueChanged) {
+        const gen = join(root, 'src', 'gen_i18n.mjs');
+        if (existsSync(gen)) {
+            const r = spawnSync(process.execPath, [gen], { cwd: root, encoding: 'utf8' });
+            if (r.status === 0) {
+                log.push(`defaults: ${relative(root, data)} (${lang}), ${relative(root, reg)} generated again`);
+                files.push(reg);
+            }
+            else
+                log.push(`defaults: ${relative(root, data)} (${lang}) — ${relative(root, gen)} FAILED (${(r.stderr || r.error?.message || '').trim()}): generate ${relative(root, reg)} again by hand`);
+        }
+        else
+            log.push(`defaults: ${relative(root, data)} (${lang}) — generate ${relative(root, reg)} again from it (no src/gen_i18n.mjs)`);
+    }
+    if (left.length) {
+        const file = join(root, 'src', 'views-defaults.json');
+        const prev = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+        for (const d of left)
+            (prev[d.ns] ??= {})[d.key] = d.value;
+        writeFileSync(file, JSON.stringify(prev, null, 2) + '\n');
+        files.push(file);
+        log.push(`defaults: ${left.length} text(s) in ${relative(root, file)}, which NOTHING LOADS — move them into the bundles (no ${lang} bundle or catalogue for ${[...new Set(left.map((d) => d.ns))].join(', ')})`);
+    }
+    return { files, left, log };
 }
 /** `src/**\/locales/<fallback>/<ns>.json` of the project (the first found), the bundle every language falls back to. */
 function fallbackBundle(root, ns, lang = 'en') {

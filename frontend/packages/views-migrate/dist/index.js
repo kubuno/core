@@ -8,4 +8,4 @@ export { Registry } from './registry.js';
 export { mapLabelClasses, mapStackClasses, mapContainerClasses, mapStaticStyle, splitClasses } from './classes.js';
 export { cleanJsxText, decodeEntities } from './jsxtext.js';
 export { writeXml } from './xml.js';
-export { main, summary } from './cli.js';
+export { main, summary, storeDefaults } from './cli.js';
