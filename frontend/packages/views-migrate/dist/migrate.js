@@ -312,12 +312,12 @@ class Migration {
     }
     /** A getter for `expr` (in class terms); returns its name. `memo`: it builds an object (memoized on its inputs). */
     getter(base, expr, opts = {}) {
-        const key = (opts.guards?.length ? opts.guards.join(' && ') + ' => ' : '') + expr;
+        const key = (opts.guards?.length ? opts.guards.join(' && ') + ' => ' : '') + (opts.prelude?.length ? opts.prelude.join('; ') + ' => ' : '') + expr;
         const known = this.gettersByExpr.get(key);
         if (known)
             return known;
         const name = this.member(base);
-        this.getters.push({ name, body: expr, memo: !!opts.memo, doc: opts.doc, type: opts.type, guards: opts.guards?.length ? [...opts.guards] : undefined });
+        this.getters.push({ name, body: expr, memo: !!opts.memo, doc: opts.doc, type: opts.type, guards: opts.guards?.length ? [...opts.guards] : undefined, prelude: opts.prelude?.length ? [...opts.prelude] : undefined });
         this.gettersByExpr.set(key, name);
         this.stats.getters++;
         return name;
@@ -365,7 +365,8 @@ function returnsJsx(fn) {
         }
         if (Node.isReturnStatement(d)) {
             const e = d.getExpression();
-            if (e && (Node.isJsxElement(skip(e)) || Node.isJsxSelfClosingElement(skip(e)) || Node.isJsxFragment(skip(e)) || Node.isParenthesizedExpression(e)))
+            // `return cond ? <A/> : <B/>` and `return x && <A/>` return JSX too.
+            if (e && (Node.isJsxElement(skip(e)) || Node.isJsxSelfClosingElement(skip(e)) || Node.isJsxFragment(skip(e)) || Node.isParenthesizedExpression(e) || ((Node.isConditionalExpression(e) || Node.isBinaryExpression(e)) && containsJsx(e.compilerNode))))
                 found = true;
         }
     });
@@ -801,7 +802,8 @@ function convert(m, target) {
         if (l.kind === 'derived' && ts.isVariableDeclaration(l.decl) && l.decl.initializer) {
             const init = l.decl.initializer;
             if (ts.isIdentifier(l.decl.name)) {
-                let body = m.rewrite(init);
+                const bare = nestedNullables(m, init);
+                let body = m.rewrite(init, { bare });
                 if (l.fill?.length) {
                     // Filled by statements: they run here, in their order, on a fresh collection (the other collections they
                     // fill too, each getter computing its own).
@@ -816,7 +818,7 @@ function convert(m, target) {
                 // Its type written out (the TSX inferred it): a getter typed from hooks typed from getters would otherwise
                 // depend on itself.
                 const inferred = l.type ?? declaredType(m, l.decl.name);
-                m.getters.push({ name: l.member, body, memo: m.isObjectValue(init), type: inferred, guards: guardsOf(l.decl) });
+                m.getters.push({ name: l.member, body, memo: m.isObjectValue(init), type: inferred, guards: guardsOf(l.decl), prelude: bare.size && !l.fill?.length ? [...bare].map((x) => `const ${x.name} = ${refText(m, x)}`) : undefined });
                 m.stats.getters++;
             }
         }
@@ -898,12 +900,12 @@ function convert(m, target) {
     dropDefaults(m, root);
     // ── Outputs ──
     const viewFile = join(m.dir, `${m.stem}.kbview`);
-    // A code-behind holding JSX (a derived element, a handler building one) is a `.tsx`.
-    const hasJsx = [...m.useBody, ...m.getters.map((g) => g.body), ...m.methods.map((x) => x.body)].some(containsJsxText);
-    const codeFile = join(m.dir, `${m.stem}.${hasJsx ? 'tsx' : 'ts'}`);
     const outputs = {};
     outputs[viewFile] = writeXml(root, `${m.name} — converted from ${m.stem}.tsx by @kubuno/views-migrate${m.reasons.length ? ' (partial: see the TODO comments and the report)' : ''}.`);
-    outputs[codeFile] = codeBehind(m, target, outputs[viewFile]);
+    // A code-behind holding JSX (a derived element, a handler building one, a helper component it keeps) is a `.tsx`.
+    const codeText = codeBehind(m, target, outputs[viewFile]);
+    const hasJsx = containsJsx(ts.createSourceFile('code.tsx', codeText, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX));
+    outputs[join(m.dir, `${m.stem}.${hasJsx ? 'tsx' : 'ts'}`)] = codeText;
     if (m.parts.length || m.exportedLocals.size)
         outputs[join(m.dir, `${m.stem}.parts.tsx`)] = partsFile(m);
     const edits = {};
@@ -939,13 +941,14 @@ function valueOf(m, e, ctx, base, kind = 'any') {
         m.stats.bindings++;
         return `{Binding ${path}}`;
     }
-    let text = m.rewrite(x, { rows: ctx.rows });
+    const bare = ctx.row ? new Set() : nestedNullables(m, x);
+    let text = m.rewrite(x, { rows: ctx.rows, bare });
     if (kind === 'bool' && !m.isBooleanType(x))
         text = `!!(${text})`;
-    return binding(m, x, text, ctx, base);
+    return binding(m, x, text, ctx, base, [...bare].map((l) => `const ${l.name} = ${refText(m, l)}`));
 }
 /** A `{Binding}` to a getter (page) or a row field (template) computing `text`. */
-function binding(m, node, text, ctx, base) {
+function binding(m, node, text, ctx, base, prelude) {
     m.stats.bindings++;
     if (ctx.row && /\b__row\b/.test(text)) {
         // A row field (the rows getter computes it).
@@ -957,7 +960,7 @@ function binding(m, node, text, ctx, base) {
         ctx.row.fields.set(name, guards.length ? `(${guards.map((g) => `(${g})`).join(' && ')}) ? (${text}) : undefined` : text);
         return `{Binding ${name}}`;
     }
-    const g = m.getter(snake(base) || 'value', text, { memo: m.isObjectValue(node), guards: (ctx.guards ?? []).filter((c) => !/\b__row\b/.test(c)) });
+    const g = m.getter(snake(base) || 'value', text, { memo: m.isObjectValue(node), guards: (ctx.guards ?? []).filter((c) => !/\b__row\b/.test(c)), prelude });
     return `{Binding ${g}}`;
 }
 /**
@@ -1254,6 +1257,10 @@ function textValue(m, children, ctx, base) {
         if (res)
             return res;
         const v = m.rewrite(p.expr, { rows: ctx.rows });
+        // React prints nothing for a boolean (`{busy && ' · busy'}` when false): neither does the text.
+        const t = m.checker.getTypeAtLocation(p.expr);
+        if ((t.isUnion() ? t.types : [t]).some((x) => !!(x.flags & ts.TypeFlags.BooleanLike)))
+            return `((v: unknown) => (v == null || typeof v === 'boolean' ? '' : String(v)))(${v})`;
         return nullable(p.expr) ? `String(${v} ?? '')` : `String(${v})`;
     });
     return binding(m, children[0], pieces.join(' + '), ctx, base);
@@ -2164,12 +2171,14 @@ function part(m, node, ctx, why) {
     // own, with its narrowed type (passing `menu` would lose the narrowing of `menu.pos`).
     const edits = [];
     const visit = (n) => {
-        if (ts.isPropertyAccessExpression(n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n) && !(ts.isCallExpression(n.parent) && n.parent.expression === n)) {
+        if (ts.isPropertyAccessExpression(n) && !(ts.isCallExpression(n.parent) && n.parent.expression === n)) {
             let root = n;
             while (ts.isPropertyAccessExpression(root))
                 root = root.expression;
             const l = ts.isIdentifier(root) ? m.localOf(root) : undefined;
-            if (l && l.kind !== 'method' && l.kind !== 'setter' && !n.questionDotToken) {
+            // A template parameter too (`reading.trash` of a row).
+            const rowRoot = !l && ctx.rows && ctx.row && ts.isIdentifier(root) && m.rowParamOf(root, ctx.rows) !== undefined ? root.text : undefined;
+            if (((l && l.kind !== 'method' && l.kind !== 'setter') || rowRoot) && !n.questionDotToken) {
                 const sym = m.checker.getSymbolAtLocation(n.name);
                 let declared;
                 try {
@@ -2185,7 +2194,7 @@ function part(m, node, ctx, why) {
                     const segs = [];
                     for (let x = n; ts.isPropertyAccessExpression(x); x = x.expression)
                         segs.unshift(x.name.text);
-                    let t = l.kind === 'prop' ? `${m.stem}['props']['${l.member}']` : l.kind === 'props-object' ? `${m.stem}['props']` : `${m.stem}['${l.member}']`;
+                    let t = !l ? `NonNullable<${m.stem}['${ctx.row.getter}']>[number]['${rowRoot}']` : l.kind === 'prop' ? `${m.stem}['props']['${l.member}']` : l.kind === 'props-object' ? `${m.stem}['props']` : `${m.stem}['${l.member}']`;
                     for (const seg of segs)
                         t = `NonNullable<${t}>['${seg}']`;
                     return `NonNullable<${t}>`;
@@ -2206,7 +2215,7 @@ function part(m, node, ctx, why) {
             if (ctx.rows) {
                 const r = m.rowParamOf(n, ctx.rows);
                 if (r !== undefined) {
-                    free.set(n.text, { expr: r, type: `${m.stem}['${ctx.row.getter}'][number]['${n.text}']` });
+                    free.set(n.text, { expr: r, type: `NonNullable<${m.stem}['${ctx.row.getter}']>[number]['${n.text}']` });
                     return;
                 }
             }
@@ -2304,9 +2313,11 @@ function hostComponent(m, e, ctx, why) {
     m.stats.parts++;
     m.reason(why);
     const entries = [];
+    // Nullable values its inline callbacks read: local constants of the props getter (page level only).
+    const hostBare = ctx.row ? new Set() : nestedNullables(m, attributesOf(e));
     for (const p of attributesOf(e).properties) {
         if (ts.isJsxSpreadAttribute(p)) {
-            entries.push(`...${m.rewrite(p.expression, { rows: ctx.rows })}`);
+            entries.push(`...${m.rewrite(p.expression, { rows: ctx.rows, bare: hostBare })}`);
             continue;
         }
         if (!ts.isJsxAttribute(p))
@@ -2321,7 +2332,7 @@ function hostComponent(m, e, ctx, why) {
         else if (ts.isStringLiteral(init))
             value = JSON.stringify(init.text);
         else if (ts.isJsxExpression(init) && init.expression)
-            value = m.rewrite(init.expression, { rows: ctx.rows });
+            value = m.rewrite(init.expression, { rows: ctx.rows, bare: hostBare });
         else
             throw new NeedsPart(why);
         entries.push(`${/^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name)}: ${value}`);
@@ -2338,15 +2349,17 @@ function hostComponent(m, e, ctx, why) {
     const hasCallback = attributesOf(e).properties.some((p) => ts.isJsxAttribute(p) && !!p.initializer && ts.isJsxExpression(p.initializer) && !!p.initializer.expression && (ts.isArrowFunction(skipParens(p.initializer.expression)) || ts.isFunctionExpression(skipParens(p.initializer.expression))));
     const propsText = `{ ${entries.join(', ')} }${hasCallback ? ` as React.ComponentProps<typeof ${local ? `__parts.${tag.text}` : tag.text}>` : ''}`;
     if (entries.length)
-        attr(n, 'Props', binding(m, ts.factory.createObjectLiteralExpression(), propsText, ctx, `${snake(tag.text)}_props`));
+        attr(n, 'Props', binding(m, ts.factory.createObjectLiteralExpression(), propsText, ctx, `${snake(tag.text)}_props`, [...hostBare].map((l) => `const ${l.name} = ${refText(m, l)}`)));
     return n;
 }
 // ── Output files ─────────────────────────────────────────────────────────────
 /** Whether `name` is used as an identifier in `text` (not as a property `x.name`). */
 function mentions(name, text) {
     // Comments do not count (a getter's doc names the component it renders).
-    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1').replace(/\.\.\./g, ' ');
-    return new RegExp('(^|[^\\w$.])' + name.replace(/\$/g, '\\$') + '(?![\\w$])').test(code);
+    // Nor plain string literals (`'/api/x'` names no `api`).
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1').replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, "''").replace(/\.\.\./g, ' ');
+    // Nor a path segment of a template string (`${origin}/api/v1`).
+    return new RegExp('(^|[^\\w$./])' + name.replace(/\$/g, '\\$') + '(?![\\w$/])').test(code);
 }
 /** The import lines of `sf` restricted to what `text` uses. */
 function importsUsedBy(sf, text) {
@@ -2500,7 +2513,7 @@ function codeBehind(m, target, xmlText) {
         cls.push('  }', '');
     }
     // A memo depends on what its guard reads too: computed while the guard failed, it must be computed again once it holds.
-    const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, m.deps([g.body, ...(g.guards ?? [])].join(' ; '))]));
+    const depsOf = new Map(m.getters.filter((x) => x.memo).map((g) => [g.name, m.deps([g.body, ...(g.guards ?? []), ...(g.prelude ?? [])].join(' ; '))]));
     for (const g of m.getters) {
         if (g.doc)
             cls.push(`  /** ${g.doc} */`);
@@ -2511,11 +2524,12 @@ function codeBehind(m, target, xmlText) {
             // An object literal returned by an arrow needs its parentheses; a guard goes inside the memoized function, where
             // it narrows what the body reads (TypeScript does not carry a narrowing of `this.x` into a callback).
             const value = g.body.trimStart().startsWith('{') ? `(${g.body})` : g.body;
-            const fn = guard ? `() => {\n  ${guard.replace(/\n$/, '')}\n      return ${value}\n    }` : `() => ${value}`;
+            const pre = (g.prelude ?? []).map((p) => `      ${p}\n`).join('');
+            const fn = guard || pre ? `() => {\n${guard ? `  ${guard}` : ''}${pre}      return ${value}\n    }` : `() => ${value}`;
             cls.push(`  get ${g.name}()${ret} {`, `    return this.memo('${g.name}', [${depsOf.get(g.name).map((d) => `this.${d}`).join(', ')}], ${fn})`, '  }', '');
         }
         else
-            cls.push(`  get ${g.name}()${ret} {`, `${guard}    return ${g.body}`, '  }', '');
+            cls.push(`  get ${g.name}()${ret} {`, `${guard}${(g.prelude ?? []).map((p) => `    ${p}\n`).join('')}    return ${g.body}`, '  }', '');
     }
     for (const mt of m.methods) {
         if (mt.doc)
@@ -2822,21 +2836,6 @@ function lucideName(m, e) {
         return undefined;
     const imp = importOf(m, tag);
     return imp?.module === 'lucide-react' ? imp.name.replace(/Icon$/, '') : undefined;
-}
-/** Whether some code text holds JSX (then its file must be a `.tsx`). */
-function containsJsxText(text) {
-    const sf = ts.createSourceFile('x.tsx', `const __x = () => {\n${text}\n}`, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
-    let found = false;
-    const visit = (n) => {
-        if (found)
-            return;
-        if (ts.isJsxElement(n) || ts.isJsxSelfClosingElement(n) || ts.isJsxFragment(n))
-            found = true;
-        else
-            ts.forEachChild(n, visit);
-    };
-    visit(sf);
-    return found;
 }
 /** The negation of a boolean expression as a value (`Enabled` from `disabled={busy}`): a literal, or one getter. */
 function invertExpr(m, e, ctx, base) {
