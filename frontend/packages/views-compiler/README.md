@@ -185,7 +185,7 @@ The core's own `kubuno.views.json`:
 
 ```bash
 npm run build:wasm                                   # the git tag of wasm/Cargo.toml
-node scripts/build-wasm.mjs --desktop ../desktop     # a local kubuno/desktop checkout
+node scripts/build-wasm.mjs --local                 # this repository's own desktop/ (development)
 ```
 
 Needs Rust with the `wasm32-unknown-unknown` target; Linux, Windows and macOS alike. `wasm/BUILD-INFO.json`

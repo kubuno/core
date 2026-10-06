@@ -22,7 +22,8 @@ beforeAll(async () => {
 
 describe('the WASM compiler', () => {
   it('reports its version and the plan ABI', () => {
-    expect(compiler.version()).toEqual({ compiler: '0.1.0', abi: 1 })
+    // The version of kubuno-web-views-compiler-core the committed .wasm was built from (wasm/BUILD-INFO.json's tag).
+    expect(compiler.version()).toEqual({ compiler: '0.2.1', abi: 1 })
   })
 
   it('compiles the golden views to the committed plans, declarations, check files and modules', async () => {

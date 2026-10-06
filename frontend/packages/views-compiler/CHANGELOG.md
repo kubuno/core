@@ -6,6 +6,14 @@ under the published version number.
 
 ## [Unreleased]
 
+### Changed
+
+- **The WebAssembly compiler is built from the core repository.** Kubuno Desktop, which holds the `.kbview`
+  compiler (`kubuno-web-views-compiler-core`), moved into the core repository (`desktop/common`); the `.wasm` is now
+  built from its tag `web-views-compiler-core-v0.2.1` there and reports that version (`compiler.version()` gives
+  `0.2.1`, the ABI is unchanged). It compiles views exactly as before. `npm run build:wasm -- --local` builds it from
+  the repository's own `desktop/` (`--desktop <checkout>` still accepts a former `kubuno/desktop` checkout).
+
 ## [0.1.2] - 2026-10-06
 
 ### Added

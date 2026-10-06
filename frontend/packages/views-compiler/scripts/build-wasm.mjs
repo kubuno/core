@@ -2,7 +2,10 @@
 // Rebuilds wasm/kubuno-views-web.wasm, the WebAssembly build of the web `.kbview` compiler.
 //
 //   node scripts/build-wasm.mjs                       # the released compiler: git tag of wasm/Cargo.toml
-//   node scripts/build-wasm.mjs --desktop <checkout>  # a local desktop checkout instead (development)
+//   node scripts/build-wasm.mjs --desktop <checkout>  # a local checkout instead (development): the core repository
+//                                                     # (its desktop/), its desktop/ folder, or a former
+//                                                     # kubuno/desktop checkout
+//   node scripts/build-wasm.mjs --local               # this repository's own desktop/ (development)
 //   KUBUNO_DESKTOP_DIR=<checkout> node scripts/build-wasm.mjs
 //
 // Needs Rust with the `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`); works the
@@ -25,7 +28,21 @@ const flag = (name) => {
   const i = args.indexOf(name)
   return i >= 0 ? args[i + 1] : undefined
 }
-const desktop = flag('--desktop') ?? process.env.KUBUNO_DESKTOP_DIR
+// The core repository holding this package: web/packages/views-compiler (frontend/packages/views-compiler before the
+// move) → three levels up.
+const coreRoot = resolve(pkg, '..', '..', '..')
+const desktopArg = args.includes('--local') ? coreRoot : (flag('--desktop') ?? process.env.KUBUNO_DESKTOP_DIR)
+// Where the compiler's crates are in a checkout: the core's desktop/common (2026-10), a desktop folder's common/, or
+// the former kubuno/desktop repository's windows/src/crates.
+function crateDirs(checkout) {
+  const candidates = [
+    join(checkout, 'desktop', 'common'),
+    join(checkout, 'common'),
+    join(checkout, 'windows', 'src', 'crates'),
+  ]
+  return candidates.find((dir) => existsSync(join(dir, 'kubuno-web-views-compiler-core', 'Cargo.toml')) || existsSync(join(dir, 'kubuno-views-web', 'Cargo.toml')))
+}
+const desktop = desktopArg ? resolve(desktopArg) : undefined
 const targetDir = resolve(process.env.KUBUNO_WASM_TARGET_DIR ?? process.env.CARGO_TARGET_DIR ?? join(crate, 'target'))
 const toml = (p) => p.split('\\').join('/')
 
@@ -33,11 +50,12 @@ let manifestDir = crate
 let source = 'git tag (wasm/Cargo.toml)'
 if (desktop) {
   // The crate was renamed kubuno-web-views-compiler-core (2026-10-03); an older checkout still has kubuno-views-web.
-  const renamed = resolve(desktop, 'windows', 'src', 'crates', 'kubuno-web-views-compiler-core')
-  const webCrate = existsSync(join(renamed, 'Cargo.toml')) ? renamed : resolve(desktop, 'windows', 'src', 'crates', 'kubuno-views-web')
+  const crates = crateDirs(desktop) ?? join(desktop, 'desktop', 'common')
+  const renamed = join(crates, 'kubuno-web-views-compiler-core')
+  const webCrate = existsSync(join(renamed, 'Cargo.toml')) ? renamed : join(crates, 'kubuno-views-web')
   const webPackage = webCrate === renamed ? 'kubuno-web-views-compiler-core' : 'kubuno-views-web'
   if (!existsSync(join(webCrate, 'Cargo.toml'))) {
-    console.error(`build-wasm: ${webCrate} has no Cargo.toml (expected a kubuno/desktop checkout)`)
+    console.error(`build-wasm: ${webCrate} has no Cargo.toml (expected a core or former kubuno/desktop checkout)`)
     process.exit(2)
   }
   manifestDir = join(targetDir, 'override-src')
@@ -50,7 +68,7 @@ if (desktop) {
   ).replace(
     // The `.kbres` model (WV-6) comes from the same checkout.
     /^kubuno-resources-model\s*=.*$/m,
-    `kubuno-resources-model = { package = "kubuno-desktop-resources-model", path = "${toml(resolve(desktop, 'windows', 'src', 'crates', 'kubuno-desktop-resources-model'))}" }`,
+    `kubuno-resources-model = { package = "kubuno-desktop-resources-model", path = "${toml(join(crates, 'kubuno-desktop-resources-model'))}" }`,
   )
   writeFileSync(join(manifestDir, 'Cargo.toml'), manifest)
   source = `local checkout ${toml(webCrate)}`
