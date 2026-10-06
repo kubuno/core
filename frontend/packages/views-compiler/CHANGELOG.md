@@ -6,6 +6,21 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-06
+
+### Added
+
+- **Module projects open in the Visual Studio designer with their own code.** With `@kubuno/host-runtime` installed
+  as a devDependency, a module's development server serves that package's design page, and the module's views render
+  with their code-behinds, their own controls and React parts, the host's real elements, translations and themes —
+  instead of placeholders. The host's shared libraries (`react`, `@ui`, `@kubuno/sdk`, `@kubuno/drive`,
+  `@kubuno/views`, `i18next`, `zustand`, …) resolve to the package's single copies, as the host's import map does in
+  production, so the page and the module share one instance of each. Production builds are unchanged.
+- **`design.setup` in `kubuno.views.json`**: the project modules the design page loads before it shows a view (the
+  module's stylesheet and translations, e.g. `["src/index.css", "src/i18n.ts"]`).
+- The design page of a module project offers the host runtime's light and dark Kubuno themes when
+  `design.themes` is not set.
+
 ## [0.1.1] - 2026-10-05
 
 ### Added

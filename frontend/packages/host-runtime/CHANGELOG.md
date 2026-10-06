@@ -6,6 +6,8 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-06
+
 ### Added
 
 - **First version: the design host of Kubuno web views.** A ready-to-serve page that shows a `.kbview` or
@@ -13,3 +15,9 @@ under the published version number.
   it renders the view with the host's real elements, fonts, translations and light / dark themes, lets you
   select, move, resize and reorder elements and drop new ones from the Toolbox, and shows the project's own
   controls as labelled placeholders. It works from any address or folder, offline.
+- **Module projects in the designer with their own code.** Installed as a devDependency of a module (with
+  `@kubuno/views-compiler` 0.1.2 or later), the package also provides the design page the module's development
+  server shows to Visual Studio: the module's views render with their code-behinds, their own controls and React
+  parts, and update as you edit them. The page and the module share one copy of React, of the host's elements, of
+  the sdk and of the views runtime, as in the running host; the module's stylesheet and translations are loaded
+  first (`design.setup` in `kubuno.views.json`).

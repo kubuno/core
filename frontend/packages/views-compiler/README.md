@@ -135,12 +135,47 @@ designer, so the designer renders your views with **your project's own controls 
 | Route | What |
 |---|---|
 | `/__kubuno_design__/` | the design page (its entry: `kubuno.views.json` → `design.entry`, else `@kubuno/host-runtime/entry`) |
-| `/__kubuno_design__/project.json` | the registries (host, then the project's, with project-local modules as `/src/…`), the user controls, the plan ABI and the compiler version |
-| `/__kubuno_design__/themes/<id>/…` | the Kubuno themes of `design.themes` (`theme.json` and CSS only) |
+| `/__kubuno_design__/project.json` | the registries (host, then the project's, with project-local modules as `/src/…`), the user controls, the plan ABI, the compiler version and the setup modules (`design.setup`) |
+| `/__kubuno_design__/themes/<id>/…` | the Kubuno themes of `design.themes`, else the host runtime's (`theme.json` and CSS only) |
 
 While the server listens, `.kubuno/design-server.json` (`{version, urls, designPath, pid, root}`) tells Visual
 Studio where to find it; the file is removed when the server stops. Turn the route off with
 `kbview({ designServer: false })`.
+
+`kubuno.views.json` → `design`:
+
+| Key | What |
+|---|---|
+| `entry` | the page's entry module, project-root-relative. Only the core names one (`src/views/design/entry.tsx`); a module leaves it out and gets `@kubuno/host-runtime`'s page. |
+| `themes` | a folder of Kubuno themes (`<id>/theme.json` + CSS). Default: the host runtime's light and dark Kubuno themes. |
+| `setup` | project modules the page imports, in order, before it renders a view: what the project's own entry loads in the host — typically its stylesheet and its translations. Project-root-relative files, or bare specifiers. |
+
+### Module projects: `@kubuno/host-runtime`
+
+A module's code imports the host's shared specifiers (`react`, `react-dom`, `react/jsx-runtime`, `@ui`,
+`@kubuno/sdk`, `@kubuno/drive`, `@kubuno/views`, `i18next`, `react-i18next`, `zustand`, `@tanstack/react-query`,
+`react-router-dom`, `@radix-ui/react-dropdown-menu`). In production they are `external` and the host's import map
+gives every module the host's single instance of each; on npm, `@kubuno/sdk`, `@kubuno/drive` and
+`@kubuno/views` are type surfaces whose runtime throws. Add **`@kubuno/host-runtime`** as a devDependency and, in
+`vite serve`, for a project without `design.entry`, the plugin:
+
+- serves the package's project-mode page at `/__kubuno_design__/` (registries, controls and code-behinds from your
+  dev server, HMR kept);
+- resolves each shared specifier — the exact specifiers its `dist/project/shared.json` lists, never their subpaths —
+  to the package's module of the same name, built together with the page: one React, one `@ui`, the real sdk,
+  drive and views runtime, i18next with the core's translations, for the page and your code alike;
+- keeps those specifiers external in Vite's dependency pre-bundling (a pre-bundled `lucide-react` or
+  `@react-three/fiber` imports the shared `react` instead of bundling a copy), and removes them from
+  `optimizeDeps.include` (`@vitejs/plugin-react` adds `react` there).
+
+Your production build is untouched (the plugin does none of this in `vite build`), and your code never imports the
+core or another module. Without the package, the dev server warns and the route serves no page.
+
+```json
+{ "design": { "setup": ["src/index.css", "src/i18n.ts"] } }
+```
+
+The core's own `kubuno.views.json`:
 
 ```json
 { "design": { "entry": "src/views/design/entry.tsx", "themes": "../themes" } }

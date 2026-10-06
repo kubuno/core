@@ -7,6 +7,8 @@
 #   @kubuno/views — type surface (views/ .d.ts) + runtime stub (the .kbview runtime)
 #   @kubuno/views-compiler — real Node library (Vite plugin, kbview-tsc) + the committed .wasm
 #   @kubuno/views-migrate  — real Node library (the kbview-migrate codemod)
+#   @kubuno/host-runtime   — the Visual Studio design page: static site (bundled mode) + the project-mode
+#                            entry of module projects and the host shared modules (dist/project/)
 #
 # At runtime these specifiers are provided by the host via its import map; module
 # bundles mark them `external`. The packages exist so modules can build & typecheck
@@ -16,13 +18,13 @@ cd "$(dirname "$0")/.."                     # → frontend/
 FE="$(pwd)"
 PKG="$FE/packages"
 
-echo "==> 1/3  Building @kubuno/views-compiler (TypeScript; the committed .wasm is rebuilt by npm run build:wasm)"
+echo "==> 1/4  Building @kubuno/views-compiler (TypeScript; the committed .wasm is rebuilt by npm run build:wasm)"
 # First: kbview-tsc (below) runs from this package's dist/.
 node_modules/.bin/tsc -b packages/views-compiler
 # The codemod (kbview-migrate), a Node library of its own.
 node_modules/.bin/tsc -b packages/views-migrate
 
-echo "==> 2/3  Emitting declarations (kbview-tsc -p tsconfig.emit.json)"
+echo "==> 2/4  Emitting declarations (kbview-tsc -p tsconfig.emit.json)"
 # kbview-tsc, not plain tsc: it first generates the types of the .kbview / .kbcontrol views
 # (.kubuno/views, gitignored) that the code-behinds import, then runs tsc with the same arguments.
 rm -rf "$FE/dist-types"
@@ -45,13 +47,18 @@ rm -rf "$PKG/drive/types"; mkdir -p "$PKG/drive/types/drive"; cp -r "$FE"/dist-t
 # @kubuno/views : views/ only (the .kbview runtime; self-contained, imports react only)
 rm -rf "$PKG/views/types"; mkdir -p "$PKG/views/types";     cp -r "$FE"/dist-types/views/* "$PKG/views/types/"
 
-echo "==> 3/3  Building @kubuno/ui ESM bundle"
+echo "==> 3/4  Building @kubuno/ui ESM bundle"
 # ⚠️ The `cd` is load-bearing, not stylistic. Vite resolves `outDir` against the
 # CURRENT WORKING DIRECTORY, not against the config file. Run from frontend/ as
 #     npx vite build --config packages/ui/vite.config.ts
 # and the library lands in `frontend/dist/` — where `emptyOutDir` first WIPES the
 # host application build. Always build a package from inside the package.
 ( cd "$PKG/ui" && "$FE/node_modules/.bin/vite" build )
+
+echo "==> 4/4  Building @kubuno/host-runtime (bundled page, then the project-mode page + shared modules)"
+# vite.design-host.config.ts writes to an absolute outDir (packages/host-runtime/dist): safe from frontend/.
+node_modules/.bin/vite build --config vite.design-host.config.ts
+node_modules/.bin/vite build --config vite.design-host.config.ts --mode project
 
 rm -rf "$FE/dist-types"
 echo "==> done. Never publish by hand: use  bash _tools/publish_all.sh  (regenerates,"

@@ -83,6 +83,8 @@ export interface ProjectInfo {
   viewsAbi: number
   compiler: string
   themes?: string[]
+  /** Project modules imported before the first render (`design.setup`: the project's stylesheet, translations). */
+  setup?: string[]
 }
 
 export interface SurfaceConfig {
@@ -264,6 +266,7 @@ export class DesignSurface {
           this.registryTexts = [p.hostRegistry, ...p.registries.map((r) => r.text)]
           this.projectUserControls = p.userControls
           this.projectLoaded = true
+          await this.importSetup(p.setup ?? [])
         } catch (err) {
           this.log(`project.json unavailable (${(err as Error).message}): host elements only`)
         }
@@ -280,6 +283,18 @@ export class DesignSurface {
     this.channel.post({ type: 'ready' })
     this.channel.post({ type: 'focusState', editing: false })
     for (const m of this.queue.splice(0)) this.handle(m)
+  }
+
+  /** Imports the project's setup modules in order; one that fails is logged and the others still load. */
+  private async importSetup(setup: readonly string[]): Promise<void> {
+    if (!this.config.importModule) return
+    for (const spec of setup) {
+      try {
+        await this.config.importModule(spec)
+      } catch (err) {
+        this.log(`setup module ${spec} not loaded (${(err as Error).message})`)
+      }
+    }
   }
 
   private userControls(): UserControlInfo[] {

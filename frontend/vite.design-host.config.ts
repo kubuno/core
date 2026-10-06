@@ -1,11 +1,21 @@
 /**
- * Build of `@kubuno/host-runtime` (`npm run build:design-host`): the design surface page of `.kbview` web views in
- * **bundled** mode (`src/views/design/entry.bundled.tsx`) as a static site with relative URLs, so it can be served
- * from any origin or folder (Visual Studio maps it to `https://kubuno-design.invalid/`). Output:
- * `packages/host-runtime/dist/` (not committed): `index.html`, `entry.js`, `assets/`, the production fonts with their
- * licence texts (`fonts/`, byte-identical copies of `public/fonts`) and the light / dark Kubuno themes (`themes/`).
+ * Build of `@kubuno/host-runtime` (`npm run build:design-host`, two passes into `packages/host-runtime/dist/`, not
+ * committed):
+ *
+ * 1. default mode — the design surface page of `.kbview` web views in **bundled** mode
+ *    (`src/views/design/entry.bundled.tsx`) as a static site with relative URLs, so it can be served from any origin
+ *    or folder (Visual Studio maps it to `https://kubuno-design.invalid/`): `index.html`, `entry.js`, `assets/`, the
+ *    production fonts with their licence texts (`fonts/`, byte-identical copies of `public/fonts`) and the light /
+ *    dark Kubuno themes (`themes/`).
+ * 2. `--mode project` — the page in **project** mode for module projects, served by the module's own Vite dev server
+ *    (`src/views/design/entry.module.ts` → `project/design-page.js` + `project/design-page.css`), built TOGETHER with
+ *    the host's shared modules (`project/shared/<chunk>.js`, the entries of `build/shared-entries.ts`), so that the
+ *    page and the module's code share one instance of each; `project/shared.json` maps every shared specifier of the
+ *    host's import map to its module (read by `@kubuno/views-compiler`), and `project/entry.js` is the hand-written
+ *    `packages/host-runtime/src/entry.js` (the dev server transforms it: HMR, dynamic imports). Built with React's
+ *    development build, like a dev server's (Fast Refresh of the module's React parts, readable errors).
  */
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, type Plugin, type UserConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
@@ -13,11 +23,15 @@ import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 // The core's own views and user controls are compiled like in the app's build (the host imports some of them).
 import { kbview } from './packages/views-compiler/dist/index.js'
+import { SPECIFIER_TO_CHUNK } from './build/importmap-plugin'
+import { SHARED_ENTRIES, sharedEntryInputs } from './build/shared-entries'
 
 const here = (p: string): string => fileURLToPath(new URL(p, import.meta.url))
 const OUT = here('./packages/host-runtime/dist')
 const STAGE = here('./packages/host-runtime/.build-public')
 const THEMES = ['kubuno-reference', 'kubuno-dark']
+/** The project-mode output, under `dist/`. */
+const PROJECT = 'project'
 
 /** The page's public files: the fonts (and licences) of `public/fonts`, and the themes' `theme.json` + CSS. */
 function stagePublic(): void {
@@ -57,23 +71,59 @@ function htmlAtRoot(): Plugin {
 
 const pkg = JSON.parse(readFileSync(here('./packages/host-runtime/package.json'), 'utf-8')) as { version: string }
 
-export default defineConfig({
+/**
+ * Project mode: `project/shared.json` (the shared specifiers → their modules, as the host's import map maps them)
+ * and `project/entry.js` (copied from `packages/host-runtime/src/entry.js`).
+ */
+function projectManifest(): Plugin {
+  return {
+    name: 'kubuno-design-host-project',
+    generateBundle(_options, bundle) {
+      const byName = new Map<string, string>()
+      for (const file of Object.values(bundle)) {
+        if (file.type === 'chunk' && file.isEntry && file.name) byName.set(file.name, file.fileName)
+      }
+      const shared: Record<string, string> = {}
+      for (const [spec, chunk] of Object.entries(SPECIFIER_TO_CHUNK)) {
+        const fileName = byName.get(chunk)
+        if (!fileName) this.error(`[host-runtime] no shared module '${chunk}' for '${spec}'`)
+        shared[spec] = `dist/${fileName}`
+      }
+      const page = byName.get('design-page')
+      if (page !== `${PROJECT}/design-page.js`) this.error(`[host-runtime] the design page was emitted as ${String(page)}`)
+      const manifest = {
+        version: 1,
+        hostRuntime: pkg.version,
+        entry: `dist/${PROJECT}/entry.js`,
+        themes: 'dist/themes',
+        shared,
+      }
+      this.emitFile({ type: 'asset', fileName: `${PROJECT}/shared.json`, source: JSON.stringify(manifest, null, 2) + '\n' })
+      this.emitFile({ type: 'asset', fileName: `${PROJECT}/entry.js`, source: readFileSync(here('./packages/host-runtime/src/entry.js'), 'utf-8') })
+    },
+  }
+}
+
+const aliases = {
+  '@ui': here('./src/ui'),
+  '@kubuno/sdk': here('./src/sdk/index.ts'),
+  '@kubuno/drive': here('./src/drive/index.ts'),
+  '@kubuno/views': here('./src/views/index.ts'),
+}
+
+const versions = {
+  __APP_VERSION__: JSON.stringify(pkg.version),
+  __APP_BUILD__: JSON.stringify(`host-runtime-${pkg.version}`),
+}
+
+/** Pass 1: the bundled page. */
+const bundled: UserConfig = {
   root: here('.'),
   base: './',
   publicDir: STAGE,
   plugins: [kbview({ generateTypes: false, designServer: false }), react(), tailwindcss(), htmlAtRoot()],
-  define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
-    __APP_BUILD__: JSON.stringify(`host-runtime-${pkg.version}`),
-  },
-  resolve: {
-    alias: {
-      '@ui': here('./src/ui'),
-      '@kubuno/sdk': here('./src/sdk/index.ts'),
-      '@kubuno/drive': here('./src/drive/index.ts'),
-      '@kubuno/views': here('./src/views/index.ts'),
-    },
-  },
+  define: versions,
+  resolve: { alias: aliases },
   build: {
     outDir: OUT,
     emptyOutDir: true,
@@ -87,4 +137,42 @@ export default defineConfig({
       },
     },
   },
-})
+}
+
+/** Pass 2: the project-mode page and the shared modules (added to pass 1's output). */
+const project: UserConfig = {
+  root: here('.'),
+  base: './',
+  // The public files are pass 1's; known here so that the CSS points at them (`../fonts/…`).
+  publicDir: STAGE,
+  plugins: [kbview({ generateTypes: false, designServer: false }), react(), tailwindcss(), projectManifest()],
+  define: {
+    ...versions,
+    // React's (and every library's) development build, as a dev server would serve it.
+    'process.env.NODE_ENV': JSON.stringify('development'),
+  },
+  resolve: { alias: aliases },
+  build: {
+    outDir: OUT,
+    emptyOutDir: false,
+    copyPublicDir: false,
+    cssCodeSplit: false,
+    chunkSizeWarningLimit: 20000,
+    rollupOptions: {
+      input: {
+        'design-page': here('./src/views/design/entry.module.ts'),
+        ...sharedEntryInputs(here('.')),
+      },
+      // Every export of the shared entries stays reachable by the module's code.
+      preserveEntrySignatures: 'strict',
+      output: {
+        entryFileNames: (chunk) => (chunk.name in SHARED_ENTRIES ? `${PROJECT}/shared/[name].js` : `${PROJECT}/[name].js`),
+        chunkFileNames: `${PROJECT}/chunks/[name]-[hash].js`,
+        assetFileNames: (asset) =>
+          (asset.names ?? []).some((n) => n.endsWith('.css')) ? `${PROJECT}/design-page.css` : `${PROJECT}/assets/[name]-[hash][extname]`,
+      },
+    },
+  },
+}
+
+export default defineConfig(({ mode }) => (mode === 'project' ? project : bundled))

@@ -1,27 +1,17 @@
 /**
- * The design page in **project** (dev-server) mode: served by the project's own Vite dev server at
+ * The design page in **project** (dev-server) mode for the core itself: served by the core's own Vite dev server at
  * `/__kubuno_design__/` (`@kubuno/views-compiler`'s plugin, `kubuno.views.json` → `design.entry`). The registries
- * and user controls come from `/__kubuno_design__/project.json`; the project's controls and the view's
- * code-behind are imported through the dev server (HMR keeps them current).
+ * and user controls come from `/__kubuno_design__/project.json`; the project's controls and the view's code-behind
+ * are imported through the dev server (HMR keeps them current). Module projects get the same page from
+ * `@kubuno/host-runtime` (`entry.module.ts`).
  */
 import './bootstrap'
-import uiPackage from '../../../packages/ui/package.json'
 import wasmUrl from '../../../packages/views-compiler/wasm/kubuno-views-web.wasm?url'
-import { startSurface, type ProjectInfo } from './surface'
+import { startProjectSurface } from './project'
 
-const DESIGN_PATH = '/__kubuno_design__/'
-
-const surface = startSurface({
-  mode: 'project',
-  uiVersion: uiPackage.version,
+const surface = startProjectSurface({
   hostRuntime: null,
   wasmUrl,
-  themesBase: `${DESIGN_PATH}themes`,
-  loadProject: async () => {
-    const r = await fetch(`${DESIGN_PATH}project.json`, { cache: 'no-store' })
-    if (!r.ok) throw new Error(`${DESIGN_PATH}project.json: HTTP ${r.status}`)
-    return (await r.json()) as ProjectInfo
-  },
   importModule: (specifier) => import(/* @vite-ignore */ specifier) as Promise<Record<string, unknown>>,
 })
 

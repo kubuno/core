@@ -12,7 +12,10 @@
  *   not compile keeps the last good one on screen, with the error overlay.
  * - Code-behinds use standard (TC39) decorators (`@bind accessor`): they are lowered with TypeScript before
  *   Vite's own transform, which leaves standard decorators as they are.
- * - `vite serve` also serves the Visual Studio design surface at `/__kubuno_design__/` (`design-server.ts`).
+ * - `vite serve` also serves the Visual Studio design surface at `/__kubuno_design__/` (`design-server.ts`). For a
+ *   project without a design entry of its own (a module), the page is `@kubuno/host-runtime`'s, and the host's
+ *   shared specifiers (`react`, `@ui`, `@kubuno/sdk`, …) resolve to that package's modules — one instance each, for
+ *   the page and the project's code alike — instead of the project's `node_modules` (`host-runtime.ts`).
  * - `X.kbres` (a string resource set: the neutral file and its `X.<lang>.kbres` satellites) → `export default` its
  *   i18next bundles by language (`kbres.ts`, WV-6), for `registerModuleTranslations(ns, bundles)`.
  */
@@ -20,12 +23,13 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import type { Plugin, ResolvedConfig } from 'vite'
+import type { Plugin, ResolvedConfig, UserConfig } from 'vite'
 
 import { installDesignServer } from './design-server.js'
+import { HOST_RUNTIME_PACKAGE, dropShared, findHostRuntime, prebundleExternals, resolveShared, usesHostRuntime, type HostRuntime } from './host-runtime.js'
 import { emitViewModule } from './emit.js'
 import { compileKbresSet, kbresModule, kbresSet, type KbresCodec } from './kbres.js'
-import { codeBehindOf, isViewFile, loadNodeKbres, projectPath, viewOfCodeBehind, writeGenerated, ViewProject, type ProjectOptions } from './project.js'
+import { codeBehindOf, isViewFile, loadNodeKbres, projectPath, readProjectConfig, viewOfCodeBehind, writeGenerated, ViewProject, type ProjectOptions } from './project.js'
 import type { CompileOutput, Diagnostic } from './types.js'
 
 export interface KbviewPluginOptions extends ProjectOptions {
@@ -58,6 +62,9 @@ export function kbview(options: KbviewPluginOptions = {}): Plugin {
   let serve = false
   let ts: typeof import('typescript') | null = null
   let kbres: Promise<KbresCodec> | null = null
+  // `vite serve` of a project designed with `@kubuno/host-runtime`: its shared modules (null otherwise).
+  let hostRuntime: HostRuntime | null = null
+  let hostRuntimeProblem: string | null = null
 
   const getProject = (): Promise<ViewProject> => {
     project ??= ViewProject.open(config.root, options).then((p) => {
@@ -79,9 +86,46 @@ export function kbview(options: KbviewPluginOptions = {}): Plugin {
     name: 'kubuno-kbview',
     enforce: 'pre',
 
+    // The design page of a module project (no `design.entry`): the host runtime's shared modules stand in for the
+    // host's import map, and stay external in the pre-bundled dependencies (a pre-bundled `react` would be a second
+    // React).
+    config(user, env) {
+      hostRuntime = null
+      hostRuntimeProblem = null
+      if (env.command !== 'serve' || options.designServer === false) return
+      const root = resolve(user.root ?? process.cwd())
+      let design: ReturnType<typeof readProjectConfig>['design']
+      try {
+        design = readProjectConfig(root).design
+      } catch {
+        return // A malformed kubuno.views.json is reported when the project opens.
+      }
+      if (!usesHostRuntime(design)) return
+      try {
+        hostRuntime = findHostRuntime(root)
+        if (!hostRuntime) {
+          hostRuntimeProblem = `${HOST_RUNTIME_PACKAGE} is not installed: add it as a devDependency to open this project's views in the Visual Studio designer`
+        }
+      } catch (err) {
+        hostRuntimeProblem = (err as Error).message
+      }
+      if (!hostRuntime) return
+      return { optimizeDeps: { rolldownOptions: { plugins: [prebundleExternals(hostRuntime)] } } } as UserConfig
+    },
+
     configResolved(resolved) {
       config = resolved
       serve = resolved.command === 'serve'
+      if (hostRuntime) {
+        dropShared(resolved.optimizeDeps.include, hostRuntime)
+        for (const env of Object.values(resolved.environments ?? {})) dropShared(env.optimizeDeps?.include, hostRuntime)
+      }
+    },
+
+    resolveId(id, _importer, opts) {
+      if (!hostRuntime || opts?.ssr) return null
+      // `scan`: Vite looking for the dependencies to pre-bundle (an option Vite passes, not in its public type).
+      return resolveShared(hostRuntime, id, (opts as { scan?: boolean } | undefined)?.scan === true)
     },
 
     async buildStart() {
@@ -192,7 +236,10 @@ export function kbview(options: KbviewPluginOptions = {}): Plugin {
       }
       server.watcher.on('add', onAddOrRemove)
       server.watcher.on('unlink', onAddOrRemove)
-      if (options.designServer !== false) installDesignServer(server, p)
+      if (options.designServer !== false) {
+        if (hostRuntimeProblem) server.config.logger.warn(`@kubuno/views-compiler: ${hostRuntimeProblem}`)
+        installDesignServer(server, p, hostRuntime)
+      }
     },
   }
 }

@@ -33,11 +33,29 @@ export {
   designEntryUrl,
   designPageHtml,
   designProjectInfo,
+  designPageEntryUrl,
+  designSetupUrls,
+  designThemesDir,
   themeFile,
   type DesignConfig,
   type DesignServerInfo,
   type DesignProjectInfo,
 } from './design-server.js'
+export {
+  HOST_RUNTIME_PACKAGE,
+  HOST_RUNTIME_MANIFEST,
+  findHostRuntime,
+  parseHostRuntimeManifest,
+  usesHostRuntime,
+  prebundleExternals,
+  CJS_FACADE_PREFIX,
+  resolveShared,
+  dropShared,
+  devServerUrl,
+  type HostRuntime,
+  type HostRuntimeManifest,
+  type PrebundlePlugin,
+} from './host-runtime.js'
 export { runKbviewTsc, remapTscOutput, mapCheckPosition, loadRemapContext, type KbviewTscResult } from './tsc.js'
 export { encodeMappings, decodeMappings, type SourceMapV3, type Segment } from './sourcemap.js'
 export type * from './types.js'

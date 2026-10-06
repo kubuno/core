@@ -1,7 +1,7 @@
 {
   "name": "@kubuno/host-runtime",
   "version": "0.1.0",
-  "description": "Kubuno web views design host — a static build of the Visual Studio design surface page (React, @ui, the sdk, the @kubuno/views runtime, the .kbview compiler's WebAssembly, the host registry, the host CSS with the production fonts, the core's translations and the light / dark Kubuno themes), served from any origin or folder.",
+  "description": "Kubuno web views design host — the Visual Studio design surface page: a static build in bundled mode (React, @ui, the sdk, the @kubuno/views runtime, the .kbview compiler's WebAssembly, the host registry, the host CSS with the production fonts, the core's translations and the light / dark Kubuno themes), and the project-mode page of module projects with the host's shared modules, served by the module's own Vite dev server.",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/kubuno/core/tree/main/frontend/packages/host-runtime",
   "repository": {
@@ -9,6 +9,13 @@
     "url": "git+https://github.com/kubuno/core.git",
     "directory": "frontend/packages/host-runtime"
   },
+  "keywords": [
+    "kubuno",
+    "kbview",
+    "visual-studio",
+    "designer",
+    "vite"
+  ],
   "type": "module",
   "sideEffects": true,
   "files": [
@@ -17,9 +24,19 @@
     "CHANGELOG.md"
   ],
   "exports": {
-    "./entry": "./dist/entry.js",
+    "./entry": "./dist/project/entry.js",
+    "./bundled": "./dist/entry.js",
     "./index.html": "./dist/index.html",
+    "./shared.json": "./dist/project/shared.json",
     "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@kubuno/views-compiler": ">=0.1.2"
+  },
+  "peerDependenciesMeta": {
+    "@kubuno/views-compiler": {
+      "optional": true
+    }
   },
   "publishConfig": {
     "access": "public"

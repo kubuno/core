@@ -54,11 +54,14 @@ export interface ProjectConfig {
     hostRegistry?: string;
     /**
      * The Visual Studio design surface served by the dev server (`/__kubuno_design__/`): its entry module (a
-     * project-root-relative file; default `@kubuno/host-runtime/entry`) and a folder of Kubuno themes it can apply.
+     * project-root-relative file; default `@kubuno/host-runtime/entry`), a folder of Kubuno themes it can apply
+     * (default: the host runtime's), and the project modules the page imports before it renders (`setup`: the
+     * project's stylesheet, its translations).
      */
     design?: {
         entry?: string;
         themes?: string;
+        setup?: string[];
     };
 }
 export declare function readProjectConfig(root: string): ProjectConfig;

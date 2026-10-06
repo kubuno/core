@@ -11,6 +11,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Modules' web views in the Visual Studio designer, with their own code.** The designer's page is now also
+  published for module projects (`@kubuno/host-runtime` 0.1.0, with `@kubuno/views-compiler` 0.1.2): served by a
+  module's development server, it renders the module's views with their code-behinds and their own controls, on the
+  same React, elements, translations and themes as the running host, and follows edits as they are saved. The page
+  loads the project's stylesheet and translations first (`design.setup` in `kubuno.views.json`), for the core's own
+  views too.
+
 - **Dialog footers, banners and host strings in web views.** A view's `FloatingWindow` can now describe its footer
   (confirm and cancel buttons, their text, whether they can be clicked, a working state, a destructive action) and hold
   a banner or title-bar buttons as property elements; the `@ui` elements that carry their own texts (a close button's

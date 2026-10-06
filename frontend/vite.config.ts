@@ -5,6 +5,7 @@ import { fileURLToPath, URL } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { importMapPlugin } from './build/importmap-plugin'
+import { sharedEntryInputs } from './build/shared-entries'
 // The .kbview / .kbcontrol compiler (vskubuno docs/WEB-VIEWS.md, WV-2): the core's own views and user controls
 // (registries and folders: kubuno.views.json).
 import { kbview } from './packages/views-compiler/dist/index.js'
@@ -95,33 +96,12 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: fileURLToPath(new URL('./index.html', import.meta.url)),
-        // Entrée build-only : matérialise le chunk partagé avec TOUTE la surface
-        // @ui + @kubuno/sdk (preserveEntrySignatures évite le tree-shaking des
-        // exports non utilisés par le host mais requis par un module distant).
-        'kubuno-shared': fileURLToPath(new URL('./src/sdk/shared-entry.ts', import.meta.url)),
-        // Service plateforme fichiers (@kubuno/drive) — chunk stable, NON-eager
-        // (le main entry ne l'importe pas → chargé à la demande).
-        'drive-shared': fileURLToPath(new URL('./src/drive/shared-entry.ts', import.meta.url)),
-        // Runtime of .kbview views (@kubuno/views): its own stable chunk, so a module's views and the host's share
-        // one binding engine and one live-view registry.
-        'kubuno-views': fileURLToPath(new URL('./src/views/index.ts', import.meta.url)),
-        // Facades ESM stables par paquet singleton : garantissent un chunk dédié
-        // à URL fixe (rolldown fusionne sinon les petits paquets). L'import map
-        // pointe les bare specifiers vers ces fichiers ; ils ré-exportent
-        // l'instance unique (même si elle vit physiquement dans kubuno-shared).
-        'vendor-react':         fileURLToPath(new URL('./src/sdk/shared/react.ts', import.meta.url)),
-        'vendor-react-dom':     fileURLToPath(new URL('./src/sdk/shared/react-dom.ts', import.meta.url)),
-        'vendor-react-jsx':     fileURLToPath(new URL('./src/sdk/shared/react-jsx.ts', import.meta.url)),
-        'vendor-router':        fileURLToPath(new URL('./src/sdk/shared/router.ts', import.meta.url)),
-        'vendor-query':         fileURLToPath(new URL('./src/sdk/shared/query.ts', import.meta.url)),
-        'vendor-zustand':       fileURLToPath(new URL('./src/sdk/shared/zustand.ts', import.meta.url)),
-        'vendor-react-i18next': fileURLToPath(new URL('./src/sdk/shared/react-i18next.ts', import.meta.url)),
-        'vendor-i18next':       fileURLToPath(new URL('./src/sdk/shared/i18next.ts', import.meta.url)),
-        // Radix DropdownMenu : singleton OBLIGATOIRE (contexte Root↔Item cross-bundle,
-        // cf. bouton « Nouveau » du shell + slots new-actions des modules).
-        'vendor-radix-menu':    fileURLToPath(new URL('./src/sdk/shared/radix-dropdown-menu.ts', import.meta.url)),
+        // The shared modules the import map points at (@ui, @kubuno/sdk, @kubuno/drive, @kubuno/views, the
+        // singleton vendors): one entry each, listed in build/shared-entries.ts (also built into
+        // @kubuno/host-runtime for module projects in the Visual Studio designer).
+        ...sharedEntryInputs(fileURLToPath(new URL('.', import.meta.url))),
       },
-      // Garde tous les exports de l'entrée kubuno-shared adressables par les modules.
+      // Keeps every export of the kubuno-shared entry reachable by the modules.
       preserveEntrySignatures: 'strict',
       output: {
         // Consolide la surface partagée (registries/stores/i18n/@ui/SDK) dans UN

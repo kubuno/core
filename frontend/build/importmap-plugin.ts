@@ -14,8 +14,9 @@ import { createHash } from 'node:crypto'
  * séparément) : elle versionne donc toujours avec le SPA servi.
  */
 
-// Specifier (vu par les modules) -> nom du chunk partagé émis par le host.
-const SPECIFIER_TO_CHUNK: Record<string, string> = {
+// Specifier (as modules see it) -> name of the shared chunk the host emits. Also read by the build of
+// @kubuno/host-runtime (vite.design-host.config.ts), whose project-mode build emits the same shared modules.
+export const SPECIFIER_TO_CHUNK: Readonly<Record<string, string>> = {
   'react':                  'vendor-react',
   'react-dom':              'vendor-react-dom',
   'react-dom/client':       'vendor-react-dom',
