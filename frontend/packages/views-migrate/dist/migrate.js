@@ -867,7 +867,7 @@ function convert(m, target) {
             if (prelude.length)
                 b = b.replace(/^\{/, `{\n${prelude.join('\n')}`);
             const typeParams = f.typeParameters?.length ? `<${f.typeParameters.map((t) => m.rewrite(t)).join(', ')}>` : undefined;
-            m.methods.push({ name: l.member, params, body: b, async: isAsync, typeParams });
+            m.methods.push({ name: l.member, params, body: b, async: isAsync, typeParams, ret: f.type ? `: ${m.rewrite(f.type)}` : undefined });
         }
     }
     // Hook results land in fields at the end of `use()`.
@@ -893,7 +893,13 @@ function convert(m, target) {
         const vis = show(undefined, 'show_main');
         for (const n of convertBranch(m, jsx, { guards: earlier.map((c) => `!(${c})`) }))
             root.children.push(withVisible(m, n, vis, {}));
-        m.stats.classAttributes++;
+        // One element in all (the other cases render nothing, `if (!x) return null`): it is the root itself — a wrapper,
+        // even a `display: contents` one, would take its place among its parent's children (`divide-y` draws the line
+        // on it, where nothing shows).
+        if (root.children.length === 1)
+            root = root.children[0];
+        else
+            m.stats.classAttributes++;
     }
     if (m.propsType)
         attr(root, 'x:Props', m.propsType);
@@ -1944,8 +1950,9 @@ function component(m, e, info, ctx) {
         const expr = init && ts.isJsxExpression(init) ? init.expression : undefined;
         if (target) {
             let value;
+            // A bare boolean attribute (`disabled`) is true: inverted for `Enabled`.
             if (!init)
-                value = 'true';
+                value = target.convert === 'invert' ? 'false' : 'true';
             else if (ts.isStringLiteral(init))
                 value = target.values ? target.values.get(init.text) ?? init.text : init.text;
             else if (expr) {
@@ -2202,7 +2209,11 @@ function part(m, node, ctx, why) {
                 const type = declared && isNull(declared) && !isNull(here) ? (writableType(m, m.typeText(n)) ?? indexed()) : undefined;
                 if (type) {
                     const propName = n.getText().replace(/[^A-Za-z0-9_$]+/g, '_');
-                    free.set(propName, { expr: m.rewrite(n, { rows: ctx.rows }), type });
+                    // Read with `?.`: the narrowing may come from inside the part (`{data && <a href={data.href}/>}`), where it is only used once it holds.
+                    const segs = [];
+                    for (let x = n; ts.isPropertyAccessExpression(x); x = x.expression)
+                        segs.unshift(x.name.text);
+                    free.set(propName, { expr: `${m.rewrite(root, { rows: ctx.rows })}${segs.map((g) => `?.${g}`).join('')}`, type });
                     edits.push({ s: n.getStart(), e: n.getEnd(), text: propName });
                     return;
                 }
@@ -2450,7 +2461,21 @@ function codeBehind(m, target, xmlText) {
     // closures read its constants: a narrowing (`if (!data) return`) holds inside the callbacks too.
     const storesNames = new Set(indep.flatMap((k) => m.useNames[k] ?? []));
     const hooksNames = new Set(dep.flatMap((k) => m.useNames[k] ?? []));
-    const hooksText = (k) => m.useStmts[k].transform(m.rewrite(m.useStmts[k].node, { inUse: true, localNames: new Set([...hooksNames, ...storesNames]) }));
+    // The class's own nullable values an effect reads in its callbacks (`if (root) … root.id` inside `useEffect`): local
+    // constants declared just before the hook, so the narrowing holds there as in the TSX.
+    const hookBare = (k) => new Set([...nestedNullables(m, m.useStmts[k].node)].filter((l) => l.kind === 'derived' || l.kind === 'state' || l.kind === 'prop'));
+    const hooksText = (k) => m.useStmts[k].transform(m.rewrite(m.useStmts[k].node, { inUse: true, localNames: new Set([...hooksNames, ...storesNames]), bare: hookBare(k) }));
+    const aliased = new Set();
+    const hookAliases = (k) => {
+        const out = [];
+        for (const l of hookBare(k)) {
+            if (aliased.has(l))
+                continue;
+            aliased.add(l);
+            out.push(`    const ${l.name} = ${refText(m, l)}`);
+        }
+        return out;
+    };
     // Which of them it reads (the checker's references: a callback parameter of the same name is not one).
     const asFields = dep.map((k) => m.rewrite(m.useStmts[k].node, { inUse: true, localNames: hooksNames })).join('\n');
     const storesInHooks = hookLocals.filter((l) => storesNames.has(l.name) && new RegExp(`this\\.${l.member}(?![\\w$])`).test(asFields));
@@ -2496,7 +2521,7 @@ function codeBehind(m, target, xmlText) {
             const mine = used.filter((l) => (m.useNames[k] ?? []).includes(l.name));
             return mine.length ? [`    this.publish({ ${mine.map((l) => (l.member === l.name ? l.name : `${l.member}: ${l.name}`)).join(', ')} })`] : [];
         };
-        cls.push(`  /** ${g.doc} React's rules apply: \`use()\` runs them on every render. */`, `  ${g.method}() {`, ...aliases, ...g.ks.flatMap((k) => [indent(text(k), k), ...publishNow(k)]));
+        cls.push(`  /** ${g.doc} React's rules apply: \`use()\` runs them on every render. */`, `  ${g.method}() {`, ...aliases, ...g.ks.flatMap((k) => [...(g.method === 'useHooks' ? hookAliases(k) : []), indent(text(k), k), ...publishNow(k)]));
         cls.push(`    return { ${names.join(', ')} }`, '  }', '');
     }
     if (groups.length || m.needsNavigate) {
@@ -2534,7 +2559,7 @@ function codeBehind(m, target, xmlText) {
     for (const mt of m.methods) {
         if (mt.doc)
             cls.push(`  /** ${mt.doc} */`);
-        cls.push(`  ${mt.async ? 'async ' : ''}${mt.name}${mt.typeParams ?? ''}(${mt.params}) ${mt.body.trim()}`, '');
+        cls.push(`  ${mt.async ? 'async ' : ''}${mt.name}${mt.typeParams ?? ''}(${mt.params})${mt.ret ?? ''} ${mt.body.trim()}`, '');
     }
     // Row types of the templates (for the handlers' `args.row`).
     const methodText = m.methods.map((x) => x.body).join('\n');
