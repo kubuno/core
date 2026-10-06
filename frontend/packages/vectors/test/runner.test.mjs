@@ -82,7 +82,7 @@ describe('checksum and vendoring', () => {
 defineVectorTests(suite([{ id: 'one', input: [1, 2], expected: 3 }, { id: 'zero', input: [0, 0], expected: 0 }]), ([a, b]) => a + b, { describe, it })
 
 describe('core repository suites', () => {
-  const root = join(dirname(fileURLToPath(import.meta.url)), '../../../../vectors')
+  const root = join(dirname(fileURLToPath(import.meta.url)), '../../../../common/vectors')
   for (const domain of readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory())) {
     for (const name of readdirSync(join(root, domain.name)).filter((n) => n.endsWith('.json'))) {
       it(`${domain.name}/${name} is a valid suite`, () => { loadSuite(join(root, domain.name, name)) })
