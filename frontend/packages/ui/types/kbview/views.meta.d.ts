@@ -136,6 +136,8 @@ export declare const PanelMeta: {
         'aria-modal'?: boolean;
     }>, PropertyMeta<{
         autoSize?: boolean;
+    }>, PropertyMeta<{
+        dataAttributes?: string;
     }>];
     readonly events: readonly [{
         readonly name: "OnSubmit";
@@ -325,6 +327,8 @@ export declare const StackMeta: {
         'aria-modal'?: boolean;
     }>, PropertyMeta<{
         autoSize?: boolean;
+    }>, PropertyMeta<{
+        dataAttributes?: string;
     }>];
     readonly events: readonly [{
         readonly name: "OnSubmit";

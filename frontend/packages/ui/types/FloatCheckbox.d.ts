@@ -1,4 +1,4 @@
-interface FloatCheckboxProps {
+export interface FloatCheckboxProps {
     selected: boolean;
     onToggle: () => void;
     className?: string;
@@ -9,4 +9,3 @@ interface FloatCheckboxProps {
  * Wrap the parent container with `group` to enable the hover reveal.
  */
 export declare function FloatCheckbox({ selected, onToggle, className }: FloatCheckboxProps): import("react").JSX.Element;
-export {};

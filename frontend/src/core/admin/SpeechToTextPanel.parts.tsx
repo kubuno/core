@@ -20,7 +20,7 @@ interface LangCfg {
   auto_detect: boolean
 }
 
-interface GlobalSettings { silence_ms: number; sound_threshold: number; profanity_filter: boolean }
+export interface GlobalSettings { silence_ms: number; sound_threshold: number; profanity_filter: boolean }
 
 const fmtMb = (mb: number) => (mb >= 1000 ? `${(mb / 1000).toFixed(1)} Go` : `${mb} Mo`)
 

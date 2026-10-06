@@ -366,6 +366,17 @@ export declare const NumericFieldMeta: {
     readonly children: "None";
     readonly defaultEvent: "OnValueChanged";
     readonly properties: readonly [{
+        readonly name: "FieldClass";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: style classes of the text box itself (Class styles the whole control, label included).";
+        readonly docFr: "Web uniquement : classes de style de la zone de saisie elle-même (Class s'applique au contrôle entier, libellé compris).";
+        readonly to: {
+            readonly prop: "className";
+        };
+    }, {
         readonly name: "Minimum";
         readonly kind: "F32";
         readonly default: "0";

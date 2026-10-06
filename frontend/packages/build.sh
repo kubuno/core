@@ -6,6 +6,7 @@
 #   @kubuno/drive — type surface (drive/ .d.ts) + runtime stub
 #   @kubuno/views — type surface (views/ .d.ts) + runtime stub (the .kbview runtime)
 #   @kubuno/views-compiler — real Node library (Vite plugin, kbview-tsc) + the committed .wasm
+#   @kubuno/views-migrate  — real Node library (the kbview-migrate codemod)
 #
 # At runtime these specifiers are provided by the host via its import map; module
 # bundles mark them `external`. The packages exist so modules can build & typecheck
@@ -18,6 +19,8 @@ PKG="$FE/packages"
 echo "==> 1/3  Building @kubuno/views-compiler (TypeScript; the committed .wasm is rebuilt by npm run build:wasm)"
 # First: kbview-tsc (below) runs from this package's dist/.
 node_modules/.bin/tsc -b packages/views-compiler
+# The codemod (kbview-migrate), a Node library of its own.
+node_modules/.bin/tsc -b packages/views-migrate
 
 echo "==> 2/3  Emitting declarations (kbview-tsc -p tsconfig.emit.json)"
 # kbview-tsc, not plain tsc: it first generates the types of the .kbview / .kbcontrol views

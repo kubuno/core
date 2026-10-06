@@ -13,6 +13,11 @@ export interface Internals {
     readonly cell: Cell;
     readonly scope: Scope;
     version: number;
+    /**
+     * What the view root re-renders on (its hooks run again): every notification but the ones flushed after its own
+     * render, which reach the elements only.
+     */
+    rootVersion: number;
     readonly listeners: Set<() => void>;
     readonly subscribe: (listener: () => void) => () => void;
     /** `@bind` storage (kept on the instance, not in the class's private slots, so a prototype swap keeps it). */
@@ -56,12 +61,23 @@ export declare const KB: unique symbol;
 export declare const CELL: unique symbol;
 /** Notifies the elements of a view that its state changed. */
 export declare function notify(i: Internals): void;
+/**
+ * Tells the elements of a view that values changed during the root's own render (hooks published new values, new
+ * props): they recompute what they read; the root, which has just rendered with those values, does not render again
+ * (a hook returning a new object on every render would otherwise re-render the view without end).
+ */
+export declare function notifyElements(i: Internals): void;
 /** Re-renders every live view (language change, theme change). */
 export declare function invalidateViews(): void;
 /** @internal */
 export declare function setLive(i: Internals, on: boolean): void;
 /** The handle of element `id` of a view. */
 export declare function handleFor(i: Internals, id: string): ElementHandle;
+/**
+ * Drops what a view memoized (`View.memo`): on a language or theme change, a value computed from translated texts or
+ * from a registry (a module's name) is computed again, as the TSX it replaces did on every render.
+ */
+export declare function forgetMemos(vm: object): void;
 /**
  * Base of every view's code-behind (through its generated `ViewBase`). `P` is the root's `x:Props`.
  */

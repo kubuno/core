@@ -20,7 +20,7 @@ export interface WaffleApp {
   moduleLabel?: string
 }
 
-interface WaffleModuleEntry {
+export interface WaffleModuleEntry {
   moduleId: string
   label:    string
   apps:     WaffleApp[]

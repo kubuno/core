@@ -9,7 +9,7 @@ import { authApi } from '../api/auth'
 import { Button, Input } from '@ui'
 import { apiErrorDetail } from '../api/errorMessage'
 
-interface Props {
+export interface Props {
   open: boolean
   onClose: () => void
   /** Re-connecting a « Déconnecté » row: its email, locked in the form. */

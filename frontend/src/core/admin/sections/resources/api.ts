@@ -110,12 +110,12 @@ export interface FeatureInput {
   description: string | null
 }
 
-interface BuildingList {
+export interface BuildingList {
   buildings: Building[]
   limits:    { floors: number; floor_name: number }
 }
 
-interface ResourceList {
+export interface ResourceList {
   resources:  Resource[]
   categories: ResourceCategory[]
   limits: {

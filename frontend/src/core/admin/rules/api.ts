@@ -39,7 +39,7 @@ export function useRules(enabled = true) {
   })
 }
 
-interface RuleDetail { rule: Rule; versions: VersionRow[]; backtests: BacktestRow[] }
+export interface RuleDetail { rule: Rule; versions: VersionRow[]; backtests: BacktestRow[] }
 
 export function useRule(id: string | null) {
   return useQuery({

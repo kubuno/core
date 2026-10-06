@@ -1,6 +1,6 @@
 import { cn } from './cn'
 
-interface FloatCheckboxProps {
+export interface FloatCheckboxProps {
   selected: boolean
   onToggle: () => void
   className?: string

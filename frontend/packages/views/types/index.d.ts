@@ -10,7 +10,7 @@ export { Repeater, Timer, Query, Mutation, ReactHost, defineControl, registerCon
 export { Panel, UserControl, Stack, ScrollArea, TableLayoutPanel, dockGrid, parseAnchor, anchoredStyle, tableTracks, type DockGrid, type DockPlacement, type DockValue, type Surface, type AnchorEdges, } from './layout';
 export { ensureViewStyles } from './style';
 export { registerConverter, format, formatValue, type ValueConverter, type Scope } from './binding';
-export { registerElements, resolveComponent, setIconResolver, setResourceResolver, interpolationOptions, type ResourceArgs, invalidateResources, } from './resolve';
+export { registerElements, resolveComponent, setIconResolver, setResourceResolver, setTranslator, interpolationOptions, type ResourceArgs, type Translator, invalidateResources, } from './resolve';
 export type { EventArgs, MouseEventArgs, MouseButton, KeyEventArgs, KeyPressEventArgs, CancelEventArgs, DragEventArgs, ValueChangedEventArgs, ItemEventArgs, ItemActivateEventArgs, PaintEventArgs, ItemCheckEventArgs, } from './events';
 export { VIEWS_ABI, type ViewPlan, type PlanNode, type PlanProp, type PlanEvent, type PlanBinding, type PlanRes, type PlanResArg } from './plan';
 export type * from './handles.generated';

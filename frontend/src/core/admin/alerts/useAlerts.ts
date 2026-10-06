@@ -20,7 +20,7 @@ export const SUMMARY_KEY = ['admin-alerts-summary'] as const
 export const FACETS_KEY  = ['admin-alerts-facets'] as const
 export const VIEWS_KEY   = ['admin-alerts-views'] as const
 
-interface AlertPage { alerts: Alert[]; next_cursor: string | null }
+export interface AlertPage { alerts: Alert[]; next_cursor: string | null }
 
 /** One page of the queue, cursor-paginated (never offset: the queue moves). */
 export function useAlerts(filters: AlertFilters, enabled = true) {
@@ -67,7 +67,7 @@ export function useAlertFacets(enabled = true) {
   })
 }
 
-interface AlertDetail { alert: Alert; timeline: AlertEvent[]; related: Alert[] }
+export interface AlertDetail { alert: Alert; timeline: AlertEvent[]; related: Alert[] }
 
 export function useAlert(id: string | null) {
   return useQuery({

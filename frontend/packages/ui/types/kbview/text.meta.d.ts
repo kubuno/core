@@ -54,6 +54,17 @@ export declare const TextFieldMeta: {
     readonly children: "None";
     readonly defaultEvent: "OnTextChanged";
     readonly properties: readonly [{
+        readonly name: "FieldClass";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: style classes of the text box itself (Class styles the whole control, label included).";
+        readonly docFr: "Web uniquement : classes de style de la zone de saisie elle-même (Class s'applique au contrôle entier, libellé compris).";
+        readonly to: {
+            readonly prop: "className";
+        };
+    }, {
         readonly name: "Text";
         readonly kind: "String";
         readonly default: "";
@@ -285,6 +296,17 @@ export declare const TextAreaMeta: {
     readonly children: "None";
     readonly defaultEvent: "OnTextChanged";
     readonly properties: readonly [{
+        readonly name: "FieldClass";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: style classes of the text box itself (Class styles the whole control, label included).";
+        readonly docFr: "Web uniquement : classes de style de la zone de saisie elle-même (Class s'applique au contrôle entier, libellé compris).";
+        readonly to: {
+            readonly prop: "className";
+        };
+    }, {
         readonly name: "Text";
         readonly kind: "String";
         readonly default: "";
@@ -579,6 +601,18 @@ export declare const ComboBoxMeta: {
         readonly docFr: "Web uniquement : texte affiché quand rien n'est sélectionné.";
         readonly to: {
             readonly prop: "placeholder";
+        };
+    }, {
+        readonly name: "HostStrings";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.";
+        readonly docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.";
+        readonly to: {
+            readonly prop: "t";
+            readonly convert: "host-t";
         };
     }];
     readonly events: readonly [{

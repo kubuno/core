@@ -21,7 +21,7 @@ interface Draft {
   can_manage: boolean
 }
 
-interface Props {
+export interface Props {
   label:   CoreLabel
   onClose: () => void
   onSaved: () => void

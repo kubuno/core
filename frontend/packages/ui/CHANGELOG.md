@@ -18,6 +18,7 @@ under the published version number.
   `FloatingWindow`, `Tabs`, `Stepper`, `ComboBox` and `ProgressBar` (the host's translator as `t`); `FieldClass` on
   `TextField`, `TextArea` and `NumericField` (the classes of the input box). Element metadata accept dotted fields
   (`confirm.label`).
+- **Types**: `FloatCheckboxProps` is exported, so a view code-behind can name the props it passes to `FloatCheckbox`.
 
 ## [0.1.15] - 2026-10-05
 

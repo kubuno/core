@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Check, Copy, Download, Printer } from 'lucide-react'
 import { Button, Callout, Card } from '@ui'
 
-interface Props {
+export interface Props {
   codes: string[]
   /** Shown once acknowledged; omit to keep the panel permanent. */
   onDone?: () => void

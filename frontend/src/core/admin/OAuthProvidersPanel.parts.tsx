@@ -13,7 +13,7 @@ const PRESETS: { key: string; label: string; display: string; issuerHint: string
   { key: 'generic',  label: 'Autre (OIDC)', display: '',     issuerHint: 'https://idp.exemple.com',                   scopes: 'openid email profile' },
 ]
 
-interface FormState {
+export interface FormState {
   slug:          string
   display_name:  string
   issuer_url:    string

@@ -39,11 +39,18 @@ interface ContainerBase {
     'aria-modal'?: boolean;
     /** `AutoSize`: sized to its content (a push-button container like a native button) instead of filling its line. */
     autoSize?: boolean;
+    /** Web `DataAttributes`: `data-*` attributes of the element (`app-chrome; panel=right`), read by styles and scripts. */
+    dataAttributes?: string;
     /** @internal — given by the renderer to every element of `@kubuno/views`. */
     __view?: Internals;
     /** @internal */
     __id?: string;
 }
+/**
+ * `DataAttributes="app-chrome; panel=right"` → `{ 'data-app-chrome': '', 'data-panel': 'right' }`: entries separated by
+ * `;`, each a name (an empty attribute) or `name=value`; a name that is not a valid attribute name is ignored.
+ */
+export declare function dataAttributesOf(spec: string | undefined): Record<string, string>;
 export type DockValue = 'None' | 'Top' | 'Bottom' | 'Left' | 'Right' | 'Fill';
 /** Where a docked child goes in the dock grid: `[rowStart, rowEnd, colStart, colEnd]` (1-based lines). */
 export interface DockPlacement {

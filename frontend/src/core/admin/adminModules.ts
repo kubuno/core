@@ -161,7 +161,7 @@ export const LIVE_STATE_KEY: Record<ModuleLiveState, string> = {
   unknown:     'admin.m_running',
 }
 
-interface ToggleResult { id: string; is_enabled: boolean; also_disabled: string[] }
+export interface ToggleResult { id: string; is_enabled: boolean; also_disabled: string[] }
 
 /**
  * Enables or disables a module, optimistically.

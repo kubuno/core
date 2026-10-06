@@ -36,6 +36,19 @@ export declare function resolveResource(key: string, set?: string, args?: Resour
  * rules apply to `Count="3"` too.
  */
 export declare function interpolationOptions(args: ResourceArgs): Record<string, unknown>;
+/** The host's i18next `t` (default namespace), for `@ui` elements given their strings by the host (`HostStrings`). */
+export type Translator = (key: string, options?: Record<string, unknown>) => string;
+/**
+ * Sets the host's translator: what an `@ui` element receives as its `t` prop when its view sets `HostStrings`
+ * (the strings it carries itself — a close button's name, a default « Cancel » — then come from the host's
+ * catalogue, as when a TSX screen passes its own `t`).
+ */
+export declare function setTranslator(t: Translator | undefined): void;
+/**
+ * The host's translator, a new function after every language change (an element given it re-renders, as with
+ * a `t` from `useTranslation`); `undefined` when the host set none (the element keeps its English defaults).
+ */
+export declare function hostTranslator(): Translator | undefined;
 export declare function invalidateResources(): void;
 /** @internal */
 export declare function onResourcesChanged(listener: () => void): () => void;

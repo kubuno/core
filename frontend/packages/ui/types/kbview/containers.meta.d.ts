@@ -59,7 +59,7 @@ export declare const CardMeta: {
             readonly prop: "icon";
             readonly convert: "icon-node";
         };
-    }, {
+    }, ...import("./types.ts").PropertyMeta<never>[], {
         readonly name: "Actions";
         readonly kind: "String";
         readonly default: "";
@@ -160,6 +160,18 @@ export declare const TabsMeta: {
                 readonly Sm: "sm";
                 readonly Md: "md";
             };
+        };
+    }, {
+        readonly name: "HostStrings";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.";
+        readonly docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.";
+        readonly to: {
+            readonly prop: "t";
+            readonly convert: "host-t";
         };
     }];
     readonly events: readonly [{
@@ -483,6 +495,18 @@ export declare const StepperMeta: {
         readonly to: {
             readonly prop: "allowForward";
         };
+    }, {
+        readonly name: "HostStrings";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.";
+        readonly docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.";
+        readonly to: {
+            readonly prop: "t";
+            readonly convert: "host-t";
+        };
     }];
     readonly events: readonly [{
         readonly name: "OnStepSelected";
@@ -651,6 +675,132 @@ export declare const FloatingWindowMeta: {
         readonly to: {
             readonly prop: "showClose";
         };
+    }, {
+        readonly name: "ConfirmText";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly localizable: true;
+        readonly webOnly: true;
+        readonly doc: "Web only: text of the footer's confirm button (the action the window is for). Leave empty for none.";
+        readonly docFr: "Web uniquement : texte du bouton de confirmation du pied de fenêtre (l'action pour laquelle la fenêtre existe). Laisser vide pour aucun.";
+        readonly to: {
+            readonly prop: "actions";
+            readonly field: "confirm.label";
+        };
+    }, {
+        readonly name: "ConfirmEnabled";
+        readonly kind: "Bool";
+        readonly default: "true";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: whether the confirm button can be clicked.";
+        readonly docFr: "Web uniquement : indique si le bouton de confirmation peut être cliqué.";
+        readonly to: {
+            readonly prop: "actions";
+            readonly field: "confirm.disabled";
+            readonly convert: "invert";
+        };
+    }, {
+        readonly name: "ConfirmBusy";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: shows the confirm button as working (a spinner).";
+        readonly docFr: "Web uniquement : affiche le bouton de confirmation comme en cours (un indicateur).";
+        readonly to: {
+            readonly prop: "actions";
+            readonly field: "confirm.loading";
+        };
+    }, {
+        readonly name: "ConfirmDanger";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Appearance";
+        readonly webOnly: true;
+        readonly doc: "Web only: the confirm action is destructive (its text turns red).";
+        readonly docFr: "Web uniquement : l'action de confirmation est destructrice (son texte passe en rouge).";
+        readonly to: {
+            readonly prop: "actions";
+            readonly field: "confirm.danger";
+        };
+    }, {
+        readonly name: "ConfirmFocused";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the confirm button has the focus when the window opens (Enter confirms).";
+        readonly docFr: "Web uniquement : le bouton de confirmation a le focus à l'ouverture (Entrée confirme).";
+        readonly to: {
+            readonly prop: "actions";
+            readonly field: "confirm.autoFocus";
+        };
+    }, {
+        readonly name: "CancelText";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly localizable: true;
+        readonly webOnly: true;
+        readonly doc: "Web only: text of the footer's cancel button. Leave empty for the default (Cancel).";
+        readonly docFr: "Web uniquement : texte du bouton Annuler du pied de fenêtre. Laisser vide pour le texte par défaut (Annuler).";
+        readonly to: {
+            readonly prop: "actions";
+            readonly field: "cancel.label";
+        };
+    }, {
+        readonly name: "CancelEnabled";
+        readonly kind: "Bool";
+        readonly default: "true";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: whether the cancel button can be clicked.";
+        readonly docFr: "Web uniquement : indique si le bouton Annuler peut être cliqué.";
+        readonly to: {
+            readonly prop: "actions";
+            readonly field: "cancel.disabled";
+            readonly convert: "invert";
+        };
+    }, {
+        readonly name: "HostStrings";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.";
+        readonly docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.";
+        readonly to: {
+            readonly prop: "t";
+            readonly convert: "host-t";
+        };
+    }, {
+        readonly name: "Banner";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly serialization: "Content";
+        readonly browsable: false;
+        readonly webOnly: true;
+        readonly doc: "Web only: what the window says about itself (a refused save), between the title band and the content, outside the scrolling area; written as a <FloatingWindow.Banner> property element.";
+        readonly docFr: "Web uniquement : ce que la fenêtre dit d'elle-même (un enregistrement refusé), entre la barre de titre et le contenu, hors de la zone qui défile ; écrit dans un élément de propriété <FloatingWindow.Banner>.";
+        readonly to: {
+            readonly prop: "banner";
+        };
+    }, {
+        readonly name: "TitleActions";
+        readonly kind: "String";
+        readonly default: "";
+        readonly category: "Appearance";
+        readonly serialization: "Content";
+        readonly browsable: false;
+        readonly webOnly: true;
+        readonly doc: "Web only: buttons of the title band, before the close button; written as a <FloatingWindow.TitleActions> property element.";
+        readonly docFr: "Web uniquement : boutons de la barre de titre, avant le bouton Fermer ; écrits dans un élément de propriété <FloatingWindow.TitleActions>.";
+        readonly to: {
+            readonly prop: "titleActions";
+        };
     }];
     readonly events: readonly [{
         readonly name: "OnClose";
@@ -660,6 +810,28 @@ export declare const FloatingWindowMeta: {
         readonly docFr: "Se produit quand on clique sur le bouton Fermer de la fenêtre.";
         readonly from: {
             readonly prop: "onClose";
+            readonly args: "none";
+        };
+    }, {
+        readonly name: "OnConfirm";
+        readonly category: "Action";
+        readonly args: "EventArgs";
+        readonly doc: "Web only: occurs when the footer's confirm button is clicked.";
+        readonly docFr: "Web uniquement : se produit quand on clique sur le bouton de confirmation du pied de fenêtre.";
+        readonly from: {
+            readonly prop: "actions";
+            readonly field: "confirm.onClick";
+            readonly args: "none";
+        };
+    }, {
+        readonly name: "OnCancel";
+        readonly category: "Action";
+        readonly args: "EventArgs";
+        readonly doc: "Web only: occurs when the footer's cancel button is clicked (without a handler, it closes the window).";
+        readonly docFr: "Web uniquement : se produit quand on clique sur le bouton Annuler du pied de fenêtre (sans gestionnaire, il ferme la fenêtre).";
+        readonly from: {
+            readonly prop: "actions";
+            readonly field: "cancel.onClick";
             readonly args: "none";
         };
     }];
@@ -682,6 +854,10 @@ export declare const FloatingWindowMeta: {
         readonly export: "FloatingWindow";
         readonly domRoot: "portal";
         readonly content: "children";
+        readonly slots: {
+            readonly Banner: "banner";
+            readonly TitleActions: "titleActions";
+        };
     };
 };
 export declare const PopoverMeta: {

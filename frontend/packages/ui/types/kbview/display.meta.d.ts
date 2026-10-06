@@ -222,6 +222,18 @@ export declare const ProgressBarMeta: {
                 readonly Md: "md";
             };
         };
+    }, {
+        readonly name: "HostStrings";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.";
+        readonly docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.";
+        readonly to: {
+            readonly prop: "t";
+            readonly convert: "host-t";
+        };
     }];
     readonly events: readonly [];
     readonly designDefaults: {
@@ -345,6 +357,18 @@ export declare const CalloutMeta: {
         readonly to: {
             readonly prop: "action";
             readonly field: "label";
+        };
+    }, {
+        readonly name: "HostStrings";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.";
+        readonly docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.";
+        readonly to: {
+            readonly prop: "t";
+            readonly convert: "host-t";
         };
     }];
     readonly events: readonly [{
@@ -471,7 +495,19 @@ export declare const EmptyStateMeta: {
             readonly prop: "secondaryAction";
             readonly field: "label";
         };
-    }, ...import("./types.ts").PropertyMeta<never>[]];
+    }, ...import("./types.ts").PropertyMeta<never>[], {
+        readonly name: "HostStrings";
+        readonly kind: "Bool";
+        readonly default: "false";
+        readonly category: "Behavior";
+        readonly webOnly: true;
+        readonly doc: "Web only: the control's own texts (a close button's name, a default Cancel) in the user's language, from the application's strings.";
+        readonly docFr: "Web uniquement : les textes propres au contrôle (le nom d'un bouton Fermer, un Annuler par défaut) dans la langue de l'utilisateur, pris dans les textes de l'application.";
+        readonly to: {
+            readonly prop: "t";
+            readonly convert: "host-t";
+        };
+    }];
     readonly events: readonly [{
         readonly name: "OnAction";
         readonly category: "Action";
