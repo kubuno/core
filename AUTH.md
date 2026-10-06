@@ -139,14 +139,14 @@ the core still accepts.
 
 Tickets are validated in exactly two places:
 
-1. **The module proxy** (`crates/kubuno-core/src/modules/proxy.rs`), for every
+1. **The module proxy** (`server/src/modules/proxy.rs`), for every
    `/api/v1/<module>/…` request, HTTP and WebSocket. A valid ticket resolves the
    account, and the proxy forwards the same signed identity (`X-Kubuno-Auth`,
    kubuno-modauth, audience-bound to the module) as for a bearer, with
    `X-Kubuno-Auth-Origin: ticket`. **Modules need no code and no crate update.**
    The `kt` parameter is removed from the URL before forwarding, so a module
    never sees, logs or re-emits a ticket.
-2. **The `AuthUser` extractor** (`crates/kubuno-core/src/auth/middleware.rs`), for
+2. **The `AuthUser` extractor** (`server/src/auth/middleware.rs`), for
    the core's own routes (exports, for instance), with audience `core`. The
    core's `/ws` and `/collab/<room>/sync` sockets accept `?kt=` (a socket ticket)
    in addition to `?token=`.

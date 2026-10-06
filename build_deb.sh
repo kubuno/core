@@ -2,8 +2,23 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Repository layout (2026-10, platform layout): the server in server/ (its Cargo workspace, migrations/,
+# config.toml.example, man/), the web host in web/ (frontend/ before it moved), the shared crates in common/.
+# The older layout (Cargo.toml at the root, frontend/) is still accepted. The installed layout is the same.
+SERVER_DIR=server; [[ -f server/Cargo.toml ]] || SERVER_DIR=.
+WEB_DIR=web; [[ -f web/package.json ]] || WEB_DIR=frontend
+THEMES_DIR=web/themes; [[ -d web/themes ]] || THEMES_DIR=themes
+TARGET_DIR="${CARGO_TARGET_DIR:-$SERVER_DIR/target}"
+
+# --no-install: build the packages only (same as KUBUNO_NO_INSTALL=1).
+_args=()
+for _a in "$@"; do
+  if [[ "$_a" == "--no-install" ]]; then export KUBUNO_NO_INSTALL=1; else _args+=("$_a"); fi
+done
+set -- "${_args[@]+"${_args[@]}"}"
+
 # ── Config ──────────────────────────────────────────────────────────────────
-VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+VERSION=$(grep '^version' "$SERVER_DIR/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
 ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
 
 # Git-derived build identifier: <commit-count>.g<short-hash>[.dirty.<UTC stamp>]
@@ -38,6 +53,7 @@ Arguments:
 
 Options:
   -h, --help        Affiche cette aide
+  --no-install      Construit les paquets sans les installer (KUBUNO_NO_INSTALL=1)
 
 Composants disponibles:
   core              Core Rust + frontend React
@@ -87,9 +103,9 @@ fi
 # Fichiers sources à surveiller par composant (pour détecter les changements)
 get_sources() {
   case "$1" in
-    core) echo "crates/kubuno-core Cargo.toml Cargo.lock migrations \
-                frontend/src frontend/public frontend/package.json frontend/package-lock.json \
-                frontend/vite.config.ts frontend/tailwind.config.ts frontend/index.html" ;;
+    core) echo "$SERVER_DIR/src $SERVER_DIR/Cargo.toml $SERVER_DIR/Cargo.lock $SERVER_DIR/migrations common crates \
+                $WEB_DIR/src $WEB_DIR/public $WEB_DIR/package.json $WEB_DIR/package-lock.json \
+                $WEB_DIR/vite.config.ts $WEB_DIR/tailwind.config.ts $WEB_DIR/index.html" ;;
     *)    echo "modules/$1 Cargo.lock Cargo.toml" ;;
   esac
 }
@@ -199,12 +215,12 @@ setup_core() {
         "${PKG_DIR}/usr/lib/kubuno/modules" \
         "${PKG_DIR}/var/backups/kubuno"
 
-    install -m 755 target/release/kubuno-core "${PKG_DIR}/usr/bin/kubuno-core"
-    install -m 755 target/release/kubuno       "${PKG_DIR}/usr/bin/kubuno"
-    gzip -c man/kubuno.1 > "${PKG_DIR}/usr/share/man/man1/kubuno.1.gz"
+    install -m 755 "$TARGET_DIR/release/kubuno-core" "${PKG_DIR}/usr/bin/kubuno-core"
+    install -m 755 "$TARGET_DIR/release/kubuno"       "${PKG_DIR}/usr/bin/kubuno"
+    gzip -c "$SERVER_DIR/man/kubuno.1" > "${PKG_DIR}/usr/share/man/man1/kubuno.1.gz"
 
-    if [[ -d frontend/dist ]]; then
-        cp -r frontend/dist/. "${PKG_DIR}/usr/share/kubuno/frontend/"
+    if [[ -d "$WEB_DIR/dist" ]]; then
+        cp -r "$WEB_DIR/dist/." "${PKG_DIR}/usr/share/kubuno/frontend/"
         # Rétro-compatibilité des onglets ouverts : on CONSERVE les anciens chunks
         # hashés déjà déployés (assets/) en plus des nouveaux. Ainsi un onglet chargé
         # avant le déploiement peut encore résoudre ses imports dynamiques (pas de 404
@@ -216,17 +232,17 @@ setup_core() {
         fi
     fi
 
-    install -m 640 config.toml.example "${PKG_DIR}/etc/kubuno/config.toml.example"
+    install -m 640 "$SERVER_DIR/config.toml.example" "${PKG_DIR}/etc/kubuno/config.toml.example"
     # Migrations are split per engine (postgres/mysql/sqlite) since the
     # multi-database port, so copy the whole tree, not a flat *.sql glob.
-    cp -r migrations/. "${PKG_DIR}/usr/share/kubuno/migrations/"
+    cp -r "$SERVER_DIR/migrations/." "${PKG_DIR}/usr/share/kubuno/migrations/"
 
     # Thèmes livrés avec l'application (bundles CSS/JS dans themes/). Stagés en
     # lecture seule sous /usr/share, puis semés dans /var/lib/kubuno/themes au
     # postinst (le répertoire lu à l'exécution).
-    if [[ -d themes ]]; then
+    if [[ -d "$THEMES_DIR" ]]; then
         mkdir -p "${PKG_DIR}/usr/share/kubuno/themes"
-        cp -r themes/. "${PKG_DIR}/usr/share/kubuno/themes/"
+        cp -r "$THEMES_DIR/." "${PKG_DIR}/usr/share/kubuno/themes/"
     fi
 
     cat > "${PKG_DIR}/etc/logrotate.d/kubuno" << 'LOGROTATE'
@@ -638,12 +654,12 @@ echo ""
 
 if [[ "${#RUST_BINS[@]}" -gt 0 ]]; then
   echo "==> Compilation Rust…"
-  SQLX_OFFLINE=true cargo build --release "${RUST_BINS[@]}"
+  (cd "$SERVER_DIR" && SQLX_OFFLINE=true cargo build --release "${RUST_BINS[@]}")
 fi
 
-if $BUILD_FRONTEND && [[ -d frontend ]] && [[ -f frontend/package.json ]]; then
+if $BUILD_FRONTEND && [[ -f "$WEB_DIR/package.json" ]]; then
   echo "==> Build frontend…"
-  (cd frontend && npm run build)
+  (cd "$WEB_DIR" && npm run build)
 fi
 
 # ── Packaging ────────────────────────────────────────────────────────────────
@@ -675,9 +691,11 @@ echo "════════════════════════�
 
 # ── Installation ─────────────────────────────────────────────────────────────
 DO_INSTALL=true
+# --no-install (or KUBUNO_NO_INSTALL=1): build only, never touch the packages installed on this machine.
+[[ "${KUBUNO_NO_INSTALL:-0}" == "1" ]] && DO_INSTALL=false
 
 # En mode interactif (TTY), demander confirmation avant d'installer
-if [[ -t 0 ]]; then
+if $DO_INSTALL && [[ -t 0 ]]; then
   echo ""
   read -r -p "Installer maintenant avec apt ? [O/n] " _confirm
   case "${_confirm:-o}" in

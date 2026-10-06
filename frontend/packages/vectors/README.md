@@ -27,7 +27,7 @@ Outputs are compared as JSON: numbers by value, object keys in any order, arrays
 ## Vendoring suites from another repository
 
 ```sh
-npx kubuno-vectors vendor ../core/vectors/sync test/vectors/sync \
+npx kubuno-vectors vendor ../core/common/vectors/sync test/vectors/sync \
   --source https://github.com/kubuno/core --ref vectors-v0.1.0 --path vectors/sync
 npx kubuno-vectors check test/vectors/sync     # in CI
 ```

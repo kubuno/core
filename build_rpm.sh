@@ -13,7 +13,15 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+# Repository layout (2026-10, platform layout): the server in server/ (its Cargo workspace, migrations/,
+# config.toml.example, man/), the web host in web/ (frontend/ before it moved), the shared crates in common/.
+# The older layout (Cargo.toml at the root, frontend/) is still accepted. The installed layout is the same.
+SERVER_DIR=server; [[ -f server/Cargo.toml ]] || SERVER_DIR=.
+WEB_DIR=web; [[ -f web/package.json ]] || WEB_DIR=frontend
+THEMES_DIR=web/themes; [[ -d web/themes ]] || THEMES_DIR=themes
+TARGET_DIR="${CARGO_TARGET_DIR:-$SERVER_DIR/target}"
+
+VERSION=$(grep -m1 '^version' "$SERVER_DIR/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')
 RELEASE="${RPM_RELEASE:-1}"
 # RPM arch naming differs from dpkg: amd64→x86_64, arm64→aarch64.
 case "$(uname -m)" in
@@ -30,13 +38,13 @@ if ! command -v rpmbuild &>/dev/null; then
 fi
 
 # ── Pré-requis : binaires + frontend ────────────────────────────────────────
-if [[ ! -x target/release/kubuno-core || ! -x target/release/kubuno ]]; then
+if [[ ! -x "$TARGET_DIR/release/kubuno-core" || ! -x "$TARGET_DIR/release/kubuno" ]]; then
   echo "==> Compilation Rust (release)…"
-  SQLX_OFFLINE=true cargo build --release --bin kubuno-core --bin kubuno
+  (cd "$SERVER_DIR" && SQLX_OFFLINE=true cargo build --release --bin kubuno-core --bin kubuno)
 fi
-if [[ ! -d frontend/dist ]]; then
+if [[ ! -d "$WEB_DIR/dist" ]]; then
   echo "==> Build frontend…"
-  (cd frontend && npm ci && npm run build)
+  (cd "$WEB_DIR" && npm ci && npm run build)
 fi
 
 # ── Arborescence de build RPM ───────────────────────────────────────────────
@@ -47,6 +55,7 @@ trap 'rm -rf "$TOP"' EXIT
 mkdir -p "$TOP"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
 
 SRCDIR="$PWD"
+TARGET_ABS="$(cd "$TARGET_DIR" && pwd)"
 
 # README (fallback si absent)
 [[ -f README.md ]] || echo "# Kubuno Core" > "$TOP/SOURCES/README.md"
@@ -112,6 +121,10 @@ Requires(postun): systemd
 
 # Chemins source (artefacts pré-compilés) passés depuis build_rpm.sh.
 %global _srcdir ${SRCDIR}
+%global _serverdir ${SRCDIR}/${SERVER_DIR}
+%global _webdir ${SRCDIR}/${WEB_DIR}
+%global _themesdir ${SRCDIR}/${THEMES_DIR}
+%global _targetdir ${TARGET_ABS}
 %global _readme ${README_SRC}
 
 # Binaires Rust déjà strippés/optimisés : pas de re-traitement debuginfo.
@@ -138,13 +151,13 @@ mkdir -p %{buildroot}/usr/bin \
          %{buildroot}/usr/share/doc/kubuno-core \
          %{buildroot}/etc/kubuno \
          %{buildroot}/usr/lib/systemd/system
-install -m 755 %{_srcdir}/target/release/kubuno-core %{buildroot}/usr/bin/kubuno-core
-install -m 755 %{_srcdir}/target/release/kubuno       %{buildroot}/usr/bin/kubuno
-gzip -c %{_srcdir}/man/kubuno.1 > %{buildroot}/usr/share/man/man1/kubuno.1.gz
-cp -r %{_srcdir}/frontend/dist/. %{buildroot}/usr/share/kubuno/frontend/
-cp -r %{_srcdir}/migrations/. %{buildroot}/usr/share/kubuno/migrations/
-cp -r %{_srcdir}/themes/. %{buildroot}/usr/share/kubuno/themes/
-install -m 644 %{_srcdir}/config.toml.example %{buildroot}/etc/kubuno/config.toml.example
+install -m 755 %{_targetdir}/release/kubuno-core %{buildroot}/usr/bin/kubuno-core
+install -m 755 %{_targetdir}/release/kubuno       %{buildroot}/usr/bin/kubuno
+gzip -c %{_serverdir}/man/kubuno.1 > %{buildroot}/usr/share/man/man1/kubuno.1.gz
+cp -r %{_webdir}/dist/. %{buildroot}/usr/share/kubuno/frontend/
+cp -r %{_serverdir}/migrations/. %{buildroot}/usr/share/kubuno/migrations/
+cp -r %{_themesdir}/. %{buildroot}/usr/share/kubuno/themes/
+install -m 644 %{_serverdir}/config.toml.example %{buildroot}/etc/kubuno/config.toml.example
 install -m 644 %{_sourcedir}/kubuno.service %{buildroot}/usr/lib/systemd/system/kubuno.service
 install -m 644 %{_srcdir}/LICENSE %{buildroot}/usr/share/doc/kubuno-core/LICENSE
 install -m 644 %{_readme} %{buildroot}/usr/share/doc/kubuno-core/README.md

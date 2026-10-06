@@ -2062,12 +2062,10 @@ name = "kubuno-db"
 version = "0.10.0"
 dependencies = [
  "chrono",
- "regex",
  "rust-stemmers",
  "serde",
  "serde_json",
  "sqlx",
- "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -2106,14 +2104,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kubuno-seccomp"
-version = "0.1.1"
-dependencies = [
- "libc",
- "tracing",
-]
-
-[[package]]
 name = "kubuno-storage"
 version = "0.1.2"
 dependencies = [
@@ -2125,22 +2115,11 @@ dependencies = [
  "hex",
  "serde",
  "sha2 0.10.9",
- "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-util",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "kubuno-vectors"
-version = "0.1.0"
-dependencies = [
- "hex",
- "serde",
- "serde_json",
- "sha2 0.10.9",
 ]
 
 [[package]]

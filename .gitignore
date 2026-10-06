@@ -35,6 +35,7 @@ nohup.out
 .env.*
 !.env.example
 /config.toml
+/server/config.toml
 !config.toml.example
 *.pem
 *.key
@@ -47,8 +48,8 @@ nohup.out
 .vscode/
 *.swp
 
-# NB volontairement VERSIONNÉS : Cargo.lock, .sqlx/ (cache requêtes sqlx,
-# nécessaire pour compiler sans base de données en CI), migrations/, themes/, man/
+# Deliberately VERSIONED: server/Cargo.lock and common/Cargo.lock, server/.sqlx/ (the sqlx query cache,
+# needed to build without a database in CI), server/migrations/, themes/, server/man/
 
 # symlink local éventuel
 node_modules

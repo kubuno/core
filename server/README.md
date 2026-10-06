@@ -4,7 +4,7 @@ The Kubuno server: the platform's "operating system", which every installation r
 and every app plugs into. This crate builds the server and the administration
 command line.
 
-For installation, packages and configuration, see the [core README](../../README.md).
+For installation, packages and configuration, see the [core README](../README.md).
 
 ---
 
@@ -72,8 +72,8 @@ cargo build --release -p kubuno-core     # → target/release/kubuno-core and ta
 | `database` | the pool, migrations, seeding, `LISTEN`/`NOTIFY` and its outbox fallback on the other engines, portable SQL equivalents |
 | `models`, `errors`, `logging`, `state` | shared types, the `AppError` → HTTP mapping, tracing setup, the application state |
 
-The database schema lives in `migrations/{postgres,mysql,sqlite}` at the repository
-root; the engine is chosen at run time through [`kubuno-db`](../kubuno-db/README.md).
+The database schema lives in `migrations/{postgres,mysql,sqlite}` next to this file
+(`server/migrations`); the engine is chosen at run time through [`kubuno-db`](../common/kubuno-db/README.md).
 
 ## The `kubuno` CLI
 
@@ -105,10 +105,10 @@ notification channel.
 
 ## Workspace crates it relies on
 
-- [`kubuno-db`](../kubuno-db/README.md) — one binary over PostgreSQL, MySQL/MariaDB or SQLite
-- [`kubuno-storage`](../kubuno-storage/README.md) — the storage backend
-- [`kubuno-modauth`](../kubuno-modauth/README.md) — the signed identity token the proxy mints for each module
-- [`kubuno-mcp`](../kubuno-mcp/README.md) — the Model Context Protocol server core
+- [`kubuno-db`](../common/kubuno-db/README.md) — one binary over PostgreSQL, MySQL/MariaDB or SQLite
+- [`kubuno-storage`](../common/kubuno-storage/README.md) — the storage backend
+- [`kubuno-modauth`](../common/kubuno-modauth/README.md) — the signed identity token the proxy mints for each module
+- [`kubuno-mcp`](../common/kubuno-mcp/README.md) — the Model Context Protocol server core
 
 ## Tests
 
@@ -122,4 +122,4 @@ token scopes and alert lifecycles.
 
 ## License
 
-[AGPL-3.0-or-later](../../LICENSE) © Kubuno contributors.
+[AGPL-3.0-or-later](../LICENSE) © Kubuno contributors.

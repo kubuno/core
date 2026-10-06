@@ -2,7 +2,7 @@
 
 # ── Setup initial ────────────────────────────────────────
 setup:
-	cp -n config.toml.example config.toml || true
+	cp -n server/config.toml.example config.toml || true
 	@echo "→ Édite config.toml (url, jwt_secret, internal_secret), puis lance: make migrate && make dev"
 
 # ── Développement ────────────────────────────────────────
@@ -10,14 +10,14 @@ dev:
 	@$(MAKE) -j2 dev-back dev-front
 
 dev-back:
-	cargo watch -q -c -x 'run --bin kubuno-core'
+	cargo watch -q -c -w server -w common -x 'run --manifest-path server/Cargo.toml --bin kubuno-core'
 
 dev-front:
 	cd frontend && npm run dev
 
 # ── Build ────────────────────────────────────────────────
 build:
-	cargo build --release --bin kubuno-core
+	cd server && cargo build --release --bin kubuno-core
 
 build-front:
 	cd frontend && npm run build
@@ -28,33 +28,38 @@ deb: check
 
 # ── Tests ────────────────────────────────────────────────
 test:
-	cargo test --workspace -- --test-threads=4
+	cd server && cargo test --workspace -- --test-threads=4
+	cd common && cargo test --workspace
 
 # ── Qualité de code ──────────────────────────────────────
 lint:
-	cargo clippy --workspace -- -D warnings
+	cd server && cargo clippy --workspace -- -D warnings
+	cd common && cargo clippy --workspace -- -D warnings
 	cd frontend && npx eslint src/
 
 fmt:
-	cargo fmt --all
+	cd server && cargo fmt --all
+	cd common && cargo fmt --all
 	cd frontend && npx prettier --write src/
 
 check:
-	cargo check --workspace
+	cd server && cargo check --workspace
+	cd common && cargo check --workspace
 	cd frontend && npx tsc --noEmit
 
 # ── Base de données ──────────────────────────────────────
 migrate:
-	sqlx migrate run --source migrations
+	sqlx migrate run --source server/migrations
 
 migrate-down:
-	sqlx migrate revert --source migrations
+	sqlx migrate revert --source server/migrations
 
 migration:
 	@read -p "Nom de la migration: " name; \
-	sqlx migrate add --source migrations $$name
+	sqlx migrate add --source server/migrations $$name
 
 # ── Nettoyage ────────────────────────────────────────────
 clean:
-	cargo clean
+	cd server && cargo clean
+	cd common && cargo clean
 	rm -rf frontend/dist frontend/node_modules data/ *.deb

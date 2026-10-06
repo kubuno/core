@@ -64,14 +64,14 @@ This repository contains:
 
 | Component | Path | Role |
 |---|---|---|
-| **[kubuno-core](crates/kubuno-core/README.md)** | `crates/kubuno-core` | Server application (bin `kubuno-core`) and administration CLI (`kubuno`) |
-| **[kubuno-db](crates/kubuno-db/README.md)** | `crates/kubuno-db` | Database foundation: one binary over PostgreSQL / MySQL-MariaDB / SQLite — shared |
-| **[kubuno-storage](crates/kubuno-storage/README.md)** | `crates/kubuno-storage` | Storage abstraction (local filesystem; S3 declared, not implemented yet) — shared |
-| **[kubuno-seccomp](crates/kubuno-seccomp/README.md)** | `crates/kubuno-seccomp` | Execution sandbox (seccomp) — shared |
-| **[kubuno-modauth](crates/kubuno-modauth/README.md)** | `crates/kubuno-modauth` | Signed module ↔ core authentication — shared |
-| **[kubuno-mcp](crates/kubuno-mcp/README.md)** | `crates/kubuno-mcp` | MCP server building blocks — used by the core |
+| **[kubuno-core](server/README.md)** | `server/` | Server application (bin `kubuno-core`) and administration CLI (`kubuno`) |
+| **[kubuno-db](common/kubuno-db/README.md)** | `common/kubuno-db` | Database foundation: one binary over PostgreSQL / MySQL-MariaDB / SQLite — shared |
+| **[kubuno-storage](common/kubuno-storage/README.md)** | `common/kubuno-storage` | Storage abstraction (local filesystem; S3 declared, not implemented yet) — shared |
+| **[kubuno-seccomp](common/kubuno-seccomp/README.md)** | `common/kubuno-seccomp` | Execution sandbox (seccomp) — shared |
+| **[kubuno-modauth](common/kubuno-modauth/README.md)** | `common/kubuno-modauth` | Signed module ↔ core authentication — shared |
+| **[kubuno-mcp](common/kubuno-mcp/README.md)** | `common/kubuno-mcp` | MCP server building blocks — used by the core |
 | **Frontend host** | `frontend/` | React shell + shared libraries `@kubuno/sdk`, `@kubuno/ui`, `@kubuno/drive` |
-| **Migrations** | `migrations/` | Core database schema |
+| **Migrations** | `server/migrations/` | Core database schema |
 | **Themes** | `themes/` | Skin themes shipped with the platform (see [`THEMES.md`](THEMES.md)) |
 
 Shared crates are consumed by the **module repositories** via tagged git dependencies; the shared frontend libraries are published to npm under the **`@kubuno/*`** scope.

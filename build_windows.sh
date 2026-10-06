@@ -19,7 +19,15 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+# Repository layout (2026-10, platform layout): the server in server/ (its Cargo workspace, migrations/,
+# config.toml.example, man/), the web host in web/ (frontend/ before it moved), the shared crates in common/.
+# The older layout (Cargo.toml at the root, frontend/) is still accepted. The installed layout is the same.
+SERVER_DIR=server; [[ -f server/Cargo.toml ]] || SERVER_DIR=.
+WEB_DIR=web; [[ -f web/package.json ]] || WEB_DIR=frontend
+THEMES_DIR=web/themes; [[ -d web/themes ]] || THEMES_DIR=themes
+TARGET_DIR="${CARGO_TARGET_DIR:-$SERVER_DIR/target}"
+
+VERSION=$(grep -m1 '^version' "$SERVER_DIR/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')
 TARGET="${TARGET:-x86_64-pc-windows-msvc}"
 DIST_DIR="${DIST_DIR:-dist}"
 WINSW_VERSION="${WINSW_VERSION:-v2.12.0}"
@@ -31,9 +39,9 @@ mkdir -p "$DIST_DIR"
 command -v makensis >/dev/null || { echo "Erreur : makensis (NSIS) introuvable." >&2; exit 1; }
 
 # ── Frontend ────────────────────────────────────────────────────────────────
-if [[ ! -d frontend/dist ]]; then
+if [[ ! -d "$WEB_DIR/dist" ]]; then
   echo "==> Build frontend…"
-  (cd frontend && npm ci && npm run build)
+  (cd "$WEB_DIR" && npm ci && npm run build)
 fi
 
 # ── Compilation Rust (cross Windows depuis Linux, OU natif sur Windows) ──────
@@ -50,14 +58,14 @@ if [[ "$TARGET" == *"-msvc" && "$HOST_IS_WINDOWS" == "0" ]]; then
     echo "        Installez-le (cargo install cargo-xwin) ou utilisez TARGET=x86_64-pc-windows-gnu." >&2
     exit 1
   fi
-  SQLX_OFFLINE=true cargo xwin build --release --target "$TARGET" \
-    --bin kubuno-core --bin kubuno
+  (cd "$SERVER_DIR" && SQLX_OFFLINE=true cargo xwin build --release --target "$TARGET" \
+    --bin kubuno-core --bin kubuno)
 else
-  SQLX_OFFLINE=true cargo build --release --target "$TARGET" \
-    --bin kubuno-core --bin kubuno
+  (cd "$SERVER_DIR" && SQLX_OFFLINE=true cargo build --release --target "$TARGET" \
+    --bin kubuno-core --bin kubuno)
 fi
 
-BIN_DIR="target/${TARGET}/release"
+BIN_DIR="$TARGET_DIR/${TARGET}/release"
 [[ -f "$BIN_DIR/kubuno-core.exe" ]] || { echo "Erreur : kubuno-core.exe non produit." >&2; exit 1; }
 
 # ── Récupération du wrapper de service WinSW ────────────────────────────────
@@ -73,9 +81,9 @@ fi
 echo "==> Staging…"
 install -m 755 "$BIN_DIR/kubuno-core.exe" "$STAGE/kubuno-core.exe"
 install -m 755 "$BIN_DIR/kubuno.exe"      "$STAGE/kubuno.exe"
-cp -r frontend/dist   "$STAGE/frontend"
-cp -r migrations      "$STAGE/migrations"
-cp -r themes          "$STAGE/themes"
+cp -r "$WEB_DIR/dist"  "$STAGE/frontend"
+cp -r "$SERVER_DIR/migrations" "$STAGE/migrations"
+cp -r "$THEMES_DIR"   "$STAGE/themes"
 cp LICENSE            "$STAGE/LICENSE.txt"
 cp README.md          "$STAGE/README.txt" 2>/dev/null || echo "Kubuno Core" > "$STAGE/README.txt"
 

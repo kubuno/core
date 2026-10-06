@@ -20,15 +20,28 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            server
+            common
       # clippy --all-targets also compiles the test code (catching test
-      # build breakage).
+      # build breakage). Two workspaces: the server (server/) and the shared
+      # crates the modules take by git tag (common/).
       - name: clippy (deny warnings)
+        working-directory: server
+        run: cargo clippy --all-targets -- -D warnings
+      - name: clippy, shared crates (deny warnings)
+        working-directory: common
         run: cargo clippy --all-targets -- -D warnings
       # Compiling the tests is not running them: an assertion left behind by a
       # change of bound stayed red from v0.1.6 to v0.1.11 because nothing ever
       # executed it. The unit suites need no database; the integration suites
       # that need a Postgres service are still to be wired.
       - name: tests unitaires
+        working-directory: server
+        run: cargo test --lib
+      - name: tests unitaires, shared crates
+        working-directory: common
         run: cargo test --lib
 
   # Conformance vectors (SC-0): the Rust and TypeScript runners and the core
@@ -44,7 +57,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
+        with: { workspaces: common }
       - name: kubuno-vectors (clippy, tests)
+        working-directory: common
         run: |
           cargo clippy -p kubuno-vectors --all-targets -- -D warnings
           cargo test -p kubuno-vectors
@@ -61,7 +76,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-audit }
-      - name: cargo audit
+      - name: cargo audit (server)
+        working-directory: server
+        run: cargo audit
+      - name: cargo audit (shared crates)
+        working-directory: common
         run: cargo audit
 
   frontend:

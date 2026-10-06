@@ -8,10 +8,10 @@ use kubuno_db::{DbPool, MigratorSet};
 /// `mysql` files as written). See `kubuno_db::MySqlVariants`.
 fn set() -> MigratorSet {
     kubuno_db::migrations!(
-        "../../migrations/postgres",
-        "../../migrations/mysql",
-        "../../migrations/sqlite",
-        oracle_mysql = "../../migrations/mysql-oracle",
+        "migrations/postgres",
+        "migrations/mysql",
+        "migrations/sqlite",
+        oracle_mysql = "migrations/mysql-oracle",
     )
 }
 

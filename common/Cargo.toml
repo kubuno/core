@@ -1,0 +1,25 @@
+# The shared crates of Kubuno: the server (../server) takes them by relative path, and the modules take
+# them by git tag from https://github.com/kubuno/core (cargo finds a crate by its name anywhere in the
+# repository): kubuno-db (db-v*), kubuno-storage (storage-v*), kubuno-seccomp (seccomp-v*),
+# kubuno-modauth (modauth-v*), kubuno-vectors (vectors-v*). Each crate carries its own version; the tag
+# name states the version of the crate at the tag. vectors/ holds the conformance vectors the shared
+# cores are checked against (kubuno-vectors, @kubuno/vectors).
+[workspace]
+resolver = "2"
+members  = [
+    "kubuno-db",
+    "kubuno-mcp",
+    "kubuno-modauth",
+    "kubuno-paths",
+    "kubuno-seccomp",
+    "kubuno-storage",
+    "kubuno-vectors",
+]
+
+# The dependencies some crates inherit (`foo.workspace = true`), same versions as the server's workspace.
+[workspace.dependencies]
+tracing     = "0.1"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+async-trait = "0.1"
+uuid        = { version = "1", features = ["v4", "serde"] }

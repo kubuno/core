@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn the_core_repository_suites_are_valid() {
         // The sync suites live in the core repository next to this crate.
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/sync");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../vectors/sync");
         for name in ["outbox-backoff.json", "http-classify.json"] {
             let path = root.join(name);
             if let Err(e) = load(&path) {

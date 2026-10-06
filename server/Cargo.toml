@@ -1,25 +1,110 @@
-[workspace]
-resolver = "2"
-# Dépôt kubuno/core : uniquement le core + les crates partagées (consommées par les
-# repos modules via dépendances git taguées). Les modules vivent dans leurs propres repos.
-members  = [
-    "crates/kubuno-core",
-    "crates/kubuno-storage",
-    "crates/kubuno-mcp",
-    "crates/kubuno-seccomp",
-    "crates/kubuno-modauth",
-    "crates/kubuno-db",
-    "crates/kubuno-paths",
-    "crates/kubuno-vectors",
-]
-
-[workspace.package]
+[package]
+name    = "kubuno-core"
 version      = "0.1.15"
 edition      = "2021"
 authors      = ["Kubuno Contributors"]
 license      = "AGPL-3.0"
 repository   = "https://github.com/kubuno/core"
-rust-version = "1.82"
+
+[[bin]]
+name = "kubuno-core"
+path = "src/main.rs"
+
+[[bin]]
+name = "kubuno"
+path = "src/bin/kubuno/main.rs"
+
+[lib]
+name = "kubuno_core"
+path = "src/lib.rs"
+
+[dependencies]
+tokio.workspace       = true
+axum.workspace        = true
+axum-server.workspace = true
+rustls.workspace      = true
+tower.workspace       = true
+tower-http.workspace  = true
+async-trait.workspace = true
+
+sqlx.workspace        = true
+
+serde.workspace       = true
+serde_json.workspace  = true
+
+jsonwebtoken.workspace = true
+argon2.workspace       = true
+aes-gcm.workspace      = true
+rand.workspace         = true
+sha2.workspace         = true
+# Ed25519 verification for the signed catalogue manifest. `ring` is already in
+# the tree (rustls, ACME): using it adds no new implementation to audit.
+ring = "0.17"
+hmac.workspace         = true
+hkdf.workspace         = true
+subtle.workspace       = true
+base64.workspace       = true
+
+reqwest.workspace   = true
+
+config.workspace    = true
+dotenvy.workspace   = true
+
+validator.workspace = true
+regex.workspace     = true
+
+tracing.workspace            = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace   = true
+
+thiserror.workspace = true
+anyhow.workspace    = true
+
+uuid.workspace   = true
+chrono.workspace = true
+hickory-resolver.workspace = true
+chrono-tz.workspace = true
+ipnet.workspace  = true
+
+bytes.workspace   = true
+zip.workspace     = true
+flate2.workspace  = true
+futures.workspace = true
+tokio-util.workspace = true
+yrs.workspace     = true
+hex.workspace     = true
+toml.workspace    = true
+totp-rs.workspace = true
+clap.workspace    = true
+url.workspace               = true
+lettre.workspace            = true
+ldap3.workspace              = true
+rustls-pemfile.workspace     = true
+rustls-native-certs.workspace = true
+x509-parser.workspace        = true
+instant-acme.workspace       = true
+tokio-tungstenite.workspace = true
+kubuno-storage.workspace    = true
+kubuno-mcp.workspace        = true
+kubuno-modauth.workspace    = true
+kubuno-db.workspace         = true
+kubuno-paths.workspace      = true
+utoipa.workspace            = true
+
+# POSIX only: `statvfs` and friends. Declared per platform because calling it
+# unconditionally is what kept the server from compiling for Windows.
+[target.'cfg(unix)'.dependencies]
+libc.workspace   = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+
+# ─── Workspace ───────────────────────────────────────────────────────────────
+# The server is a workspace of its own (server/Cargo.lock, server/target). The shared crates live in
+# ../common (their own workspace, published to the modules by git tag: db-v*, storage-v*, seccomp-v*,
+# modauth-v*, vectors-v*) and are taken here by relative path. The desktop workspace is ../desktop.
+[workspace]
+resolver = "2"
 
 [workspace.dependencies]
 # Async
@@ -77,12 +162,12 @@ tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender   = "0.2"
 tokio-util         = { version = "0.7", features = ["io"] }
-kubuno-storage     = { path = "crates/kubuno-storage" }
-kubuno-mcp         = { path = "crates/kubuno-mcp" }
-kubuno-seccomp     = { path = "crates/kubuno-seccomp" }
-kubuno-modauth     = { path = "crates/kubuno-modauth" }
-kubuno-db          = { path = "crates/kubuno-db" }
-kubuno-paths       = { path = "crates/kubuno-paths" }
+kubuno-storage     = { path = "../common/kubuno-storage" }
+kubuno-mcp         = { path = "../common/kubuno-mcp" }
+kubuno-seccomp     = { path = "../common/kubuno-seccomp" }
+kubuno-modauth     = { path = "../common/kubuno-modauth" }
+kubuno-db          = { path = "../common/kubuno-db" }
+kubuno-paths       = { path = "../common/kubuno-paths" }
 
 # Erreurs
 thiserror = "1"

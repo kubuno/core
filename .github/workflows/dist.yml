@@ -19,6 +19,7 @@ jobs:
         with: { fetch-depth: 0 }   # full history: build id needs the commit count
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with: { workspaces: server }
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - name: Install rpm tooling
@@ -45,6 +46,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: x86_64-pc-windows-msvc }
       - uses: Swatinem/rust-cache@v2
+        with: { workspaces: server }
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - name: Install NSIS
@@ -72,6 +74,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: aarch64-apple-darwin }
       - uses: Swatinem/rust-cache@v2
+        with: { workspaces: server }
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - name: Build macOS package

@@ -1,0 +1,13 @@
+[package]
+name = "kubuno-mcp"
+# Its own version since the server and the shared crates are separate workspaces (it inherited
+# the core version 0.1.15 before).
+version = "0.1.15"
+edition = "2021"
+license = "AGPL-3.0"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }

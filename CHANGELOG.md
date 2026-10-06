@@ -11,6 +11,16 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The repository is organised by platform: the server moves to `server/`, the shared crates to `common/`.**
+  `server/` holds `kubuno-core` (its sources, `migrations/`, the `.sqlx` query cache, `config.toml.example`, the man
+  page) as a Cargo workspace of its own; `common/` holds the crates the modules share (`kubuno-db`,
+  `kubuno-storage`, `kubuno-seccomp`, `kubuno-modauth`, `kubuno-paths`, `kubuno-mcp`, `kubuno-vectors`) and the
+  conformance vectors (`common/vectors`), in a second workspace the server takes by relative path. The modules keep
+  their git dependencies unchanged: Cargo finds a crate by its name anywhere in the repository, and the tags keep
+  their names (`db-v*`, `storage-v*`, `seccomp-v*`, `modauth-v*`, `vectors-v*`). `kubuno-mcp` now has its own
+  version. The packages (`.deb`, `.rpm`, Windows installer, macOS package, Docker image) install exactly the same
+  files; `build_deb.sh --no-install` (or `KUBUNO_NO_INSTALL=1`) builds them without installing them on the build
+  machine. The CI checks both workspaces.
 - **The web views are sorted into views and user controls, like the desktop.** A page the router shows, a window or a
   dialog is a view (`.kbview`); a piece placed inside another screen — a pane, a section, a tab, a row, a card, the
   header and its menus — is a user control (`.kbcontrol`), with its properties and events. The core's screens were

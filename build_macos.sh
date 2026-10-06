@@ -22,13 +22,21 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Repository layout (2026-10, platform layout): the server in server/ (its Cargo workspace, migrations/,
+# config.toml.example, man/), the web host in web/ (frontend/ before it moved), the shared crates in common/.
+# The older layout (Cargo.toml at the root, frontend/) is still accepted. The installed layout is the same.
+SERVER_DIR=server; [[ -f server/Cargo.toml ]] || SERVER_DIR=.
+WEB_DIR=web; [[ -f web/package.json ]] || WEB_DIR=frontend
+THEMES_DIR=web/themes; [[ -d web/themes ]] || THEMES_DIR=themes
+TARGET_DIR="${CARGO_TARGET_DIR:-$SERVER_DIR/target}"
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Erreur : build_macos.sh doit être exécuté sur macOS (pkgbuild/productbuild requis)." >&2
   echo "        Sur Linux, utilisez la CI GitHub (runner macos-latest)." >&2
   exit 1
 fi
 
-VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+VERSION=$(grep -m1 '^version' "$SERVER_DIR/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')
 TARGET="${TARGET:-aarch64-apple-darwin}"
 UNIVERSAL="${UNIVERSAL:-0}"
 DIST_DIR="${DIST_DIR:-dist}"
@@ -39,9 +47,9 @@ trap 'rm -rf "$PKGROOT" "$SCRIPTS"' EXIT
 mkdir -p "$DIST_DIR"
 
 # ── Frontend ────────────────────────────────────────────────────────────────
-if [[ ! -d frontend/dist ]]; then
+if [[ ! -d "$WEB_DIR/dist" ]]; then
   echo "==> Build frontend…"
-  (cd frontend && npm ci && npm run build)
+  (cd "$WEB_DIR" && npm ci && npm run build)
 fi
 
 # ── Compilation Rust ────────────────────────────────────────────────────────
@@ -49,20 +57,20 @@ build_one() {
   local t="$1"
   rustup target add "$t" >/dev/null 2>&1 || true
   echo "==> Compilation Rust → ${t}…"
-  SQLX_OFFLINE=true cargo build --release --target "$t" --bin kubuno-core --bin kubuno
+  (cd "$SERVER_DIR" && SQLX_OFFLINE=true cargo build --release --target "$t" --bin kubuno-core --bin kubuno)
 }
 
 if [[ "$UNIVERSAL" == "1" ]]; then
   build_one aarch64-apple-darwin
   build_one x86_64-apple-darwin
   ARCH_LABEL="universal"
-  mkdir -p "target/universal/release"
+  mkdir -p "$TARGET_DIR/universal/release"
   for b in kubuno-core kubuno; do
-    lipo -create -output "target/universal/release/$b" \
-      "target/aarch64-apple-darwin/release/$b" \
-      "target/x86_64-apple-darwin/release/$b"
+    lipo -create -output "$TARGET_DIR/universal/release/$b" \
+      "$TARGET_DIR/aarch64-apple-darwin/release/$b" \
+      "$TARGET_DIR/x86_64-apple-darwin/release/$b"
   done
-  BIN_DIR="target/universal/release"
+  BIN_DIR="$TARGET_DIR/universal/release"
 else
   build_one "$TARGET"
   case "$TARGET" in
@@ -70,7 +78,7 @@ else
     x86_64-apple-darwin)  ARCH_LABEL="x86_64" ;;
     *) ARCH_LABEL="$TARGET" ;;
   esac
-  BIN_DIR="target/${TARGET}/release"
+  BIN_DIR="$TARGET_DIR/${TARGET}/release"
 fi
 
 [[ -f "$BIN_DIR/kubuno-core" ]] || { echo "Erreur : kubuno-core non produit." >&2; exit 1; }
@@ -90,9 +98,9 @@ touch "$PKGROOT/usr/local/kubuno/modules/.keep"
 
 install -m 755 "$BIN_DIR/kubuno-core" "$PKGROOT/usr/local/kubuno/bin/kubuno-core"
 install -m 755 "$BIN_DIR/kubuno"      "$PKGROOT/usr/local/kubuno/bin/kubuno"
-cp -R frontend/dist/. "$PKGROOT/usr/local/kubuno/frontend/"
-cp -R migrations/.     "$PKGROOT/usr/local/kubuno/migrations/"
-cp -R themes/.         "$PKGROOT/usr/local/kubuno/themes/"
+cp -R "$WEB_DIR/dist/." "$PKGROOT/usr/local/kubuno/frontend/"
+cp -R "$SERVER_DIR/migrations/." "$PKGROOT/usr/local/kubuno/migrations/"
+cp -R "$THEMES_DIR/."  "$PKGROOT/usr/local/kubuno/themes/"
 
 # config.toml.example adapté macOS (chemins Apple)
 cat > "$PKGROOT/Library/Application Support/Kubuno/config.toml.example" << 'CFG'
