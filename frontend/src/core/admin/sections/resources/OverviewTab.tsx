@@ -1,132 +1,162 @@
-// The landing screen of the section.
-//
-// It answers two questions, in that order: what does the instance hold, and is
-// the inventory finished. The second one is the reason the screen exists — a
-// bare total says the feature was used once, while "three buildings hold nothing
-// and eleven resources carry no visible description" says what is left to do,
-// which is what an administrator actually arrives with.
+/**
+ * Code-behind of `OverviewTab.kbview` (converted from `OverviewTab.tsx` by @kubuno/views-migrate).
+ */
+import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { Building2, CalendarRange, DoorOpen, Users } from "lucide-react"
+import { useResourceOverview } from "./api"
+import type { ResourcePane } from "./panes"
 
-import type { ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Building2, CalendarRange, DoorOpen, Sparkles, Users } from 'lucide-react'
-import { Button, Callout, Card, Spinner } from '@ui'
-import { useResourceOverview } from './api'
-import type { ResourcePane } from './panes'
+import { ViewBase } from './OverviewTab.kbview'
+import * as __parts from './OverviewTab.parts'
 
-function Stat({ icon, value, label }: { icon: ReactNode; value: number; label: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-0 px-4 py-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full
-                       bg-primary-light text-primary">
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-text-primary" style={{ fontSize: 'var(--kb-text-title)' }}>
-          {value}
-        </span>
-        <span className="block truncate text-text-secondary"
-              style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {label}
-        </span>
-      </span>
-    </div>
-  )
-}
+export type OverviewTabProps = { onGo: (pane: ResourcePane) => void }
 
-export default function OverviewTab({ onGo }: { onGo: (pane: ResourcePane) => void }) {
-  const { t } = useTranslation()
-  const { data, isLoading, isError, refetch } = useResourceOverview()
+export class OverviewTab extends ViewBase {
+  tr!: OverviewTabStores['t']
+  data!: OverviewTabStores['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: OverviewTabStores['refetch']
 
-  if (isLoading) {
-    return <div className="flex justify-center py-10"><Spinner /></div>
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const { data, isLoading, isError, refetch } = useResourceOverview()
+    return { t, data, isLoading, isError, refetch }
   }
 
-  if (isError || !data) {
-    return (
-      <Callout
-        variant="danger"
-        title={t('admin.res_load_failed')}
-        action={{ label: t('admin.res_retry'), onClick: () => void refetch() }}
-        t={t}
-      />
-    )
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, data: s.data, isLoading: s.isLoading, isError: s.isError, refetch: s.refetch })
   }
 
-  const allGaps: { key: string; count: number; text: string; pane: ResourcePane }[] = [
+  get allGaps(): { key: string; count: number; text: string; pane: ResourcePane }[] {
+    return this.memo('allGaps', [this.data, this.tr, this.isLoading, this.isError], () => {
+      if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+      return [
     {
       key: 'empty_buildings',
-      count: data.empty_buildings,
-      text: t('admin.res_gap_empty_buildings', { count: data.empty_buildings }),
+      count: this.data.empty_buildings,
+      text: this.tr('admin.res_gap_empty_buildings', { count: this.data.empty_buildings }),
       pane: 'buildings',
     },
     {
       key: 'undescribed',
-      count: data.undescribed,
-      text: t('admin.res_gap_undescribed', { count: data.undescribed }),
+      count: this.data.undescribed,
+      text: this.tr('admin.res_gap_undescribed', { count: this.data.undescribed }),
       pane: 'resources',
     },
     {
       key: 'unused_features',
-      count: data.unused_features,
-      text: t('admin.res_gap_unused_features', { count: data.unused_features }),
+      count: this.data.unused_features,
+      text: this.tr('admin.res_gap_unused_features', { count: this.data.unused_features }),
       pane: 'features',
     },
   ]
-  const gaps = allGaps.filter(g => g.count > 0)
-  const isEmpty = data.buildings === 0 && data.resources === 0 && data.features === 0
+    })
+  }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat icon={<Building2 size={17} />}    value={data.buildings}  label={t('admin.res_stat_buildings')} />
-        <Stat icon={<CalendarRange size={17} />} value={data.resources} label={t('admin.res_stat_resources')} />
-        <Stat icon={<DoorOpen size={17} />}     value={data.rooms}      label={t('admin.res_stat_rooms')} />
-        <Stat icon={<Users size={17} />}        value={data.room_seats} label={t('admin.res_stat_seats')} />
-      </div>
+  get gaps(): { key: string; count: number; text: string; pane: ResourcePane; }[] {
+    return this.memo('gaps', [this.allGaps, this.isLoading, this.isError, this.data], () => {
+      if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+      return this.allGaps.filter(g => g.count > 0)
+    })
+  }
 
-      {/* Hidden while the inventory is empty. "Every building holds resources,
-          every resource is described" is vacuously true of nothing, and on a
-          fresh instance it reads as a claim that the work is done — the exact
-          opposite of what the first screen has to say. With no rows at all, the
-          card below is the whole answer. */}
-      {!isEmpty && (
-      <Card title={t('admin.res_todo_title')} subtitle={t('admin.res_todo_subtitle')}>
-        {gaps.length === 0 ? (
-          <p className="text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-            {t('admin.res_todo_clear')}
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {gaps.map(g => (
-              <li key={g.key} className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-                  {g.text}
-                </span>
-                <Button variant="ghost" size="sm" onClick={() => onGo(g.pane)}>
-                  {t('admin.res_todo_open')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-      )}
+  get isEmpty(): boolean {
+    if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+    return this.data.buildings === 0 && this.data.resources === 0 && this.data.features === 0
+  }
 
-      <Card
-        title={t('admin.res_order_title')}
-        icon={<Sparkles size={16} />}
-        subtitle={t('admin.res_order_subtitle')}
-      >
-        {/* The order is not decoration: a resource cannot be created without a
-            building, and cannot carry a feature that does not exist yet. Saying
-            it here is cheaper than three refusals in a row. */}
-        <ol className="ml-4 flex list-decimal flex-col gap-1 text-text-secondary"
-            style={{ fontSize: 'var(--kb-text-body)' }}>
-          <li>{t('admin.res_order_step_buildings')}</li>
-          <li>{t('admin.res_order_step_features')}</li>
-          <li>{t('admin.res_order_step_resources')}</li>
-        </ol>
-      </Card>
-    </div>
-  )
+  get show_case_1() {
+    return !!(this.isLoading)
+  }
+
+  get show_case_2() {
+    return !(this.isLoading) && !!(this.isError || !this.data)
+  }
+
+  get show_main() {
+    return !(this.isLoading) && !(this.isError || !this.data)
+  }
+
+  /** `<Stat>`, rendered by a ReactHost. */
+  get Stat() {
+    if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+    return __parts.Stat
+  }
+
+  get stat_props() {
+    return this.memo('stat_props', [this.data, this.tr, this.isLoading, this.isError], () => {
+      if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+      return ({ icon: <Building2 size={17} />, value: this.data.buildings, label: this.tr('admin.res_stat_buildings') })
+    })
+  }
+
+  get stat_props2() {
+    return this.memo('stat_props2', [this.data, this.tr, this.isLoading, this.isError], () => {
+      if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+      return ({ icon: <CalendarRange size={17} />, value: this.data.resources, label: this.tr('admin.res_stat_resources') })
+    })
+  }
+
+  get stat_props3() {
+    return this.memo('stat_props3', [this.data, this.tr, this.isLoading, this.isError], () => {
+      if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+      return ({ icon: <DoorOpen size={17} />, value: this.data.rooms, label: this.tr('admin.res_stat_rooms') })
+    })
+  }
+
+  get stat_props4() {
+    return this.memo('stat_props4', [this.data, this.tr, this.isLoading, this.isError], () => {
+      if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+      return ({ icon: <Users size={17} />, value: this.data.room_seats, label: this.tr('admin.res_stat_seats') })
+    })
+  }
+
+  get show_is_empty() {
+    if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
+    return !this.isEmpty
+  }
+
+  get show_gaps() {
+    if (!(!(this.isLoading)) || !(!(this.isError || !this.data)) || !(!this.isEmpty)) return undefined as never
+    return this.gaps.length === 0
+  }
+
+  get show_not_gaps() {
+    if (!(!(this.isLoading)) || !(!(this.isError || !this.data)) || !(!this.isEmpty)) return undefined as never
+    return !(this.gaps.length === 0)
+  }
+
+  /** The rows of the Repeater over `gaps`. */
+  get rows_gaps() {
+    return this.memo('rows_gaps', [this.gaps, this.isLoading, this.isError, this.data, this.isEmpty], () => {
+      if (!(!(this.isLoading)) || !(!(this.isError || !this.data)) || !(!this.isEmpty) || !(!(this.gaps.length === 0))) return undefined as never
+      return this.gaps.map((g) => {
+      return { g, key: g.key }
+    })
+    })
+  }
+
+  callout_action(_sender: unknown, _args: EventArgs) {
+    if (!(!(this.isLoading)) || !(this.isError || !this.data)) return undefined as never
+    void this.refetch()
+  }
+
+  button_click(_sender: unknown, args: MouseEventArgs) {
+    const { g } = args.row as RowOf_rows_gaps
+    if (!(!(this.isLoading)) || !(!(this.isError || !this.data)) || !(!this.isEmpty) || !(!(this.gaps.length === 0))) return undefined as never
+    this.props.onGo(g.pane)
+  }
+
 }
+
+type RowOf_rows_gaps = OverviewTab['rows_gaps'][number]
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type OverviewTabStores = ReturnType<OverviewTab['useStores']>
+
+export default OverviewTab.component()

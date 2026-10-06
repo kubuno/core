@@ -1,0 +1,29 @@
+<!-- AudiencesSection — converted from AudiencesSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <AudienceSheet> is no .kbview element (./AudienceSheet#default) -->
+  <ReactHost Component="{Binding AudienceSheet}" Props="{Binding audience_sheet_props}" Visible="{Binding show_case_1}"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+      <Label HtmlTag="H1"
+             Text="{Res admin.nav_audiences}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+      <Label HtmlTag="Span"
+             Text="{Binding span_text}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Visible="{Binding show_data}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+    </Panel>
+    <Callout Title="{Res admin.aud_scope_title}" Body="{Res admin.aud_scope_body}" Class="mb-4"/>
+    <!-- TODO(views-migrate): <DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, rowActions, onRowClick, t, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <AudienceDialog> is no .kbview element (./AudienceDialog#default) -->
+    <ReactHost Component="{Binding AudienceDialog}" Props="{Binding audience_dialog_props}" Visible="{Binding creating}"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

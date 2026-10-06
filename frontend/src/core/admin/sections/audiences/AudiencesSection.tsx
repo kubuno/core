@@ -1,86 +1,90 @@
-// Target audiences — the curated recipient lists the instance offers at share
-// time.
-//
-// The list answers the only question worth answering from a distance: how wide
-// is each of these, and is it actually in use? Hence three figures per row, and
-// not one. `member_count` is what you edit; `reach` is what happens; `applied_to`
-// is whether it happens at all. An audience with a hundred people and nowhere to
-// appear is defined, not deployed — and the row says so.
-//
-// The open audience lives in the URL (`/admin/audiences/<id>`) rather than in
-// component state, so the browser's Back button leaves the sheet the way anybody
-// expects.
+/**
+ * Code-behind of `AudiencesSection.kbview` (converted from `AudiencesSection.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { Globe, Plus, Search, Trash2 } from "lucide-react"
+import { Button, Input, foldIncludes, type DataTableColumn, type DataTableRowAction } from "@ui"
+import { usePrivileges } from "../../../authz/usePrivileges"
+import { useConfirm } from "../../../hooks/useConfirm"
+import ConfirmDialog from "@ui/ConfirmDialog"
+import { adminUrlWith } from "../../adminAction"
+import { AUDIENCES_MANAGE } from "./privileges"
+import { useAudiences, useAudienceMutations, type Audience } from "./api"
+import AudienceDialog from "./AudienceDialog"
+import AudienceSheet from "./AudienceSheet"
 
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Globe, Plus, Search, Trash2, Users } from 'lucide-react'
-import {
-  Button, Callout, DataTable, EmptyState, Input, foldIncludes,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import { usePrivileges } from '../../../authz/usePrivileges'
-import { useConfirm } from '../../../hooks/useConfirm'
-import ConfirmDialog from '@ui/ConfirmDialog'
-import type { AdminSectionProps } from '../registry'
-import { adminUrlWith } from '../../adminAction'
-import { AUDIENCES_MANAGE } from './privileges'
-import { useAudiences, useAudienceMutations, type Audience } from './api'
-import AudienceDialog from './AudienceDialog'
-import AudienceSheet from './AudienceSheet'
+import { ViewBase } from './AudiencesSection.kbview'
+import * as __parts from './AudiencesSection.parts'
 
 function errMessage(err: unknown): string | undefined {
   const e = err as { message?: string; response?: { data?: { message?: string } } }
   return e?.response?.data?.message ?? e?.message
 }
 
-export default function AudiencesSection({ params, navigate }: AdminSectionProps) {
-  const { t }   = useTranslation()
-  const { can } = usePrivileges()
-  const canManage = can(AUDIENCES_MANAGE)
+export class AudiencesSection extends ViewBase {
+  @bind accessor creating = false
+  @bind accessor q = ''
+  tr!: AudiencesSectionStores['t']
+  can!: AudiencesSectionStores['can']
+  data!: AudiencesSectionStores['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: AudiencesSectionStores['refetch']
+  create!: AudiencesSectionStores['create']
+  remove!: AudiencesSectionStores['remove']
+  confirm!: AudiencesSectionStores['confirm']
+  confirmState!: AudiencesSectionStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  rows!: Audience[]
 
-  const open = params.get('audience')
-  const go = (id: string | null) => navigate(adminUrlWith('audiences', params, { audience: id }))
-
-  const { data, isLoading, isError, refetch } = useAudiences()
-  const { create, remove } = useAudienceMutations(null)
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
-  const [creating, setCreating] = useState(false)
-  const [q, setQ] = useState('')
-
-  // Accent-insensitive, like every other filter in the console: an operator
-  // typing "equipe" must find "Équipe".
-  const rows = useMemo(() => {
-    const all = data?.audiences ?? []
-    if (!q.trim()) return all
-    return all.filter(a => foldIncludes(a.name, q) || (a.description ? foldIncludes(a.description, q) : false))
-  }, [data, q])
-
-  if (open) return <AudienceSheet id={open} canManage={canManage} />
-
-  const askRemove = async (a: Audience) => {
-    const ok = await confirm({
-      title: t('admin.aud_delete_q', { defaultValue: 'Supprimer « {{name}} » ?', name: a.name }),
-      // The count of places it is offered is the part nobody has in mind: the
-      // same click removes a list and changes what several units are shown.
-      message: a.applied_to > 0
-        ? t('admin.aud_delete_applied', {
-            defaultValue_one: 'Cette audience est proposée à {{count}} endroit. Elle cessera d’y apparaître. Les partages déjà effectués ne sont pas retirés.',
-            defaultValue: 'Cette audience est proposée à {{count}} endroits. Elle cessera d’y apparaître. Les partages déjà effectués ne sont pas retirés.',
-            count: a.applied_to,
-          })
-        : t('admin.aud_delete_msg', {
-            defaultValue: 'Elle n’est proposée nulle part. Les partages déjà effectués ne sont pas retirés.',
-          }),
-      confirmLabel: t('common.delete', { defaultValue: 'Supprimer' }),
-      variant: 'danger',
-    })
-    if (ok) remove.mutate(a.id)
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t }   = useTranslation()
+    const { can } = usePrivileges()
+    const { data, isLoading, isError, refetch } = useAudiences()
+    const { create, remove } = useAudienceMutations(null)
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    return { t, can, data, isLoading, isError, refetch, create, remove, confirm, confirmState, handleConfirm, handleCancel }
   }
 
-  const columns: DataTableColumn<Audience>[] = [
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const data = this.data
+    const rows = useMemo(() => {
+      const all = data?.audiences ?? []
+      if (!this.q.trim()) return all
+      return all.filter(a => foldIncludes(a.name, this.q) || (a.description ? foldIncludes(a.description, this.q) : false))
+    }, [data, this.q])
+    this.publish({ rows })
+    return { rows }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, can: s.can, data: s.data, isLoading: s.isLoading, isError: s.isError, refetch: s.refetch, create: s.create, remove: s.remove, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel })
+    const h = this.useHooks()
+    this.publish({ rows: h.rows })
+  }
+
+  get canManage(): boolean {
+    return this.can(AUDIENCES_MANAGE)
+  }
+
+  get open(): string | null {
+    return this.props.params.get('audience')
+  }
+
+  get columns(): DataTableColumn<Audience>[] {
+    return this.memo('columns', [this.tr, this.open], () => {
+      if (!(!(this.open))) return undefined as never
+      return [
     {
       id: 'name',
-      header: t('admin.aud_name', { defaultValue: 'Nom' }),
+      header: this.tr('admin.aud_name', { defaultValue: 'Nom' }),
       sortValue: a => a.name,
       cell: (a: Audience) => (
         <span className="flex min-w-0 items-center gap-2">
@@ -91,135 +95,199 @@ export default function AudiencesSection({ params, navigate }: AdminSectionProps
     },
     {
       id: 'description',
-      header: t('admin.aud_description', { defaultValue: 'Description' }),
+      header: this.tr('admin.aud_description', { defaultValue: 'Description' }),
       cell: (a: Audience) => <span className="truncate text-text-secondary">{a.description ?? '—'}</span>,
     },
     {
       id: 'members',
-      header: t('admin.aud_members', { defaultValue: 'Membres' }),
+      header: this.tr('admin.aud_members', { defaultValue: 'Membres' }),
       align: 'right',
       sortValue: a => a.member_count,
       cell: (a: Audience) => (a.is_everyone ? '—' : a.member_count),
     },
     {
       id: 'reach',
-      header: t('admin.aud_reach', { defaultValue: 'Comptes atteints' }),
+      header: this.tr('admin.aud_reach', { defaultValue: 'Comptes atteints' }),
       align: 'right',
       sortValue: a => a.reach,
       cell: (a: Audience) => a.reach,
     },
     {
       id: 'applied',
-      header: t('admin.aud_applied', { defaultValue: 'Proposée' }),
+      header: this.tr('admin.aud_applied', { defaultValue: 'Proposée' }),
       align: 'right',
       sortValue: a => a.applied_to,
       cell: (a: Audience) => (a.applied_to === 0
         ? <span className="text-text-tertiary">
-            {t('admin.aud_not_applied', { defaultValue: 'nulle part' })}
+            {this.tr('admin.aud_not_applied', { defaultValue: 'nulle part' })}
           </span>
-        : t('admin.aud_applied_n', {
+        : this.tr('admin.aud_applied_n', {
             defaultValue_one: '{{count}} endroit',
             defaultValue: '{{count}} endroits',
             count: a.applied_to,
           })),
     },
   ]
+    })
+  }
 
-  const rowActions: DataTableRowAction<Audience>[] = canManage
+  get rowActions(): DataTableRowAction<Audience>[] {
+    return this.memo('rowActions', [this.canManage, this.tr, this.open], () => {
+      if (!(!(this.open))) return undefined as never
+      return this.canManage
     ? [{
         id: 'delete',
-        label: t('common.delete', { defaultValue: 'Supprimer' }),
+        label: this.tr('common.delete', { defaultValue: 'Supprimer' }),
         icon: <Trash2 size={14} />,
         danger: true,
         // The seeded audience is refused server-side; hiding the action avoids
         // offering a button whose only outcome is an error.
         hidden: a => a.is_everyone,
-        onClick: a => void askRemove(a),
+        onClick: a => void this.askRemove(a),
       }]
     : []
+    })
+  }
 
-  const toolbar = (
+  get toolbar() {
+    return this.memo('toolbar', [this.q, this.tr, this.canManage, this.creating, this.open], () => {
+      if (!(!(this.open))) return undefined as never
+      return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <Input value={q} onChange={e => setQ(e.target.value)}
-             placeholder={t('admin.aud_filter_ph', { defaultValue: 'Rechercher une audience…' })}
+      <Input value={this.q} onChange={e => this.q = e.target.value}
+             placeholder={this.tr('admin.aud_filter_ph', { defaultValue: 'Rechercher une audience…' })}
              leftIcon={<Search size={15} />} className="w-52 pl-9" />
-      {canManage && (
-        <Button size="sm" icon={<Plus size={14} />} onClick={() => setCreating(true)}>
-          {t('admin.aud_new', { defaultValue: 'Nouvelle audience' })}
+      {this.canManage && (
+        <Button size="sm" icon={<Plus size={14} />} onClick={() => this.creating = true}>
+          {this.tr('admin.aud_new', { defaultValue: 'Nouvelle audience' })}
         </Button>
       )}
     </div>
   )
+    })
+  }
 
-  return (
-    <div className="min-w-0">
-      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-          {t('admin.nav_audiences', { defaultValue: 'Audiences cibles' })}
-        </h1>
-        {data && (
-          <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {t('admin.aud_count', {
+  get show_case_1() {
+    return !!(this.open)
+  }
+
+  /** `<AudienceSheet>`, rendered by a ReactHost. */
+  get AudienceSheet() {
+    if (!(this.open)) return undefined as never
+    return AudienceSheet
+  }
+
+  get audience_sheet_props() {
+    return this.memo('audience_sheet_props', [this.open, this.canManage], () => {
+      if (!(this.open)) return undefined as never
+      return ({ id: this.open, canManage: this.canManage })
+    })
+  }
+
+  get show_main() {
+    return !(this.open)
+  }
+
+  get show_data() {
+    return this.memo('show_data', [this.data, this.open], () => {
+      if (!(!(this.open))) return undefined as never
+      return !!(this.data)
+    })
+  }
+
+  get span_text() {
+    if (!(!(this.open)) || !(this.data)) return undefined as never
+    return this.tr('admin.aud_count', {
               defaultValue_one: '{{count}} audience',
               defaultValue: '{{count}} audiences',
-              count: data.audiences.length,
-            })}
-          </span>
-        )}
-      </div>
+              count: this.data.audiences.length,
+            })
+  }
 
-      {/* The framing statement, first, because everything below has to be read
-          inside it: an audience is a suggestion, not a permission. Somebody who
-          reads this list as a list of access grants draws the wrong conclusion
-          from every row. */}
-      <Callout variant="info" className="mb-4"
-               title={t('admin.aud_scope_title', { defaultValue: 'Une audience ne donne aucun droit' })}>
-        {t('admin.aud_scope_body', {
-          defaultValue: 'Ce sont des listes de destinataires proposées au moment de partager, pour que le geste rapide ne soit pas « tout le monde ». En faire partie ne donne accès à rien : la personne qui partage décide toujours.',
-        })}
-      </Callout>
+  get part1_props() {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.q, this.toolbar, this.rowActions, this.open], () => {
+      if (!(!(this.open))) return undefined as never
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, q: this.q, setQ: this.setQ.bind(this), toolbar: this.toolbar, rowActions: this.rowActions, go: this.go.bind(this) })
+    })
+  }
 
-      <DataTable
-        rows={rows}
-        columns={columns}
-        rowKey={a => a.id}
-        loading={isLoading}
-        error={isError ? t('admin.aud_load_failed', { defaultValue: 'Impossible de charger les audiences.' }) : undefined}
-        onRetry={() => void refetch()}
-        filtered={!!q.trim()}
-        onClearFilters={() => setQ('')}
-        toolbar={toolbar}
-        rowActions={rowActions}
-        onRowClick={a => go(a.id)}
-        pageSize={25}
-        // Without this the table's own chrome — "Rows per page", its empty and
-        // error states — stays in English while the rest of the page is not.
-        t={t}
-        emptyState={
-          <EmptyState
-            icon={<Users size={26} />}
-            variant="first-use"
-            title={t('admin.aud_empty', { defaultValue: 'Aucune audience' })}
-            description={t('admin.aud_empty_desc', {
-              defaultValue: 'Créez une audience par service ou par site, puis appliquez-la à un module pour qu’elle soit proposée.',
-            })}
-          />
-        }
-      />
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, onRetry, filtered, onClearFilters, toolbar, rowActions, onRowClick, t, emptyState: no .kbview property). */
+  get Part1() {
+    if (!(!(this.open))) return undefined as never
+    return __parts.Part1
+  }
 
-      {creating && (
-        <AudienceDialog
-          busy={create.isPending}
-          error={errMessage(create.error)}
-          onCancel={() => setCreating(false)}
-          onSave={v => create.mutate(v, {
-            onSuccess: r => { setCreating(false); go(r.audience.id) },
-          })}
-        />
-      )}
-      {confirmState && (
-        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
-      )}
-    </div>
-  )
+  /** `<AudienceDialog>`, rendered by a ReactHost. */
+  get AudienceDialog() {
+    if (!(!(this.open)) || !(this.creating)) return undefined as never
+    return AudienceDialog
+  }
+
+  get audience_dialog_props() {
+    return this.memo('audience_dialog_props', [this.create, this.creating, this.open], () => {
+      if (!(!(this.open)) || !(this.creating)) return undefined as never
+      return ({ busy: this.create.isPending, error: errMessage(this.create.error), onCancel: () => this.creating = false, onSave: v => this.create.mutate(v, {
+            onSuccess: r => { this.creating = false; this.go(r.audience.id) },
+          }) } as React.ComponentProps<typeof AudienceDialog>)
+    })
+  }
+
+  get show_confirm_state() {
+    return this.memo('show_confirm_state', [this.confirmState, this.open], () => {
+      if (!(!(this.open))) return undefined as never
+      return !!(this.confirmState)
+    })
+  }
+
+  /** `<ConfirmDialog>`, rendered by a ReactHost. */
+  get ConfirmDialog() {
+    if (!(!(this.open)) || !(this.confirmState)) return undefined as never
+    return ConfirmDialog
+  }
+
+  get confirm_dialog_props() {
+    return this.memo('confirm_dialog_props', [this.confirmState, this.handleConfirm, this.handleCancel, this.open], () => {
+      if (!(!(this.open)) || !(this.confirmState)) return undefined as never
+      return ({ ...this.confirmState, onConfirm: this.handleConfirm, onCancel: this.handleCancel })
+    })
+  }
+
+  go(id: string | null) {
+    return this.props.navigate(adminUrlWith('audiences', this.props.params, { audience: id }))
+  }
+
+  async askRemove(a: Audience) {
+    if (!(!(this.open))) return undefined as never
+    const ok = await this.confirm({
+      title: this.tr('admin.aud_delete_q', { defaultValue: 'Supprimer « {{name}} » ?', name: a.name }),
+      // The count of places it is offered is the part nobody has in mind: the
+      // same click removes a list and changes what several units are shown.
+      message: a.applied_to > 0
+        ? this.tr('admin.aud_delete_applied', {
+            defaultValue_one: 'Cette audience est proposée à {{count}} endroit. Elle cessera d’y apparaître. Les partages déjà effectués ne sont pas retirés.',
+            defaultValue: 'Cette audience est proposée à {{count}} endroits. Elle cessera d’y apparaître. Les partages déjà effectués ne sont pas retirés.',
+            count: a.applied_to,
+          })
+        : this.tr('admin.aud_delete_msg', {
+            defaultValue: 'Elle n’est proposée nulle part. Les partages déjà effectués ne sont pas retirés.',
+          }),
+      confirmLabel: this.tr('common.delete', { defaultValue: 'Supprimer' }),
+      variant: 'danger',
+    })
+    if (ok) this.remove.mutate(a.id)
+  }
+
+  /** `setQ` of the TSX: a value, or an update of the previous one. */
+  setQ(value: AudiencesSection['q'] | ((prev: AudiencesSection['q']) => AudiencesSection['q'])) {
+    this.q = typeof value === 'function' ? (value as (prev: AudiencesSection['q']) => AudiencesSection['q'])(this.q) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type AudiencesSectionStores = ReturnType<AudiencesSection['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type AudiencesSectionHooks = ReturnType<AudiencesSection['useHooks']>
+
+export default AudiencesSection.component()

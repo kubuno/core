@@ -1,0 +1,29 @@
+<!-- FeatureDialog — converted from FeatureDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="FeatureDialogProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Res admin.res_save}"
+                  ConfirmEnabled="{Binding enabled_unless_busy}"
+                  ConfirmBusy="{Binding busy}"
+                  CancelText="{Res admin.res_cancel}"
+                  HostStrings="true"
+                  Title="{Binding title}"
+                  Width="460"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <Stack Gap="16" Class="p-4">
+      <!-- TODO(views-migrate): <TextField> autoFocus: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <!-- TODO(views-migrate): <TextArea> rows: no .kbview property -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+      <Callout Body="{Res admin.res_feature_rename_warning, Count={Binding res_feature_rename_warning_count}}"
+               Visible="{Binding show_feature_feature_resource}"/>
+      <Label Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             InheritFontSize="true"
+             AccessibleRole="Alert"
+             Visible="{Binding show_error}"
+             Class="[font-size:var(--kb-text-body)]"/>
+    </Stack>
+  </FloatingWindow>
+</Panel>

@@ -1,64 +1,90 @@
-// One territory's days.
-//
-// The table answers three questions at once, which is why it is a table and not
-// a list of cards: what the day is called, *when* it falls (the rule, in words,
-// and the date it produces in the chosen year), and where it comes from — this
-// calendar, or the country it inherits from. An inherited row is read-only here
-// on purpose: editing it would silently rewrite the country for everybody, and
-// the region's real verb is "ne l'observe pas", which is the exclusion switch.
+/**
+ * Code-behind of `CalendarDetail.kbview` (converted from `CalendarDetail.tsx` by @kubuno/views-migrate).
+ */
+import { bind, type MouseEventArgs, type ValueChangedEventArgs } from '@kubuno/views'
+import { useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { RotateCcw } from "lucide-react"
+import { Badge, Toggle, type DataTableColumn, type DataTableRowAction } from "@ui"
+import ConfirmDialog from "@ui/ConfirmDialog"
+import { useConfirm } from "../../../hooks/useConfirm"
+import HolidayDialog from "./HolidayDialog"
+import { formatDate, observanceText, ruleText } from "./ruleText"
+import { errorMessage, useCalendarDetail, useDeleteHoliday, useResetHoliday, useSetExclusions, useSetHolidayEnabled, type Holiday } from "./api"
+import { useAdminCrumbs } from "../../AdminBreadcrumb"
 
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { CalendarDays, Plus, RotateCcw } from 'lucide-react'
-import {
-  Badge, Button, Callout, DataTable, EmptyState, NumberInput, Toggle,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import ConfirmDialog from '@ui/ConfirmDialog'
-import { useConfirm } from '../../../hooks/useConfirm'
-import HolidayDialog from './HolidayDialog'
-import { formatDate, observanceText, ruleText } from './ruleText'
-import {
-  errorMessage, useCalendarDetail, useDeleteHoliday, useResetHoliday,
-  useSetExclusions, useSetHolidayEnabled, type Holiday,
-} from './api'
-import { useAdminCrumbs } from '../../AdminBreadcrumb'
+import { ViewBase } from './CalendarDetail.kbview'
+import * as __parts from './CalendarDetail.parts'
 
-export default function CalendarDetail({
-  calendarId, canManage, onOpenCalendar,
-}: {
+export type CalendarDetailProps = {
   calendarId: string
   canManage: boolean
   onOpenCalendar: (id: string) => void
-}) {
-  const { t, i18n } = useTranslation()
-  const locale = i18n.language || 'fr'
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+}
 
-  const [year, setYear]       = useState(new Date().getFullYear())
-  const [editing, setEditing] = useState<Holiday | 'new' | null>(null)
-  const [error, setError]     = useState<string | null>(null)
+export class CalendarDetail extends ViewBase {
+  @bind accessor editing: Holiday | 'new' | null = null
+  @bind accessor error: string | null = null
+  tr!: CalendarDetailStores['t']
+  i18n!: CalendarDetailStores['i18n']
+  confirm!: CalendarDetailStores['confirm']
+  confirmState!: CalendarDetailStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  year!: CalendarDetailStores['year']
+  setYear!: CalendarDetailStores['setYear']
+  data!: CalendarDetailHooks['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: CalendarDetailHooks['refetch']
+  setEnabled!: CalendarDetailStores['setEnabled']
+  remove!: CalendarDetailStores['remove']
+  reset!: CalendarDetailStores['reset']
+  setExclusions!: CalendarDetailHooks['setExclusions']
 
-  const { data, isLoading, isError, refetch } = useCalendarDetail(calendarId, year)
-  const setEnabled    = useSetHolidayEnabled()
-  const remove        = useDeleteHoliday()
-  const reset         = useResetHoliday()
-  const setExclusions = useSetExclusions(calendarId)
-
-  const fail = (e: unknown) => setError(errorMessage(e, t('admin.hol_save_failed')))
-
-  /** Add or drop one key from the exclusion set, which is always written whole. */
-  const toggleExclusion = (key: string, excluded: boolean) => {
-    const current = data?.exclusions ?? []
-    const next = excluded ? [...current, key] : current.filter(k => k !== key)
-    setError(null)
-    setExclusions.mutate(next, { onError: fail })
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t, i18n } = useTranslation()
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    const [year, setYear]       = useState<number>(new Date().getFullYear())
+    const setEnabled    = useSetHolidayEnabled()
+    const remove        = useDeleteHoliday()
+    const reset         = useResetHoliday()
+    return { t, i18n, confirm, confirmState, handleConfirm, handleCancel, year, setYear, setEnabled, remove, reset }
   }
 
-  const columns: DataTableColumn<Holiday>[] = [
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const year = this.year
+    const { data, isLoading, isError, refetch } = useCalendarDetail(this.props.calendarId, year)
+    this.publish({ data, isLoading, isError, refetch })
+    const setExclusions = useSetExclusions(this.props.calendarId)
+    this.publish({ setExclusions })
+    const calendar = this.calendar
+    useAdminCrumbs(useMemo(
+      () => (calendar ? [{ label: calendar.name, title: calendar.name }] : []),
+      [calendar],
+    ))
+    return { data, isLoading, isError, refetch, setExclusions }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, i18n: s.i18n, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel, year: s.year, setYear: s.setYear, setEnabled: s.setEnabled, remove: s.remove, reset: s.reset })
+    const h = this.useHooks()
+    this.publish({ data: h.data, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch, setExclusions: h.setExclusions })
+  }
+
+  get locale(): string {
+    return this.i18n.language || 'fr'
+  }
+
+  get columns(): DataTableColumn<Holiday>[] {
+    return this.memo('columns', [this.tr, this.locale, this.year, this.props, this.setEnabled, this.setExclusions, this.error], () => [
     {
       id: 'name',
-      header: t('admin.hol_col_day'),
+      header: this.tr('admin.hol_col_day'),
       primary: true,
       minWidth: 220,
       sortValue: r => r.display_name.toLowerCase(),
@@ -69,28 +95,28 @@ export default function CalendarDetail({
           </span>
           <span className="flex flex-wrap items-center gap-1">
             {r.inherited && (
-              <Badge variant="neutral">{t('admin.hol_badge_inherited')}</Badge>
+              <Badge variant="neutral">{this.tr('admin.hol_badge_inherited')}</Badge>
             )}
-            {r.is_overridden && <Badge variant="primary">{t('admin.hol_badge_corrected')}</Badge>}
-            {!r.is_builtin && <Badge variant="neutral">{t('admin.hol_badge_custom')}</Badge>}
+            {r.is_overridden && <Badge variant="primary">{this.tr('admin.hol_badge_corrected')}</Badge>}
+            {!r.is_builtin && <Badge variant="neutral">{this.tr('admin.hol_badge_custom')}</Badge>}
             {/* A row the newest dataset dropped, kept because it was edited.
                 Naming it is the whole point of the flag. */}
-            {r.is_orphan && <Badge variant="warning">{t('admin.hol_badge_orphan')}</Badge>}
+            {r.is_orphan && <Badge variant="warning">{this.tr('admin.hol_badge_orphan')}</Badge>}
           </span>
         </span>
       ),
     },
     {
       id: 'rule',
-      header: t('admin.hol_col_rule'),
+      header: this.tr('admin.hol_col_rule'),
       minWidth: 220,
       sortValue: r => r.kind,
       cell: r => (
         <span className="flex min-w-0 flex-col">
-          <span className="truncate text-text-secondary">{ruleText(t, locale, r.kind, r.rule)}</span>
+          <span className="truncate text-text-secondary">{ruleText(this.tr, this.locale, r.kind, r.rule)}</span>
           {r.observance !== 'none' && (
             <span className="truncate text-text-tertiary" style={{ fontSize: 'var(--kb-text-small)' }}>
-              {observanceText(t, r.observance)}
+              {observanceText(this.tr, r.observance)}
             </span>
           )}
         </span>
@@ -98,7 +124,7 @@ export default function CalendarDetail({
     },
     {
       id: 'dates',
-      header: t('admin.hol_col_dates', { year }),
+      header: this.tr('admin.hol_col_dates', { year: this.year }),
       minWidth: 220,
       sortValue: r => r.dates[0]?.date ?? null,
       cell: r => (
@@ -106,22 +132,22 @@ export default function CalendarDetail({
           // Not an error: a rule bounded by its years, or a date list that has
           // run out, legitimately produces nothing this year — and saying so is
           // more useful than an empty cell.
-          ? <span className="text-text-tertiary">{t('admin.hol_no_date_this_year')}</span>
+          ? <span className="text-text-tertiary">{this.tr('admin.hol_no_date_this_year')}</span>
           : (
             <span className="flex flex-col">
               {r.dates.slice(0, 3).map(d => (
                 <span key={d.date} className="text-text-primary">
-                  {formatDate(locale, d.date)}
+                  {formatDate(this.locale, d.date)}
                   {d.observed_from && (
                     <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-small)' }}>
-                      {' '}{t('admin.hol_preview_moved', { from: formatDate(locale, d.observed_from) })}
+                      {' '}{this.tr('admin.hol_preview_moved', { from: formatDate(this.locale, d.observed_from) })}
                     </span>
                   )}
                 </span>
               ))}
               {r.dates.length > 3 && (
                 <span className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-small)' }}>
-                  {t('admin.hol_more_dates', { count: r.dates.length - 3 })}
+                  {this.tr('admin.hol_more_dates', { count: r.dates.length - 3 })}
                 </span>
               )}
             </span>
@@ -130,163 +156,197 @@ export default function CalendarDetail({
     },
     {
       id: 'category',
-      header: t('admin.hol_col_category'),
+      header: this.tr('admin.hol_col_category'),
       sortValue: r => r.category,
-      cell: r => <span className="text-text-secondary">{t(`admin.hol_cat_${r.category}`)}</span>,
+      cell: r => <span className="text-text-secondary">{this.tr(`admin.hol_cat_${r.category}`)}</span>,
     },
     {
       id: 'enabled',
-      header: t('admin.hol_col_observed'),
+      header: this.tr('admin.hol_col_observed'),
       align: 'right',
       sortValue: r => (r.enabled && !r.excluded ? 1 : 0),
       cell: r => (
         <Toggle
           checked={r.inherited ? !r.excluded : r.enabled}
-          disabled={!canManage || setEnabled.isPending || setExclusions.isPending}
-          aria-label={t('admin.hol_col_observed')}
+          disabled={!this.props.canManage || this.setEnabled.isPending || this.setExclusions.isPending}
+          aria-label={this.tr('admin.hol_col_observed')}
           onChange={e => {
-            setError(null)
+            this.error = null
             // The same switch, two different writes: a day of this calendar is
             // disabled, an inherited one is excluded. One control because the
             // question the operator is answering is identical.
-            if (r.inherited) toggleExclusion(r.key, !e.target.checked)
-            else setEnabled.mutate({ id: r.id, enabled: e.target.checked }, { onError: fail })
+            if (r.inherited) this.toggleExclusion(r.key, !e.target.checked)
+            else this.setEnabled.mutate({ id: r.id, enabled: e.target.checked }, { onError: this.fail.bind(this) })
           }}
         />
       ),
     },
-  ]
+  ])
+  }
 
-  const rowActions: DataTableRowAction<Holiday>[] = canManage
+  get rowActions(): DataTableRowAction<Holiday>[] {
+    return this.memo('rowActions', [this.props, this.tr, this.editing, this.error, this.reset, this.confirm, this.remove], () => this.props.canManage
     ? [
         {
           id: 'edit',
-          label: t('admin.hol_action_edit'),
+          label: this.tr('admin.hol_action_edit'),
           hidden: r => r.inherited,
-          onClick: r => setEditing(r),
+          onClick: r => this.editing = r,
         },
         {
           id: 'reset',
-          label: t('admin.hol_action_reset'),
+          label: this.tr('admin.hol_action_reset'),
           icon: <RotateCcw size={14} />,
           // Only a shipped row that was edited has an original to go back to.
           hidden: r => !r.is_overridden || r.inherited,
           onClick: r => {
-            setError(null)
-            reset.mutate(r.id, { onError: fail })
+            this.error = null
+            this.reset.mutate(r.id, { onError: this.fail.bind(this) })
           },
         },
         {
           id: 'delete',
-          label: t('admin.hol_action_delete'),
+          label: this.tr('admin.hol_action_delete'),
           danger: true,
           hidden: r => r.is_builtin || r.inherited,
           onClick: async r => {
-            const ok = await confirm({
-              title: t('admin.hol_delete_day_title'),
-              message: t('admin.hol_delete_day_message', { name: r.display_name }),
-              confirmLabel: t('admin.hol_action_delete'),
+            const ok = await this.confirm({
+              title: this.tr('admin.hol_delete_day_title'),
+              message: this.tr('admin.hol_delete_day_message', { name: r.display_name }),
+              confirmLabel: this.tr('admin.hol_action_delete'),
               variant: 'danger',
             })
             if (!ok) return
-            setError(null)
-            remove.mutate(r.id, { onError: fail })
+            this.error = null
+            this.remove.mutate(r.id, { onError: this.fail.bind(this) })
           },
         },
       ]
-    : []
+    : [])
+  }
 
-  const calendar = data?.calendar
-  // The trail carries the calendar; « Jours fériés » is then the link back.
-  // The neighbouring « open the parent calendar » button is NOT a back link
-  // and stays.
-  useAdminCrumbs(useMemo(
-    () => (calendar ? [{ label: calendar.name, title: calendar.name }] : []),
-    [calendar],
-  ))
-  const coverage = calendar?.coverage_from && calendar?.coverage_to
-    ? t('admin.hol_coverage', { from: calendar.coverage_from, to: calendar.coverage_to })
+  get calendar() {
+    return this.memo('calendar', [this.data], () => this.data?.calendar)
+  }
+
+  get coverage(): string | null {
+    return this.calendar?.coverage_from && this.calendar?.coverage_to
+    ? this.tr('admin.hol_coverage', { from: this.calendar.coverage_from, to: this.calendar.coverage_to })
     : null
+  }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {data?.parent && (
-          <Button variant="ghost" onClick={() => onOpenCalendar(data.parent!.id)}>
-            {t('admin.hol_open_parent', { name: data.parent.name })}
-          </Button>
-        )}
-      </div>
+  get show_data_parent() {
+    return this.memo('show_data_parent', [this.data], () => !!(this.data?.parent))
+  }
 
-      <div className="min-w-0">
-        <h2 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-section)' }}>
-          {data?.display_name ?? '…'}
-          <span className="ms-2 text-text-tertiary" style={{ fontSize: 'var(--kb-text-small)' }}>
-            {calendar?.code}
-          </span>
-        </h2>
-        {data?.parent && (
-          <p className="mt-1 text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-            {t('admin.hol_inherits_from', { name: data.parent.name })}
-          </p>
-        )}
-      </div>
+  get hol_open_parent_name() {
+    if (!(this.data?.parent)) return undefined as never
+    return this.data.parent.name
+  }
 
-      {coverage && <Callout variant="info" t={t}>{coverage}</Callout>}
+  get text() {
+    return this.data?.display_name ?? '…'
+  }
 
-      <div className="flex flex-wrap items-end gap-3">
-        <NumberInput
-          label={t('admin.hol_preview_year')}
-          value={year}
-          min={1970}
-          max={2200}
-          onChange={setYear}
-          className="w-32"
-        />
-        <div className="ms-auto">
-          {canManage && (
-            <Button variant="secondary" onClick={() => setEditing('new')}>
-              <Plus size={16} /> {t('admin.hol_new_day')}
-            </Button>
-          )}
-        </div>
-      </div>
+  get span_text() {
+    return this.calendar?.code
+  }
 
-      {error && (
-        <p className="text-danger" role="alert" style={{ fontSize: 'var(--kb-text-body)' }}>{error}</p>
-      )}
+  get show_coverage() {
+    return !!(this.coverage)
+  }
 
-      <DataTable<Holiday>
-        t={t}
-        rows={data?.holidays ?? []}
-        columns={columns}
-        rowKey={r => r.id}
-        loading={isLoading}
-        rowActions={rowActions}
-        error={isError ? t('admin.hol_load_failed') : undefined}
-        onRetry={() => void refetch()}
-        pageSize={0}
-        emptyState={
-          <EmptyState
-            icon={<CalendarDays size={26} />}
-            title={t('admin.hol_no_days_title')}
-            description={t('admin.hol_no_days_desc')}
-            t={t}
-          />
-        }
-      />
+  get part1_props() {
+    return this.memo('part1_props', [this.tr, this.props], () => {
+      if (!(this.props.canManage)) return undefined as never
+      return ({ setEditing: this.setEditing.bind(this), t: this.tr })
+    })
+  }
 
-      {editing && (
-        <HolidayDialog
-          calendarId={calendarId}
-          holiday={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-        />
-      )}
+  /** A part of the screen still written in React (<Button> with element children). */
+  get Part1() {
+    if (!(this.props.canManage)) return undefined as never
+    return __parts.Part1
+  }
 
-      {confirmState && (
-        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
-      )}
-    </div>
-  )
+  get show_error() {
+    return !!(this.error)
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.tr, this.data, this.columns, this.isLoading, this.rowActions, this.isError, this.refetch], () => ({ t: this.tr, data: this.data, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, isError: this.isError, refetch: this.refetch }))
+  }
+
+  /** A part of the screen still written in React (<DataTable> t, columns, rowKey, rowActions, onRetry, emptyState: no .kbview property). */
+  get Part2() {
+    return __parts.Part2
+  }
+
+  get show_editing() {
+    return this.memo('show_editing', [this.editing], () => !!(this.editing))
+  }
+
+  /** `<HolidayDialog>`, rendered by a ReactHost. */
+  get HolidayDialog() {
+    if (!(this.editing)) return undefined as never
+    return HolidayDialog
+  }
+
+  get holiday_dialog_props() {
+    return this.memo('holiday_dialog_props', [this.props, this.editing], () => {
+      if (!(this.editing)) return undefined as never
+      return ({ calendarId: this.props.calendarId, holiday: this.editing === 'new' ? null : this.editing, onClose: () => this.editing = null } as React.ComponentProps<typeof HolidayDialog>)
+    })
+  }
+
+  get show_confirm_state() {
+    return this.memo('show_confirm_state', [this.confirmState], () => !!(this.confirmState))
+  }
+
+  /** `<ConfirmDialog>`, rendered by a ReactHost. */
+  get ConfirmDialog() {
+    if (!(this.confirmState)) return undefined as never
+    return ConfirmDialog
+  }
+
+  get confirm_dialog_props() {
+    return this.memo('confirm_dialog_props', [this.confirmState, this.handleConfirm, this.handleCancel], () => {
+      if (!(this.confirmState)) return undefined as never
+      return ({ ...this.confirmState, onConfirm: this.handleConfirm, onCancel: this.handleCancel })
+    })
+  }
+
+  fail(e: unknown) {
+    return this.error = errorMessage(e, this.tr('admin.hol_save_failed'))
+  }
+
+  toggleExclusion(key: string, excluded: boolean) {
+    const current = this.data?.exclusions ?? []
+    const next = excluded ? [...current, key] : current.filter(k => k !== key)
+    this.error = null
+    this.setExclusions.mutate(next, { onError: this.fail.bind(this) })
+  }
+
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    if (!(this.data?.parent)) return undefined as never
+    this.props.onOpenCalendar(this.data.parent!.id)
+  }
+
+  numeric_field_value_changed(_sender: unknown, args: ValueChangedEventArgs) {
+    this.setYear(args.value as never)
+  }
+
+  /** `setEditing` of the TSX: a value, or an update of the previous one. */
+  setEditing(value: Holiday | 'new' | null | ((prev: Holiday | 'new' | null) => Holiday | 'new' | null)) {
+    this.editing = typeof value === 'function' ? (value as (prev: Holiday | 'new' | null) => Holiday | 'new' | null)(this.editing) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type CalendarDetailStores = ReturnType<CalendarDetail['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type CalendarDetailHooks = ReturnType<CalendarDetail['useHooks']>
+
+export default CalendarDetail.component()

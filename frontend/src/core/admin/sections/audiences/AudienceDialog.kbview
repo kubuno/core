@@ -1,0 +1,25 @@
+<!-- AudienceDialog — converted from AudienceDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AudienceDialogProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Res settings.create}"
+                  ConfirmEnabled="{Binding enabled_unless_can_save}"
+                  CancelText="{Res common.cancel}"
+                  CancelEnabled="{Binding enabled_unless_busy}"
+                  HostStrings="true"
+                  Title="{Res admin.aud_new_title}"
+                  Width="560"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <Stack Gap="16" Class="max-h-[65vh] overflow-y-auto p-4">
+      <!-- TODO(views-migrate): <TextField> autoFocus: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <TextArea Text="{Binding desc, Mode=TwoWay}"
+                Label="{Res admin.aud_description}"
+                FieldClass="h-20"
+                Placeholder="{Res admin.aud_desc_ph}"
+                ErrorText="{Binding error_text}"
+                Hint="{Res admin.aud_desc_hint, N={Binding descLen}, Max={Binding aud_desc_hint_max}}"/>
+      <Callout Variant="Danger" Body="{Binding props.error}" Visible="{Binding show_error}"/>
+    </Stack>
+  </FloatingWindow>
+</Panel>

@@ -1,0 +1,31 @@
+<!-- CalendarDialog — converted from CalendarDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="CalendarDialogProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Res admin.hol_save}"
+                  ConfirmEnabled="{Binding enabled_unless_create_is_pending_name}"
+                  ConfirmBusy="{Binding create.isPending}"
+                  CancelText="{Res admin.hol_cancel}"
+                  HostStrings="true"
+                  Title="{Res admin.hol_new_calendar}"
+                  Width="460"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <Stack Gap="16" Class="p-4">
+      <!-- TODO(views-migrate): <TextField> autoFocus: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <TextField Label="{Res admin.hol_calendar_country}"
+                 Text="{Binding country}"
+                 MaxLength="2"
+                 Hint="{Res admin.hol_calendar_country_hint}"
+                 OnTextChanged="text_field_text_changed"/>
+      <Callout Body="{Res admin.hol_calendar_new_note}"/>
+      <Label Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             InheritFontSize="true"
+             AccessibleRole="Alert"
+             Visible="{Binding show_error}"
+             Class="[font-size:var(--kb-text-body)]"/>
+    </Stack>
+  </FloatingWindow>
+</Panel>

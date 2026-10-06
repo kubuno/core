@@ -1,0 +1,28 @@
+<!-- ResourcesSection — converted from ResourcesSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="AdminSectionProps" Gap="16" Class="min-w-0">
+  <Panel Class="min-w-0">
+    <Label HtmlTag="H1"
+           Text="{Res admin.nav_resources}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+    <Label Text="{Res admin.res_intro}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="mt-1 max-w-3xl [font-size:var(--kb-text-body)]"/>
+  </Panel>
+  <!-- TODO(views-migrate): <Tabs> tabs: no .kbview property -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  <!-- TODO(views-migrate): <OverviewTab> is no .kbview element (./OverviewTab#default) -->
+  <ReactHost Component="{Binding OverviewTab}" Props="{Binding overview_tab_props}" Visible="{Binding show_pane_overview}"/>
+  <!-- TODO(views-migrate): <BuildingsTab> is no .kbview element (./BuildingsTab#default) -->
+  <ReactHost Component="{Binding BuildingsTab}" Props="{Binding buildings_tab_props}" Visible="{Binding show_pane_buildings}"/>
+  <!-- TODO(views-migrate): <ResourcesTab> is no .kbview element (./ResourcesTab#default) -->
+  <ReactHost Component="{Binding ResourcesTab}" Props="{Binding resources_tab_props}" Visible="{Binding show_pane_resources}"/>
+  <!-- TODO(views-migrate): <FeaturesTab> is no .kbview element (./FeaturesTab#default) -->
+  <ReactHost Component="{Binding FeaturesTab}" Props="{Binding features_tab_props}" Visible="{Binding show_pane_features}"/>
+  <!-- TODO(views-migrate): <RoomStatsTab> is no .kbview element (./RoomStatsTab#default) -->
+  <ReactHost Component="{Binding RoomStatsTab}" Visible="{Binding show_pane_room_stats}"/>
+</Stack>

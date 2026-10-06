@@ -1,0 +1,109 @@
+<!-- ResourceDialog — converted from ResourceDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="ResourceDialogProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Res admin.res_save}"
+                  ConfirmEnabled="{Binding enabled_unless_busy_no_buildings}"
+                  ConfirmBusy="{Binding busy}"
+                  CancelText="{Res admin.res_cancel}"
+                  HostStrings="true"
+                  Title="{Binding title}"
+                  Width="600"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <Stack Gap="16" Class="max-h-[65vh] overflow-y-auto p-4">
+      <Callout Variant="Warning"
+               Title="{Res admin.res_needs_building_title}"
+               Body="{Res admin.res_needs_building_desc}"
+               Visible="{Binding noBuildings}"/>
+      <Stack Gap="4">
+        <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (./FieldLabel#default) -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <Label HtmlTag="Div"
+               Text="{Binding div_text}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               BackColor="Surface1"
+               InheritFontSize="true"
+               Class="rounded-md border border-border px-3 py-2 [font-size:var(--kb-text-body)]"/>
+        <Label HtmlTag="Span"
+               Text="{Res admin.res_generated_hint}"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-meta)]"/>
+      </Stack>
+      <Stack Gap="4">
+        <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (./FieldLabel#default) -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+        <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        <Label HtmlTag="Span"
+               Text="{Binding span_text}"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-meta)]"/>
+      </Stack>
+      <TextField Label="{Res admin.res_type}"
+                 Text="{Binding kind}"
+                 MaxLength="45"
+                 Hint="{Res admin.res_type_hint}"
+                 Visible="{Binding show_category_other}"
+                 OnTextChanged="text_field_text_changed"/>
+      <!-- TODO(views-migrate): <TextField> autoFocus: no .kbview property -->
+      <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+      <Stack Gap="4">
+        <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (./FieldLabel#default) -->
+        <ReactHost Component="{Binding Part5}" Props="{Binding part1_props}"/>
+        <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+        <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+      </Stack>
+      <Panel Class="grid grid-cols-3 gap-3">
+        <Stack Gap="4">
+          <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (./FieldLabel#default) -->
+          <ReactHost Component="{Binding Part7}" Props="{Binding part1_props}"/>
+          <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+          <ReactHost Component="{Binding Part8}" Props="{Binding part8_props}"/>
+        </Stack>
+        <TextField Label="{Res admin.res_section}" Text="{Binding section}" MaxLength="15" OnTextChanged="text_field_text_changed2"/>
+        <NumericField Label="{Res admin.res_capacity}"
+                      Value="{Binding capacity}"
+                      Minimum="1"
+                      Maximum="100000"
+                      OnValueChanged="numeric_field_value_changed"/>
+      </Panel>
+      <CheckBox Checked="{Binding releaseExempt}"
+                Text="{Res admin.res_release_exempt}"
+                Description="{Res admin.res_release_exempt_desc}"
+                Visible="{Binding show_category_meeting_room}"
+                OnCheckedChanged="check_box_checked_changed"/>
+      <Stack>
+        <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (./FieldLabel#default) -->
+        <ReactHost Component="{Binding Part9}" Props="{Binding part1_props}"/>
+        <Label HtmlTag="Span"
+               Text="{Res admin.res_features_none}"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               InheritFontSize="true"
+               Visible="{Binding show_features_data_features}"
+               Class="[font-size:var(--kb-text-meta)]"/>
+        <Panel Visible="{Binding show_not_features_data_features}" Class="flex flex-wrap gap-x-6 gap-y-2">
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+            <CheckBox Checked="{Binding checked}" Text="{Binding f.name}" OnCheckedChanged="check_box_checked_changed2"/>
+          </Repeater>
+        </Panel>
+      </Stack>
+      <!-- TODO(views-migrate): <TextArea> rows: no .kbview property -->
+      <ReactHost Component="{Binding Part10}" Props="{Binding part10_props}"/>
+      <!-- TODO(views-migrate): <TextArea> rows: no .kbview property -->
+      <ReactHost Component="{Binding Part11}" Props="{Binding part11_props}"/>
+      <Label Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             InheritFontSize="true"
+             AccessibleRole="Alert"
+             Visible="{Binding show_error}"
+             Class="[font-size:var(--kb-text-body)]"/>
+    </Stack>
+  </FloatingWindow>
+</Panel>

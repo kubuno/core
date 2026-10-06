@@ -1,47 +1,68 @@
-// The inventory of territories.
-//
-// Two hundred and fifty countries and six hundred subdivisions is a directory,
-// not a list to read: it opens on countries only, with the search box as the
-// real navigation. A subdivision is reached from its country, where the number
-// that matters ("+2 par rapport au pays") is finally legible.
+/**
+ * Code-behind of `CalendarsTab.kbview` (converted from `CalendarsTab.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { Toggle, type DataTableColumn, type DataTableRowAction } from "@ui"
+import ConfirmDialog from "@ui/ConfirmDialog"
+import { useConfirm } from "../../../hooks/useConfirm"
+import CalendarDialog from "./CalendarDialog"
+import { errorMessage, useDeleteCalendar, useHolidayCalendars, useSetCalendarEnabled, type CalendarSummary } from "./api"
 
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Globe, Plus, Search } from 'lucide-react'
-import {
-  Button, Checkbox, DataTable, EmptyState, Input, Toggle,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import ConfirmDialog from '@ui/ConfirmDialog'
-import { useConfirm } from '../../../hooks/useConfirm'
-import CalendarDialog from './CalendarDialog'
-import {
-  errorMessage, useDeleteCalendar, useHolidayCalendars, useSetCalendarEnabled,
-  type CalendarSummary,
-} from './api'
+import { ViewBase } from './CalendarsTab.kbview'
+import * as __parts from './CalendarsTab.parts'
 
-export default function CalendarsTab({
-  canManage, onOpen,
-}: {
+export type CalendarsTabProps = {
   canManage: boolean
   onOpen: (id: string) => void
-}) {
-  const { t } = useTranslation()
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+}
 
-  const [search, setSearch] = useState('')
-  const [countriesOnly, setCountriesOnly] = useState(true)
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+export class CalendarsTab extends ViewBase {
+  @bind accessor search = ''
+  @bind accessor countriesOnly = true
+  @bind accessor creating = false
+  @bind accessor error: string | null = null
+  tr!: CalendarsTabStores['t']
+  confirm!: CalendarsTabStores['confirm']
+  confirmState!: CalendarsTabStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  data!: CalendarsTabHooks['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: CalendarsTabHooks['refetch']
+  setEnabled!: CalendarsTabStores['setEnabled']
+  remove!: CalendarsTabStores['remove']
 
-  const { data, isLoading, isError, refetch } = useHolidayCalendars(search, countriesOnly)
-  const setEnabled = useSetCalendarEnabled()
-  const remove     = useDeleteCalendar()
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    const setEnabled = useSetCalendarEnabled()
+    const remove     = useDeleteCalendar()
+    return { t, confirm, confirmState, handleConfirm, handleCancel, setEnabled, remove }
+  }
 
-  const columns: DataTableColumn<CalendarSummary>[] = [
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const { data, isLoading, isError, refetch } = useHolidayCalendars(this.search, this.countriesOnly)
+    this.publish({ data, isLoading, isError, refetch })
+    return { data, isLoading, isError, refetch }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel, setEnabled: s.setEnabled, remove: s.remove })
+    const h = this.useHooks()
+    this.publish({ data: h.data, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch })
+  }
+
+  get columns(): DataTableColumn<CalendarSummary>[] {
+    return this.memo('columns', [this.tr, this.props, this.setEnabled, this.error], () => [
     {
       id: 'name',
-      header: t('admin.hol_col_territory'),
+      header: this.tr('admin.hol_col_territory'),
       primary: true,
       minWidth: 220,
       sortValue: r => r.display_name.toLowerCase(),
@@ -56,7 +77,7 @@ export default function CalendarsTab({
           {!r.is_builtin && (
             <span className="shrink-0 rounded-full bg-surface-2 px-2 text-text-secondary"
                   style={{ fontSize: 'var(--kb-text-small)' }}>
-              {t('admin.hol_badge_custom')}
+              {this.tr('admin.hol_badge_custom')}
             </span>
           )}
         </span>
@@ -64,7 +85,7 @@ export default function CalendarsTab({
     },
     {
       id: 'holidays',
-      header: t('admin.hol_col_days'),
+      header: this.tr('admin.hol_col_days'),
       align: 'right',
       sortValue: r => r.holiday_count + r.inherited_count,
       cell: r => (
@@ -72,14 +93,14 @@ export default function CalendarsTab({
           {r.parent_id
             // A subdivision's own count means nothing on its own: "2" is two
             // days only if the reader also knows it inherits eleven.
-            ? t('admin.hol_days_with_inherited', { own: r.holiday_count, inherited: r.inherited_count })
+            ? this.tr('admin.hol_days_with_inherited', { own: r.holiday_count, inherited: r.inherited_count })
             : r.holiday_count}
         </span>
       ),
     },
     {
       id: 'subdivisions',
-      header: t('admin.hol_col_regions'),
+      header: this.tr('admin.hol_col_regions'),
       align: 'right',
       sortValue: r => r.subdivision_count,
       cell: r => (
@@ -90,7 +111,7 @@ export default function CalendarsTab({
     },
     {
       id: 'overridden',
-      header: t('admin.hol_col_corrected'),
+      header: this.tr('admin.hol_col_corrected'),
       align: 'right',
       sortValue: r => r.overridden_count,
       cell: r => (
@@ -101,105 +122,139 @@ export default function CalendarsTab({
     },
     {
       id: 'enabled',
-      header: t('admin.hol_col_offered'),
+      header: this.tr('admin.hol_col_offered'),
       align: 'right',
       sortValue: r => (r.enabled ? 1 : 0),
       cell: r => (
         <Toggle
           checked={r.enabled}
-          disabled={!canManage || setEnabled.isPending}
-          aria-label={t('admin.hol_col_offered')}
+          disabled={!this.props.canManage || this.setEnabled.isPending}
+          aria-label={this.tr('admin.hol_col_offered')}
           onChange={e => {
-            setError(null)
-            setEnabled.mutate({ id: r.id, enabled: e.target.checked }, {
-              onError: e => setError(errorMessage(e, t('admin.hol_save_failed'))),
+            this.error = null
+            this.setEnabled.mutate({ id: r.id, enabled: e.target.checked }, {
+              onError: e => this.error = errorMessage(e, this.tr('admin.hol_save_failed')),
             })
           }}
         />
       ),
     },
-  ]
+  ])
+  }
 
-  const rowActions: DataTableRowAction<CalendarSummary>[] = [
-    { id: 'open', label: t('admin.hol_action_open'), onClick: r => onOpen(r.id) },
-    ...(canManage
+  get rowActions(): DataTableRowAction<CalendarSummary>[] {
+    return this.memo('rowActions', [this.tr, this.props, this.confirm, this.error, this.remove], () => [
+    { id: 'open', label: this.tr('admin.hol_action_open'), onClick: r => this.props.onOpen(r.id) },
+    ...(this.props.canManage
       ? [{
           id: 'delete',
-          label: t('admin.hol_action_delete'),
+          label: this.tr('admin.hol_action_delete'),
           danger: true,
           // A shipped territory cannot be deleted — the seeder would bring it
           // back — so the action is simply absent rather than offered and refused.
           hidden: (r: CalendarSummary) => r.is_builtin,
           onClick: async (r: CalendarSummary) => {
-            const ok = await confirm({
-              title: t('admin.hol_delete_calendar_title'),
-              message: t('admin.hol_delete_calendar_message', { name: r.display_name }),
-              confirmLabel: t('admin.hol_action_delete'),
+            const ok = await this.confirm({
+              title: this.tr('admin.hol_delete_calendar_title'),
+              message: this.tr('admin.hol_delete_calendar_message', { name: r.display_name }),
+              confirmLabel: this.tr('admin.hol_action_delete'),
               variant: 'danger',
             })
             if (!ok) return
-            setError(null)
-            remove.mutate(r.id, { onError: e => setError(errorMessage(e, t('admin.hol_save_failed'))) })
+            this.error = null
+            this.remove.mutate(r.id, { onError: e => this.error = errorMessage(e, this.tr('admin.hol_save_failed')) })
           },
         } as DataTableRowAction<CalendarSummary>]
       : []),
-  ]
+  ])
+  }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder={t('admin.hol_search_ph')}
-          leftIcon={<Search size={16} />}
-          className="w-full sm:w-80"
-        />
-        <Checkbox
-          checked={countriesOnly}
-          onChange={setCountriesOnly}
-          label={t('admin.hol_countries_only')}
-        />
-        <div className="ms-auto">
-          {canManage && (
-            <Button variant="secondary" onClick={() => setCreating(true)}>
-              <Plus size={16} /> {t('admin.hol_new_calendar')}
-            </Button>
-          )}
-        </div>
-      </div>
+  get part1_props() {
+    return this.memo('part1_props', [this.search, this.tr], () => ({ search: this.search, setSearch: this.setSearch.bind(this), t: this.tr }))
+  }
 
-      {error && (
-        <p className="text-danger" role="alert" style={{ fontSize: 'var(--kb-text-body)' }}>{error}</p>
-      )}
+  /** A part of the screen still written in React (<TextField LeftIcon>: an icon size the element cannot take). */
+  get Part1() {
+    return __parts.Part1
+  }
 
-      <DataTable<CalendarSummary>
-        t={t}
-        rows={data ?? []}
-        columns={columns}
-        rowKey={r => r.id}
-        loading={isLoading}
-        rowActions={rowActions}
-        onRowClick={r => onOpen(r.id)}
-        error={isError ? t('admin.hol_load_failed') : undefined}
-        onRetry={() => void refetch()}
-        filtered={search !== '' || countriesOnly}
-        onClearFilters={() => { setSearch(''); setCountriesOnly(false) }}
-        emptyState={
-          <EmptyState
-            icon={<Globe size={26} />}
-            title={t('admin.hol_empty_title')}
-            description={t('admin.hol_empty_desc')}
-            t={t}
-          />
-        }
-      />
+  get part2_props() {
+    return this.memo('part2_props', [this.tr, this.props], () => {
+      if (!(this.props.canManage)) return undefined as never
+      return ({ setCreating: this.setCreating.bind(this), t: this.tr })
+    })
+  }
 
-      {creating && <CalendarDialog onClose={() => setCreating(false)} onCreated={onOpen} />}
+  /** A part of the screen still written in React (<Button> with element children). */
+  get Part2() {
+    if (!(this.props.canManage)) return undefined as never
+    return __parts.Part2
+  }
 
-      {confirmState && (
-        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
-      )}
-    </div>
-  )
+  get show_error() {
+    return !!(this.error)
+  }
+
+  get part3_props() {
+    return this.memo('part3_props', [this.tr, this.data, this.columns, this.isLoading, this.rowActions, this.props, this.isError, this.refetch, this.search, this.countriesOnly], () => ({ t: this.tr, data: this.data, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, onOpen: this.props.onOpen, isError: this.isError, refetch: this.refetch, search: this.search, countriesOnly: this.countriesOnly, setSearch: this.setSearch.bind(this), setCountriesOnly: this.setCountriesOnly.bind(this) }))
+  }
+
+  /** A part of the screen still written in React (<DataTable> t, columns, rowKey, rowActions, onRowClick, onRetry, filtered, onClearFilters, emptyState: no .kbview property). */
+  get Part3() {
+    return __parts.Part3
+  }
+
+  /** `<CalendarDialog>`, rendered by a ReactHost. */
+  get CalendarDialog() {
+    if (!(this.creating)) return undefined as never
+    return CalendarDialog
+  }
+
+  get calendar_dialog_props() {
+    return this.memo('calendar_dialog_props', [this.creating, this.props], () => {
+      if (!(this.creating)) return undefined as never
+      return ({ onClose: () => this.creating = false, onCreated: this.props.onOpen } as React.ComponentProps<typeof CalendarDialog>)
+    })
+  }
+
+  get show_confirm_state() {
+    return this.memo('show_confirm_state', [this.confirmState], () => !!(this.confirmState))
+  }
+
+  /** `<ConfirmDialog>`, rendered by a ReactHost. */
+  get ConfirmDialog() {
+    if (!(this.confirmState)) return undefined as never
+    return ConfirmDialog
+  }
+
+  get confirm_dialog_props() {
+    return this.memo('confirm_dialog_props', [this.confirmState, this.handleConfirm, this.handleCancel], () => {
+      if (!(this.confirmState)) return undefined as never
+      return ({ ...this.confirmState, onConfirm: this.handleConfirm, onCancel: this.handleCancel })
+    })
+  }
+
+  /** `setSearch` of the TSX: a value, or an update of the previous one. */
+  setSearch(value: CalendarsTab['search'] | ((prev: CalendarsTab['search']) => CalendarsTab['search'])) {
+    this.search = typeof value === 'function' ? (value as (prev: CalendarsTab['search']) => CalendarsTab['search'])(this.search) : value
+  }
+
+  /** `setCreating` of the TSX: a value, or an update of the previous one. */
+  setCreating(value: CalendarsTab['creating'] | ((prev: CalendarsTab['creating']) => CalendarsTab['creating'])) {
+    this.creating = typeof value === 'function' ? (value as (prev: CalendarsTab['creating']) => CalendarsTab['creating'])(this.creating) : value
+  }
+
+  /** `setCountriesOnly` of the TSX: a value, or an update of the previous one. */
+  setCountriesOnly(value: CalendarsTab['countriesOnly'] | ((prev: CalendarsTab['countriesOnly']) => CalendarsTab['countriesOnly'])) {
+    this.countriesOnly = typeof value === 'function' ? (value as (prev: CalendarsTab['countriesOnly']) => CalendarsTab['countriesOnly'])(this.countriesOnly) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type CalendarsTabStores = ReturnType<CalendarsTab['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type CalendarsTabHooks = ReturnType<CalendarsTab['useHooks']>
+
+export default CalendarsTab.component()

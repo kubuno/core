@@ -1,0 +1,65 @@
+<!-- UnitsTab — converted from UnitsTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="UnitsTabProps" Gap="16" Class="min-w-0">
+  <Callout Body="{Res admin.hol_units_intro}"/>
+  <Stack Direction="LeftToRight" Gap="12" CrossAlign="End" WrapContents="true">
+    <Stack Gap="4">
+      <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (../resources/FieldLabel#default) -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <!-- TODO(views-migrate): <Button> with element children -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Stack>
+    <Stack Gap="4" Visible="{Binding show_unit_id_can_manage}">
+      <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (../resources/FieldLabel#default) -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+      <Stack Direction="LeftToRight" CrossAlign="Center">
+        <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+        <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+        <!-- TODO(views-migrate): <Button> with element children -->
+        <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+      </Stack>
+    </Stack>
+  </Stack>
+  <Label Text="{Binding error}"
+         Overflow="Wrap"
+         ForeColor="Danger"
+         InheritFontSize="true"
+         AccessibleRole="Alert"
+         Visible="{Binding show_error}"
+         Class="[font-size:var(--kb-text-body)]"/>
+  <EmptyState IconSize="26"
+              Icon="Building2"
+              Title="{Res admin.hol_units_empty_title}"
+              Description="{Res admin.hol_units_empty_desc}"
+              Visible="{Binding show_unit_id}"/>
+  <Label Text="{Res admin.hol_loading}"
+         Overflow="Wrap"
+         ForeColor="TextSecondary"
+         InheritFontSize="true"
+         Visible="{Binding visible3}"
+         Class="[font-size:var(--kb-text-body)]"/>
+  <EmptyState IconSize="26"
+              Icon="Building2"
+              Title="{Res admin.hol_units_no_pref_title}"
+              Description="{Res admin.hol_units_no_pref_desc, Name={Binding unitName}}"
+              Visible="{Binding visible4}"/>
+  <Panel HtmlTag="Ul" Visible="{Binding visible5}" Class="flex flex-col divide-y divide-border rounded border border-border">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+      <Panel HtmlTag="Li" Class="flex flex-wrap items-center gap-3 px-3 py-2">
+        <Label HtmlTag="Span"
+               Text="{Binding span_text}"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="min-w-0 flex-1 [font-size:var(--kb-text-body)]"/>
+        <Switch On="{Binding pref.enabled}"
+                Enabled="{Binding enabled_unless_can_manage_set_pref_is_pending}"
+                AccessibleName="{Res admin.hol_col_observed}"
+                OnCheckedChanged="switch_checked_changed"/>
+        <!-- TODO(views-migrate): <Button> with element children -->
+        <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}" Visible="{Binding props.canManage}"/>
+      </Panel>
+    </Repeater>
+  </Panel>
+  <!-- TODO(views-migrate): <OrgUnitPicker> is no .kbview element (../../OrgUnitPicker#default) -->
+  <ReactHost Component="{Binding OrgUnitPicker}" Props="{Binding org_unit_picker_props}" Visible="{Binding picking}"/>
+</Stack>

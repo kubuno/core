@@ -1,0 +1,71 @@
+<!-- AudienceSheet — converted from AudienceSheet.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AudienceSheetProps" Class="contents">
+  <Label Text="{Res common.loading}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_case_1}" Class="p-6"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Panel Class="mb-4 flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
+      <Icon Name="Globe" Size="18" Visible="{Binding a.is_everyone}" Class="mt-1 shrink-0 text-text-tertiary"/>
+      <Icon Name="Users" Size="18" Visible="{Binding show_not_a_is_everyone}" Class="mt-1 shrink-0 text-text-tertiary"/>
+      <Label HtmlTag="H1"
+             Text="{Binding a.name}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+      <Label HtmlTag="Span"
+             Text="{Binding span_text}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Visible="{Binding show_a_is_everyone}"
+             Class="mt-1 [font-size:var(--kb-text-meta)]"/>
+    </Panel>
+    <!-- TODO(views-migrate): <IdentityCard> is no .kbview element (./IdentityCard#default) -->
+    <ReactHost Component="{Binding IdentityCard}" Props="{Binding identity_card_props}"/>
+    <Callout Body="{Res admin.aud_everyone_note}" Visible="{Binding a.is_everyone}" Class="mb-4"/>
+    <Card Title="{Res admin.aud_members}" IconSize="16" Icon="Users" Visible="{Binding show_a_is_everyone}" Class="mb-4">
+      <Card.Actions>
+        <!-- TODO(views-migrate): <Button> with element children -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding props.canManage}"/>
+      </Card.Actions>
+      <Panel Class="contents">
+        <EmptyState IconSize="22"
+                    Icon="Users"
+                    Title="{Res admin.aud_no_member}"
+                    Description="{Res admin.aud_no_member_desc}"
+                    Visible="{Binding show_data_members}"/>
+        <Panel Visible="{Binding show_not_data_members}" Class="rounded-lg border border-border">
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_members}">
+            <!-- TODO(views-migrate): <MemberRow> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding MemberRow}" Props="{Binding member_row_props}"/>
+          </Repeater>
+        </Panel>
+      </Panel>
+    </Card>
+    <Card Title="{Res admin.aud_applied_where}" IconSize="16" Icon="MapPin">
+      <Panel Class="contents">
+        <Label Text="{Res admin.aud_applied_nowhere}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_data_applied}"/>
+        <Panel HtmlTag="Ul" ForeColor="TextPrimary" Visible="{Binding show_not_data_applied}" Class="space-y-1 text-sm">
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_applied}">
+            <Panel HtmlTag="Li" Class="flex items-center gap-2">
+              <Label HtmlTag="Span" Text="{Binding p.org_unit_name}" Overflow="Wrap" ForeColor="TextSecondary" InheritFontSize="true"/>
+              <Label HtmlTag="Span" Text="·" Overflow="Wrap" ForeColor="TextTertiary" InheritFontSize="true"/>
+              <Label HtmlTag="Span" Text="{Binding p.module_id}" Overflow="Wrap" InheritFontSize="true"/>
+              <Label HtmlTag="Span"
+                     Text="{Res admin.aud_primary}"
+                     Role="Meta"
+                     Overflow="Wrap"
+                     ForeColor="Primary"
+                     BackColor="PrimaryLight"
+                     Visible="{Binding show_p_position}"
+                     Class="rounded-full px-2 py-0.5"/>
+            </Panel>
+          </Repeater>
+        </Panel>
+      </Panel>
+    </Card>
+    <!-- TODO(views-migrate): <MemberPicker> is no .kbview element (./MemberPicker#default) -->
+    <ReactHost Component="{Binding MemberPicker}" Props="{Binding member_picker_props}" Visible="{Binding adding}"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

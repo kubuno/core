@@ -1,0 +1,37 @@
+<!-- OrgUnitPicker — converted from OrgUnitPicker.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="OrgUnitPickerProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Res admin.ou_done}"
+                  ConfirmEnabled="{Binding enabled_unless_sel}"
+                  CancelText="{Res admin.ou_cancel}"
+                  HostStrings="true"
+                  Title="{Binding props.title}"
+                  Width="420"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <Panel Class="contents">
+      <Panel Class="px-4 pt-4">
+        <!-- TODO(views-migrate): <TextField LeftIcon>: an icon size the element cannot take -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+      <Panel Class="p-4 max-h-[55vh] overflow-y-auto">
+        <Label Text="{Res admin.ou_no_results}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding visible2}" Class="py-2"/>
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_results}" Visible="{Binding visible3}">
+          <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click">
+            <Label HtmlTag="Span" Text="{Binding u.name}" Overflow="Wrap" Class="block"/>
+            <Label HtmlTag="Span"
+                   Text="{Binding span_text}"
+                   Role="Meta"
+                   Overflow="Wrap"
+                   ForeColor="TextTertiary"
+                   Visible="{Binding show_ou_path_units_u}"
+                   Class="block"/>
+          </Panel>
+        </Repeater>
+        <!-- TODO(views-migrate): <div ref>: attribute(s) without a .kbview property -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding visible4}"/>
+        <Label Text="…" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding visible5}"/>
+      </Panel>
+    </Panel>
+  </FloatingWindow>
+</Panel>

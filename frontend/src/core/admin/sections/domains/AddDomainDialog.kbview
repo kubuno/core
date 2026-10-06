@@ -1,0 +1,41 @@
+<!-- AddDomainDialog — converted from AddDomainDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AddDomainDialogProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Res admin.dom_add_and_verify}"
+                  ConfirmEnabled="{Binding enabled_unless_add_is_pending_name}"
+                  ConfirmBusy="{Binding add.isPending}"
+                  CancelText="{Res admin.dom_cancel}"
+                  HostStrings="true"
+                  Title="{Res admin.dom_add_title}"
+                  Width="520"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <Stack Gap="16" Class="p-4">
+      <!-- TODO(views-migrate): <TextField> autoFocus: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <Stack>
+        <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (../resources/FieldLabel#default) -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+        <!-- TODO(views-migrate): <Choice> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        <!-- TODO(views-migrate): <Choice> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part4}" Props="{Binding part3_props}"/>
+      </Stack>
+      <Stack Gap="4" Visible="{Binding show_kind_alias}">
+        <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (../resources/FieldLabel#default) -->
+        <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+        <Callout Variant="Warning" Body="{Res admin.dom_no_parent}" Visible="{Binding show_parents}"/>
+        <!-- TODO(views-migrate): <Dropdown> width, height, focusable: no .kbview property -->
+        <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}" Visible="{Binding show_not_parents}"/>
+      </Stack>
+      <Callout Body="{Res admin.dom_add_note}"/>
+      <Label Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             InheritFontSize="true"
+             AccessibleRole="Alert"
+             Visible="{Binding show_error}"
+             Class="[font-size:var(--kb-text-body)]"/>
+    </Stack>
+  </FloatingWindow>
+</Panel>

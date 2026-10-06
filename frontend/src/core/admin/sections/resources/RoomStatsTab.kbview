@@ -1,0 +1,73 @@
+<!-- RoomStatsTab — converted from RoomStatsTab.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <EmptyState Variant="{Binding variant}"
+              IconSize="26"
+              Icon="CalendarCheck2"
+              Title="{Binding title}"
+              Description="{Binding description}"
+              Visible="{Binding show_case_2}"/>
+  <Stack Gap="16" Visible="{Binding show_main}" Class="min-w-0">
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Justify="SpaceBetween" WrapContents="true">
+      <!-- TODO(views-migrate): <Dropdown> width, focusable: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.rs_scope, Count={Binding rs_scope_count}, Hours={Binding rs_scope_hours}}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_data}"
+             Class="[font-size:var(--kb-text-meta)]"/>
+    </Stack>
+    <Callout Variant="Danger" Body="{Binding callout_text}" Visible="{Binding isError}"/>
+    <Panel Class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding StatCard}" Props="{Binding stat_card_props}"/>
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding StatCard}" Props="{Binding stat_card_props2}"/>
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding StatCard}" Props="{Binding stat_card_props3}"/>
+      <!-- TODO(views-migrate): <StatCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding StatCard}" Props="{Binding stat_card_props4}"/>
+    </Panel>
+    <EmptyState IconSize="26"
+                Icon="DoorOpen"
+                Title="{Res admin.rs_empty}"
+                Description="{Res admin.rs_empty_desc}"
+                Visible="{Binding show_answered}"/>
+    <Panel Visible="{Binding show_not_answered}" Class="grid gap-4 lg:grid-cols-2">
+      <!-- TODO(views-migrate): <ChartCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+      <!-- TODO(views-migrate): <ChartCard> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <ChartCard> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}" Visible="{Binding show_not_answered}"/>
+    <Panel HtmlTag="Section" BackColor="Surface" Visible="{Binding show_not_answered}" Class="rounded-xl border border-border p-4">
+      <Label HtmlTag="H3"
+             Text="{Res admin.rs_release}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-section)]"/>
+      <Label Text="{Res admin.rs_release_desc}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="mt-1 [font-size:var(--kb-text-body)]"/>
+      <Label Text="{Binding p_text}"
+             FontWeight="SemiBold"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="mt-3 tabular-nums [font-size:var(--kb-text-title)]"/>
+      <Label Text="{Res admin.rs_released}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-meta)]"/>
+    </Panel>
+  </Stack>
+</Panel>

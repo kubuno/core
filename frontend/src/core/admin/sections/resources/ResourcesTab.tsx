@@ -1,35 +1,53 @@
-// The resources inventory.
-//
-// The composed name is the primary column, not the typed one: it is the string
-// people see when they book, so a table sorted and searched on anything else
-// would be a table that disagrees with everybody's experience of the same room.
+/**
+ * Code-behind of `ResourcesTab.kbview` (converted from `ResourcesTab.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { type DataTableColumn, type DataTableRowAction } from "@ui"
+import ConfirmDialog from "@ui/ConfirmDialog"
+import { useConfirm } from "../../../hooks/useConfirm"
+import ResourceDialog from "./ResourceDialog"
+import { errorMessage, useDeleteResource, useResources, type Resource } from "./api"
 
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { CalendarRange, Plus } from 'lucide-react'
-import {
-  Button, DataTable, EmptyState,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import ConfirmDialog from '@ui/ConfirmDialog'
-import { useConfirm } from '../../../hooks/useConfirm'
-import ResourceDialog from './ResourceDialog'
-import { errorMessage, useDeleteResource, useResources, type Resource } from './api'
+import { ViewBase } from './ResourcesTab.kbview'
+import * as __parts from './ResourcesTab.parts'
 
-export default function ResourcesTab({ canManage }: { canManage: boolean }) {
-  const { t } = useTranslation()
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+export type ResourcesTabProps = { canManage: boolean }
 
-  const [editing, setEditing] = useState<Resource | 'new' | null>(null)
-  const [error, setError]     = useState<string | null>(null)
+export class ResourcesTab extends ViewBase {
+  @bind accessor editing: Resource | 'new' | null = null
+  @bind accessor error: string | null = null
+  tr!: ResourcesTabStores['t']
+  confirm!: ResourcesTabStores['confirm']
+  confirmState!: ResourcesTabStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  data!: ResourcesTabStores['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: ResourcesTabStores['refetch']
+  remove!: ResourcesTabStores['remove']
 
-  const { data, isLoading, isError, refetch } = useResources()
-  const remove = useDeleteResource()
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    const { data, isLoading, isError, refetch } = useResources()
+    const remove = useDeleteResource()
+    return { t, confirm, confirmState, handleConfirm, handleCancel, data, isLoading, isError, refetch, remove }
+  }
 
-  const columns: DataTableColumn<Resource>[] = [
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel, data: s.data, isLoading: s.isLoading, isError: s.isError, refetch: s.refetch, remove: s.remove })
+  }
+
+  get columns(): DataTableColumn<Resource>[] {
+    return this.memo('columns', [this.tr], () => [
     {
       id: 'generated_name',
-      header: t('admin.res_generated_name'),
+      header: this.tr('admin.res_generated_name'),
       primary: true,
       minWidth: 260,
       sortValue: r => r.generated_name.toLowerCase(),
@@ -44,19 +62,19 @@ export default function ResourcesTab({ canManage }: { canManage: boolean }) {
     },
     {
       id: 'category',
-      header: t('admin.res_category'),
+      header: this.tr('admin.res_category'),
       sortValue: r => (r.category === 'meeting_room' ? 0 : 1),
       cell: r => (
         <span className="text-text-secondary">
           {r.category === 'meeting_room'
-            ? t('admin.res_category_room')
-            : r.resource_type ?? t('admin.res_category_other')}
+            ? this.tr('admin.res_category_room')
+            : r.resource_type ?? this.tr('admin.res_category_other')}
         </span>
       ),
     },
     {
       id: 'building',
-      header: t('admin.res_building'),
+      header: this.tr('admin.res_building'),
       minWidth: 160,
       sortValue: r => r.building.key.toLowerCase(),
       cell: r => (
@@ -67,7 +85,7 @@ export default function ResourcesTab({ canManage }: { canManage: boolean }) {
     },
     {
       id: 'floor',
-      header: t('admin.res_floor'),
+      header: this.tr('admin.res_floor'),
       sortValue: r => r.floor_name.toLowerCase(),
       cell: r => (
         <span className="text-text-secondary">
@@ -77,14 +95,14 @@ export default function ResourcesTab({ canManage }: { canManage: boolean }) {
     },
     {
       id: 'capacity',
-      header: t('admin.res_capacity'),
+      header: this.tr('admin.res_capacity'),
       align: 'right',
       sortValue: r => r.capacity,
       cell: r => <span className="text-text-secondary">{r.capacity}</span>,
     },
     {
       id: 'features',
-      header: t('admin.res_features'),
+      header: this.tr('admin.res_features'),
       minWidth: 180,
       defaultHidden: true,
       sortValue: r => r.feature_names.length,
@@ -94,90 +112,92 @@ export default function ResourcesTab({ canManage }: { canManage: boolean }) {
         </span>
       ),
     },
-  ]
+  ])
+  }
 
-  const rowActions: DataTableRowAction<Resource>[] = canManage
+  get rowActions(): DataTableRowAction<Resource>[] {
+    return this.memo('rowActions', [this.props, this.tr, this.editing, this.confirm, this.error, this.remove], () => this.props.canManage
     ? [
-        { id: 'edit', label: t('admin.res_action_edit'), onClick: r => setEditing(r) },
+        { id: 'edit', label: this.tr('admin.res_action_edit'), onClick: r => this.editing = r },
         {
           id: 'delete',
-          label: t('admin.res_action_delete'),
+          label: this.tr('admin.res_action_delete'),
           danger: true,
           onClick: async r => {
-            const ok = await confirm({
-              title: t('admin.res_resource_delete_title'),
-              message: t('admin.res_resource_delete_message', { name: r.generated_name }),
-              confirmLabel: t('admin.res_action_delete'),
+            const ok = await this.confirm({
+              title: this.tr('admin.res_resource_delete_title'),
+              message: this.tr('admin.res_resource_delete_message', { name: r.generated_name }),
+              confirmLabel: this.tr('admin.res_action_delete'),
               variant: 'danger',
             })
             if (!ok) return
-            setError(null)
+            this.error = null
             try {
-              await remove.mutateAsync(r.id)
+              await this.remove.mutateAsync(r.id)
             } catch (e) {
-              setError(errorMessage(e, t('admin.res_delete_failed')))
+              this.error = errorMessage(e, this.tr('admin.res_delete_failed'))
             }
           },
         },
       ]
-    : []
+    : [])
+  }
 
-  return (
-    <div className="min-w-0">
-      {error && (
-        <p className="mb-3 text-danger" role="alert" style={{ fontSize: 'var(--kb-text-body)' }}>
-          {error}
-        </p>
-      )}
+  get show_error() {
+    return !!(this.error)
+  }
 
-      <DataTable
-        rows={data?.resources ?? []}
-        columns={columns}
-        rowKey={r => r.id}
-        loading={isLoading}
-        error={isError ? t('admin.res_load_failed') : undefined}
-        onRetry={() => void refetch()}
-        rowActions={rowActions}
-        onRowClick={canManage ? r => setEditing(r) : undefined}
-        configurableColumns
-        pageSize={0}
-        t={t}
-        toolbar={canManage
-          ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Plus size={14} />}
-              onClick={() => setEditing('new')}
-            >
-              {t('admin.res_resource_new')}
-            </Button>
-          )
-          : undefined}
-        emptyState={(
-          <EmptyState
-            icon={<CalendarRange size={26} />}
-            variant="first-use"
-            title={t('admin.res_resources_empty_title')}
-            description={t('admin.res_resources_empty_desc')}
-            action={canManage
-              ? { label: t('admin.res_resource_new'), onClick: () => setEditing('new') }
-              : undefined}
-            t={t}
-          />
-        )}
-      />
+  get part1_props() {
+    return this.memo('part1_props', [this.data, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.props], () => ({ data: this.data, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, canManage: this.props.canManage, setEditing: this.setEditing.bind(this) }))
+  }
 
-      {editing && (
-        <ResourceDialog
-          resource={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-        />
-      )}
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, onRetry, rowActions, onRowClick, configurableColumns, t, toolbar, emptyState: no .kbview property). */
+  get Part1() {
+    return __parts.Part1
+  }
 
-      {confirmState && (
-        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
-      )}
-    </div>
-  )
+  get show_editing() {
+    return this.memo('show_editing', [this.editing], () => !!(this.editing))
+  }
+
+  /** `<ResourceDialog>`, rendered by a ReactHost. */
+  get ResourceDialog() {
+    if (!(this.editing)) return undefined as never
+    return ResourceDialog
+  }
+
+  get resource_dialog_props() {
+    return this.memo('resource_dialog_props', [this.editing], () => {
+      if (!(this.editing)) return undefined as never
+      return ({ resource: this.editing === 'new' ? null : this.editing, onClose: () => this.editing = null } as React.ComponentProps<typeof ResourceDialog>)
+    })
+  }
+
+  get show_confirm_state() {
+    return this.memo('show_confirm_state', [this.confirmState], () => !!(this.confirmState))
+  }
+
+  /** `<ConfirmDialog>`, rendered by a ReactHost. */
+  get ConfirmDialog() {
+    if (!(this.confirmState)) return undefined as never
+    return ConfirmDialog
+  }
+
+  get confirm_dialog_props() {
+    return this.memo('confirm_dialog_props', [this.confirmState, this.handleConfirm, this.handleCancel], () => {
+      if (!(this.confirmState)) return undefined as never
+      return ({ ...this.confirmState, onConfirm: this.handleConfirm, onCancel: this.handleCancel })
+    })
+  }
+
+  /** `setEditing` of the TSX: a value, or an update of the previous one. */
+  setEditing(value: Resource | 'new' | null | ((prev: Resource | 'new' | null) => Resource | 'new' | null)) {
+    this.editing = typeof value === 'function' ? (value as (prev: Resource | 'new' | null) => Resource | 'new' | null)(this.editing) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ResourcesTabStores = ReturnType<ResourcesTab['useStores']>
+
+export default ResourcesTab.component()

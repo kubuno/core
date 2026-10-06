@@ -13,7 +13,7 @@ import { PRIV } from "../authz/types"
 import { usePrivileges } from "../authz/usePrivileges"
 import { useConfirm } from "../hooks/useConfirm"
 import OrgUnitPicker from "./OrgUnitPicker"
-import { OrgUnitScopePanel, ALL_UNITS, type OrgUnitScope } from "./OrgUnitScopePanel"
+import OrgUnitScopePanel, { ALL_UNITS, type OrgUnitScope } from "./OrgUnitScopePanel"
 import { adminUrl, useAdminAction } from "./adminAction"
 
 import { ViewBase } from './UsersPanel.kbview'

@@ -1,0 +1,21 @@
+<!-- OrgUnitsPanel — converted from OrgUnitsPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel>
+  <Panel Class="bg-white rounded-xl border border-border overflow-hidden">
+    <Panel Class="flex items-baseline gap-2 px-5 py-4 border-b border-border">
+      <Label HtmlTag="H2" Text="{Res admin.ou_manage_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-base"/>
+      <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" ForeColor="TextTertiary"/>
+    </Panel>
+    <Panel Class="overflow-x-auto">
+      <!-- TODO(views-migrate): <table> has no .kbview element yet -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Panel>
+  </Panel>
+  <!-- TODO(views-migrate): <ContextMenu> pos, onClose: no .kbview property -->
+  <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding show_menu}"/>
+  <!-- TODO(views-migrate): <OrgUnitDialog {...spread}> (spread props) -->
+  <ReactHost Component="{Binding OrgUnitDialog}" Props="{Binding org_unit_dialog_props}" Visible="{Binding show_dialog}"/>
+  <!-- TODO(views-migrate): <OrgUnitPicker> is no .kbview element (./OrgUnitPicker#default) -->
+  <ReactHost Component="{Binding OrgUnitPicker}" Props="{Binding org_unit_picker_props}" Visible="{Binding show_move_unit}"/>
+  <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+  <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+</Panel>

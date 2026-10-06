@@ -1,64 +1,154 @@
-// Declaring a domain: its name, and what it is *for*.
-//
-// The second question is the one people get wrong, and it is not a detail of
-// storage — it decides whether the domain carries its own accounts or lends a
-// second address to somebody else's. The two options are therefore written out
-// as full sentences rather than as two words in a dropdown, with the
-// consequence stated on each: "des comptes à ce domaine" against "une seconde
-// adresse pour les comptes existants".
+/**
+ * Code-behind of `AddDomainDialog.kbview` (converted from `AddDomainDialog.tsx` by @kubuno/views-migrate).
+ */
+import { bind, type EventArgs, type MouseEventArgs } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { errorMessage, useAddDomain, type Domain, type DomainKind } from "./api"
 
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Callout, Dropdown, Input } from '@ui'
-import { FloatingWindow } from '@ui/FloatingWindow'
-import FieldLabel from '../resources/FieldLabel'
-import { errorMessage, useAddDomain, type Domain, type DomainKind } from './api'
+import { ViewBase } from './AddDomainDialog.kbview'
+import * as __parts from './AddDomainDialog.parts'
 
-export default function AddDomainDialog({
-  domains, onClose, onAdded,
-}: {
+export type AddDomainDialogProps = {
   /** Candidates an alias can hang off: verified, non-alias. */
   domains: Domain[]
   onClose: () => void
   /** Called with the new domain, so the page can open its verification screen. */
   onAdded: (domain: Domain) => void
-}) {
-  const { t } = useTranslation()
-  const [name, setName]     = useState('')
-  const [kind, setKind]     = useState<DomainKind>('secondary')
-  const [parent, setParent] = useState('')
-  const [error, setError]   = useState<string | null>(null)
+}
 
-  const add = useAddDomain()
-  const parents = domains.filter(d => d.kind !== 'alias' && d.verified)
+export class AddDomainDialog extends ViewBase {
+  @bind accessor name = ''
+  @bind accessor kind: DomainKind = 'secondary'
+  @bind accessor parent = ''
+  @bind accessor error: string | null = null
+  tr!: AddDomainDialogStores['t']
+  add!: AddDomainDialogStores['add']
 
-  const submit = async () => {
-    setError(null)
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const add = useAddDomain()
+    return { t, add }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, add: s.add })
+  }
+
+  get parents(): Domain[] {
+    return this.memo('parents', [this.props], () => this.props.domains.filter(d => d.kind !== 'alias' && d.verified))
+  }
+
+  get enabled_unless_add_is_pending_name() {
+    return !(this.add.isPending || this.name.trim() === '' || (this.kind === 'alias' && this.parent === ''))
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.tr, this.name], () => ({ t: this.tr, name: this.name, setName: this.setName.bind(this) }))
+  }
+
+  /** A part of the screen still written in React (<TextField> autoFocus: no .kbview property). */
+  get Part1() {
+    return __parts.Part1
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.tr], () => ({ t: this.tr }))
+  }
+
+  /** A part of the screen still written in React (<FieldLabel> is no .kbview element (../resources/FieldLabel#default)). */
+  get Part2() {
+    return __parts.Part2
+  }
+
+  get part3_props() {
+    return this.memo('part3_props', [this.tr], () => ({ Choice: this.Choice.bind(this), t: this.tr }))
+  }
+
+  /** A part of the screen still written in React (<Choice> is no .kbview element (a local or dynamic component)). */
+  get Part3() {
+    return __parts.Part3
+  }
+
+  /** A part of the screen still written in React (<Choice> is no .kbview element (a local or dynamic component)). */
+  get Part4() {
+    return __parts.Part4
+  }
+
+  get show_kind_alias() {
+    return this.kind === 'alias'
+  }
+
+  get part5_props() {
+    return this.memo('part5_props', [this.tr, this.kind], () => {
+      if (!(this.kind === 'alias')) return undefined as never
+      return ({ t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<FieldLabel> is no .kbview element (../resources/FieldLabel#default)). */
+  get Part5() {
+    if (!(this.kind === 'alias')) return undefined as never
+    return __parts.Part5
+  }
+
+  get show_parents() {
+    if (!(this.kind === 'alias')) return undefined as never
+    return this.parents.length === 0
+  }
+
+  get show_not_parents() {
+    if (!(this.kind === 'alias')) return undefined as never
+    return !(this.parents.length === 0)
+  }
+
+  get part6_props() {
+    return this.memo('part6_props', [this.parent, this.tr, this.parents, this.kind], () => {
+      if (!(this.kind === 'alias') || !(!(this.parents.length === 0))) return undefined as never
+      return ({ parent: this.parent, t: this.tr, parents: this.parents, setParent: this.setParent.bind(this) })
+    })
+  }
+
+  /** A part of the screen still written in React (<Dropdown> width, height, focusable: no .kbview property). */
+  get Part6() {
+    if (!(this.kind === 'alias') || !(!(this.parents.length === 0))) return undefined as never
+    return __parts.Part6
+  }
+
+  get show_error() {
+    return !!(this.error)
+  }
+
+  async submit() {
+    this.error = null
     try {
-      const created = await add.mutateAsync({
-        name: name.trim(),
-        kind,
-        parent_id: kind === 'alias' ? (parent || undefined) : undefined,
+      const created = await this.add.mutateAsync({
+        name: this.name.trim(),
+        kind: this.kind,
+        parent_id: this.kind === 'alias' ? (this.parent || undefined) : undefined,
       })
-      onClose()
-      onAdded(created)
+      this.props.onClose()
+      this.props.onAdded(created)
     } catch (e) {
-      setError(errorMessage(e, t('admin.dom_save_failed')))
+      this.error = errorMessage(e, this.tr('admin.dom_save_failed'))
     }
   }
 
-  const Choice = ({ value, title, description }: { value: DomainKind; title: string; description: string }) => (
+  Choice({ value, title, description }: { value: DomainKind; title: string; description: string }) {
+    return (
     <label
       className={`flex cursor-pointer gap-3 rounded border p-3 transition-colors ${
-        kind === value ? 'border-primary bg-primary-light' : 'border-border hover:bg-surface-1'
+        this.kind === value ? 'border-primary bg-primary-light' : 'border-border hover:bg-surface-1'
       }`}
     >
       <input
         type="radio"
         name="domain-kind"
         className="mt-1 accent-[var(--color-primary)]"
-        checked={kind === value}
-        onChange={() => setKind(value)}
+        checked={this.kind === value}
+        onChange={() => this.kind = value}
       />
       <span className="min-w-0">
         <span className="block font-medium text-text-primary" style={{ fontSize: 'var(--kb-text-body)' }}>{title}</span>
@@ -66,70 +156,34 @@ export default function AddDomainDialog({
       </span>
     </label>
   )
+  }
 
-  return (
-    <div onMouseDown={e => e.stopPropagation()}>
-      <FloatingWindow
-        title={t('admin.dom_add_title')}
-        onClose={onClose}
-        defaultWidth={520}
-        backdrop
-        t={t}
-        actions={{
-          confirm: {
-            label:    t('admin.dom_add_and_verify'),
-            onClick:  () => void submit(),
-            disabled: add.isPending || name.trim() === '' || (kind === 'alias' && parent === ''),
-            loading:  add.isPending,
-          },
-          cancel: { label: t('admin.dom_cancel') },
-        }}
-      >
-        <div className="flex flex-col gap-4 p-4">
-          <Input
-            label={t('admin.dom_field_name')}
-            value={name}
-            autoFocus
-            maxLength={253}
-            placeholder="exemple.fr"
-            onChange={e => setName(e.target.value)}
-            hint={t('admin.dom_field_name_hint')}
-          />
+  panel_mouse_down(_sender: unknown, args: MouseEventArgs) {
+    const e = args.native as MouseEvent
+    e.stopPropagation()
+  }
 
-          <div className="flex flex-col gap-2">
-            <FieldLabel>{t('admin.dom_field_kind')}</FieldLabel>
-            <Choice value="secondary" title={t('admin.dom_kind_secondary')} description={t('admin.dom_kind_secondary_desc')} />
-            <Choice value="alias"     title={t('admin.dom_kind_alias')}     description={t('admin.dom_kind_alias_desc')} />
-          </div>
+  floating_window_confirm(_sender: unknown, _args: EventArgs) {
+    void this.submit()
+  }
 
-          {kind === 'alias' && (
-            <div className="flex flex-col gap-1">
-              <FieldLabel>{t('admin.dom_field_parent')}</FieldLabel>
-              {parents.length === 0 ? (
-                // An alias of an unproven domain would launder the very claim
-                // the registry exists to check.
-                <Callout variant="warning" t={t}>{t('admin.dom_no_parent')}</Callout>
-              ) : (
-                <Dropdown
-                  value={parent}
-                  placeholder={t('admin.dom_field_parent_ph')}
-                  options={parents.map(d => ({ value: d.id, label: d.name }))}
-                  onChange={setParent}
-                  width="100%"
-                  height={36}
-                  focusable
-                />
-              )}
-            </div>
-          )}
+  floating_window_close(_sender: unknown, _args: EventArgs) {
+    this.props.onClose?.()
+  }
 
-          <Callout variant="info" t={t}>{t('admin.dom_add_note')}</Callout>
+  /** `setName` of the TSX: a value, or an update of the previous one. */
+  setName(value: AddDomainDialog['name'] | ((prev: AddDomainDialog['name']) => AddDomainDialog['name'])) {
+    this.name = typeof value === 'function' ? (value as (prev: AddDomainDialog['name']) => AddDomainDialog['name'])(this.name) : value
+  }
 
-          {error && (
-            <p className="text-danger" role="alert" style={{ fontSize: 'var(--kb-text-body)' }}>{error}</p>
-          )}
-        </div>
-      </FloatingWindow>
-    </div>
-  )
+  /** `setParent` of the TSX: a value, or an update of the previous one. */
+  setParent(value: AddDomainDialog['parent'] | ((prev: AddDomainDialog['parent']) => AddDomainDialog['parent'])) {
+    this.parent = typeof value === 'function' ? (value as (prev: AddDomainDialog['parent']) => AddDomainDialog['parent'])(this.parent) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type AddDomainDialogStores = ReturnType<AddDomainDialog['useStores']>
+
+export default AddDomainDialog.component()

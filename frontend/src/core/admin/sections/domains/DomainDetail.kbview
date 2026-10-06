@@ -1,0 +1,74 @@
+<!-- DomainDetail — converted from DomainDetail.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="DomainDetailProps" Class="contents">
+  <Label Text="{Res admin.dom_loading}"
+         Overflow="Wrap"
+         ForeColor="TextSecondary"
+         InheritFontSize="true"
+         Visible="{Binding show_case_1}"
+         Class="[font-size:var(--kb-text-body)]"/>
+  <Stack Gap="16" Visible="{Binding show_main}" Class="min-w-0">
+    <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true">
+      <Label HtmlTag="H2"
+             Text="{Binding h2_text}"
+             Overflow="Wrap"
+             ForeColor="TextPrimary"
+             InheritFontSize="true"
+             Class="min-w-0 [font-size:var(--kb-text-section)]"/>
+      <Badge Variant="Primary" Text="{Res admin.dom_kind_primary}" Visible="{Binding show_domain_kind_primary}"/>
+      <Badge Variant="Neutral" Text="{Res admin.dom_kind_secondary}" Visible="{Binding show_domain_kind_secondary}"/>
+      <Badge Variant="Neutral" Text="{Res admin.dom_alias_of, Name={Binding dom_alias_of_name}}" Visible="{Binding show_domain_kind_alias}"/>
+      <Badge Variant="Success" Text="{Res admin.dom_verified}" Visible="{Binding show_domain_verified}"/>
+      <Badge Variant="Warning" Text="{Res admin.dom_unverified}" Visible="{Binding show_not_domain_verified}"/>
+    </Stack>
+    <Label Text="{Binding error}"
+           Overflow="Wrap"
+           ForeColor="Danger"
+           InheritFontSize="true"
+           AccessibleRole="Alert"
+           Visible="{Binding show_error}"
+           Class="[font-size:var(--kb-text-body)]"/>
+    <!-- TODO(views-migrate): <Card> title: an object value for a text property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <DomainDiagnosticsCard> is no .kbview element (./DomainDiagnosticsCard#default) -->
+    <ReactHost Component="{Binding DomainDiagnosticsCard}" Props="{Binding domain_diagnostics_card_props}"/>
+    <Card Title="{Res admin.dom_danger_title}" Visible="{Binding props.canManage}">
+      <Stack Gap="16" Class="p-1">
+        <Stack Direction="LeftToRight"
+               Gap="12"
+               CrossAlign="Center"
+               Justify="SpaceBetween"
+               WrapContents="true"
+               Visible="{Binding show_domain_kind_secondary2}">
+          <Label Text="{Res admin.dom_promote_desc}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Class="min-w-0 flex-1 [font-size:var(--kb-text-body)]"/>
+          <!-- TODO(views-migrate): <Button> with element children -->
+          <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+        </Stack>
+        <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Justify="SpaceBetween" WrapContents="true">
+          <Panel Class="min-w-0 flex-1">
+            <Label Text="{Res admin.dom_remove_desc}"
+                   Overflow="Wrap"
+                   ForeColor="TextSecondary"
+                   InheritFontSize="true"
+                   Class="[font-size:var(--kb-text-body)]"/>
+            <Panel HtmlTag="Ul"
+                   ForeColor="TextTertiary"
+                   Visible="{Binding show_blockers}"
+                   Class="mt-1 list-disc ps-5 [font-size:var(--kb-text-small)]">
+              <Repeater ItemKey="key" ItemsSource="{Binding rows_blockers}">
+                <Label HtmlTag="Li" Text="{Binding b}" Overflow="Wrap" InheritFontSize="true"/>
+              </Repeater>
+            </Panel>
+          </Panel>
+          <!-- TODO(views-migrate): <Button> with element children -->
+          <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        </Stack>
+      </Stack>
+    </Card>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Stack>
+</Panel>

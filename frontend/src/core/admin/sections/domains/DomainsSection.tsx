@@ -1,71 +1,78 @@
-// The domains this instance answers for.
-//
-// ## The status column is a button
-//
-// That is the one idea worth copying from the reference console, and the easiest
-// to miss: a row is a pipeline — déclaré → vérifié → messagerie — and the status
-// cell shows *the step that remains* as something you can press, not a grey
-// badge you have to interpret. A domain nobody has proven says « Vérifier »; a
-// proven one says what its mail records look like.
-//
-// ## What is deliberately absent
-//
-// No web redirection, no per-domain branding, no billing: those exist in the
-// reference because it hosts websites and sells seats. Copying the shape of a
-// page whose features this product does not have would be building controls that
-// report back.
+/**
+ * Code-behind of `DomainsSection.kbview` (converted from `DomainsSection.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
+import { AlertTriangle, ShieldCheck } from "lucide-react"
+import { Badge, Button, type DataTableColumn, type DataTableRowAction } from "@ui"
+import { usePrivileges } from "../../../authz/usePrivileges"
+import { adminUrl, adminUrlWith } from "../../adminAction"
+import { DOMAINS_MANAGE } from "./privileges"
+import AddDomainDialog from "./AddDomainDialog"
+import DomainDetail from "./DomainDetail"
+import { errorMessage, useDomains, useVerifyDomain, type Domain } from "./api"
 
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Globe, Plus, ShieldCheck } from 'lucide-react'
-import {
-  Badge, Button, Callout, DataTable, EmptyState,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import { usePrivileges } from '../../../authz/usePrivileges'
-import type { AdminSectionProps } from '../registry'
-import { adminUrl, adminUrlWith } from '../../adminAction'
-import { DOMAINS_MANAGE } from './privileges'
-import AddDomainDialog from './AddDomainDialog'
-import DomainDetail from './DomainDetail'
-import { errorMessage, useDomains, useVerifyDomain, type Domain } from './api'
+import { ViewBase } from './DomainsSection.kbview'
+import * as __parts from './DomainsSection.parts'
 
-function Figure({ value, label }: { value: number | string; label: string }) {
-  return (
-    <div className="flex min-w-24 flex-col">
-      <span className="text-text-primary" style={{ fontSize: 'var(--kb-text-section)' }}>{value}</span>
-      <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-small)' }}>{label}</span>
-    </div>
-  )
-}
+export class DomainsSection extends ViewBase {
+  @bind accessor adding = false
+  @bind accessor error: string | null = null
+  tr!: DomainsSectionStores['t']
+  can!: DomainsSectionStores['can']
+  routerNavigate!: DomainsSectionStores['routerNavigate']
+  data!: DomainsSectionStores['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: DomainsSectionStores['refetch']
+  verify!: DomainsSectionStores['verify']
 
-export default function DomainsSection({ params, navigate }: AdminSectionProps) {
-  const { t }   = useTranslation()
-  const { can } = usePrivileges()
-  const canManage = can(DOMAINS_MANAGE)
-  const routerNavigate = useNavigate()
-
-  const [adding, setAdding] = useState(false)
-  const [error, setError]   = useState<string | null>(null)
-
-  const { data, isLoading, isError, refetch } = useDomains()
-  const verify = useVerifyDomain()
-
-  const selected = params.get('domain')
-  const open = (id: string | null) => navigate(adminUrlWith('domains', params, { domain: id }))
-
-  if (selected) {
-    return <DomainDetail domainId={selected} canManage={canManage} onGone={() => open(null)} />
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t }   = useTranslation()
+    const { can } = usePrivileges()
+    const routerNavigate = useNavigate()
+    const { data, isLoading, isError, refetch } = useDomains()
+    const verify = useVerifyDomain()
+    return { t, can, routerNavigate, data, isLoading, isError, refetch, verify }
   }
 
-  const domains = data?.domains ?? []
-  const overview = data?.overview
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, can: s.can, routerNavigate: s.routerNavigate, data: s.data, isLoading: s.isLoading, isError: s.isError, refetch: s.refetch, verify: s.verify })
+  }
 
-  const columns: DataTableColumn<Domain>[] = [
+  get canManage(): boolean {
+    return this.can(DOMAINS_MANAGE)
+  }
+
+  get selected(): string | null {
+    return this.props.params.get('domain')
+  }
+
+  get domains(): Domain[] {
+    return this.memo('domains', [this.data, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return this.data?.domains ?? []
+    })
+  }
+
+  get overview(): { total: number; verified: number; pending: number; aliases: number; primary_name: string | null; } | undefined {
+    return this.memo('overview', [this.data, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return this.data?.overview
+    })
+  }
+
+  get columns(): DataTableColumn<Domain>[] {
+    return this.memo('columns', [this.tr, this.canManage, this.verify, this.error, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return [
     {
       id: 'name',
-      header: t('admin.dom_col_domain'),
+      header: this.tr('admin.dom_col_domain'),
       primary: true,
       minWidth: 220,
       sortValue: r => r.name,
@@ -74,7 +81,7 @@ export default function DomainsSection({ params, navigate }: AdminSectionProps) 
           <span className="truncate text-text-primary">{r.name}</span>
           {r.kind === 'alias' && (
             <span className="truncate text-text-tertiary" style={{ fontSize: 'var(--kb-text-small)' }}>
-              {t('admin.dom_alias_of', { name: r.parent_name })}
+              {this.tr('admin.dom_alias_of', { name: r.parent_name })}
             </span>
           )}
         </span>
@@ -82,17 +89,17 @@ export default function DomainsSection({ params, navigate }: AdminSectionProps) 
     },
     {
       id: 'kind',
-      header: t('admin.dom_col_kind'),
+      header: this.tr('admin.dom_col_kind'),
       sortValue: r => r.kind,
       cell: r => (
         r.kind === 'primary'
-          ? <Badge variant="primary">{t('admin.dom_kind_primary')}</Badge>
-          : <Badge variant="neutral">{t(`admin.dom_kind_${r.kind}`)}</Badge>
+          ? <Badge variant="primary">{this.tr('admin.dom_kind_primary')}</Badge>
+          : <Badge variant="neutral">{this.tr(`admin.dom_kind_${r.kind}`)}</Badge>
       ),
     },
     {
       id: 'status',
-      header: t('admin.dom_col_status'),
+      header: this.tr('admin.dom_col_status'),
       minWidth: 220,
       sortValue: r => (r.verified ? 1 : 0),
       // The pipeline, as a control: what remains to do is what you can press.
@@ -101,38 +108,38 @@ export default function DomainsSection({ params, navigate }: AdminSectionProps) 
           ? (
             <span className="flex min-w-0 flex-col">
               <span className="flex items-center gap-1.5 text-text-primary">
-                <ShieldCheck size={14} className="text-success" /> {t('admin.dom_verified')}
+                <ShieldCheck size={14} className="text-success" /> {this.tr('admin.dom_verified')}
               </span>
               <span className="truncate text-text-tertiary" style={{ fontSize: 'var(--kb-text-small)' }}>
                 {r.mx_hosts.length > 0
-                  ? t('admin.dom_mail_mx_count', { count: r.mx_hosts.length })
-                  : r.mail_checked_at ? t('admin.dom_mail_none') : t('admin.dom_mail_unchecked')}
+                  ? this.tr('admin.dom_mail_mx_count', { count: r.mx_hosts.length })
+                  : r.mail_checked_at ? this.tr('admin.dom_mail_none') : this.tr('admin.dom_mail_unchecked')}
               </span>
             </span>
           )
-          : canManage
+          : this.canManage
             ? (
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={verify.isPending}
+                disabled={this.verify.isPending}
                 onClick={e => {
                   e.stopPropagation()
-                  setError(null)
-                  verify.mutate(r.id, { onError: err => setError(errorMessage(err, t('admin.dom_save_failed'))) })
+                  this.error = null
+                  this.verify.mutate(r.id, { onError: err => this.error = errorMessage(err, this.tr('admin.dom_save_failed')) })
                 }}
               >
-                {t('admin.dom_verify')}
+                {this.tr('admin.dom_verify')}
               </Button>
             )
             : <span className="flex items-center gap-1.5 text-text-tertiary">
-                <AlertTriangle size={14} /> {t('admin.dom_unverified')}
+                <AlertTriangle size={14} /> {this.tr('admin.dom_unverified')}
               </span>
       ),
     },
     {
       id: 'accounts',
-      header: t('admin.dom_col_accounts'),
+      header: this.tr('admin.dom_col_accounts'),
       align: 'right',
       sortValue: r => r.account_count,
       cell: r => (
@@ -142,87 +149,160 @@ export default function DomainsSection({ params, navigate }: AdminSectionProps) 
       ),
     },
   ]
+    })
+  }
 
-  const rowActions: DataTableRowAction<Domain>[] = [
-    { id: 'open', label: t('admin.dom_action_open'), onClick: r => open(r.id) },
+  get rowActions(): DataTableRowAction<Domain>[] {
+    return this.memo('rowActions', [this.tr, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return [
+    { id: 'open', label: this.tr('admin.dom_action_open'), onClick: r => this.open(r.id) },
   ]
+    })
+  }
 
-  // The instance sends from an address whose domain nobody proved here: not an
-  // error (a relay's domain is legitimate), but the one thing this page can
-  // usefully point out about mail without pretending to run it.
-  const fromMismatch =
-    data?.from_domain && domains.length > 0 && !domains.some(d => d.name === data.from_domain && d.verified)
+  get fromMismatch(): boolean | "" | null | undefined {
+    if (!(!(this.selected))) return undefined as never
+    const data = this.data
+    return data?.from_domain && this.domains.length > 0 && !this.domains.some(d => d.name === data.from_domain && d.verified)
+  }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="min-w-0">
-        <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-          {t('admin.nav_domains')}
-        </h1>
-        <p className="mt-1 max-w-3xl text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-          {t('admin.dom_intro')}
-        </p>
-      </div>
+  get show_case_1() {
+    return !!(this.selected)
+  }
 
-      {overview && (
-        <div className="flex flex-wrap items-start gap-6 rounded border border-border bg-surface-1 px-4 py-3">
-          <Figure value={overview.total}    label={t('admin.dom_stat_total')} />
-          <Figure value={overview.verified} label={t('admin.dom_stat_verified')} />
-          <Figure value={overview.pending}  label={t('admin.dom_stat_pending')} />
-          <div className="ms-auto flex items-center gap-3">
-            {overview.primary_name && (
-              <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-small)' }}>
-                {t('admin.dom_primary_is', { name: overview.primary_name })}
-              </span>
-            )}
-            {canManage && (
-              <Button variant="primary" onClick={() => setAdding(true)}>
-                <Plus size={16} /> {t('admin.dom_add')}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
+  /** `<DomainDetail>`, rendered by a ReactHost. */
+  get DomainDetail() {
+    if (!(this.selected)) return undefined as never
+    return DomainDetail
+  }
 
-      {fromMismatch && (
-        <Callout variant="info" t={t}>
-          {t('admin.dom_from_mismatch', { address: data?.from_address, domain: data?.from_domain })}
-        </Callout>
-      )}
+  get domain_detail_props() {
+    return this.memo('domain_detail_props', [this.selected, this.canManage], () => {
+      if (!(this.selected)) return undefined as never
+      return ({ domainId: this.selected, canManage: this.canManage, onGone: () => this.open(null) } as React.ComponentProps<typeof DomainDetail>)
+    })
+  }
 
-      {error && <p className="text-danger" role="alert" style={{ fontSize: 'var(--kb-text-body)' }}>{error}</p>}
+  get show_main() {
+    return !(this.selected)
+  }
 
-      <DataTable<Domain>
-        t={t}
-        rows={domains}
-        columns={columns}
-        rowKey={r => r.id}
-        loading={isLoading}
-        rowActions={rowActions}
-        onRowClick={r => open(r.id)}
-        pageSize={0}
-        error={isError ? t('admin.dom_load_failed') : undefined}
-        onRetry={() => void refetch()}
-        emptyState={
-          <EmptyState
-            icon={<Globe size={26} />}
-            title={t('admin.dom_empty_title')}
-            description={t('admin.dom_empty_desc')}
-            action={canManage ? { label: t('admin.dom_add'), onClick: () => setAdding(true), variant: 'primary' } : undefined}
-            t={t}
-          />
-        }
-      />
+  get show_overview() {
+    return this.memo('show_overview', [this.overview, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return !!(this.overview)
+    })
+  }
 
-      {adding && (
-        <AddDomainDialog
-          domains={domains}
-          onClose={() => setAdding(false)}
-          // Straight to the proof: a domain that was just declared is a domain
-          // nobody has verified, and that is the only thing left to do with it.
-          onAdded={d => routerNavigate(adminUrl({ tab: 'domains', params: { domain: d.id } }))}
-        />
-      )}
-    </div>
-  )
+  /** `<Figure>`, rendered by a ReactHost. */
+  get Figure() {
+    if (!(!(this.selected)) || !(this.overview)) return undefined as never
+    return __parts.Figure
+  }
+
+  get figure_props() {
+    return this.memo('figure_props', [this.overview, this.tr, this.selected], () => {
+      if (!(!(this.selected)) || !(this.overview)) return undefined as never
+      return ({ value: this.overview.total, label: this.tr('admin.dom_stat_total') })
+    })
+  }
+
+  get figure_props2() {
+    return this.memo('figure_props2', [this.overview, this.tr, this.selected], () => {
+      if (!(!(this.selected)) || !(this.overview)) return undefined as never
+      return ({ value: this.overview.verified, label: this.tr('admin.dom_stat_verified') })
+    })
+  }
+
+  get figure_props3() {
+    return this.memo('figure_props3', [this.overview, this.tr, this.selected], () => {
+      if (!(!(this.selected)) || !(this.overview)) return undefined as never
+      return ({ value: this.overview.pending, label: this.tr('admin.dom_stat_pending') })
+    })
+  }
+
+  get show_overview_primary_name() {
+    if (!(!(this.selected)) || !(this.overview)) return undefined as never
+    return !!(this.overview.primary_name)
+  }
+
+  get dom_primary_is_name() {
+    if (!(!(this.selected)) || !(this.overview) || !(this.overview.primary_name)) return undefined as never
+    return this.overview.primary_name
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.tr, this.selected, this.overview, this.canManage], () => {
+      if (!(!(this.selected)) || !(this.overview) || !(this.canManage)) return undefined as never
+      return ({ setAdding: this.setAdding.bind(this), t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<Button> with element children). */
+  get Part1() {
+    if (!(!(this.selected)) || !(this.overview) || !(this.canManage)) return undefined as never
+    return __parts.Part1
+  }
+
+  get show_from_mismatch() {
+    if (!(!(this.selected))) return undefined as never
+    return !!(this.fromMismatch)
+  }
+
+  get dom_from_mismatch_address() {
+    if (!(!(this.selected)) || !(this.fromMismatch)) return undefined as never
+    return this.data?.from_address
+  }
+
+  get dom_from_mismatch_domain() {
+    if (!(!(this.selected)) || !(this.fromMismatch)) return undefined as never
+    return this.data?.from_domain
+  }
+
+  get show_error() {
+    if (!(!(this.selected))) return undefined as never
+    return !!(this.error)
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.tr, this.domains, this.columns, this.isLoading, this.rowActions, this.isError, this.refetch, this.canManage, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return ({ t: this.tr, domains: this.domains, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, open: this.open.bind(this), isError: this.isError, refetch: this.refetch, canManage: this.canManage, setAdding: this.setAdding.bind(this) })
+    })
+  }
+
+  /** A part of the screen still written in React (<DataTable> t, columns, rowKey, rowActions, onRowClick, onRetry, emptyState: no .kbview property). */
+  get Part2() {
+    if (!(!(this.selected))) return undefined as never
+    return __parts.Part2
+  }
+
+  /** `<AddDomainDialog>`, rendered by a ReactHost. */
+  get AddDomainDialog() {
+    if (!(!(this.selected)) || !(this.adding)) return undefined as never
+    return AddDomainDialog
+  }
+
+  get add_domain_dialog_props() {
+    return this.memo('add_domain_dialog_props', [this.domains, this.adding, this.routerNavigate, this.selected], () => {
+      if (!(!(this.selected)) || !(this.adding)) return undefined as never
+      return ({ domains: this.domains, onClose: () => this.adding = false, onAdded: d => this.routerNavigate(adminUrl({ tab: 'domains', params: { domain: d.id } })) } as React.ComponentProps<typeof AddDomainDialog>)
+    })
+  }
+
+  open(id: string | null) {
+    return this.props.navigate(adminUrlWith('domains', this.props.params, { domain: id }))
+  }
+
+  /** `setAdding` of the TSX: a value, or an update of the previous one. */
+  setAdding(value: DomainsSection['adding'] | ((prev: DomainsSection['adding']) => DomainsSection['adding'])) {
+    this.adding = typeof value === 'function' ? (value as (prev: DomainsSection['adding']) => DomainsSection['adding'])(this.adding) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type DomainsSectionStores = ReturnType<DomainsSection['useStores']>
+
+export default DomainsSection.component()

@@ -1,0 +1,45 @@
+<!-- BuildingDialog — converted from BuildingDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="BuildingDialogProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Res admin.res_save}"
+                  ConfirmEnabled="{Binding enabled_unless_busy}"
+                  ConfirmBusy="{Binding busy}"
+                  CancelText="{Res admin.res_cancel}"
+                  HostStrings="true"
+                  Title="{Binding title}"
+                  Width="780"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <FloatingWindow.Banner>
+      <Callout Variant="Danger" Body="{Binding error}" Visible="{Binding show_error}"/>
+    </FloatingWindow.Banner>
+    <Panel Class="grid max-h-[65vh] grid-cols-1 items-start gap-4 overflow-y-auto p-4 sm:grid-cols-2">
+      <!-- TODO(views-migrate): <TextField> autoFocus: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <TextField Label="{Res admin.res_building_name}" Text="{Binding name}" MaxLength="100" OnTextChanged="text_field_text_changed"/>
+      <!-- TODO(views-migrate): <TextArea> rows: no .kbview property -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+      <Panel Class="min-w-0">
+        <!-- TODO(views-migrate): <FloorsField> is no .kbview element (./FloorsField#default) -->
+        <ReactHost Component="{Binding FloorsField}" Props="{Binding floors_field_props}"/>
+      </Panel>
+      <Panel Visible="{Binding show_building_building_resource}" Class="sm:col-span-2">
+        <Callout Body="{Res admin.res_building_rename_warning, Count={Binding res_building_rename_warning_count}}"/>
+      </Panel>
+      <Panel Class="min-w-0 sm:col-span-2">
+        <!-- TODO(views-migrate): <GeoPoint> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}" Visible="{Binding show_geo_point}"/>
+        <Panel Visible="{Binding show_not_geo_point}" Class="grid grid-cols-2 gap-3">
+          <!-- TODO(views-migrate): <TextField> inputMode: no .kbview property -->
+          <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+          <!-- TODO(views-migrate): <TextField> inputMode: no .kbview property -->
+          <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+        </Panel>
+      </Panel>
+      <Panel Class="sm:col-span-2">
+        <!-- TODO(views-migrate): <TextArea> rows: no .kbview property -->
+        <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+      </Panel>
+    </Panel>
+  </FloatingWindow>
+</Panel>
