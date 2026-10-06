@@ -173,6 +173,18 @@ export function isAbsoluteChild(nodes: ReadonlyMap<string, NodeInfo>, catalog: C
   return containerKind(nodes, catalog, parent) === 'absolute'
 }
 
+/**
+ * What the surface shows: a `page` (`.kbview`: a page, window or dialog — designed on a white sheet, its boundary
+ * dashed) or a `control` (`.kbcontrol`: a user control, on the canvas in Visual Studio's colours). The file's
+ * extension decides; without a file yet, the plan's kind does; with neither, the canvas keeps Visual Studio's colours.
+ */
+export function designDocumentKind(file: string | null | undefined, plan: ViewPlan | null): 'page' | 'control' {
+  if (file && /\.kbcontrol$/i.test(file)) return 'control'
+  if (file && /\.kbview$/i.test(file)) return 'page'
+  if (!plan) return 'control'
+  return plan.kind === 'control' ? 'control' : 'page'
+}
+
 /** `src/a/X.kbcontrol` + `./X` → `/src/a/X` (posix, `.` / `..` resolved). */
 export function moduleOfCodeBehind(file: string, codeBehind: string): string {
   const dir = file.split('/').slice(0, -1)

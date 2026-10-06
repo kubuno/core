@@ -14,11 +14,15 @@
  *    host's import map to its module (read by `@kubuno/views-compiler`), and `project/entry.js` is the hand-written
  *    `packages/host-runtime/src/entry.js` (the dev server transforms it: HMR, dynamic imports). Built with React's
  *    development build, like a dev server's (Fast Refresh of the module's React parts, readable errors).
+ *
+ * Pass 2 ends by writing `design-host.json` (the build's file list and the hash of the host registry it embeds),
+ * which the Visual Studio extension's build checks before shipping `dist/`.
  */
 import { defineConfig, type Plugin, type UserConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 // The core's own views and user controls are compiled like in the app's build (the host imports some of them).
@@ -104,6 +108,36 @@ function projectManifest(): Plugin {
   }
 }
 
+/** The host registry the bundled page compiles with (`entry.bundled.tsx` embeds it). */
+const HOST_REGISTRY = here('./packages/ui/kbview-registry.web.json')
+/** Written last, by pass 2: its absence means an unfinished build. */
+const BUILD_MANIFEST = 'design-host.json'
+
+/**
+ * `dist/design-host.json`, written once both passes are on disk: `{version: 1, hostRuntime, registrySha256, files}`
+ * (every other file of `dist/`, sorted, `/`-separated). A consumer that ships the build (the Visual Studio
+ * extension's VSIX) checks that every listed file is there and that the registry hash is its source's: a pass-1-only
+ * or half-copied `dist/`, or a build older than the registry, is refused instead of shipped.
+ */
+function buildManifest(): Plugin {
+  const list = (dir: string, prefix: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? list(join(dir, e.name), `${prefix}${e.name}/`) : [`${prefix}${e.name}`],
+    )
+  return {
+    name: 'kubuno-design-host-manifest',
+    closeBundle() {
+      const files = list(OUT, '').filter((f) => f !== BUILD_MANIFEST).sort()
+      if (!files.includes('index.html') || !files.includes(`${PROJECT}/shared.json`)) {
+        this.error(`[host-runtime] incomplete build in ${OUT}: run both passes (npm run build:design-host)`)
+      }
+      const registrySha256 = createHash('sha256').update(readFileSync(HOST_REGISTRY)).digest('hex')
+      const manifest = { version: 1, hostRuntime: pkg.version, registrySha256, files }
+      writeFileSync(join(OUT, BUILD_MANIFEST), JSON.stringify(manifest, null, 2) + '\n')
+    },
+  }
+}
+
 const aliases = {
   '@ui': here('./src/ui'),
   '@kubuno/sdk': here('./src/sdk/index.ts'),
@@ -145,7 +179,7 @@ const project: UserConfig = {
   base: './',
   // The public files are pass 1's; known here so that the CSS points at them (`../fonts/…`).
   publicDir: STAGE,
-  plugins: [kbview({ generateTypes: false, designServer: false }), react(), tailwindcss(), projectManifest()],
+  plugins: [kbview({ generateTypes: false, designServer: false }), react(), tailwindcss(), projectManifest(), buildManifest()],
   define: {
     ...versions,
     // React's (and every library's) development build, as a dev server would serve it.

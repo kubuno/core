@@ -55,7 +55,7 @@ import {
   type LayoutMap,
   type Rect,
 } from './geometry'
-import { Catalog, containerKind, indexPlan, isAbsoluteChild, literalNumber, moduleOfCodeBehind, planModules, type NodeInfo } from './model'
+import { Catalog, containerKind, designDocumentKind, indexPlan, isAbsoluteChild, literalNumber, moduleOfCodeBehind, planModules, type NodeInfo } from './model'
 import { drawAdorners, handleCursor, type SelectedAdorner } from './overlay'
 import { makePlaceholder } from './placeholder'
 import {
@@ -618,6 +618,7 @@ export class DesignSurface {
       this.frame.style.height = ''
       this.frame.dataset.autoHeight = 'true'
     }
+    this.canvas.dataset.document = designDocumentKind(this.doc?.file, this.plan)
     const chrome = this.doc?.designData?.frame
     const isControl = this.plan?.kind === 'control'
     this.frame.style.background = chrome?.background ? tokenColor(chrome.background) : (isControl ? 'var(--color-surface-0)' : 'var(--body-bg, var(--color-surface-0))')

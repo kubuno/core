@@ -6,6 +6,22 @@ under the published version number.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-06
+
+### Changed
+
+- **A page is designed on a white sheet.** In the Visual Studio designer, a `.kbview` (a page, window or dialog) is
+  now shown on a white canvas whatever Visual Studio's theme, with the page's boundary drawn as a light-grey dashed
+  line at the chosen width (1px at every zoom, outside the page so it never covers it). The page itself keeps its own
+  theme: the light / dark preview switches the page, not the canvas. A `.kbcontrol` (user control) keeps the canvas
+  in Visual Studio's colours, as before.
+
+### Added
+
+- **`dist/design-host.json`, the build's manifest**, written once both passes of the build are done: every file of
+  `dist/` and the SHA-256 of the host element registry the bundled page embeds. The Visual Studio extension's build
+  checks it and refuses a half-built or out-of-date design host instead of shipping it.
+
 ## [0.1.1] - 2026-10-06
 
 ### Changed

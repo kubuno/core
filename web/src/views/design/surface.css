@@ -12,6 +12,10 @@
   --vs-hover: rgba(255, 255, 255, 0.08);
   --kbd-adorner: #1a73e8;
   --kbd-toolbar-h: 32px;
+  /* A page (`.kbview`: page, window, dialog) is designed on a white sheet whatever Visual Studio's theme, its
+     boundary drawn as a light-grey dashed line (Windows Forms' look); a user control keeps the themed canvas. */
+  --kbd-page-canvas: #ffffff;
+  --kbd-page-boundary: #c8c8c8;
 }
 :root[data-vs-theme='light'] {
   --vs-canvas: #f5f5f5;
@@ -106,6 +110,11 @@ html.kbd-page body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.18);
 }
 .kbd-frame[data-auto-height='true'] { min-height: 120px; }
+/* A page: white canvas, the page's boundary dashed. Drawn on the unscaled zoom box (just outside the page, so it never
+   covers the view and stays 1px at every zoom); the page itself keeps its own theme (the light / dark preview). */
+.kbd-canvas[data-document='page'] { background: var(--kbd-page-canvas); }
+.kbd-canvas[data-document='page'] .kbd-zoom { outline: 1px dashed var(--kbd-page-boundary); }
+.kbd-canvas[data-document='page'] .kbd-frame { box-shadow: none; }
 /* The view's root fills the frame (the design size is the view's surface, like a Windows Forms form): a root Panel
    whose children are all placed by X / Y has no height of its own otherwise. */
 .kbd-frame > [data-kb-id=''],

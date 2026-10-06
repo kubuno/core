@@ -114,6 +114,7 @@ Every URL in the bundled build is relative: serve `dist/` from any origin or fol
 | `dist/project/design-page.js`, `design-page.css` | the project-mode page and its stylesheet |
 | `dist/project/shared/*.js`, `dist/project/chunks/` | the host's shared modules |
 | `dist/project/shared.json` | shared specifier → module (`@kubuno/host-runtime/shared.json`): `{version: 1, hostRuntime, entry, themes, shared}` |
+| `dist/design-host.json` | written last: `{version: 1, hostRuntime, registrySha256, files}` — every file of the build and the hash of the host registry it embeds, checked by the Visual Studio extension's build before it ships `dist/` |
 
 ## Build
 
