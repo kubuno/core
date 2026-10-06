@@ -9,6 +9,28 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Changed
+
+- **Kubuno Desktop moves into the core repository, under `desktop/`, with its history.** The `kubuno/desktop`
+  repository is retired. `desktop/` is one Cargo workspace for every operating system: `common/` carries the
+  complete, portable part and `windows/`, `linux/`, `macos/` only what each system does differently. The crates
+  sit directly in their platform folder (`common/<crate>`, `windows/<crate>`; no more `windows/src/crates`).
+- **The shell's app is portable** (`common/kubuno-desktop-shell-common`): start-up, the accounts and the token
+  broker, the sync engine's door with its offline sample and the activity log no longer depend on the Win32
+  framework. Every entry point calls `app::run(platform, ui)` with its platform extension points (`Folders`,
+  `SystemIntegration`, with portable defaults) and its interface (`UiHost`). `kubuno-desktop.exe` registers the
+  Windows ones (the Documents known folder, the `Run` key, the Win32 window and splash screen) and starts exactly
+  as before; `kubuno-desktop-shell-linux` and `kubuno-desktop-shell-macos` run the same app with a text interface
+  (`--sample` lists the sample's sync folders).
+- **The portable layers of the framework are in `common/`** (the `.kbview` grammar, model, metadata and macros, the
+  resources and data models and tools, the web views compiler, `kubuno-drive-desktop-shared`) and build and test
+  on Linux and macOS; the Win32 / Direct2D layers (`kubuno-desktop`, `-ui`, `-controls`, `-views`, the painting
+  surface, the header menus and data) are in `windows/`.
+- **Version 0.1.1-alpha, tagged in the core repository.** Apps take the framework from
+  `git = "https://github.com/kubuno/core"`, tag `desktop-v0.1.1-alpha` (the web views compiler:
+  `web-views-compiler-core-v0.2.1`); the former repository's tags keep resolving there. The CI is the core's
+  (`desktop.yml` on every change, `desktop-release.yml` on a `desktop-v*` tag, no longer on `v*`).
+
 ### Added
 
 - **Four more type roles** (Badge 10 px, Caption 11 px, Subtitle 16 px, Display 24 px) join the shared web/desktop type scale, so

@@ -1,0 +1,106 @@
+name: Desktop release
+
+# Kubuno Desktop artifacts, on a desktop framework tag (`desktop-v*`, desktop/README.md "Versions and tags";
+# the core's own `v*` tags release the server). Each OS builds on its native runner: the kubuno-sync daemon for
+# Linux (.deb + .rpm), Windows and macOS, and the Windows shell (kubuno-desktop.exe and its MSIX).
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: kubuno-sync ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu, kind: linux }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,   kind: windows }
+          - { os: macos-latest,   target: aarch64-apple-darwin,     kind: macos }
+          - { os: macos-13,       target: x86_64-apple-darwin,      kind: macos }
+    defaults: { run: { working-directory: desktop } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # full history: build id needs the commit count
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p kubuno-desktop-sync
+
+      # ── Linux: .deb + .rpm ──────────────────────────────────────────────────
+      - name: Package Linux (deb + rpm)
+        if: matrix.kind == 'linux'
+        run: |
+          cargo install cargo-deb cargo-generate-rpm --locked
+          cargo deb -p kubuno-desktop-sync --target ${{ matrix.target }} --no-build
+          cargo generate-rpm -p common/kubuno-desktop-sync --target ${{ matrix.target }}
+          mkdir -p dist
+          cp target/${{ matrix.target }}/debian/*.deb dist/
+          cp target/${{ matrix.target }}/generate-rpm/*.rpm dist/
+
+      # ── Windows: zip the CLI .exe (the shell ships its own MSIX) ────────────
+      - name: Package Windows (zip)
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path target/${{ matrix.target }}/release/kubuno-sync.exe `
+            -DestinationPath dist/kubuno-sync-${{ matrix.target }}.zip
+
+      # ── macOS: zip the CLI binary ──────────────────────────────────────────
+      - name: Package macOS (zip)
+        if: matrix.kind == 'macos'
+        run: |
+          mkdir -p dist
+          zip -j dist/kubuno-sync-${{ matrix.target }}.zip target/${{ matrix.target }}/release/kubuno-sync
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubuno-sync-${{ matrix.target }}
+          path: desktop/dist/*
+
+  shell:
+    name: Kubuno Desktop (Windows)
+    runs-on: windows-latest
+    defaults: { run: { working-directory: desktop } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - name: Test
+        run: cargo test -p kubuno-desktop-shell -p kubuno-desktop-shell-common
+      - name: Build
+        run: cargo build --release -p kubuno-desktop-shell
+      # The MSIX wraps the exe; MakeAppx ships with the Windows SDK, which the runner already has.
+      - name: Package MSIX
+        working-directory: desktop/windows/packaging
+        run: pwsh ./package-msix.ps1 -ExePath ..\..\target\release\kubuno-desktop.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubuno-desktop-windows
+          path: |
+            desktop/target/release/kubuno-desktop.exe
+            desktop/windows/packaging/Kubuno-Desktop.msix
+
+  release:
+    needs: [sync, shell]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: 'Kubuno Desktop ${{ github.ref_name }}'
+          draft: true
+          files: artifacts/**/*

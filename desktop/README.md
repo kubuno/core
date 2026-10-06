@@ -5,11 +5,11 @@
 
 <div align="center">
 
-<img src=".github/logo.svg" alt="Kubuno Desktop logo" width="120">
+<img src="common/assets/kubuno-desktop.svg" alt="Kubuno Desktop logo" width="120">
 
 # Kubuno — Desktop
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](../LICENSE)
 ![Rust](https://img.shields.io/badge/Rust-edition_2021-orange.svg)
 ![Windows](https://img.shields.io/badge/Windows-native_Win32-0078D4.svg)
 ![Sync](https://img.shields.io/badge/sync-Linux_%7C_Windows_%7C_macOS-4D38DB.svg)
@@ -26,56 +26,83 @@ themselves — no web view, no bundler, no Node.
 
 ## What's inside
 
-The repository is organised by platform, around a common foundation:
+Kubuno Desktop is the `desktop/` folder of the [core repository](https://github.com/kubuno/core) (the former
+`kubuno/desktop` repository, merged with its history on 2026-10-06). It is **one Cargo workspace for every
+operating system**, organised by platform: `common/` carries the complete app, an OS folder only what that system
+does differently.
 
 ```
 desktop/
-├── common/     shared by every desktop version
-│   ├── kubuno-desktop-sync/   file synchronisation engine (pure Rust, cross-platform)
+├── common/     complete and portable (Windows, Linux, macOS)
+│   ├── kubuno-desktop-shell-common/   the shell's app: start-up (app::run(platform, ui)), accounts and token
+│   │                                  broker, the sync engine's door and its offline sample, the activity log,
+│   │                                  the platform extension points (platform) with portable defaults
+│   ├── kubuno-desktop-sync/           file synchronisation engine and the kubuno-sync daemon
 │   ├── kubuno-desktop-account, -secrets, -api-client, -sync-engine, -app-storage/  accounts, tokens, local data
-│   ├── kubuno-office-docs-core/  the word processor's engine (shared core of the Office module)
-│   └── assets/        Kubuno and application logos
-├── windows/    the Windows version (the only shell written so far)
-│   ├── src/shell/        kubuno-desktop.exe — launcher, accounts, sync, settings
-│   ├── src/documents/    kubuno-documents — word processor for the Office module (moves to office next)
-│   ├── src/crates/       the framework: kubuno-desktop (facade), -ui (design system), -controls, -views…,
-│   │                     the painting surface kubuno-drive-desktop-app-controls and the shared header controls
-│   └── packaging/        Microsoft Store (MSIX)
-├── linux/      shell to be written
-└── macos/      shell to be written
+│   ├── kubuno-office-docs-core/       the word processor's engine (shared core of the Office module)
+│   ├── kubuno-desktop-views-syntax, -views-model, -views-meta, -views-macros, -data-model, -data-macros,
+│   │   -resources-model, -resources-macros, -resources-tool, kubuno-web-views-compiler-core,
+│   │   kubuno-drive-desktop-shared   the portable layers of the framework
+│   └── assets/                        Kubuno and application logos
+├── windows/    what Windows does differently
+│   ├── kubuno-desktop, -ui, -controls, -views, -views-ls, -data, -data-tool, -print, -resources,
+│   │   -app-storage-components, kubuno-drive-desktop-app-controls   the Win32 / Direct2D framework
+│   ├── kubuno-desktop-shell-controls, -header-data   the header menus and their data, for every app
+│   ├── kubuno-desktop-shell/      kubuno-desktop.exe: the Windows interface of the shell's app (views, tray,
+│   │                              Explorer integration) and the Windows implementations of its extension points
+│   ├── kubuno-office-desktop/     kubuno-documents.exe, the Office module's word processor (moves to office next)
+│   └── packaging/                 Microsoft Store (MSIX)
+├── linux/      kubuno-desktop-shell-linux: the entry point (portable platform, text interface)
+└── macos/      kubuno-desktop-shell-macos: the entry point (portable platform, text interface)
 ```
+
+### Platform extension points
+
+Each entry point builds its `Platform` and its user interface and calls
+`kubuno_desktop_shell_common::app::run(platform, ui)`. The extension points (`kubuno_desktop_shell_common::platform`)
+have portable defaults, so the app runs anywhere with nothing registered:
+
+| Extension point | Portable default | Windows override |
+|---|---|---|
+| `Folders` | `Documents` in the home directory | the Documents known folder |
+| `SystemIntegration` | nothing registered with the system | the `Run` key of a start at logon |
+| `UiHost` | a text summary of the sync folders (`TextUi`) | the Win32 window, splash screen and tray |
+
+The Win32 framework only builds on Windows (it is the Windows implementation of the desktop UI); a Linux or macOS
+window will join as another `UiHost`.
 
 The module apps live in their module's repository, next to the server and the web frontend (per-module
 reorganisation, 2026-10): **Kubuno Chat** (`kubuno-chat.exe`) in
-[`kubuno/chat`](https://github.com/kubuno/chat) under `desktop/windows/`, **Kubuno Drive** (`drive.exe`) in
-[`kubuno/drive`](https://github.com/kubuno/drive) under `desktop/windows/`. They link this repository's framework
-**statically**, through a git tag (below), and depend on Kubuno Desktop only as a service (the account/token broker
-on the named pipe).
+[`kubuno/chat`](https://github.com/kubuno/chat) under `desktop/`, **Kubuno Drive** (`drive.exe`) in
+[`kubuno/drive`](https://github.com/kubuno/drive) under `desktop/`. They link this framework
+**statically**, through a git tag of the core repository (below), and depend on Kubuno Desktop only as a service
+(the account/token broker on the named pipe).
 
 ### Versions and tags
 
-Every crate of the framework (`windows/`) and every common crate (`common/`) shares the version
-`0.1.0-alpha` (`[workspace.package]` of both workspaces). **One annotated tag pins them all:
-`desktop-v<version>`** (first one: `desktop-v0.1.0-alpha`), following the shared-crate convention
-`<crate>-v<version>` with the facade crate `kubuno-desktop`. An app takes every crate it needs from the same tag:
+Every crate of the workspace shares the version `0.1.1-alpha` (`[workspace.package]` of `desktop/Cargo.toml`),
+except the two crates ported from Files (`kubuno-drive-desktop-app-controls`, `kubuno-drive-desktop-shared`, MIT,
+`0.1.0`) and the separately released `kubuno-web-views-compiler-core`. **One annotated tag of the core repository
+pins them all: `desktop-v<version>`** (`desktop-v0.1.1-alpha`, the first one cut in the core repository), following
+the shared-crate convention `<crate>-v<version>` with the facade crate `kubuno-desktop`. An app takes every crate it
+needs from the same tag; Cargo finds each crate by its name anywhere in the repository:
 
 ```toml
 [workspace.dependencies]
-kubuno-desktop         = { git = "https://github.com/kubuno/desktop", tag = "desktop-v0.1.0-alpha" }
-kubuno-desktop-account = { git = "https://github.com/kubuno/desktop", tag = "desktop-v0.1.0-alpha" }
+kubuno-desktop         = { git = "https://github.com/kubuno/core", tag = "desktop-v0.1.1-alpha" }
+kubuno-desktop-account = { git = "https://github.com/kubuno/core", tag = "desktop-v0.1.1-alpha" }
 ```
 
-The two crates ported from Files (`kubuno-drive-desktop-app-controls`, `kubuno-drive-desktop-shared`, MIT, version
-`0.1.0`) and the separately released `kubuno-web-views-compiler-core` (`web-views-compiler-core-v*`) ride on the same
-tag. A new tag is published on GitHub (from GitLab's `sync-github` job) before any app bumps to it.
+The web views compiler has its own tags, `web-views-compiler-core-v<its version>` (`web-views-compiler-core-v0.2.1`),
+which the core's `@kubuno/views-compiler` WebAssembly shim builds from. The tags made in the former
+`kubuno/desktop` repository (`desktop-v0.1.0-alpha`, `web-views-compiler-core-v0.2.0`) keep resolving there. A new
+tag is published on GitHub (from GitLab's `sync-github` job) before any app bumps to it.
 
 Names follow one rule (2026-10-03): a crate is `kubuno-<product>-<component>` and its Visual Studio project
-`Kubuno.<Product>.<Component>` (`kubuno-desktop-ui` ↔ `Kubuno.Desktop.UI`, `kubuno-drive-desktop` ↔
+`Kubuno.<Product>.<Component>` (`kubuno-desktop-ui` and `Kubuno.Desktop.UI`, `kubuno-drive-desktop` and
 `Kubuno.Drive.Desktop`). The framework's facade is `kubuno-desktop` (`use kubuno_desktop::prelude::*`). The
 programs keep their names (`kubuno-desktop.exe`, `kubuno-chat.exe`, `kubuno-documents.exe`, `drive.exe`,
-`kubuno-sync`). `Kubuno.Desktop.slnx`, at the root, is the repository's Visual Studio solution (folders
-Applications, Framework, Shared controls, Common (multi-OS), Tools, Web), generated by vskubuno
-("Kubuno: Generate Visual Studio Projects"); never point it at a project outside this repository.
+`kubuno-sync`). The core's `Kubuno.Core.slnx` shows the workspace under Desktop (Common, Windows, Linux, macOS).
 
 ## Features
 
@@ -135,7 +162,7 @@ icon set and one set of controls:
 ## Usage (sync daemon)
 
 ```bash
-cd common && cargo build --release -p kubuno-desktop-sync
+cd desktop && cargo build --release -p kubuno-desktop-sync
 
 # Connect and choose the local sync folder
 ./target/release/kubuno-sync login \
@@ -165,13 +192,13 @@ no system OpenSSL or SQLite dependency and builds are identical across platforms
 | `kubuno-sync` `.deb`, `.rpm` | Linux | `common/build_deb.sh` (`cargo deb` / `cargo generate-rpm`) |
 | `kubuno-sync` `.exe` (zip) | Windows | `cargo build` + zip |
 | `kubuno-sync` binaries (zip) | macOS (Apple Silicon and Intel) | `cargo build` per target |
-| `kubuno-desktop` `.exe` / MSIX | Windows 10/11 | `windows/` + `windows/packaging/package-msix.ps1` |
+| `kubuno-desktop` `.exe` / MSIX | Windows 10/11 | `windows/kubuno-desktop-shell` + `windows/packaging/package-msix.ps1` |
 
-On a `v*` tag, CI builds every target on its **native runner** and attaches the
-artifacts to a GitHub Release (`release.yml` for the sync daemon, `app-release.yml`
-for the Windows shell).
+On a `desktop-v*` tag, CI builds every target on its **native runner** and attaches the
+artifacts to a GitHub Release (the core repository's `.github/workflows/desktop-release.yml`; `desktop.yml`
+checks every change of `desktop/`).
 
-Windows shell, from `windows/`:
+Windows shell, from `desktop/`:
 
 ```bash
 cargo build --release -p kubuno-desktop-shell     # → target/release/kubuno-desktop.exe
@@ -187,7 +214,7 @@ Store submission — is in **[`BUILD.md`](BUILD.md)**.
 
 ## Roadmap
 
-- Shells for Linux and macOS (only the Windows shell exists today).
+- Native windows for Linux and macOS (today their entry points run the portable app with a text interface).
 - New local folders created on the server (today only files in known folders are pushed).
 - Server-side idempotency for drive writes, so a retried create cannot duplicate.
 - Code signing for the MSIX package.
@@ -195,7 +222,7 @@ Store submission — is in **[`BUILD.md`](BUILD.md)**.
 
 ## Security
 
-Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
+Please report vulnerabilities privately — see [`SECURITY.md`](../SECURITY.md).
 
 ## Contributing
 
@@ -203,6 +230,6 @@ Issues and pull requests are welcome. For any significant change, please open an
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE) © Kubuno contributors. The crates `kubuno-drive-desktop-app-controls` and
-`kubuno-drive-desktop-shared` (`windows/src/crates/`, see their `LICENSE-MIT`) are
+[AGPL-3.0-or-later](../LICENSE) © Kubuno contributors. The crates `kubuno-drive-desktop-app-controls`
+(`windows/`) and `kubuno-drive-desktop-shared` (`common/`, see their `LICENSE-MIT`) are
 MIT-licensed, like the project they are ported from.

@@ -1,0 +1,78 @@
+name: Desktop
+
+# Kubuno Desktop (desktop/, one Cargo workspace): clippy -D warnings and the tests on Windows for the whole
+# workspace, and on Linux and macOS for what is portable (desktop/common and the Linux/macOS entry points; the
+# Win32 framework and apps of desktop/windows build on Windows only). Plus a dependency-vulnerability audit.
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults: { run: { shell: bash, working-directory: desktop } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      # The vendored OpenSSL of the sync engine's SQLCipher configures with Strawberry Perl (on the runner).
+      - name: clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: tests
+        run: cargo test --workspace
+
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults: { run: { working-directory: desktop } }
+    env:
+      # The crates every desktop OS builds (desktop/common) and the entry point of this OS.
+      PACKAGES: >-
+        -p kubuno-desktop-shell-common -p kubuno-desktop-sync -p kubuno-desktop-sync-engine
+        -p kubuno-desktop-account -p kubuno-desktop-api-client -p kubuno-desktop-secrets
+        -p kubuno-desktop-app-storage -p kubuno-office-docs-core
+        -p kubuno-desktop-views-syntax -p kubuno-desktop-views-model -p kubuno-desktop-views-meta
+        -p kubuno-desktop-views-macros -p kubuno-desktop-data-model -p kubuno-desktop-data-macros
+        -p kubuno-desktop-resources-model -p kubuno-desktop-resources-macros -p kubuno-desktop-resources-tool
+        -p kubuno-web-views-compiler-core -p kubuno-drive-desktop-shared
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - name: clippy (deny warnings)
+        run: |
+          ENTRY=$([ "$RUNNER_OS" = macOS ] && echo kubuno-desktop-shell-macos || echo kubuno-desktop-shell-linux)
+          cargo clippy $PACKAGES -p $ENTRY --all-targets -- -D warnings
+      # Doc tests are left out (the macros' examples run the Win32 runtime), and so are five unit tests that state
+      # Windows file-name and path rules and have never passed on another OS (sync name sanitising, the Files
+      # path helpers): to be made per-OS with the illegal-file-name fix of the sync engine.
+      - name: tests
+        run: >-
+          cargo test $PACKAGES --lib --bins --tests --
+          --skip engine::tests::a_colon_no_longer_blocks_the_sync
+          --skip engine::tests::illegal_characters_are_replaced
+          --skip engine::tests::separators_and_traversal_are_stripped
+          --skip helpers::path_helpers::tests::combine_preserves_forward_slashes
+          --skip helpers::path_helpers::tests::fonts_folder_detection
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-audit }
+      - name: cargo audit
+        working-directory: desktop
+        run: cargo audit

@@ -4,10 +4,11 @@ The Windows version of Kubuno Desktop: native Win32 applications written in Rust
 drawn with Direct2D, DirectWrite and DirectComposition — no web view, no UI
 framework, no runtime to install.
 
-It is built on the shared foundation in [`../common`](../common), above all the
-[`kubuno-sync`](../common/kubuno-desktop-sync) file synchronisation engine. See the
-[repository README](../README.md) for the whole picture and [`BUILD.md`](../BUILD.md)
-for build notes common to every platform.
+This folder only holds what Windows does differently: the complete, portable app is in
+[`../common`](../common) (the shell's app `kubuno-desktop-shell-common`, the
+[`kubuno-sync`](../common/kubuno-desktop-sync) file synchronisation engine, accounts, secrets, storage), and these
+crates are members of the one desktop workspace (`../Cargo.toml`). See the [desktop README](../README.md) for the
+whole picture and [`BUILD.md`](../BUILD.md) for build notes common to every platform.
 
 ---
 
@@ -15,19 +16,24 @@ for build notes common to every platform.
 
 ```
 windows/
-├── Cargo.toml            the Windows workspace
-├── src/
-│   ├── shell/            kubuno-desktop.exe — the desktop shell
-│   ├── documents/        kubuno-documents — word processor for the Office module
-│   └── crates/
-│       ├── kubuno-desktop-controls/   the control library, drawn natively on Direct2D
-│       ├── kubuno-desktop-ui/         the design system built on those controls
-│       └── kubuno-drive-desktop-app-controls/  the painting surface (ported from Files, MIT)
-├── packaging/            Microsoft Store (MSIX): manifest, Store logos, packaging script
-└── tools/                UI reference and parity tooling (PowerShell)
+├── kubuno-desktop/                     the framework's facade (Application, views, resources, splash screen…)
+├── kubuno-desktop-ui/                  the design system built on the controls
+├── kubuno-desktop-controls/            the control library, drawn natively on Direct2D
+├── kubuno-desktop-views, -views-ls, -data, -data-tool, -print, -resources, -app-storage-components/
+├── kubuno-drive-desktop-app-controls/  the painting surface (ported from Files, MIT)
+├── kubuno-desktop-shell-controls/, kubuno-desktop-header-data/   the header menus and their data, for every app
+├── kubuno-desktop-shell/               kubuno-desktop.exe — the Windows face of the shell's app
+├── kubuno-office-desktop/              kubuno-documents — word processor for the Office module
+├── packaging/                          Microsoft Store (MSIX): manifest, Store logos, packaging script
+└── tools/                              UI reference and parity tooling (PowerShell)
 ```
 
 ### The shell — `kubuno-desktop.exe`
+
+`kubuno-desktop-shell` puts a Windows face on the portable app of
+`../common/kubuno-desktop-shell-common`: its `main.rs` registers the Windows platform (the Documents known folder,
+the `Run` key) and the Win32 interface (`platform::ui_host::WindowsUi`), and calls
+`kubuno_desktop_shell_common::app::run`.
 
 The launcher that stays with the user: accounts, activity, settings, favourites and
 labels, the applications of each Kubuno instance, and file synchronisation driven
@@ -63,14 +69,12 @@ in `kubuno-drive-desktop`, custom Direct2D controls, the shell/storage layer, lo
 
 ## Build
 
-From `windows/`:
+From `desktop/` (the workspace root):
 
 ```powershell
 cargo build --release -p kubuno-desktop-shell     # → target\release\kubuno-desktop.exe (the shell)
 cargo test  -p kubuno-desktop-shell               # interaction geometry, text fields
 cargo run   -p kubuno-desktop-ui --example gallery  # component gallery (UI reference)
-
-cd src\drive; cargo build --release         # → drive.exe (nested workspace)
 ```
 
 **Build directory.** When the repository lives on a network share, the MSVC linker
@@ -92,8 +96,8 @@ Everything lives in [`packaging/`](packaging): the MSIX manifest, the Store logo
 
 ```powershell
 cargo build --release -p kubuno-desktop-shell
-cd packaging
-pwsh ./package-msix.ps1 -ExePath ..\target\release\kubuno-desktop.exe
+cd windows\packaging
+pwsh ./package-msix.ps1 -ExePath ..\..\target\release\kubuno-desktop.exe
 # or, signed for local installation:
 pwsh ./package-msix.ps1 -Sign -Thumbprint <certificate-thumbprint>
 ```
@@ -104,14 +108,12 @@ it are in [`packaging/README.md`](packaging/README.md).
 
 ## Continuous integration
 
-`.github/workflows/app-release.yml` runs on a Windows runner for every `v*` tag (or
-on demand): it tests and builds `kubuno-desktop`, packages the MSIX, and attaches
-`kubuno-desktop.exe` and `Kubuno-Desktop.msix` to a draft GitHub Release.
-
-The command-line sync client (`kubuno-sync.exe`) is released separately, as a zip,
-by `release.yml`.
+The core repository's `.github/workflows/desktop-release.yml` runs for every `desktop-v*` tag (or on demand): on
+a Windows runner it tests and builds `kubuno-desktop`, packages the MSIX, and attaches `kubuno-desktop.exe` and
+`Kubuno-Desktop.msix` to a draft GitHub Release, next to the command-line sync client (`kubuno-sync`) built for
+each OS. `desktop.yml` checks every change of `desktop/`.
 
 ## License
 
-[AGPL-3.0-or-later](../LICENSE) © Kubuno contributors. The crates ported from Files
-(`src/crates/kubuno-drive-desktop-app-controls`, `src/crates/kubuno-drive-desktop-shared`) are MIT-licensed.
+[AGPL-3.0-or-later](../../LICENSE) © Kubuno contributors. The crates ported from Files
+(`kubuno-drive-desktop-app-controls` here, `../common/kubuno-drive-desktop-shared`) are MIT-licensed.

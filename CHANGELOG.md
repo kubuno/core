@@ -21,6 +21,13 @@ number at release time, and CI publishes that section as the GitHub Release note
   version. The packages (`.deb`, `.rpm`, Windows installer, macOS package, Docker image) install exactly the same
   files; `build_deb.sh --no-install` (or `KUBUNO_NO_INSTALL=1`) builds them without installing them on the build
   machine. The CI checks both workspaces.
+- **Kubuno Desktop joins the core repository, under `desktop/`, with its history** (the former `kubuno/desktop`
+  repository, retired). It is one Cargo workspace for every operating system: `desktop/common` holds the complete,
+  portable app (the shell's start-up, accounts and token broker, sync, the portable layers of the framework) and
+  `desktop/windows`, `desktop/linux`, `desktop/macos` only what each system does differently; see
+  `desktop/README.md` and `desktop/CHANGELOG.md`. Desktop apps take the framework from this repository by tag:
+  `desktop-v0.1.1-alpha`, and `web-views-compiler-core-v0.2.1` for the web views compiler. New CI workflows
+  check `desktop/` on Windows, Linux and macOS and release it on a `desktop-v*` tag.
 - **The web views are sorted into views and user controls, like the desktop.** A page the router shows, a window or a
   dialog is a view (`.kbview`); a piece placed inside another screen — a pane, a section, a tab, a row, a card, the
   header and its menus — is a user control (`.kbcontrol`), with its properties and events. The core's screens were

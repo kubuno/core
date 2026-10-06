@@ -1,0 +1,119 @@
+# Kubuno Desktop: ONE Cargo workspace for every operating system (core repository, desktop/; the former
+# kubuno/desktop repository, merged on 2026-10-06), independent of the server's (../server) and of the shared
+# server crates' (../common).
+#
+#   common/   what every desktop OS shares, complete and portable: the shell's app (kubuno-desktop-shell-common,
+#             with the platform extension points and their portable defaults), the sync daemon and the
+#             accounts/tokens/secrets/storage crates, the word processor's engine, and the portable layers of the
+#             framework (the .kbview grammar, model, metadata and macros, the resources and data models, the
+#             web views compiler)
+#   windows/  only what Windows does differently: the Win32 / Direct2D framework (kubuno-desktop, -ui,
+#             -controls, -views, ...), the shell's Windows interface and kubuno-desktop.exe, Kubuno Documents
+#   linux/, macos/  thin entry points running the shell's app with the portable defaults
+#
+# The module apps (chat, drive, ...) live in their module's repository and take these crates by git tag from
+# https://github.com/kubuno/core: `desktop-v<version>` pins every crate of this workspace (desktop/README.md,
+# "Versions and tags"). The Windows-only crates are built on Windows only (CI selects packages per OS: -p).
+[workspace]
+resolver = "2"
+members  = [
+    "common/kubuno-desktop-account",
+    "common/kubuno-desktop-api-client",
+    "common/kubuno-desktop-app-storage",
+    "common/kubuno-desktop-data-macros",
+    "common/kubuno-desktop-data-model",
+    "common/kubuno-desktop-resources-macros",
+    "common/kubuno-desktop-resources-model",
+    "common/kubuno-desktop-resources-tool",
+    "common/kubuno-desktop-secrets",
+    "common/kubuno-desktop-shell-common",
+    "common/kubuno-desktop-sync",
+    "common/kubuno-desktop-sync-engine",
+    "common/kubuno-desktop-views-macros",
+    "common/kubuno-desktop-views-meta",
+    "common/kubuno-desktop-views-model",
+    "common/kubuno-desktop-views-syntax",
+    "common/kubuno-drive-desktop-shared",
+    "common/kubuno-office-docs-core",
+    "common/kubuno-web-views-compiler-core",
+    # Windows: the Win32 / Direct2D framework (the facade kubuno-desktop, -ui, -controls, -views, the painting surface
+    # kubuno-drive-desktop-app-controls, the header menus and data), the shell's Windows face and entry point, and
+    # Kubuno Documents (the Office module's app, which moves to the office repository next).
+    "windows/kubuno-desktop",
+    "windows/kubuno-desktop-app-storage-components",
+    "windows/kubuno-desktop-controls",
+    "windows/kubuno-desktop-data",
+    "windows/kubuno-desktop-data-tool",
+    "windows/kubuno-desktop-header-data",
+    "windows/kubuno-desktop-print",
+    "windows/kubuno-desktop-resources",
+    "windows/kubuno-desktop-shell",
+    "windows/kubuno-desktop-shell-controls",
+    "windows/kubuno-desktop-ui",
+    "windows/kubuno-desktop-views",
+    "windows/kubuno-desktop-views-ls",
+    "windows/kubuno-drive-desktop-app-controls",
+    "windows/kubuno-office-desktop",
+    "linux/kubuno-desktop-shell-linux",
+    "macos/kubuno-desktop-shell-macos",
+]
+
+[workspace.package]
+version    = "0.1.1-alpha"
+edition    = "2021"
+license    = "AGPL-3.0-or-later"
+repository = "https://github.com/kubuno/core"
+
+[workspace.dependencies]
+kubuno-drive-desktop-shared       = { path = "common/kubuno-drive-desktop-shared" }
+kubuno-drive-desktop-app-controls = { path = "windows/kubuno-drive-desktop-app-controls" }
+kubuno-desktop-ui          = { path = "windows/kubuno-desktop-ui" }
+kubuno-desktop-controls    = { path = "windows/kubuno-desktop-controls" }
+kubuno-desktop-views       = { path = "windows/kubuno-desktop-views" }
+kubuno-desktop-views-macros = { path = "common/kubuno-desktop-views-macros" }
+kubuno-desktop-views-meta   = { path = "common/kubuno-desktop-views-meta" }
+kubuno-desktop-views-syntax = { path = "common/kubuno-desktop-views-syntax" }
+kubuno-desktop-views-model  = { path = "common/kubuno-desktop-views-model" }
+kubuno-web-views-compiler-core    = { path = "common/kubuno-web-views-compiler-core" }
+kubuno-desktop-data         = { path = "windows/kubuno-desktop-data" }
+kubuno-desktop-data-model   = { path = "common/kubuno-desktop-data-model" }
+kubuno-desktop-data-macros  = { path = "common/kubuno-desktop-data-macros" }
+kubuno-desktop-print        = { path = "windows/kubuno-desktop-print" }
+kubuno-desktop-app-storage-components = { path = "windows/kubuno-desktop-app-storage-components" }
+kubuno-desktop-resources-model  = { path = "common/kubuno-desktop-resources-model" }
+kubuno-desktop-resources        = { path = "windows/kubuno-desktop-resources" }
+kubuno-desktop-resources-macros = { path = "common/kubuno-desktop-resources-macros" }
+kubuno-desktop              = { path = "windows/kubuno-desktop" }
+kubuno-desktop-shell-controls     = { path = "windows/kubuno-desktop-shell-controls" }
+kubuno-desktop-header-data        = { path = "windows/kubuno-desktop-header-data" }
+# The common crates (accounts, sync, secrets, storage, the word processor's engine).
+kubuno-desktop-account            = { path = "common/kubuno-desktop-account" }
+kubuno-desktop-api-client         = { path = "common/kubuno-desktop-api-client" }
+kubuno-desktop-app-storage        = { path = "common/kubuno-desktop-app-storage" }
+kubuno-desktop-secrets            = { path = "common/kubuno-desktop-secrets" }
+kubuno-desktop-shell-common       = { path = "common/kubuno-desktop-shell-common" }
+kubuno-desktop-sync               = { path = "common/kubuno-desktop-sync" }
+kubuno-desktop-sync-engine        = { path = "common/kubuno-desktop-sync-engine" }
+kubuno-office-docs-core           = { path = "common/kubuno-office-docs-core" }
+
+windows          = { version = "0.62" }
+windows-core     = { version = "0.62" }
+thiserror        = "2"
+crc32fast        = "1"
+md-5             = "0.10"
+sha1             = "0.10"
+sha2             = "0.10"
+hex              = "0.4"
+chrono           = { version = "0.4", features = ["unstable-locales"] }
+futures          = "0.3"
+windows-numerics = "0.3"
+serde            = { version = "1", features = ["derive"] }
+serde_json       = "1"
+tokio            = { version = "1", features = ["rt-multi-thread", "sync", "fs", "macros", "time", "io-util"] }
+tracing          = "0.1"
+tracing-subscriber = "0.3"
+
+# Drive's former workspace built release with `lto = "thin"` and one codegen
+# unit. Not carried over (yet): it was impossible while `kubuno-desktop-ui` was a shared
+# DLL. Every program now links statically, so LTO would work again; it is left
+# off to keep release builds short.

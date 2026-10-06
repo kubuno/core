@@ -1,0 +1,19 @@
+[package]
+name        = "kubuno-desktop-shell-common"
+description = "Kubuno Desktop, the portable app: start-up, accounts and token broker, the sync engine's door with its offline sample, the activity log, and the platform extension points the OS folders override"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Everything of the shell no operating system does differently. The Windows interface (desktop/windows/
+# kubuno-desktop-shell) and the Linux and macOS entry points (desktop/linux, desktop/macos) run this app through
+# `app::run(platform, ui)`; nothing here depends on the Win32 framework.
+[dependencies]
+kubuno-desktop-sync       = { path = "../kubuno-desktop-sync" }
+kubuno-desktop-account    = { path = "../kubuno-desktop-account" }
+kubuno-desktop-secrets    = { path = "../kubuno-desktop-secrets" }
+kubuno-desktop-api-client = { path = "../kubuno-desktop-api-client" }
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+serde_json  = "1"
+anyhow      = "1"
+tracing     = "0.1"
