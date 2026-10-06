@@ -135,6 +135,13 @@ describe('relocation', () => {
       expect(readFileSync(`${dir}/src/pages/List.parts.tsx`, 'utf8')).toContain(`import Row from './ListRow'`)
       expect(readFileSync(`${dir}/src/dialogs/EditDialog.kbview`, 'utf8')).toMatch(/^<Panel x:Props="EditDialogProps"/)
     })
+
+    it('is idempotent: a second run moves nothing, a split folder\'s role folders included', () => {
+      expect(planRelayout({ root: dir, components: true }).moves).toEqual([])
+      const split = planRelayout({ root: dir, appRoots: [], components: true, split: 1 })
+      applyRelayout(dir, split)
+      expect(planRelayout({ root: dir, appRoots: [], components: true, split: 1 }).moves).toEqual([])
+    })
   })
 })
 

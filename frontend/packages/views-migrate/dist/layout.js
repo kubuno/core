@@ -421,8 +421,10 @@ export function surfaceOfComponent(text, stem) {
     };
     if (comp)
         visit(comp);
+    // A React component's overlay is often portalled or built by a helper, out of sight here: its name counts
+    // (`…Viewer`, `…Player`, `…Overlay`).
     if (!first)
-        return named === 'dialog' ? named : undefined;
+        return named;
     const tag = first.tagName.getText(sf).replace(/^.*\./, '');
     const attrs = first.attributes.getText(sf);
     if (DIALOG_ELEMENTS.has(tag) || /role="dialog"|aria-modal/.test(attrs))
@@ -431,7 +433,7 @@ export function surfaceOfComponent(text, stem) {
         return named === 'window' ? 'window' : 'dialog';
     if (/\bfixed\b/.test(attrs) && /\binset-0\b/.test(attrs))
         return named ?? 'window';
-    return named === 'dialog' ? named : undefined;
+    return named;
 }
 function firstJsx(e) {
     let x = e;
@@ -543,12 +545,13 @@ export function planLayout(units, opts) {
     const isRoleFolder = (d) => ROLE_FOLDERS.includes(basename(d));
     /** The folder whose role folders `dir` uses, if any. */
     const areaOf = (dir) => {
-        if (roots.has(dir) || (viewsIn.get(dir) ?? 0) > split)
+        if (roots.has(dir))
             return dir;
+        // A role folder of an area (an app root, a folder split by role): its units are placed again by role.
         const parent = dirname(dir);
         if (isRoleFolder(dir) && (roots.has(parent) || (viewsIn.get(parent) ?? 0) > split || units.some((u) => dirname(u.dir) === parent && isRoleFolder(u.dir) && u.dir !== dir)))
             return parent;
-        return undefined;
+        return (viewsIn.get(dir) ?? 0) > split ? dir : undefined;
     };
     const moves = [];
     const targets = new Map();
