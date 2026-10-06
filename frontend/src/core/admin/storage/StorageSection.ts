@@ -8,6 +8,7 @@ import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
 import { adminUrl } from "../adminAction"
 import { formatBytes } from "../sections/format"
+import type { AdminSectionProps } from "../sections/registry"
 import { type Segment } from "./charts"
 import ConsumersCard from "./ConsumersCard"
 import ModuleBreakdownCard from "./ModuleBreakdownCard"
@@ -15,10 +16,12 @@ import QuotaPolicyCard from "./QuotaPolicyCard"
 import ReconciliationCard from "./ReconciliationCard"
 import { errorMessage, useSetWarnPercent, useStorageOverview } from "./api"
 import CompositionBar from "./CompositionBar"
-import TrendChart from "./TrendChart"
+import { TrendChart } from "./TrendChart"
 
 import { ViewBase } from './StorageSection.kbview'
 import * as __parts from './StorageSection.parts'
+
+export type { AdminSectionProps }
 
 export class StorageSection extends ViewBase {
   @bind accessor warnDraft: number | null = null
@@ -301,7 +304,7 @@ export class StorageSection extends ViewBase {
   get part5_props() {
     return this.memo('part5_props', [this.tr, this.projection, this.isLoading, this.isError, this.data, this.trendData], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data)) || !(this.trendData.length >= 2) || !(this.projection)) return undefined as never
-      return ({ t: this.tr, projection: this.projection, projection_daysLeft: this.projection.daysLeft })
+      return ({ t: this.tr, projection: this.projection, projection_daysLeft: this.projection?.daysLeft })
     })
   }
 
@@ -422,9 +425,9 @@ export class StorageSection extends ViewBase {
   }
 
   get part7_props() {
-    return this.memo('part7_props', [this.canManageSettings, this.warnDraft, this.data, this.tr, this.isLoading, this.isError], () => {
+    return this.memo('part7_props', [this.canManageSettings, this.warnDraft, this.data, this.memo, this.tr, this.isLoading, this.isError], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
-      return ({ canManageSettings: this.canManageSettings, warnDraft: this.warnDraft, data: this.data, setWarnDraft: this.setWarnDraft.bind(this), t: this.tr })
+      return ({ canManageSettings: this.canManageSettings, warnDraft: this.warnDraft, data: this.data, setWarnDraft: this.memo("setWarnDraft:bound", [], () => this.setWarnDraft.bind(this)), t: this.tr })
     })
   }
 

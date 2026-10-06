@@ -1,0 +1,10 @@
+<!-- RightPanel — converted from RightPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Panel AccessibleHidden="true"
+         DataAttributes="app-chrome"
+         Visible="{Binding show_is_open_overlay}"
+         Class="fixed inset-0 z-40 bg-black/20"
+         OnClick="panel_click"/>
+  <!-- TODO(views-migrate): <div> with a computed style -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+</Panel>

@@ -40,7 +40,7 @@ export class SecurityTab extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.props], () => ({ t: this.tr, user: this.props.user }))
+    return this.memo('part1_props', [this.tr, this.props], () => ({ t: this.tr, user: this.props.user, user_oauth_provider: this.props.user?.oauth_provider }))
   }
 
   /** A part of the screen still written in React (<dl> has no .kbview element yet). */

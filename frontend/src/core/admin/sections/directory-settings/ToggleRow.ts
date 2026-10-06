@@ -3,9 +3,11 @@
  */
 import { type EventArgs } from '@kubuno/views'
 import ProvenanceLine from "../../settings/ProvenanceLine"
-import { useRow } from "./PolicyRow"
+import { type RowProps, useRow } from "./PolicyRow"
 
 import { ViewBase } from './ToggleRow.kbview'
+
+export type { RowProps }
 
 export class ToggleRow extends ViewBase {
   row!: ToggleRowHooks['row']

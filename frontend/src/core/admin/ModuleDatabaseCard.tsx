@@ -116,16 +116,17 @@ export class ModuleDatabaseCard extends ViewBase {
       staleTime: 30_000,
     })
     this.publish({ cfg })
+    const ov = this.ov
     useEffect(() => {
       if (!cfg.data) return
-      if (this.ov && this.ov.enabled) {
-        this.mode = this.ov.engine
-        this.host = this.ov.host
-        this.port = this.ov.port != null ? String(this.ov.port) : ''
-        this.user = this.ov.user
-        this.database = this.ov.database
-        this.path = this.ov.path
-        this.prefix = this.ov.schema_prefix ?? ''
+      if (ov && ov.enabled) {
+        this.mode = ov.engine
+        this.host = ov.host
+        this.port = ov.port != null ? String(ov.port) : ''
+        this.user = ov.user
+        this.database = ov.database
+        this.path = ov.path
+        this.prefix = ov.schema_prefix ?? ''
       } else {
         this.mode = 'inherit'
       }
@@ -133,10 +134,11 @@ export class ModuleDatabaseCard extends ViewBase {
       this.passwordTouched = false
       this.test = null
     }, [cfg.data])
+    const engine = this.engine
     const body = useMemo(() => {
-      if (!this.engine) return null
+      if (!engine) return null
       const b: Record<string, unknown> = {
-        engine: this.engine,
+        engine,
         host: this.host.trim(),
         port: this.port.trim() ? Number(this.port.trim()) : null,
         user: this.user.trim(),
@@ -149,7 +151,7 @@ export class ModuleDatabaseCard extends ViewBase {
       // is kept server-side.
       if (this.passwordTouched) b.password = this.password
       return b
-    }, [this.engine, this.host, this.port, this.user, this.database, this.path, this.prefix, this.password, this.passwordTouched])
+    }, [engine, this.host, this.port, this.user, this.database, this.path, this.prefix, this.password, this.passwordTouched])
     const testMut = useMutation({
       mutationFn: () => api.post<DbTest>(`/admin/modules/${this.props.moduleId}/database/test`, body).then(r => r.data),
       onSuccess: (data) => this.test = data,
@@ -242,24 +244,28 @@ export class ModuleDatabaseCard extends ViewBase {
   }
 
   get fields() {
-    return this.memo('fields', [this.engine, this.tr, this.host, this.port, this.database, this.props, this.user, this.hasOverride, this.passwordTouched, this.password, this.test, this.path, this.prefix, this.migrateResult, this.testMut, this.busy, this.saveMut, this.migrateMut, this.isSuperuser], () => {
+    return this.memo('fields', [this.engine, this.tr, this.host, this.test, this.memo, this.port, this.database, this.props, this.user, this.hasOverride, this.passwordTouched, this.password, this.path, this.prefix, this.migrateResult, this.isSuperuser, this.testMut, this.saveMut, this.migrateMut, this.revertMut], () => {
       if (!(!(!this.isSuperuser))) return undefined as never
+      const testMut = this.testMut
+      const saveMut = this.saveMut
+      const migrateMut = this.migrateMut
+      const busy = testMut.isPending || saveMut.isPending || this.revertMut.isPending || migrateMut.isPending
       return this.engine && (
     <div className="mt-4 flex flex-col gap-4">
       {this.engine !== 'sqlite' && (
         <>
           <div className="flex gap-3">
             <div className="flex-1">
-              <OutlinedField label={this.tr('admin.mdb_host')} value={this.host} onChange={this.onEdit(this.setHost.bind(this))}
+              <OutlinedField label={this.tr('admin.mdb_host')} value={this.host} onChange={this.onEdit(this.memo("setHost:bound", [], () => this.setHost.bind(this)))}
                 icon={<Database size={20} strokeWidth={1.8} />} primaryColor={PRIMARY} />
             </div>
             <div style={{ width: 120 }}>
-              <OutlinedField label={this.tr('admin.mdb_port')} value={this.port} onChange={this.onEdit(this.setPort.bind(this))}
+              <OutlinedField label={this.tr('admin.mdb_port')} value={this.port} onChange={this.onEdit(this.memo("setPort:bound", [], () => this.setPort.bind(this)))}
                 placeholder={DEFAULT_PORT[this.engine]} inputMode="numeric" primaryColor={PRIMARY} />
             </div>
           </div>
           {this.engine === 'postgres' && (
-            <OutlinedField label={this.tr('admin.mdb_database')} value={this.database} onChange={this.onEdit(this.setDatabase.bind(this))}
+            <OutlinedField label={this.tr('admin.mdb_database')} value={this.database} onChange={this.onEdit(this.memo("setDatabase:bound", [], () => this.setDatabase.bind(this)))}
               primaryColor={PRIMARY} />
           )}
           {this.engine === 'mysql' && (
@@ -267,7 +273,7 @@ export class ModuleDatabaseCard extends ViewBase {
               {this.tr('admin.mdb_mysql_db_hint', { schema: this.props.moduleId })}
             </p>
           )}
-          <OutlinedField label={this.tr('admin.mdb_user')} value={this.user} onChange={this.onEdit(this.setUser.bind(this))} primaryColor={PRIMARY} />
+          <OutlinedField label={this.tr('admin.mdb_user')} value={this.user} onChange={this.onEdit(this.memo("setUser:bound", [], () => this.setUser.bind(this)))} primaryColor={PRIMARY} />
           <OutlinedField
             label={this.hasOverride && !this.passwordTouched ? this.tr('admin.mdb_password_kept') : this.tr('admin.mdb_password')}
             value={this.password}
@@ -277,7 +283,7 @@ export class ModuleDatabaseCard extends ViewBase {
       )}
       {this.engine === 'sqlite' && (
         <div>
-          <OutlinedField label={this.tr('admin.mdb_sqlite_path')} value={this.path} onChange={this.onEdit(this.setPath.bind(this))}
+          <OutlinedField label={this.tr('admin.mdb_sqlite_path')} value={this.path} onChange={this.onEdit(this.memo("setPath:bound", [], () => this.setPath.bind(this)))}
             placeholder="/var/lib/kubuno/db" primaryColor={PRIMARY} />
           <p className="mt-1 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
             {this.tr('admin.mdb_sqlite_hint', { schema: this.props.moduleId })}
@@ -285,7 +291,7 @@ export class ModuleDatabaseCard extends ViewBase {
         </div>
       )}
       <div>
-        <OutlinedField label={this.tr('admin.mdb_schema_prefix')} value={this.prefix} onChange={this.onEdit(this.setPrefix.bind(this))}
+        <OutlinedField label={this.tr('admin.mdb_schema_prefix')} value={this.prefix} onChange={this.onEdit(this.memo("setPrefix:bound", [], () => this.setPrefix.bind(this)))}
           primaryColor={PRIMARY} />
         <p className="mt-1 text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
           {this.tr('admin.mdb_schema_prefix_hint')}
@@ -320,13 +326,13 @@ export class ModuleDatabaseCard extends ViewBase {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="secondary" size="sm" onClick={() => this.testMut.mutate()} loading={this.testMut.isPending} disabled={this.busy}>
+        <Button variant="secondary" size="sm" onClick={() => testMut.mutate()} loading={testMut.isPending} disabled={busy}>
           {this.tr('admin.mdb_test')}
         </Button>
-        <Button variant="primary" size="sm" onClick={() => this.saveMut.mutate()} loading={this.saveMut.isPending} disabled={this.busy}>
+        <Button variant="primary" size="sm" onClick={() => saveMut.mutate()} loading={saveMut.isPending} disabled={busy}>
           {this.tr('admin.mdb_save')}
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => this.migrateMut.mutate()} loading={this.migrateMut.isPending} disabled={this.busy}>
+        <Button variant="secondary" size="sm" onClick={() => migrateMut.mutate()} loading={migrateMut.isPending} disabled={busy}>
           {this.tr('admin.mdb_copy')}
         </Button>
       </div>

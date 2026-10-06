@@ -1,0 +1,109 @@
+<!-- ThemesPanel — converted from ThemesPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel>
+  <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start" Justify="SpaceBetween" Class="mb-6">
+    <Panel>
+      <Label HtmlTag="H2" Text="{Res admin.t_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-base mb-1"/>
+      <Label Text="{Res admin.t_desc}" Overflow="Wrap" ForeColor="TextSecondary"/>
+    </Panel>
+    <Stack Direction="LeftToRight" CrossAlign="Center" Class="flex-shrink-0">
+      <Button Variant="Secondary"
+              IconSize="15"
+              Icon="Upload"
+              Enabled="{Binding enabled_unless_import_mut_is_pending}"
+              Text="{Res admin.t_import}"
+              OnClick="button_click"/>
+      <Button Variant="Secondary"
+              IconSize="15"
+              Icon="FileArchive"
+              Enabled="{Binding enabled_unless_import_zip_mut_is_pending}"
+              Text="{Res admin.t_import_zip}"
+              OnClick="button_click2"/>
+    </Stack>
+    <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+  </Stack>
+  <Label HtmlTag="Div"
+         Text="{Binding importError}"
+         Overflow="Wrap"
+         ForeColor="Danger"
+         BackColor="DangerLight"
+         Visible="{Binding show_import_error}"
+         Class="mb-4 p-3 border border-danger/20 rounded-lg"/>
+  <Label Text="{Res admin.t_importing}"
+         Overflow="Wrap"
+         ForeColor="TextSecondary"
+         Visible="{Binding show_import_mut_is_pending_import_zip_mut}"
+         Class="mb-4"/>
+  <Label Text="{Res admin.t_loading}" Overflow="Wrap" ForeColor="TextSecondary" Visible="{Binding show_themes}"/>
+  <Stack Direction="LeftToRight" Gap="24" CrossAlign="Start">
+    <Panel Class="w-64 flex-shrink-0 space-y-1.5">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_themes}">
+        <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click">
+          <!-- TODO(views-migrate): <ThemeChip> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding ThemeChip}" Props="{Binding theme_chip_props}"/>
+          <Panel Class="min-w-0 flex-1">
+            <Stack Direction="LeftToRight" Gap="4" CrossAlign="Center">
+              <Label HtmlTag="Span" Text="{Binding theme.name}" FontWeight="Medium" ForeColor="TextPrimary"/>
+              <Icon Name="Check" Size="13" Visible="{Binding active}" Class="text-primary flex-shrink-0"/>
+            </Stack>
+            <Stack Direction="LeftToRight" Gap="6" CrossAlign="Center" Class="mt-0.5">
+              <Label HtmlTag="Span" Text="{Binding span_text}" Overflow="Wrap" ForeColor="TextTertiary" Class="text-[11px] capitalize"/>
+              <Panel HtmlTag="Span"
+                     ForeColor="TextTertiary"
+                     Visible="{Binding show_theme_builtin}"
+                     Class="flex items-center gap-0.5 text-[10px]">
+                <Icon Name="Lock" Size="9"/>
+                <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.t_builtin}"/>
+              </Panel>
+              <Panel HtmlTag="Span"
+                     ForeColor="Warning"
+                     Visible="{Binding show_theme_has_scripts}"
+                     Class="flex items-center gap-0.5 text-[10px]">
+                <Icon Name="Code2" Size="10"/>
+                <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.t_has_scripts}"/>
+              </Panel>
+            </Stack>
+          </Panel>
+        </Panel>
+      </Repeater>
+    </Panel>
+    <Panel Class="flex-1 min-w-0">
+      <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start" Justify="SpaceBetween" Visible="{Binding show_selected}" Class="mb-3">
+        <Panel Class="min-w-0">
+          <Label HtmlTag="H3" Text="{Binding selected.name}" FontWeight="Medium" ForeColor="TextPrimary" Class="text-base"/>
+          <Label Text="{Res admin.t_prev_hint}" Overflow="Wrap" ForeColor="TextTertiary" Class="mt-0.5"/>
+        </Panel>
+        <Stack Direction="LeftToRight" CrossAlign="Center" Class="flex-shrink-0">
+          <Stack Direction="LeftToRight" Gap="6" CrossAlign="Center" Visible="{Binding visible}">
+            <Label HtmlTag="Span" Text="{Res admin.t_confirm}" Overflow="Wrap" ForeColor="TextSecondary"/>
+            <Button Variant="Danger" Size="Sm" Loading="{Binding deleteMut.isPending}" Text="{Res common.delete}" OnClick="button_click3"/>
+            <Button Variant="Ghost" Size="Sm" Text="{Res common.cancel}" OnClick="button_click4"/>
+          </Stack>
+          <Button Variant="Ghost" Size="Sm" IconSize="14" Icon="Trash2" Visible="{Binding visible2}" OnClick="button_click5"/>
+          <Button Enabled="{Binding enabled_unless_is_active}" Text="{Binding button_text}" OnClick="button_click6"/>
+        </Stack>
+      </Stack>
+      <Panel BackColor="Surface1" Visible="{Binding visible3}" Class="mb-3 p-3 rounded-lg border border-border">
+        <Switch On="{Binding on}"
+                Enabled="{Binding enabled_unless_trust_mut_is_pending}"
+                Label="{Res admin.t_allow_scripts}"
+                OnCheckedChanged="switch_checked_changed"/>
+        <Panel HtmlTag="Span" ForeColor="Warning" Class="flex items-center gap-1 text-[11px] mt-1">
+          <Icon Name="AlertTriangle" Size="11" Class="flex-shrink-0"/>
+          <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+        </Panel>
+      </Panel>
+      <!-- TODO(views-migrate): <ThemeDevicePreview> is no .kbview element (./ThemeDevicePreview#default) -->
+      <ReactHost Component="{Binding ThemeDevicePreview}" Props="{Binding theme_device_preview_props}" Visible="{Binding show_selected}"/>
+      <Label Text="{Res admin.t_loading}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_not_selected}"/>
+    </Panel>
+  </Stack>
+  <Label Text="{Res admin.t_save_error}" Overflow="Wrap" ForeColor="Danger" Visible="{Binding saveMut.isError}" Class="mt-4"/>
+  <Panel BackColor="Surface1" Class="mt-6 p-4 rounded-lg border border-border">
+    <Label Text="{Res admin.t_format_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextSecondary" Class="mb-1"/>
+    <!-- TODO(views-migrate): <pre> has no .kbview element yet -->
+    <ReactHost Component="{Binding Part3}"/>
+  </Panel>
+</Panel>

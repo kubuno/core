@@ -1,3 +1,19 @@
 <!-- ReportBlock — converted from ReportBlock.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<!-- TODO(views-migrate): <section data-report-card>: attribute(s) without a .kbview property -->
-<ReactHost x:Props="ReportBlockProps" Component="{Binding Part1}" Props="{Binding part1_props}"/>
+<Panel x:Props="ReportBlockProps"
+       HtmlTag="Section"
+       BackColor="Surface"
+       DataAttributes="{Binding section_data}"
+       Class="mt-4 rounded-xl border border-border p-4">
+  <Label HtmlTag="H2"
+         Text="{Binding props.title}"
+         Overflow="Wrap"
+         ForeColor="TextPrimary"
+         InheritFontSize="true"
+         Class="mb-3 [font-size:var(--kb-text-heading)]"/>
+  <!-- TODO(views-migrate): elements held in an expression -->
+  <ReactHost Component="{Binding Fragment}" Props="{Binding content_children}"/>
+  <Panel HtmlTag="P" ForeColor="TextTertiary" Visible="{Binding show_note}" Class="mt-3 [font-size:var(--kb-text-meta)]">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_note}"/>
+  </Panel>
+</Panel>

@@ -167,7 +167,7 @@ export class ModuleBreakdownCard extends ViewBase {
 
   /** The rows of the Repeater over `declaring`. */
   get rows_declaring() {
-    return this.memo('rows_declaring', [this.declaring, this.rules, this.open, this.tr, this.colorOf], () => {
+    return this.memo('rows_declaring', [this.declaring, this.rules, this.open, this.tr, this.colorOf, this.memo], () => {
       if (!(this.declaring.length > 0)) return undefined as never
       return this.declaring.map((m) => {
       const cats = m.categories ?? []
@@ -193,7 +193,7 @@ export class ModuleBreakdownCard extends ViewBase {
                 </span>
               </>
             )
-      return { m, cats, expandable, isOpen, meta, identity, show_not_expandable: ((this.declaring.length > 0)) ? (!(expandable)) : undefined, part1_props: ((this.declaring.length > 0) && (expandable)) ? ({ isOpen: isOpen, setOpen: this.setOpen.bind(this), m: m, identity: identity }) : undefined, content_identity: ((this.declaring.length > 0) && (!(expandable))) ? ({ children: identity }) : undefined, span_text: ((this.declaring.length > 0)) ? (formatBytes(m.used_bytes)) : undefined, category_rows_props: ((this.declaring.length > 0) && (isOpen)) ? ({ rows: cats, rules: this.rules }) : undefined, delegated_note_props: ((this.declaring.length > 0) && (isOpen)) ? ({ bytes: m.delegated_bytes ?? 0, objects: m.delegated_objects ?? 0, scope: "module", className: "mt-2" }) : undefined, key: m.module_id }
+      return { m, cats, expandable, isOpen, meta, identity, show_not_expandable: ((this.declaring.length > 0)) ? (!(expandable)) : undefined, part1_props: ((this.declaring.length > 0) && (expandable)) ? ({ isOpen: isOpen, setOpen: this.memo("setOpen:bound", [], () => this.setOpen.bind(this)), m: m, identity: identity }) : undefined, content_identity: ((this.declaring.length > 0) && (!(expandable))) ? ({ children: identity }) : undefined, span_text: ((this.declaring.length > 0)) ? (formatBytes(m.used_bytes)) : undefined, category_rows_props: ((this.declaring.length > 0) && (isOpen)) ? ({ rows: cats, rules: this.rules }) : undefined, delegated_note_props: ((this.declaring.length > 0) && (isOpen)) ? ({ bytes: m.delegated_bytes ?? 0, objects: m.delegated_objects ?? 0, scope: "module", className: "mt-2" }) : undefined, key: m.module_id }
     })
     })
   }

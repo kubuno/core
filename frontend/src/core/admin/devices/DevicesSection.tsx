@@ -11,6 +11,7 @@ import { useConfirm } from "../../hooks/useConfirm"
 import { formatAgo, formatWhen } from "../sections/format"
 import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
+import type { AdminSectionProps } from "../sections/registry"
 import { adminUrl } from "../adminAction"
 import DeviceDetail from "./DeviceDetail"
 import { useDeviceFacets, useDevices, useForgetDevice, useSetApproval, useSignOutDevice } from "../../devices/useDevices"
@@ -20,6 +21,8 @@ import { EMPTY_DEVICE_FILTERS, type Device, type DeviceFilters } from "../../dev
 import { ViewBase } from './DevicesSection.kbview'
 import * as __parts from './DevicesSection.parts'
 import { FilterControls } from './DevicesSection.parts'
+
+export type { AdminSectionProps }
 
 export class DevicesSection extends ViewBase {
   @bind accessor sheet = false
@@ -209,7 +212,7 @@ export class DevicesSection extends ViewBase {
   }
 
   get rowActions(): DataTableRowAction<Device>[] {
-    return this.memo('rowActions', [this.canManage, this.tr, this.openId, this.setApproval, this.toast, this.signOut, this.confirm, this.forget], () => {
+    return this.memo('rowActions', [this.canManage, this.tr, this.openId, this.setApproval, this.toast, this.memo, this.signOut, this.confirm, this.forget], () => {
       if (!(!(this.openId))) return undefined as never
       return this.canManage ? [
     {
@@ -226,7 +229,7 @@ export class DevicesSection extends ViewBase {
     },
     {
       id: 'sign-out', label: this.tr('devices.sign_out'), icon: <LogOut size={15} />,
-      onClick: this.runSignOut.bind(this), hidden: d => d.active_sessions === 0,
+      onClick: this.memo("runSignOut:bound", [], () => this.runSignOut.bind(this)), hidden: d => d.active_sessions === 0,
     },
     {
       id: 'forget', label: this.tr('devices.forget'), icon: <Trash2 size={15} />,
@@ -237,7 +240,7 @@ export class DevicesSection extends ViewBase {
   }
 
   get toolbar() {
-    return this.memo('toolbar', [this.setFilters, this.draft, this.setDraft, this.tr, this.facets, this.sheet, this.openId, this.filters], () => {
+    return this.memo('toolbar', [this.setFilters, this.draft, this.setDraft, this.tr, this.memo, this.facets, this.sheet, this.openId, this.filters], () => {
       if (!(!(this.openId))) return undefined as never
       const filters = this.filters
       const anyFilter = Object.values(filters).some(Boolean)
@@ -248,7 +251,7 @@ export class DevicesSection extends ViewBase {
           placeholder={this.tr('devices.search_ph')} leftIcon={<Search size={15} />} className="w-52 pl-9" />
       </form>
       <div className="hidden flex-wrap items-center gap-2 sm:flex">
-        <FilterControls filters={filters} set={this.set.bind(this)} facets={this.facets} stacked={false} />
+        <FilterControls filters={filters} set={this.memo("set:bound", [], () => this.set.bind(this))} facets={this.facets} stacked={false} />
       </div>
       <Button variant="secondary" size="sm" className="sm:hidden"
         icon={<SlidersHorizontal size={14} />} onClick={() => this.sheet = true}>
@@ -322,9 +325,9 @@ export class DevicesSection extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.sheet, this.tr, this.filters, this.setFilters, this.facets, this.openId], () => {
+    return this.memo('part2_props', [this.sheet, this.memo, this.tr, this.filters, this.setFilters, this.facets, this.openId], () => {
       if (!(!(this.openId))) return undefined as never
-      return ({ sheet: this.sheet, setSheet: this.setSheet.bind(this), t: this.tr, filters: this.filters, set: this.set.bind(this), facets: this.facets })
+      return ({ sheet: this.sheet, setSheet: this.memo("setSheet:bound", [], () => this.setSheet.bind(this)), t: this.tr, filters: this.filters, set: this.memo("set:bound", [], () => this.set.bind(this)), facets: this.facets })
     })
   }
 

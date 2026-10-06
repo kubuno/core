@@ -4,7 +4,7 @@
 import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import { formatBytes, formatDay } from "../../../admin/sections/format"
-import { downloadUrl, type MyExportOverview } from "./api"
+import { downloadUrl, type MyExportOverview, type MyExportRun } from "./api"
 import { signedUrl } from "../../../api/signedUrl"
 
 import { ViewBase } from './RequestStatus.kbview'
@@ -32,16 +32,20 @@ export class RequestStatus extends ViewBase {
     this.publish({ tr: s.t })
   }
 
-  get active() {
+  get active(): MyExportRun | null {
     return this.memo('active', [this.props], () => this.props.data.active)
   }
 
-  get latest() {
+  get latest(): MyExportRun | undefined {
     return this.memo('latest', [this.props], () => this.props.data.history.find(r => r.status === 'ready' && r.downloadable))
   }
 
-  get past() {
-    return this.memo('past', [this.props, this.active, this.latest], () => this.props.data.history.filter(r => r.id !== this.active?.id && r.id !== this.latest?.id))
+  get past(): MyExportRun[] {
+    return this.memo('past', [this.props, this.active, this.latest], () => {
+      const active = this.active
+      const latest = this.latest
+      return this.props.data.history.filter(r => r.id !== active?.id && r.id !== latest?.id)
+    })
   }
 
   get show_active() {

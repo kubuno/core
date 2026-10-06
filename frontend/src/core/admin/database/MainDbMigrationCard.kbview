@@ -1,0 +1,83 @@
+<!-- MainDbMigrationCard — converted from MainDbMigrationCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Card Title="{Res admin.db_manage_title}"
+      IconSize="16"
+      Icon="Database"
+      Subtitle="{Res admin.db_manage_subtitle}"
+      Visible="{Binding show_main}"
+      Class="mb-4">
+  <Panel Class="contents">
+    <Stack Gap="24">
+      <Panel>
+        <Label HtmlTag="H3"
+               Text="{Res admin.db_current_heading}"
+               FontWeight="Medium"
+               Overflow="Wrap"
+               InheritFontSize="true"
+               Class="mb-1 [font-size:var(--kb-text-body)]"/>
+        <Label Text="{Binding p_text}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-meta)]"/>
+      </Panel>
+      <!-- TODO(views-migrate): <KnownConnectionsCard> is no .kbview element (./KnownConnectionsCard#default) -->
+      <ReactHost Component="{Binding KnownConnectionsCard}" Props="{Binding known_connections_card_props}"/>
+      <Stack Gap="16">
+        <Panel>
+          <Label HtmlTag="H3"
+                 Text="{Res admin.db_migrate_heading}"
+                 FontWeight="Medium"
+                 Overflow="Wrap"
+                 InheritFontSize="true"
+                 Class="mb-1 [font-size:var(--kb-text-body)]"/>
+          <Label Text="{Res admin.db_migrate_subheading}"
+                 Overflow="Wrap"
+                 ForeColor="TextSecondary"
+                 InheritFontSize="true"
+                 Class="[font-size:var(--kb-text-meta)]"/>
+        </Panel>
+        <Callout Variant="Warning" Body="{Res admin.dbmig_warning}"/>
+        <Stack>
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_engines}">
+            <RadioButton SelectedValue="{Binding selected_value}"
+                         Value="true"
+                         Text="{Binding text}"
+                         OnCheckedChanged="radio_button_checked_changed"/>
+          </Repeater>
+        </Stack>
+        <Stack Direction="LeftToRight" Gap="12" Visible="{Binding show_engine_sqlite}">
+          <Panel Class="flex-1">
+            <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+            <ReactHost Component="{Binding OutlinedField}" Props="{Binding outlined_field_props}"/>
+          </Panel>
+          <Panel Class="[width:120px]">
+            <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+            <ReactHost Component="{Binding OutlinedField}" Props="{Binding outlined_field_props2}"/>
+          </Panel>
+        </Stack>
+        <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+        <ReactHost Component="{Binding OutlinedField}" Props="{Binding outlined_field_props3}" Visible="{Binding show_engine_sqlite}"/>
+        <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+        <ReactHost Component="{Binding OutlinedField}" Props="{Binding outlined_field_props4}" Visible="{Binding show_engine_sqlite}"/>
+        <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+        <ReactHost Component="{Binding OutlinedField}" Props="{Binding outlined_field_props5}" Visible="{Binding show_engine_sqlite}"/>
+        <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+        <ReactHost Component="{Binding OutlinedField2}" Props="{Binding outlined_field_props6}" Visible="{Binding show_engine_sqlite2}"/>
+        <Callout Variant="Danger" Title="{Res admin.dbmig_error}" Body="{Binding error}" Visible="{Binding show_error}"/>
+        <!-- TODO(views-migrate): <Callout> with element children -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_job_job_status}"/>
+        <!-- TODO(views-migrate): <Callout> icon: a value the property converts (null-when-false) -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding show_job_job_status2}"/>
+        <Panel>
+          <Button Size="Sm"
+                  Loading="{Binding migrate.isPending}"
+                  Enabled="{Binding enabled_unless_migrate_is_pending}"
+                  Text="{Res admin.dbmig_action}"
+                  OnClick="onMigrate"/>
+        </Panel>
+      </Stack>
+    </Stack>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Card>

@@ -2,7 +2,7 @@
 <Panel Class="contents">
   <Panel Visible="{Binding show_case_1}" Class="space-y-3">
     <Label HtmlTag="H3" Text="{Res settings.bc_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
-    <!-- TODO(views-migrate): <BackupCodesPanel> is no .kbview element (./BackupCodesPanel#default) -->
+    <!-- TODO(views-migrate): <BackupCodesPanel> is no .kbview element (./BackupCodesPanel#BackupCodesPanel) -->
     <ReactHost Component="{Binding BackupCodesPanel}" Props="{Binding backup_codes_panel_props}"/>
   </Panel>
   <Panel Visible="{Binding show_main}" Class="space-y-3">

@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next"
 import { formatBytes } from "../sections/format"
 import { NEUTRAL_SERIES, type Segment } from "./charts"
 import { type CategoryReading } from "./categories"
-import CategoryRow from "./CategoryBreakdown"
 import DelegatedNote from "./DelegatedNote"
 import CompositionBar from "./CompositionBar"
 
@@ -91,7 +90,7 @@ export class CategoryComposition extends ViewBase {
   /** `<CategoryRow>`, rendered by a ReactHost. */
   get CategoryRow() {
     if (!(this.segments.length > 0)) return undefined as never
-    return CategoryRow
+    return __parts.CategoryRow
   }
 
   /** The rows of the Repeater over `reading.slices`. */
@@ -111,7 +110,7 @@ export class CategoryComposition extends ViewBase {
   get part1_props() {
     return this.memo('part1_props', [this.tr, this.props], () => {
       if (!(this.props.reading.trash)) return undefined as never
-      return ({ t: this.tr, reading_trash: this.props.reading.trash })
+      return ({ t: this.tr, reading_trash: this.props.reading?.trash })
     })
   }
 

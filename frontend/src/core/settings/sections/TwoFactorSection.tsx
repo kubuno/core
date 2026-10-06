@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next"
 import { Callout } from "@ui"
 import { useAuthStore } from "../../store/authStore"
 import { api } from "../../api/client"
-import BackupCodesPanel from "./BackupCodesPanel"
+import { BackupCodesPanel } from "./BackupCodesPanel"
 import BackupCodesSection from "./BackupCodesSection"
 
 import { ViewBase } from './TwoFactorSection.kbview'
@@ -66,7 +66,7 @@ export class TwoFactorSection extends ViewBase {
     this.useHooks()
   }
 
-  get enabled() {
+  get enabled(): boolean {
     return this.user?.totp_enabled ?? false
   }
 
@@ -98,7 +98,7 @@ export class TwoFactorSection extends ViewBase {
   get backup_codes_panel_props() {
     return this.memo('backup_codes_panel_props', [this.freshCodes, this.step], () => {
       if (!(this.step === 'codes')) return undefined as never
-      return ({ codes: this.freshCodes, onDone: () => this.step = 'done' })
+      return ({ codes: this.freshCodes, onDone: () => this.step = 'done' } as React.ComponentProps<typeof BackupCodesPanel>)
     })
   }
 
@@ -134,9 +134,9 @@ export class TwoFactorSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.disableCode, this.tr, this.step, this.enabled, this.showDisableForm], () => {
+    return this.memo('part1_props', [this.disableCode, this.memo, this.tr, this.step, this.enabled, this.showDisableForm], () => {
       if (!(!(this.step === 'codes')) || !(this.enabled) || !(!(!this.showDisableForm))) return undefined as never
-      return ({ disableCode: this.disableCode, setDisableCode: this.setDisableCode.bind(this), t: this.tr })
+      return ({ disableCode: this.disableCode, setDisableCode: this.memo("setDisableCode:bound", [], () => this.setDisableCode.bind(this)), t: this.tr })
     })
   }
 
@@ -191,9 +191,9 @@ export class TwoFactorSection extends ViewBase {
   }
 
   get part4_props() {
-    return this.memo('part4_props', [this.code, this.tr, this.step, this.enabled], () => {
+    return this.memo('part4_props', [this.code, this.memo, this.tr, this.step, this.enabled], () => {
       if (!(!(this.step === 'codes')) || !(!(this.enabled)) || !(!(this.step === 'done')) || !(this.step === 'qr')) return undefined as never
-      return ({ code: this.code, setCode: this.setCode.bind(this), t: this.tr })
+      return ({ code: this.code, setCode: this.memo("setCode:bound", [], () => this.setCode.bind(this)), t: this.tr })
     })
   }
 

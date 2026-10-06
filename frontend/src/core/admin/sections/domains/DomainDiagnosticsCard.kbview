@@ -1,3 +1,0 @@
-<!-- DomainDiagnosticsCard — converted from DomainDiagnosticsCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<!-- TODO(views-migrate): <Card> title: an object value for a text property -->
-<ReactHost x:Props="DomainDiagnosticsCardProps" Component="{Binding Part1}" Props="{Binding part1_props}"/>

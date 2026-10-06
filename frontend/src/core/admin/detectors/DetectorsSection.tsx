@@ -11,6 +11,7 @@ import { useConfirm } from "../../hooks/useConfirm"
 import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
 import { adminUrl, useAdminAction } from "../adminAction"
+import type { AdminSectionProps } from "../sections/registry"
 import { useDetectors, useDeleteDetector, errorMessage, type Detector } from "./api"
 import { asPercent, categoryLabel, categoryOrder, checksumLabel, kindLabel } from "./labels"
 import DetectorEditor from "./DetectorEditor"
@@ -19,6 +20,8 @@ import { ViewBase } from './DetectorsSection.kbview'
 import * as __parts from './DetectorsSection.parts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export type { AdminSectionProps }
 
 export class DetectorsSection extends ViewBase {
   @bind accessor editing: string | 'new' | null = null
@@ -234,9 +237,9 @@ export class DetectorsSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.editing, this.canManage, this.active], () => {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.memo, this.editing, this.canManage, this.active], () => {
       if (!(!(this.active))) return undefined as never
-      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, setEditing: this.setEditing.bind(this), canManage: this.canManage })
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)), canManage: this.canManage })
     })
   }
 

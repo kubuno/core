@@ -1,24 +1,22 @@
 <!-- DelegatedNote — converted from DelegatedNote.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<Panel x:Props="DelegatedNoteProps" Class="contents">
-  <Panel Visible="{Binding show_main}" Class="{Binding div_class}">
-    <Stack Direction="LeftToRight" CrossAlign="Center">
-      <Icon Name="Share2" Size="14" Class="shrink-0 text-text-tertiary"/>
-      <Label HtmlTag="Span"
-             Text="{Res admin.sto_deleg_label}"
-             ForeColor="TextPrimary"
-             InheritFontSize="true"
-             Class="min-w-0 flex-1 [font-size:var(--kb-text-body)]"/>
-      <Label HtmlTag="Span"
-             Text="{Res admin.sto_deleg_objects, N={Binding sto_deleg_objects_n}, Count={Binding props.objects}}"
-             Overflow="Wrap"
-             ForeColor="TextSecondary"
-             InheritFontSize="true"
-             Class="shrink-0 tabular-nums [font-size:var(--kb-text-body)]"/>
-    </Stack>
-    <Label Text="{Binding p_text}"
+<Panel x:Props="DelegatedNoteProps" Visible="{Binding show_main}" Class="{Binding div_class}">
+  <Stack Direction="LeftToRight" CrossAlign="Center">
+    <Icon Name="Share2" Size="14" Class="shrink-0 text-text-tertiary"/>
+    <Label HtmlTag="Span"
+           Text="{Res admin.sto_deleg_label}"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="min-w-0 flex-1 [font-size:var(--kb-text-body)]"/>
+    <Label HtmlTag="Span"
+           Text="{Res admin.sto_deleg_objects, N={Binding sto_deleg_objects_n}, Count={Binding props.objects}}"
            Overflow="Wrap"
            ForeColor="TextSecondary"
            InheritFontSize="true"
-           Class="mt-1 [font-size:var(--kb-text-meta)]"/>
-  </Panel>
+           Class="shrink-0 tabular-nums [font-size:var(--kb-text-body)]"/>
+  </Stack>
+  <Label Text="{Binding p_text}"
+         Overflow="Wrap"
+         ForeColor="TextSecondary"
+         InheritFontSize="true"
+         Class="mt-1 [font-size:var(--kb-text-meta)]"/>
 </Panel>

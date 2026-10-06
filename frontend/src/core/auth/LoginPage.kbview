@@ -1,0 +1,172 @@
+<!-- LoginPage — converted from LoginPage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="LoginPageProps" Direction="LeftToRight" Gap="0" Class="min-h-screen bg-white">
+  <Panel Class="hidden lg:flex lg:w-[45%] flex-col justify-center items-center p-12 relative overflow-hidden [background:linear-gradient(160deg,_#08174d_0%,_#03091a_100%)]">
+    <!-- TODO(views-migrate): <LoginAnimation> is no .kbview element (./LoginAnimationGL#default) -->
+    <ReactHost Component="{Binding LoginAnimation}" Props="{Binding login_animation_props}"/>
+    <Panel Class="relative text-white text-center max-w-sm z-10">
+      <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Justify="Center" Class="mb-10">
+        <!-- TODO(views-migrate): <InstanceLogo> is no .kbview element (../shell/InstanceLogo#InstanceLogo) -->
+        <ReactHost Component="{Binding InstanceLogo}" Props="{Binding instance_logo_props}"/>
+        <Label HtmlTag="Span" Text="Kubuno" Overflow="Wrap" Class="text-4xl font-light tracking-tight text-white"/>
+      </Stack>
+      <Label HtmlTag="H2" Text="{Res login.tagline}" FontWeight="Regular" Overflow="Wrap" Class="text-2xl mb-4 text-white"/>
+      <Label Text="{Res login.subtitle_desc}" Overflow="Wrap" Class="text-blue-100 leading-relaxed"/>
+    </Panel>
+    <Label HtmlTag="Span"
+           Text="{Binding span_text}"
+           Role="Meta"
+           TextAlign="TopCenter"
+           Overflow="Wrap"
+           ToolTip="{Binding tooltip}"
+           Class="absolute bottom-4 left-0 right-0 text-white/45 z-10 select-none"/>
+  </Panel>
+  <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="Center" Class="w-full lg:w-[55%] p-8">
+    <Panel Class="w-full max-w-[400px]">
+      <Panel Class="flex items-center gap-2 mb-10 lg:hidden">
+        <!-- TODO(views-migrate): <InstanceLogo> is no .kbview element (../shell/InstanceLogo#InstanceLogo) -->
+        <ReactHost Component="{Binding InstanceLogo}" Props="{Binding instance_logo_props2}"/>
+        <Label HtmlTag="Span" Text="Kubuno" FontWeight="Regular" Overflow="Wrap" ForeColor="TextSecondary" Class="text-2xl"/>
+      </Panel>
+      <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Visible="{Binding show_step_totp}" Class="mb-4">
+        <Icon Name="ShieldCheck" Size="28" Class="text-primary shrink-0"/>
+        <Panel>
+          <Label HtmlTag="H1" Text="{Res login.tfa_title}" FontWeight="Regular" Overflow="Wrap" Class="text-2xl [color:#202124]"/>
+          <Label Text="{Binding p_text}" Overflow="Wrap" Class="mt-1 [color:#5f6368]"/>
+        </Panel>
+      </Stack>
+      <Panel HtmlTag="Form" Visible="{Binding show_step_totp}" Class="space-y-5 mt-8" OnSubmit="panel_submit">
+        <!-- TODO(views-migrate): <div onFocusCapture onBlurCapture>: attribute(s) without a .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <Label HtmlTag="Div"
+               Text="{Binding error}"
+               Overflow="Wrap"
+               Visible="{Binding show_error}"
+               Class="px-4 py-3 rounded-md [color:#d93025] [background:#fce8e6] [border:1px_solid_#f28b82]"/>
+        <Panel AccessibleRole="PushButton" AutoSize="true" Class="text-sm font-medium hover:underline [color:#1a73e8]" OnClick="panel_click">
+          <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+        </Panel>
+        <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="SpaceBetween" Class="pt-2">
+          <Panel AccessibleRole="PushButton"
+                 AutoSize="true"
+                 Class="text-sm font-medium hover:underline [color:#1a73e8]"
+                 OnClick="panel_click2">
+            <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res common.back}"/>
+          </Panel>
+          <Button ButtonType="Submit"
+                  Size="Lg"
+                  Enabled="{Binding enabled_unless_use_backup_code_totp_code_replace}"
+                  Loading="{Binding isLoading}"
+                  Text="{Binding button_text}"
+                  Class="ml-auto"/>
+        </Stack>
+      </Panel>
+      <Label HtmlTag="H1"
+             Text="{Res forgot.title}"
+             FontWeight="Regular"
+             Overflow="Wrap"
+             Visible="{Binding visible8}"
+             Class="text-2xl mb-1.5 [color:#202124]"/>
+      <Label HtmlTag="Div"
+             Text="{Res forgot.sent}"
+             Overflow="Wrap"
+             Visible="{Binding visible9}"
+             Class="px-4 py-3 rounded-md mt-4 [color:#1e8e3e] [background:#e6f4ea] [border:1px_solid_#a8dab5]"/>
+      <Panel Visible="{Binding visible9}" Class="mt-6">
+        <!-- TODO(views-migrate): <Link style> -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+      </Panel>
+      <Label Text="{Res forgot.intro}" Overflow="Wrap" Visible="{Binding visible10}" Class="mb-8 [color:#5f6368]"/>
+      <Panel HtmlTag="Form" Visible="{Binding visible10}" Class="space-y-5" OnSubmit="panel_submit2">
+        <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+        <ReactHost Component="{Binding OutlinedField}" Props="{Binding outlined_field_props}"/>
+        <Button ButtonType="Submit"
+                Size="Lg"
+                Loading="{Binding forgotLoading}"
+                Enabled="{Binding enabled_unless_forgot_email_trim}"
+                Text="{Res forgot.submit}"
+                Class="w-full"/>
+      </Panel>
+      <Panel Visible="{Binding visible10}" Class="mt-6 text-center">
+        <!-- TODO(views-migrate): <Link style> -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+      </Panel>
+      <Label HtmlTag="H1"
+             Text="{Res login.welcome}"
+             FontWeight="Regular"
+             Overflow="Wrap"
+             Visible="{Binding visible11}"
+             Class="text-2xl mb-1.5 [color:#202124]"/>
+      <Label Text="{Res login.subtitle}" Overflow="Wrap" Visible="{Binding visible11}" Class="mb-8 [color:#5f6368]"/>
+      <Panel Visible="{Binding visible12}" Class="space-y-2">
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_oauth_providers}">
+          <!-- TODO(views-migrate): <a> with a computed style -->
+          <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+        </Repeater>
+      </Panel>
+      <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Visible="{Binding visible13}" Class="my-2">
+        <Panel Class="flex-1 h-px [background:#dadce0]"/>
+        <Label HtmlTag="Span" Text="{Res login.or}" Role="Meta" Overflow="Wrap" Class="[color:#80868b]"/>
+        <Panel Class="flex-1 h-px [background:#dadce0]"/>
+      </Stack>
+      <Label Text="{Res login.no_method}"
+             Overflow="Wrap"
+             Visible="{Binding visible14}"
+             Class="px-4 py-3 rounded-md [color:#d93025] [background:#fce8e6] [border:1px_solid_#f28b82]"/>
+      <Panel HtmlTag="Form" Visible="{Binding visible15}" Class="space-y-5" OnSubmit="panel_submit3">
+        <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+        <ReactHost Component="{Binding OutlinedField2}" Props="{Binding outlined_field_props2}"/>
+        <Panel>
+          <!-- TODO(views-migrate): <OutlinedField> is no .kbview element (@ui#OutlinedField) -->
+          <ReactHost Component="{Binding OutlinedField2}" Props="{Binding outlined_field_props3}"/>
+          <Stack Direction="LeftToRight" Gap="0" Justify="End" Class="mt-2">
+            <!-- TODO(views-migrate): <Link style> -->
+            <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+          </Stack>
+        </Panel>
+        <Panel Visible="{Binding show_captcha_required_captcha}">
+          <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="SpaceBetween" Class="mb-2">
+            <Label HtmlTag="Label" Text="{Binding label_text}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextSecondary" Class="block"/>
+            <Panel AccessibleRole="PushButton"
+                   AutoSize="true"
+                   Enabled="{Binding enabled_unless_captcha_loading}"
+                   AccessibleName="{Res login.captcha_refresh}"
+                   ToolTip="{Res login.captcha_refresh}"
+                   Class="w-8 h-8 flex items-center justify-center text-text-tertiary hover:text-text-secondary hover:bg-surface-2 rounded-full transition-colors"
+                   OnClick="loadCaptcha">
+              <!-- TODO(views-migrate): an icon with a computed className -->
+              <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+            </Panel>
+          </Stack>
+          <!-- TODO(views-migrate): <img> has no .kbview element yet -->
+          <ReactHost Component="{Binding Part7}" Props="{Binding part7_props}" Visible="{Binding show_captcha_type_text}"/>
+          <!-- TODO(views-migrate): <div onFocusCapture onBlurCapture>: attribute(s) without a .kbview property -->
+          <ReactHost Component="{Binding Part8}" Props="{Binding part8_props}" Visible="{Binding show_captcha_type_text}"/>
+          <!-- TODO(views-migrate): <div onFocusCapture onBlurCapture>: attribute(s) without a .kbview property -->
+          <ReactHost Component="{Binding Part9}" Props="{Binding part9_props}" Visible="{Binding show_captcha_type_math}"/>
+          <Panel Visible="{Binding show_captcha_type_slider}">
+            <!-- TODO(views-migrate): <div> with a computed style -->
+            <ReactHost Component="{Binding Part10}" Props="{Binding part10_props}"/>
+            <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+            <ReactHost Component="{Binding Part11}" Props="{Binding part11_props}"/>
+            <Label Text="{Res login.captcha_slider_hint}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary" Class="mt-1"/>
+          </Panel>
+        </Panel>
+        <Label HtmlTag="Div"
+               Text="{Binding error}"
+               Overflow="Wrap"
+               Visible="{Binding show_error2}"
+               Class="px-4 py-3 rounded-md [color:#d93025] [background:#fce8e6] [border:1px_solid_#f28b82]"/>
+        <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="SpaceBetween" Class="pt-2">
+          <!-- TODO(views-migrate): <Link style> -->
+          <ReactHost Component="{Binding Part12}" Props="{Binding part12_props}" Visible="{Binding registrationOpen}"/>
+          <Button ButtonType="Submit"
+                  Size="Lg"
+                  Loading="{Binding isLoading}"
+                  Enabled="{Binding enabled_unless_login_trim_password}"
+                  Text="{Binding button_text2}"
+                  Class="ml-auto"/>
+        </Stack>
+      </Panel>
+    </Panel>
+  </Stack>
+</Stack>

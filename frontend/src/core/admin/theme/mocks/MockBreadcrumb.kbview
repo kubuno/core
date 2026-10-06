@@ -1,0 +1,17 @@
+<!-- MockBreadcrumb — converted from MockBreadcrumb.tsx by @kubuno/views-migrate. -->
+<Panel HtmlTag="Nav" Class="flex items-center min-w-0">
+  <Panel HtmlTag="Ol" Class="inline-flex items-center gap-1.5 flex-wrap min-w-0">
+    <Panel HtmlTag="Li" Class="inline-flex items-center">
+      <Panel AccessibleRole="PushButton"
+             AutoSize="true"
+             Class="inline-flex items-center text-sm font-medium text-text-secondary hover:text-primary transition-colors">
+        <Icon Name="Home" Size="16" Class="me-1.5 shrink-0"/>
+        <Label HtmlTag="Span" Text="Mon Drive" Overflow="Wrap" InheritFontSize="true"/>
+      </Panel>
+    </Panel>
+    <Panel HtmlTag="Li" Class="inline-flex items-center gap-1.5">
+      <Icon Name="ChevronRight" Size="14" Class="text-text-tertiary shrink-0"/>
+      <Label HtmlTag="Span" Text="Documents" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+    </Panel>
+  </Panel>
+</Panel>

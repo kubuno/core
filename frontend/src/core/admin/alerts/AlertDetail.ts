@@ -154,9 +154,9 @@ export class AlertDetail extends ViewBase {
   }
 
   get action_buttons_props() {
-    return this.memo('action_buttons_props', [this.alert, this.isLoading, this.isError, this.data, this.verb, this.toast, this.tr], () => {
+    return this.memo('action_buttons_props', [this.alert, this.memo, this.isLoading, this.isError, this.data, this.verb, this.toast, this.tr], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
-      return ({ alert: this.alert, onExecute: this.runVerb.bind(this), busy: this.verb.isPending })
+      return ({ alert: this.alert, onExecute: this.memo("runVerb:bound", [], () => this.runVerb.bind(this)), busy: this.verb.isPending })
     })
   }
 
@@ -207,9 +207,9 @@ export class AlertDetail extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.draft, this.tr, this.isLoading, this.isError, this.data, this.canManage], () => {
+    return this.memo('part2_props', [this.draft, this.memo, this.tr, this.isLoading, this.isError, this.data, this.canManage], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data)) || !(this.canManage)) return undefined as never
-      return ({ draft: this.draft, setDraft: this.setDraft.bind(this), t: this.tr })
+      return ({ draft: this.draft, setDraft: this.memo("setDraft:bound", [], () => this.setDraft.bind(this)), t: this.tr })
     })
   }
 

@@ -88,7 +88,7 @@ export class ExecutionsPanel extends ViewBase {
   }
 
   get filters() {
-    return this.memo('filters', [this.props, this.rule, this.setRule, this.tr, this.rules, this.mode, this.outcome, this.isFetching, this.refetch], () => (
+    return this.memo('filters', [this.props, this.rule, this.setRule, this.tr, this.rules, this.mode, this.memo, this.outcome, this.isFetching, this.refetch], () => (
     <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
       {!this.props.ruleId && (
         <Combobox
@@ -104,7 +104,7 @@ export class ExecutionsPanel extends ViewBase {
       )}
       <Combobox
         value={this.mode}
-        onChange={this.setMode.bind(this)}
+        onChange={this.memo("setMode:bound", [], () => this.setMode.bind(this))}
         options={[
           { value: '', label: this.tr('admin.rl_log_all_modes') },
           ...(['simulate', 'monitor', 'enforce', 'backtest'] as const)
@@ -115,7 +115,7 @@ export class ExecutionsPanel extends ViewBase {
       />
       <Combobox
         value={this.outcome}
-        onChange={this.setOutcome.bind(this)}
+        onChange={this.memo("setOutcome:bound", [], () => this.setOutcome.bind(this))}
         options={[
           { value: '', label: this.tr('admin.rl_log_all_outcomes') },
           ...OUTCOMES.map(o => ({ value: o, label: outcomeLabel(this.tr, o) })),

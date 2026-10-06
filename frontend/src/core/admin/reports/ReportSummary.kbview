@@ -1,3 +1,38 @@
 <!-- ReportSummary — converted from ReportSummary.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<!-- TODO(views-migrate): <section data-report-card data-report-summary>: attribute(s) without a .kbview property -->
-<ReactHost x:Props="ReportSummaryProps" Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_main}"/>
+<Panel x:Props="ReportSummaryProps"
+       HtmlTag="Section"
+       BackColor="Surface"
+       DataAttributes="report-card; report-summary"
+       Visible="{Binding show_main}"
+       Class="mt-4 rounded-xl border border-border p-4">
+  <Label HtmlTag="H2"
+         Text="{Res admin.rep_summary}"
+         Overflow="Wrap"
+         ForeColor="TextPrimary"
+         InheritFontSize="true"
+         Class="mb-3 [font-size:var(--kb-text-heading)]"/>
+  <Panel Class="flex flex-wrap items-start gap-x-6 gap-y-3">
+    <Panel Class="min-w-40">
+      <Label Text="{Res admin.rep_total}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-meta)]"/>
+      <Label Text="{Binding props.model.totalText}"
+             Overflow="Wrap"
+             InheritFontSize="true"
+             Class="tabular-nums [font-size:26pt] [line-height:1.1]"/>
+      <!-- TODO(views-migrate): <p> with a computed style -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_model_snapshot_model}"/>
+    </Panel>
+    <Panel HtmlTag="Ul" Class="min-w-0 flex-1 space-y-1.5">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_facts}">
+        <Panel HtmlTag="Li" ForeColor="TextPrimary" Class="flex gap-2 [font-size:var(--kb-text-body)]">
+          <!-- TODO(views-migrate): <span data-tone>: data attributes on a text -->
+          <ReactHost Component="{Binding Part2}"/>
+          <Label HtmlTag="Span" Text="{Binding f}" Overflow="Wrap" InheritFontSize="true"/>
+        </Panel>
+      </Repeater>
+    </Panel>
+  </Panel>
+</Panel>

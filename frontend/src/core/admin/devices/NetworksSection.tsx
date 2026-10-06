@@ -6,12 +6,15 @@ import { useTranslation } from "react-i18next"
 import { Search, X } from "lucide-react"
 import { Button, Combobox, Input, useToast, type ComboboxOption, type DataTableColumn } from "@ui"
 import { formatAgo, formatWhen } from "../sections/format"
+import type { AdminSectionProps } from "../sections/registry"
 import { useAdminSessions } from "../../devices/useDevices"
 import { authStrengthLabel, clientKindLabel, sessionName } from "../../devices/labels"
 import { EMPTY_SESSION_FILTERS, type DeviceSession, type SessionFilters } from "../../devices/types"
 
 import { ViewBase } from './NetworksSection.kbview'
 import * as __parts from './NetworksSection.parts'
+
+export type { AdminSectionProps }
 
 export class NetworksSection extends ViewBase {
   tr!: NetworksSectionStores['t']
@@ -189,9 +192,9 @@ export class NetworksSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.origins, this.setFilters, this.tr], () => {
+    return this.memo('part1_props', [this.origins, this.memo, this.setFilters, this.tr], () => {
       if (!(this.origins.length > 0)) return undefined as never
-      return ({ origins: this.origins, set: this.set.bind(this), t: this.tr })
+      return ({ origins: this.origins, set: this.memo("set:bound", [], () => this.set.bind(this)), t: this.tr })
     })
   }
 

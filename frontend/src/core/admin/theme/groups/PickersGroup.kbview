@@ -1,0 +1,18 @@
+<!-- PickersGroup — converted from PickersGroup.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack x:Props="PickersGroupProps" Direction="LeftToRight" Gap="20" CrossAlign="Start" WrapContents="true">
+  <Stack Gap="6">
+    <Label HtmlTag="Span" Text="{Res admin.t_prev_swatches}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+    <!-- TODO(views-migrate): <ColorSwatchPicker> is no .kbview element (@ui#ColorSwatchPicker) -->
+    <ReactHost Component="{Binding ColorSwatchPicker}" Props="{Binding color_swatch_picker_props}"/>
+  </Stack>
+  <Stack Gap="6">
+    <Label HtmlTag="Span" Text="{Res admin.t_prev_color_picker}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+    <!-- TODO(views-migrate): <ColorPicker> is no .kbview element (@ui#ColorPicker) -->
+    <ReactHost Component="{Binding ColorPicker}" Props="{Binding color_picker_props}"/>
+  </Stack>
+  <Stack Gap="6">
+    <Label HtmlTag="Span" Text="{Res admin.t_prev_gradient_picker}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary"/>
+    <!-- TODO(views-migrate): <GradientPicker> is no .kbview element (@ui#GradientPicker) -->
+    <ReactHost Component="{Binding GradientPicker}" Props="{Binding gradient_picker_props}"/>
+  </Stack>
+</Stack>

@@ -83,9 +83,9 @@ export class OverviewBar extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.reload, this.tr, this.data, this.props], () => {
+    return this.memo('part1_props', [this.reload, this.memo, this.error, this.tr, this.data, this.props], () => {
       if (!(!(!this.data)) || !(this.props.canManage)) return undefined as never
-      return ({ reload: this.reload, setError: this.setError.bind(this), t: this.tr })
+      return ({ reload: this.reload, setError: this.memo("setError:bound", [], () => this.setError.bind(this)), t: this.tr })
     })
   }
 

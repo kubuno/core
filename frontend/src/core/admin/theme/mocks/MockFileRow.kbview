@@ -1,0 +1,17 @@
+<!-- MockFileRow — converted from MockFileRow.tsx by @kubuno/views-migrate. -->
+<Panel x:Props="MockFileRowProps" Class="{Binding div_class}">
+  <Stack Direction="LeftToRight"
+         Gap="0"
+         CrossAlign="Center"
+         Justify="Center"
+         BackColor="Surface2"
+         Class="shrink-0 w-9 h-9 rounded overflow-hidden">
+    <Icon Name="FileText" Size="16" Class="text-text-tertiary"/>
+  </Stack>
+  <Panel Class="flex-1 min-w-0">
+    <Label Text="{Binding name}" ForeColor="TextPrimary"/>
+  </Panel>
+  <Label HtmlTag="Span" Text="30 juin 2026" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary" Class="shrink-0 w-28 text-right"/>
+  <Label HtmlTag="Span" Text="{Binding size}" Role="Meta" Overflow="Wrap" ForeColor="TextTertiary" Class="shrink-0 w-20 text-right"/>
+  <Icon Name="MoreVertical" Size="14" Class="shrink-0 text-text-secondary opacity-0 group-hover:opacity-100"/>
+</Panel>

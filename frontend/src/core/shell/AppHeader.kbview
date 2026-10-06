@@ -1,0 +1,49 @@
+<!-- AppHeader — converted from AppHeader.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel HtmlTag="Header" BackColor="Background" DataAttributes="app-chrome" Class="relative flex-shrink-0 h-16 z-50 flex items-center gap-0">
+  <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Class="flex-shrink-0 lg:w-64">
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           ForeColor="TextSecondary"
+           AccessibleName="Menu"
+           Class="lg:hidden w-12 h-12 flex items-center justify-center hover:bg-surface-2 rounded-full transition-colors"
+           OnClick="panel_click">
+      <Icon Name="Menu"/>
+    </Panel>
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           ForeColor="TextSecondary"
+           AccessibleName="{Binding accessible_name}"
+           Visible="{Binding show_is_home}"
+           Class="hidden lg:flex w-10 h-10 items-center justify-center flex-shrink-0 hover:bg-surface-2 rounded-full transition-colors"
+           OnClick="panel_click2">
+      <Icon Name="Menu"/>
+    </Panel>
+    <!-- TODO(views-migrate): <BrandLink> is no .kbview element (./BrandLink#default) -->
+    <ReactHost Component="{Binding BrandLink}"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" Class="min-w-0 flex-1 pl-1">
+    <Panel Visible="{Binding inlineSearch}" Class="min-w-0 flex-1 max-w-2xl px-1">
+      <!-- TODO(views-migrate): <SearchBar> is no .kbview element (./SearchBar#default) -->
+      <ReactHost Component="{Binding SearchBar}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+    <ReactHost Component="{Binding Slot}" Props="{Binding slot_props}" Visible="{Binding show_not_inline_search}"/>
+    <!-- TODO(views-migrate): <HealthTopbarChip> is no .kbview element (../admin/health/HealthTopbarChip#default) -->
+    <ReactHost Component="{Binding HealthTopbarChip}"/>
+  </Stack>
+  <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Class="ml-auto flex-shrink-0 pr-2">
+    <Panel AccessibleRole="PushButton"
+           AutoSize="true"
+           ForeColor="TextSecondary"
+           AccessibleName="{Res common.search}"
+           Visible="{Binding show_inline_search}"
+           Class="w-9 h-9 flex items-center justify-center hover:bg-surface-3 rounded-full transition-colors flex-shrink-0"
+           OnClick="panel_click3">
+      <Icon Name="Search" Size="18"/>
+    </Panel>
+    <!-- TODO(views-migrate): <HeaderActions> is no .kbview element (./HeaderActions#default) -->
+    <ReactHost Component="{Binding HeaderActions}"/>
+  </Stack>
+  <!-- TODO(views-migrate): <div ref>: attribute(s) without a .kbview property -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_search_open_inline_search}"/>
+</Panel>

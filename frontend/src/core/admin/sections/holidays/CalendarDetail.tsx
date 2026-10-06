@@ -81,7 +81,7 @@ export class CalendarDetail extends ViewBase {
   }
 
   get columns(): DataTableColumn<Holiday>[] {
-    return this.memo('columns', [this.tr, this.locale, this.year, this.props, this.setEnabled, this.setExclusions, this.error], () => [
+    return this.memo('columns', [this.tr, this.locale, this.year, this.props, this.setEnabled, this.setExclusions, this.error, this.data, this.memo], () => [
     {
       id: 'name',
       header: this.tr('admin.hol_col_day'),
@@ -176,7 +176,7 @@ export class CalendarDetail extends ViewBase {
             // disabled, an inherited one is excluded. One control because the
             // question the operator is answering is identical.
             if (r.inherited) this.toggleExclusion(r.key, !e.target.checked)
-            else this.setEnabled.mutate({ id: r.id, enabled: e.target.checked }, { onError: this.fail.bind(this) })
+            else this.setEnabled.mutate({ id: r.id, enabled: e.target.checked }, { onError: this.memo("fail:bound", [], () => this.fail.bind(this)) })
           }}
         />
       ),
@@ -185,7 +185,7 @@ export class CalendarDetail extends ViewBase {
   }
 
   get rowActions(): DataTableRowAction<Holiday>[] {
-    return this.memo('rowActions', [this.props, this.tr, this.editing, this.error, this.reset, this.confirm, this.remove], () => this.props.canManage
+    return this.memo('rowActions', [this.props, this.tr, this.editing, this.error, this.reset, this.memo, this.confirm, this.remove], () => this.props.canManage
     ? [
         {
           id: 'edit',
@@ -201,7 +201,7 @@ export class CalendarDetail extends ViewBase {
           hidden: r => !r.is_overridden || r.inherited,
           onClick: r => {
             this.error = null
-            this.reset.mutate(r.id, { onError: this.fail.bind(this) })
+            this.reset.mutate(r.id, { onError: this.memo("fail:bound", [], () => this.fail.bind(this)) })
           },
         },
         {
@@ -218,7 +218,7 @@ export class CalendarDetail extends ViewBase {
             })
             if (!ok) return
             this.error = null
-            this.remove.mutate(r.id, { onError: this.fail.bind(this) })
+            this.remove.mutate(r.id, { onError: this.memo("fail:bound", [], () => this.fail.bind(this)) })
           },
         },
       ]
@@ -257,9 +257,9 @@ export class CalendarDetail extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.props], () => {
+    return this.memo('part1_props', [this.memo, this.editing, this.tr, this.props], () => {
       if (!(this.props.canManage)) return undefined as never
-      return ({ setEditing: this.setEditing.bind(this), t: this.tr })
+      return ({ setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)), t: this.tr })
     })
   }
 
@@ -317,14 +317,14 @@ export class CalendarDetail extends ViewBase {
   }
 
   fail(e: unknown) {
-    return this.error = errorMessage(e, this.tr('admin.hol_save_failed'))
+    this.error = errorMessage(e, this.tr('admin.hol_save_failed'))
   }
 
   toggleExclusion(key: string, excluded: boolean) {
     const current = this.data?.exclusions ?? []
     const next = excluded ? [...current, key] : current.filter(k => k !== key)
     this.error = null
-    this.setExclusions.mutate(next, { onError: this.fail.bind(this) })
+    this.setExclusions.mutate(next, { onError: this.memo("fail:bound", [], () => this.fail.bind(this)) })
   }
 
   button_click(_sender: unknown, _args: MouseEventArgs) {

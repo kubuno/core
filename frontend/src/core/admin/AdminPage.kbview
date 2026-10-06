@@ -1,0 +1,49 @@
+<!-- AdminPage — converted from AdminPage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <!-- TODO(views-migrate): <Navigate> is no .kbview element (react-router-dom#Navigate) -->
+  <ReactHost Component="{Binding Navigate}" Props="{Binding navigate_props}" Visible="{Binding show_case_1}"/>
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_2}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <!-- TODO(views-migrate): <Navigate> is no .kbview element (react-router-dom#Navigate) -->
+  <ReactHost Component="{Binding Navigate2}" Props="{Binding navigate_props2}" Visible="{Binding show_case_3}"/>
+  <Panel Visible="{Binding show_case_4}">
+    <Label HtmlTag="H1"
+           Text="{Res user.admin}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="mb-6 [font-size:var(--kb-text-page)]"/>
+    <!-- TODO(views-migrate): <AdminSectionNotFound> is no .kbview element (./AdminSectionNotFound#default) -->
+    <ReactHost Component="{Binding AdminSectionNotFound}" Props="{Binding admin_section_not_found_props}"/>
+  </Panel>
+  <Panel Visible="{Binding show_case_5}">
+    <Label HtmlTag="H1"
+           Text="{Res user.admin}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="mb-6 [font-size:var(--kb-text-page)]"/>
+    <!-- TODO(views-migrate): <AdminForbidden> is no .kbview element (./AdminForbidden#default) -->
+    <ReactHost Component="{Binding AdminForbidden}" Props="{Binding admin_forbidden_props}"/>
+  </Panel>
+  <Panel Visible="{Binding show_main}" Class="kb-admin">
+    <Panel BackColor="Surface" DataAttributes="admin-crumbs" Class="no-print sticky -top-6 z-30 -mx-6 -mt-6 px-6 pt-6 pb-2">
+      <!-- TODO(views-migrate): <AdminBreadcrumb> is no .kbview element (./AdminBreadcrumb#default) -->
+      <ReactHost Component="{Binding AdminBreadcrumb}" Props="{Binding admin_breadcrumb_props}"/>
+    </Panel>
+    <Label HtmlTag="H1"
+           Text="{Binding h1_text}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Visible="{Binding show_section_own_header}"
+           Class="mb-6 [font-size:var(--kb-text-page)]"/>
+    <!-- TODO(views-migrate): <AdminSectionBoundary> is no .kbview element (./AdminSectionBoundary#default) -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    <!-- TODO(views-migrate): <ComingSoon> is no .kbview element (./sections/ComingSoon#default) -->
+    <ReactHost Component="{Binding ComingSoon}" Props="{Binding coming_soon_props}" Visible="{Binding show_meta_item_soon}"/>
+    <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+    <ReactHost Component="{Binding Slot}" Props="{Binding slot_props}"/>
+  </Panel>
+</Panel>

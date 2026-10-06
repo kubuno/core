@@ -6,7 +6,7 @@
       <ReactHost Component="{Binding RoleBadge}" Props="{Binding role_badge_props}"/>
     </Panel>
     <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start">
-      <!-- TODO(views-migrate): <UserAvatar> is no .kbview element (./atoms#UserAvatar) -->
+      <!-- TODO(views-migrate): <UserAvatar> is no .kbview element (./UserAvatar#UserAvatar) -->
       <ReactHost Component="{Binding UserAvatar}" Props="{Binding user_avatar_props}"/>
       <Panel Class="min-w-0 flex-1">
         <Label HtmlTag="H1"

@@ -44,7 +44,7 @@ import DataMigrationSection from './data-migration/DataMigrationSection'
 import DataExportSection from './data-export/DataExportSection'
 import SubscriptionSection from './subscription/SubscriptionSection'
 import { adminUrl } from '../adminAction'
-import RulesLogSection from '../rules/RulesLogSection'
+import { RulesLogSection } from '../rules/RulesLogSection'
 
 /**
  * Everything a section may need from the router. Sections that need neither may

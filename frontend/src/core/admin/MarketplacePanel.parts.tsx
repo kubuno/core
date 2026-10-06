@@ -6,7 +6,7 @@ import { isNewerVersion } from "../utils/semver"
 import { Package, Check, Download, RefreshCw, Star, ExternalLink, Trash2 } from "lucide-react"
 import type { MarketplacePanel } from './MarketplacePanel'
 
-export function Part1({ visible, cat, busy, t, uninstall, install, phase }: { visible: NonNullable<MarketplacePanel['visible']>; cat: MarketplacePanel['rows_categories'][number]['cat']; busy: MarketplacePanel['busy']; t: NonNullable<MarketplacePanel['tr']>; uninstall: NonNullable<MarketplacePanel['uninstall']>; install: NonNullable<MarketplacePanel['install']>; phase: NonNullable<MarketplacePanel['phase']> }) {
+export function Part1({ visible, cat, busy, t, uninstall, install, phase }: { visible: NonNullable<MarketplacePanel['visible']>; cat: NonNullable<MarketplacePanel['rows_categories']>[number]['cat']; busy: MarketplacePanel['busy']; t: NonNullable<MarketplacePanel['tr']>; uninstall: NonNullable<MarketplacePanel['uninstall']>; install: NonNullable<MarketplacePanel['install']>; phase: NonNullable<MarketplacePanel['phase']> }) {
   return (
     <>{visible.filter((m) => (m.category || 'Autres') === cat).map((mod) => {
                   // Strictly newer only: a catalogue lagging behind must never invite

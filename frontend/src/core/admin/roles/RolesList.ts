@@ -88,7 +88,7 @@ export class RolesList extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.props, this.q, this.tr, this.isSuperuser, this.roleName, this.roleDescription, this.canGrant], () => ({ rows: this.rows, loading: this.props.loading, error: this.props.error, onRetry: this.props.onRetry, q: this.q, setQ: this.setQ.bind(this), t: this.tr, isSuperuser: this.isSuperuser, setCreating: this.setCreating.bind(this), roleName: this.roleName, roleDescription: this.roleDescription, canGrant: this.canGrant, setAssign: this.setAssign.bind(this), openRole: this.openRole.bind(this), askDelete: this.askDelete.bind(this) }))
+    return this.memo('part1_props', [this.rows, this.props, this.q, this.memo, this.tr, this.isSuperuser, this.creating, this.roleName, this.roleDescription, this.canGrant, this.assign, this.navigate, this.confirm, this.remove, this.toast], () => ({ rows: this.rows, loading: this.props.loading, error: this.props.error, onRetry: this.props.onRetry, q: this.q, setQ: this.memo("setQ:bound", [], () => this.setQ.bind(this)), t: this.tr, isSuperuser: this.isSuperuser, setCreating: this.memo("setCreating:bound", [], () => this.setCreating.bind(this)), roleName: this.roleName, roleDescription: this.roleDescription, canGrant: this.canGrant, setAssign: this.memo("setAssign:bound", [], () => this.setAssign.bind(this)), openRole: this.memo("openRole:bound", [], () => this.openRole.bind(this)), askDelete: this.memo("askDelete:bound", [], () => this.askDelete.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<DataTable> rowKey, onRetry, filtered, onClearFilters, toolbar, emptyState, columns, rowActions, t: no .kbview property). */

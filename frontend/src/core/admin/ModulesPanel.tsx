@@ -10,6 +10,7 @@ import { Package, Settings } from "lucide-react"
 import { Badge, type DataTableColumn, type DataTableRowAction } from "@ui"
 import MarketplacePanel from "./MarketplacePanel"
 import { adminUrl, useAdminAction } from "./adminAction"
+import type { AdminSectionProps } from "./sections/registry"
 import { moduleGlyph } from "./nav/moduleGlyph"
 import { useAdminModules, useModuleLiveState, useToggleModule, type AdminModule, type ModuleLiveState } from "./adminModules"
 import { getPublicConfig } from "../api/publicConfig"
@@ -33,6 +34,8 @@ function useDefaultModule() {
 const STATUS_RANK: Record<ModuleLiveState, number> = {
   unreachable: 0, disabled: 1, running: 2, unknown: 3,
 }
+
+export type { AdminSectionProps }
 
 export class ModulesPanel extends ViewBase {
   @bind accessor errorMsg: string | null = null
@@ -101,7 +104,7 @@ export class ModulesPanel extends ViewBase {
   }
 
   get columns(): DataTableColumn<AdminModule>[] {
-    return this.memo('columns', [this.tr, this.liveState], () => [
+    return this.memo('columns', [this.tr, this.defaultModulePath, this.liveState], () => [
     {
       id:         'app',
       header:     this.tr('admin.m_col_app'),
@@ -163,10 +166,10 @@ export class ModulesPanel extends ViewBase {
   }
 
   get rowActions(): DataTableRowAction<AdminModule>[] {
-    return this.memo('rowActions', [this.tr, this.setDefault], () => [
+    return this.memo('rowActions', [this.tr, this.memo, this.props, this.errorMsg, this.toggle, this.infoMsg, this.defaultModulePath, this.setDefault], () => [
     {
       id: 'manage', label: this.tr('admin.card_manage'), icon: <Settings size={15} />,
-      onClick: this.open.bind(this),
+      onClick: this.memo("open:bound", [], () => this.open.bind(this)),
     },
     {
       id: 'enable', label: this.tr('admin.m_turn_on'),
@@ -237,9 +240,9 @@ export class ModulesPanel extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.query, this.rowActions, this.tr, this.showMarketplace], () => {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.query, this.memo, this.rowActions, this.props, this.tr, this.showMarketplace], () => {
       if (!(!(this.showMarketplace))) return undefined as never
-      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, query: this.query, setQuery: this.setQuery.bind(this), rowActions: this.rowActions, open: this.open.bind(this), t: this.tr })
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, query: this.query, setQuery: this.memo("setQuery:bound", [], () => this.setQuery.bind(this)), rowActions: this.rowActions, open: this.memo("open:bound", [], () => this.open.bind(this)), t: this.tr })
     })
   }
 

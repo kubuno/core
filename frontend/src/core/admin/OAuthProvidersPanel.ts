@@ -112,7 +112,7 @@ export class OAuthProvidersPanel extends ViewBase {
     this.publish({ updateM })
     const deleteM = useMutation({
       mutationFn: (id: string) => api.delete(`/admin/oauth-providers/${id}`),
-      onSuccess: this.invalidate_.bind(this),
+      onSuccess: this.memo("invalidate_:bound", [], () => this.invalidate_.bind(this)),
     })
     this.publish({ deleteM })
     const testM = useMutation({
@@ -137,9 +137,9 @@ export class OAuthProvidersPanel extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.editing], () => {
+    return this.memo('part1_props', [this.memo, this.editing], () => {
       if (!(this.editing === null)) return undefined as never
-      return ({ setEditing: this.setEditing.bind(this) })
+      return ({ setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)) })
     })
   }
 
@@ -160,9 +160,9 @@ export class OAuthProvidersPanel extends ViewBase {
   }
 
   get provider_form_props() {
-    return this.memo('provider_form_props', [this.editing], () => {
+    return this.memo('provider_form_props', [this.memo, this.editing, this.createM, this.updateM], () => {
       if (!(this.editing === 'new')) return undefined as never
-      return ({ initial: emptyForm, isEdit: false, onSave: this.submit.bind(this), onCancel: () => this.editing = null } as React.ComponentProps<typeof __parts.ProviderForm>)
+      return ({ initial: emptyForm, isEdit: false, onSave: this.memo("submit:bound", [], () => this.submit.bind(this)), onCancel: () => this.editing = null } as React.ComponentProps<typeof __parts.ProviderForm>)
     })
   }
 
@@ -181,9 +181,9 @@ export class OAuthProvidersPanel extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.providers, this.editing, this.testM, this.updateM, this.isLoading], () => {
+    return this.memo('part2_props', [this.providers, this.editing, this.memo, this.createM, this.updateM, this.testM, this.confirm, this.deleteM, this.isLoading], () => {
       if (!(!(this.isLoading)) || !(!((this.providers?.length ?? 0) === 0 && this.editing !== 'new'))) return undefined as never
-      return ({ providers: this.providers, editing: this.editing, toFormState: this.toFormState.bind(this), submit: this.submit.bind(this), setEditing: this.setEditing.bind(this), testM: this.testM, updateM: this.updateM, onDelete: this.onDelete.bind(this) })
+      return ({ providers: this.providers, editing: this.editing, toFormState: this.memo("toFormState:bound", [], () => this.toFormState.bind(this)), submit: this.memo("submit:bound", [], () => this.submit.bind(this)), setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)), testM: this.testM, updateM: this.updateM, onDelete: this.memo("onDelete:bound", [], () => this.onDelete.bind(this)) })
     })
   }
 
@@ -205,7 +205,7 @@ export class OAuthProvidersPanel extends ViewBase {
       if (!(!(this.isLoading)) || !(!((this.providers?.length ?? 0) === 0 && this.editing !== 'new'))) return undefined as never
       return this.providers?.filter((p) => this.probe[p.id]).map((p) => {
       const r = this.probe[p.id]
-      return { p, r, part3_props: ((!(this.isLoading)) && (!((this.providers?.length ?? 0) === 0 && this.editing !== 'new'))) ? ({ p: p, r: r, r_authorization_endpoint: r.authorization_endpoint, r_detail: r.detail, r_hint: r.hint }) : undefined, key: `probe-${p.id}` }
+      return { p, r, part3_props: ((!(this.isLoading)) && (!((this.providers?.length ?? 0) === 0 && this.editing !== 'new'))) ? ({ p: p, r: r, r_authorization_endpoint: r?.authorization_endpoint, r_detail: r?.detail, r_hint: r?.hint }) : undefined, key: `probe-${p.id}` }
     })
     })
   }
@@ -240,7 +240,7 @@ export class OAuthProvidersPanel extends ViewBase {
     this.qc.invalidateQueries({ queryKey: ['oauth-providers'] })  // public list on the login page
   }
 
-  toFormState(p: AdminProvider) {
+  toFormState(p: AdminProvider): FormState {
     return ({
     slug: p.slug, display_name: p.display_name, issuer_url: p.issuer_url, client_id: p.client_id,
     client_secret: '', scopes: p.scopes, button_color: p.button_color ?? '',

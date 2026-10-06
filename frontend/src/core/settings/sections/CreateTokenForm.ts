@@ -1,12 +1,13 @@
 /**
  * Code-behind of `CreateTokenForm.kbview` (converted from `CreateTokenForm.tsx` by @kubuno/views-migrate).
  */
-import { bind } from '@kubuno/views'
+import { bind, type EventArgs } from '@kubuno/views'
 import { useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { TokenScope } from "../../types"
+import ApiTokenScopePicker from "./ApiTokenScopePicker"
 
 import { ViewBase } from './CreateTokenForm.kbview'
 import * as __parts from './CreateTokenForm.parts'
@@ -21,8 +22,8 @@ export class CreateTokenForm extends ViewBase {
   tr!: CreateTokenFormStores['t']
   queryClient!: CreateTokenFormStores['queryClient']
   data!: CreateTokenFormStores['data']
-  available!: CreateTokenFormStores['available']
-  expiryMandatory!: CreateTokenFormHooks['expiryMandatory']
+  available!: TokenScope[]
+  expiryMandatory!: boolean
   create!: CreateTokenFormHooks['create']
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
@@ -49,6 +50,7 @@ export class CreateTokenForm extends ViewBase {
       () => available.some((s) => this.scopes.includes(s.key) && s.requires_expiry),
       [available, this.scopes]
     )
+    this.publish({ expiryMandatory })
     const create = useMutation({
       mutationFn: () =>
         api.post<{ token: string; id: string; name: string; scopes: string[]; expires_at: string | null; created_at: string }>(
@@ -71,6 +73,7 @@ export class CreateTokenForm extends ViewBase {
         this.error = (err as { message?: string })?.message ?? t('settings.tok_create_error')
       },
     })
+    this.publish({ create })
     return { expiryMandatory, create }
   }
 
@@ -82,17 +85,34 @@ export class CreateTokenForm extends ViewBase {
     this.publish({ expiryMandatory: h.expiryMandatory, create: h.create })
   }
 
-  get maxTtlDays() {
+  get maxTtlDays(): number {
     return this.data?.max_ttl_days ?? 365
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.name, this.expiresInDays, this.expiryMandatory, this.maxTtlDays, this.scopes, this.available, this.error, this.create], () => ({ t: this.tr, handleSubmit: this.handleSubmit.bind(this), name: this.name, setName: this.setName.bind(this), expiresInDays: this.expiresInDays, setExpiresInDays: this.setExpiresInDays.bind(this), expiryMandatory: this.expiryMandatory, maxTtlDays: this.maxTtlDays, scopes: this.scopes, available: this.available, setScopes: this.setScopes.bind(this), error: this.error, create: this.create }))
+    return this.memo('part1_props', [this.tr, this.expiresInDays, this.memo, this.expiryMandatory, this.maxTtlDays], () => ({ t: this.tr, expiresInDays: this.expiresInDays, setExpiresInDays: this.memo("setExpiresInDays:bound", [], () => this.setExpiresInDays.bind(this)), expiryMandatory: this.expiryMandatory, maxTtlDays: this.maxTtlDays }))
   }
 
-  /** A part of the screen still written in React (<Card Icon>: an icon size the element cannot take). */
+  /** A part of the screen still written in React (<TextField> min, max: no .kbview property). */
   get Part1() {
     return __parts.Part1
+  }
+
+  get show_scopes() {
+    return this.scopes.length > 0
+  }
+
+  /** `<ApiTokenScopePicker>`, rendered by a ReactHost. */
+  get ApiTokenScopePicker() {
+    return ApiTokenScopePicker
+  }
+
+  get api_token_scope_picker_props() {
+    return this.memo('api_token_scope_picker_props', [this.available, this.scopes, this.memo], () => ({ scopes: this.available, selected: this.scopes, onChange: this.memo("setScopes:bound", [], () => this.setScopes.bind(this)) }))
+  }
+
+  get show_error() {
+    return !!(this.error)
   }
 
   handleSubmit(e: React.FormEvent) {
@@ -105,9 +125,8 @@ export class CreateTokenForm extends ViewBase {
     this.create.mutate()
   }
 
-  /** `setName` of the TSX: a value, or an update of the previous one. */
-  setName(value: CreateTokenForm['name'] | ((prev: CreateTokenForm['name']) => CreateTokenForm['name'])) {
-    this.name = typeof value === 'function' ? (value as (prev: CreateTokenForm['name']) => CreateTokenForm['name'])(this.name) : value
+  panel_submit(_sender: unknown, args: EventArgs) {
+    return this.handleSubmit(args.native as never)
   }
 
   /** `setExpiresInDays` of the TSX: a value, or an update of the previous one. */

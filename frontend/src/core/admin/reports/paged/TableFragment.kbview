@@ -1,3 +1,23 @@
 <!-- TableFragment — converted from TableFragment.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<!-- TODO(views-migrate): <section data-report-card data-paged-block>: attribute(s) without a .kbview property -->
-<ReactHost x:Props="TableFragmentProps" Component="{Binding Part1}" Props="{Binding part1_props}"/>
+<Panel x:Props="TableFragmentProps"
+       HtmlTag="Section"
+       BackColor="Surface"
+       DataAttributes="report-card=table; paged-block"
+       Class="mt-4 rounded-xl border border-border p-4">
+  <Label HtmlTag="H2"
+         Text="{Binding h2_text}"
+         Overflow="Wrap"
+         ForeColor="TextPrimary"
+         InheritFontSize="true"
+         Class="mb-3 [font-size:var(--kb-text-heading)]"/>
+  <!-- TODO(views-migrate): <table> has no .kbview element yet -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  <Panel HtmlTag="P"
+         ForeColor="TextTertiary"
+         DataAttributes="paged-note"
+         Visible="{Binding show_last_item_note}"
+         Class="mt-3 [font-size:var(--kb-text-meta)]">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_item_note}"/>
+  </Panel>
+</Panel>

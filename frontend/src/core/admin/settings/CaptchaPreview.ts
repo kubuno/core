@@ -1,7 +1,7 @@
 /**
  * Code-behind of `CaptchaPreview.kbview` (converted from `CaptchaPreview.tsx` by @kubuno/views-migrate).
  */
-import { bind } from '@kubuno/views'
+import { bind, type MouseEventArgs } from '@kubuno/views'
 import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import { authApi, type CaptchaChallenge } from "../../api/auth"
@@ -50,18 +50,110 @@ export class CaptchaPreview extends ViewBase {
     return this.memo('c', [this.data], () => this.data)
   }
 
-  get part1_props() {
-    return this.memo('part1_props', [this.c, this.tr, this.isFetching], () => ({ c: this.c, t: this.tr, setNonce: this.setNonce.bind(this), isFetching: this.isFetching }))
+  get enabled_unless_is_fetching() {
+    return !(this.isFetching)
   }
 
-  /** A part of the screen still written in React (<div data-captcha-preview>: attribute(s) without a .kbview property). */
+  get part1_props() {
+    return this.memo('part1_props', [this.isFetching], () => ({ isFetching: this.isFetching }))
+  }
+
+  /** A part of the screen still written in React (an icon with a computed className). */
   get Part1() {
     return __parts.Part1
   }
 
-  /** `setNonce` of the TSX: a value, or an update of the previous one. */
-  setNonce(value: CaptchaPreview['nonce'] | ((prev: CaptchaPreview['nonce']) => CaptchaPreview['nonce'])) {
-    this.nonce = typeof value === 'function' ? (value as (prev: CaptchaPreview['nonce']) => CaptchaPreview['nonce'])(this.nonce) : value
+  get show_c() {
+    return !this.c
+  }
+
+  get show_not_c() {
+    return !(!this.c)
+  }
+
+  get show_c_type_text() {
+    if (!(!(!this.c))) return undefined as never
+    return this.c.type === 'text'
+  }
+
+  get show_not_c_type_text() {
+    if (!(!(!this.c))) return undefined as never
+    return !(this.c.type === 'text')
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.c, this.tr], () => {
+      if (!(!(!this.c)) || !(this.c.type === 'text')) return undefined as never
+      return ({ c: this.c, t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<img> has no .kbview element yet). */
+  get Part2() {
+    if (!(!(!this.c)) || !(this.c.type === 'text')) return undefined as never
+    return __parts.Part2
+  }
+
+  get show_c_type_math() {
+    if (!(!(!this.c)) || !(!(this.c.type === 'text'))) return undefined as never
+    return this.c.type === 'math'
+  }
+
+  get show_not_c_type_math() {
+    if (!(!(!this.c)) || !(!(this.c.type === 'text'))) return undefined as never
+    return !(this.c.type === 'math')
+  }
+
+  get text() {
+    if (!(!(!this.c)) || !(!(this.c.type === 'text')) || !(this.c.type === 'math')) return undefined as never
+    return this.c.prompt
+  }
+
+  get part3_props() {
+    return this.memo('part3_props', [this.c], () => {
+      if (!(!(!this.c)) || !(!(this.c.type === 'text')) || !(!(this.c.type === 'math'))) return undefined as never
+      return ({ c: this.c })
+    })
+  }
+
+  /** A part of the screen still written in React (<div> with a computed style). */
+  get Part3() {
+    if (!(!(!this.c)) || !(!(this.c.type === 'text')) || !(!(this.c.type === 'math'))) return undefined as never
+    return __parts.Part3
+  }
+
+  get visible() {
+    return this.memo('visible', [this.show_c_type_math, this.show_not_c_type_text, this.c], () => {
+      if (!(!(!this.c))) return undefined as never
+      return this.show_c_type_math && this.show_not_c_type_text
+    })
+  }
+
+  get visible2() {
+    return this.memo('visible2', [this.show_not_c_type_math, this.show_not_c_type_text, this.c], () => {
+      if (!(!(!this.c))) return undefined as never
+      return this.show_not_c_type_math && this.show_not_c_type_text
+    })
+  }
+
+  get visible3() {
+    return this.memo('visible3', [this.show_c_type_text, this.show_not_c], () => this.show_c_type_text && this.show_not_c)
+  }
+
+  get visible4() {
+    return this.memo('visible4', [this.visible, this.show_not_c], () => this.visible && this.show_not_c)
+  }
+
+  get visible5() {
+    return this.memo('visible5', [this.visible2, this.show_not_c], () => this.visible2 && this.show_not_c)
+  }
+
+  get div_data() {
+    return [((v: unknown) => (v === undefined || v === null ? '' : "captcha-preview=" + String(v)))(this.c?.type ?? 'loading')].filter(Boolean).join('; ')
+  }
+
+  panel_click(_sender: unknown, _args: MouseEventArgs) {
+    this.nonce = this.nonce + 1
   }
 
 }

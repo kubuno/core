@@ -1,0 +1,95 @@
+<!-- LabelsPage — converted from LabelsPage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack Direction="LeftToRight" Gap="0" BackColor="Surface" Class="h-full overflow-hidden">
+  <Panel HtmlTag="Aside" Class="w-72 flex-shrink-0 border-r border-border flex flex-col">
+    <Panel Class="px-4 pt-5 pb-3">
+      <Panel HtmlTag="H1" ForeColor="TextPrimary" Class="text-lg font-semibold flex items-center gap-2">
+        <!-- TODO(views-migrate): <LabelIcon> is no .kbview element (@ui#LabelIcon) -->
+        <ReactHost Component="{Binding LabelIcon}" Props="{Binding label_icon_props}"/>
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" Étiquettes"/>
+      </Panel>
+      <Label Text="Reliez des éléments de tous les modules, puis filtrez et retrouvez-les ici."
+             Role="Meta"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             Class="mt-1"/>
+    </Panel>
+    <Panel Class="px-3 pb-2">
+      <Stack Direction="LeftToRight" Gap="6" CrossAlign="Center">
+        <TextField Text="{Binding newName, Mode=TwoWay}"
+                   Placeholder="Nouvelle étiquette…"
+                   FieldClass="flex-1 min-w-0"
+                   OnKeyDown="text_field_key_down"/>
+        <Button Enabled="{Binding enabled_unless_new_name_trim}"
+                AccessibleName="Créer l'étiquette"
+                IconSize="15"
+                Icon="Plus"
+                OnClick="createLabel"/>
+      </Stack>
+    </Panel>
+    <Panel Class="flex-1 overflow-y-auto px-2 pb-4">
+      <Repeater ItemKey="key" ItemsSource="{Binding rows_labels}">
+        <!-- TODO(views-migrate): <LabelRow> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding LabelRow}" Props="{Binding label_row_props}"/>
+      </Repeater>
+      <Label Text="Créez votre première étiquette ci-dessus, puis attachez-la depuis n'importe quel module (menu « Étiquettes… »)."
+             Role="Meta"
+             TextAlign="TopCenter"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             Visible="{Binding show_labels}"
+             Class="px-3 py-8"/>
+    </Panel>
+  </Panel>
+  <Panel HtmlTag="Main" Class="flex-1 min-w-0 flex flex-col">
+    <Stack Direction="LeftToRight" CrossAlign="Center" Class="px-5 py-3 border-b border-border">
+      <Panel Class="flex-1 max-w-md">
+        <!-- TODO(views-migrate): <TextField LeftIcon>: an icon size the element cannot take -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      </Panel>
+      <!-- TODO(views-migrate): <Dropdown> height, width: no .kbview property -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+      <!-- TODO(views-migrate): a list whose item is not a single element -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+    </Stack>
+    <Panel Class="flex-1 overflow-y-auto p-5">
+      <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="Center" Visible="{Binding loading}" Class="py-16">
+        <Spinner/>
+      </Stack>
+      <Stack Gap="0" CrossAlign="Center" Justify="Center" Visible="{Binding visible}" Class="py-16 text-center">
+        <Icon Name="Package" Size="32" Class="text-text-tertiary mb-3"/>
+        <Label Text="Aucun élément étiqueté ne correspond." Overflow="Wrap" ForeColor="TextSecondary"/>
+        <Label Text="Ouvrez un fichier, une tâche, un contact… et choisissez « Étiquettes… » dans son menu."
+               Role="Meta"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               Class="mt-1"/>
+      </Stack>
+      <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start" WrapContents="true" Visible="{Binding visible2}">
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+          <Stack Gap="6">
+            <!-- TODO(views-migrate): <DataCardView> is no .kbview element (../registry/DataCardView#DataCardView) -->
+            <ReactHost Component="{Binding DataCardView}" Props="{Binding data_card_view_props}" Visible="{Binding show_item_envelope}"/>
+            <Panel AccessibleRole="PushButton"
+                   AutoSize="true"
+                   BackColor="Surface"
+                   Visible="{Binding show_not_item_envelope}"
+                   Class="w-72 rounded-xl border border-border px-3 py-2.5 text-left hover:border-strong"
+                   OnClick="panel_click">
+              <Label Text="{Binding p_text}" Role="Meta" FontWeight="SemiBold" ForeColor="TextPrimary"/>
+              <Label Text="{Binding p_text2}" Overflow="Wrap" ForeColor="TextTertiary" Class="text-[11px]"/>
+            </Panel>
+            <Stack Direction="LeftToRight" Gap="4" WrapContents="true" Class="px-1">
+              <!-- TODO(views-migrate): a list inside a list (nested Repeater) -->
+              <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+            </Stack>
+            <Label Text="{Binding p_text3}" ForeColor="TextTertiary" Visible="{Binding show_item_other_owners}" Class="px-1 text-[10px]"/>
+          </Stack>
+        </Repeater>
+      </Stack>
+    </Panel>
+  </Panel>
+  <!-- TODO(views-migrate): <LabelShareDialog> is no .kbview element (../components/LabelShareDialog#default) -->
+  <ReactHost Component="{Binding LabelShareDialog}" Props="{Binding label_share_dialog_props}" Visible="{Binding show_sharing}"/>
+  <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+  <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+</Stack>

@@ -160,9 +160,9 @@ export class HealthSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.items, this.open, this.defaultOpen, this.isLoading, this.isError, this.data], () => {
+    return this.memo('part1_props', [this.items, this.open, this.defaultOpen, this.memo, this.isLoading, this.isError, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data)) || !(!(this.data.checks.length === 0))) return undefined as never
-      return ({ items: this.items, open: this.open, defaultOpen: this.defaultOpen, setOpen: this.setOpen.bind(this) })
+      return ({ items: this.items, open: this.open, defaultOpen: this.defaultOpen, setOpen: this.memo("setOpen:bound", [], () => this.setOpen.bind(this)) })
     })
   }
 

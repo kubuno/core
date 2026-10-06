@@ -1,24 +1,22 @@
 <!-- HealthTopbarChip — converted from HealthTopbarChip.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<Panel Class="contents">
-  <Panel AccessibleRole="StatusBar" Visible="{Binding show_main}" Class="{Binding div_class}">
-    <!-- TODO(views-migrate): <Icon> is no .kbview element (a local or dynamic component) -->
-    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
-    <Label HtmlTag="Span" Text="{Binding span_text}" FontWeight="Medium" ForeColor="TextPrimary" InheritFontSize="true"/>
-    <Panel AccessibleRole="PushButton"
-           AutoSize="true"
-           ForeColor="Primary"
-           Class="shrink-0 whitespace-nowrap underline underline-offset-2 hover:no-underline"
-           OnClick="open">
-      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.hc_banner_open}"/>
-    </Panel>
-    <Panel AccessibleRole="PushButton"
-           AutoSize="true"
-           ToolTip="{Res admin.hc_banner_warning_body, Days={Binding hc_banner_warning_body_days}}"
-           AccessibleName="{Res admin.hc_banner_warning_body, Days={Binding hc_banner_warning_body_days}}"
-           Visible="{Binding show_is_critical}"
-           Class="ml-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
-           OnClick="panel_click">
-      <Icon Name="X" Size="14"/>
-    </Panel>
+<Panel AccessibleRole="StatusBar" Visible="{Binding show_main}" Class="{Binding div_class}">
+  <!-- TODO(views-migrate): <Icon> is no .kbview element (a local or dynamic component) -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  <Label HtmlTag="Span" Text="{Binding span_text}" FontWeight="Medium" ForeColor="TextPrimary" InheritFontSize="true"/>
+  <Panel AccessibleRole="PushButton"
+         AutoSize="true"
+         ForeColor="Primary"
+         Class="shrink-0 whitespace-nowrap underline underline-offset-2 hover:no-underline"
+         OnClick="open">
+    <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res admin.hc_banner_open}"/>
+  </Panel>
+  <Panel AccessibleRole="PushButton"
+         AutoSize="true"
+         ToolTip="{Res admin.hc_banner_warning_body, Days={Binding hc_banner_warning_body_days}}"
+         AccessibleName="{Res admin.hc_banner_warning_body, Days={Binding hc_banner_warning_body_days}}"
+         Visible="{Binding show_is_critical}"
+         Class="ml-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+         OnClick="panel_click">
+    <Icon Name="X" Size="14"/>
   </Panel>
 </Panel>

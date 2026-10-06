@@ -6,7 +6,7 @@ import { ChevronDown, ChevronRight } from "lucide-react"
 import { Checkbox } from "@ui"
 import type { ServicePicker } from './ServicePicker'
 
-export function Part1({ toggleFold, group, open, t }: { toggleFold: ServicePicker['toggleFold']; group: ServicePicker['rows_groups'][number]['group']; open: ServicePicker['rows_groups'][number]['open']; t: NonNullable<ServicePicker['tr']> }) {
+export function Part1({ toggleFold, group, open, t }: { toggleFold: ServicePicker['toggleFold']; group: NonNullable<ServicePicker['rows_groups']>[number]['group']; open: NonNullable<ServicePicker['rows_groups']>[number]['open']; t: NonNullable<ServicePicker['tr']> }) {
   return (
     <button
                         type="button"
@@ -21,7 +21,7 @@ export function Part1({ toggleFold, group, open, t }: { toggleFold: ServicePicke
   )
 }
 
-export function Part2({ group, selected, toggle }: { group: ServicePicker['rows_groups'][number]['group']; selected: NonNullable<ServicePicker['props']['selected']>; toggle: ServicePicker['toggle'] }) {
+export function Part2({ group, selected, toggle }: { group: NonNullable<ServicePicker['rows_groups']>[number]['group']; selected: NonNullable<ServicePicker['props']['selected']>; toggle: ServicePicker['toggle'] }) {
   return (
     <>{group.items.map(service => (
                         <Checkbox

@@ -128,9 +128,9 @@ export class QuotaPolicyCard extends ViewBase {
   }
 
   get quota_field_props() {
-    return this.memo('quota_field_props', [this.tr, this.editing, this.amount, this.unit], () => {
+    return this.memo('quota_field_props', [this.tr, this.editing, this.amount, this.unit, this.memo], () => {
       if (!(this.editing)) return undefined as never
-      return ({ label: this.tr('admin.sto_policy_field', { name: this.editing.name }), amount: this.amount, unit: this.unit, onAmount: this.setAmount.bind(this), onUnit: this.setUnit.bind(this), autoFocus: true })
+      return ({ label: this.tr('admin.sto_policy_field', { name: this.editing.name }), amount: this.amount, unit: this.unit, onAmount: this.memo("setAmount:bound", [], () => this.setAmount.bind(this)), onUnit: this.memo("setUnit:bound", [], () => this.setUnit.bind(this)), autoFocus: true })
     })
   }
 
@@ -146,7 +146,7 @@ export class QuotaPolicyCard extends ViewBase {
   }
 
   get org_unit_picker_props() {
-    return this.memo('org_unit_picker_props', [this.tr, this.policy, this.picking, this.units], () => {
+    return this.memo('org_unit_picker_props', [this.tr, this.policy, this.amount, this.unit, this.error, this.editing, this.picking, this.units], () => {
       if (!(this.picking)) return undefined as never
       const units = this.units
       return ({ title: this.tr('admin.sto_policy_pick_unit'), currentId: null, onSelect: id => {

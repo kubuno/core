@@ -4,6 +4,7 @@
 import { useTranslation } from "react-i18next"
 import { type TabDef } from "@ui"
 import { usePrivileges } from "../../../authz/usePrivileges"
+import type { AdminSectionProps } from "../registry"
 import { adminUrlWith } from "../../adminAction"
 import { HOLIDAYS_MANAGE } from "./privileges"
 import CalendarsTab from "./CalendarsTab"
@@ -15,6 +16,8 @@ import { ViewBase } from './HolidaysSection.kbview'
 import * as __parts from './HolidaysSection.parts'
 
 type Pane = 'calendars' | 'units'
+
+export type { AdminSectionProps }
 
 export class HolidaysSection extends ViewBase {
   tr!: HolidaysSectionStores['t']
@@ -70,9 +73,9 @@ export class HolidaysSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.tabs, this.pane, this.calendarId], () => {
+    return this.memo('part1_props', [this.tr, this.tabs, this.pane, this.memo, this.props, this.calendarId], () => {
       if (!(!this.calendarId)) return undefined as never
-      return ({ t: this.tr, tabs: this.tabs, pane: this.pane, go: this.go.bind(this) })
+      return ({ t: this.tr, tabs: this.tabs, pane: this.pane, go: this.memo("go:bound", [], () => this.go.bind(this)) })
     })
   }
 
@@ -97,7 +100,7 @@ export class HolidaysSection extends ViewBase {
   }
 
   get calendar_detail_props() {
-    return this.memo('calendar_detail_props', [this.calendarId, this.canManage], () => {
+    return this.memo('calendar_detail_props', [this.calendarId, this.canManage, this.props], () => {
       if (!(this.calendarId)) return undefined as never
       return ({ calendarId: this.calendarId, canManage: this.canManage, onOpenCalendar: id => this.go('calendars', id) } as React.ComponentProps<typeof CalendarDetail>)
     })
@@ -133,7 +136,7 @@ export class HolidaysSection extends ViewBase {
   }
 
   get calendars_tab_props() {
-    return this.memo('calendars_tab_props', [this.canManage, this.calendarId, this.pane], () => {
+    return this.memo('calendars_tab_props', [this.canManage, this.props, this.calendarId, this.pane], () => {
       if (!(!(this.calendarId)) || !(!(this.pane === 'units'))) return undefined as never
       return ({ canManage: this.canManage, onOpen: id => this.go('calendars', id) } as React.ComponentProps<typeof CalendarsTab>)
     })

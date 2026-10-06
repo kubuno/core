@@ -55,12 +55,13 @@ export class ScopeTree extends ViewBase {
   /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
   useHooks() {
     const units = this.units
+    const root = this.root
     const openPath = useMemo(() => {
       const ids = new Set<string>()
-      if (this.root) ids.add(this.root.id)
+      if (root) ids.add(root.id)
       for (const u of orgUnitPath(units, this.props.scope.type === 'org_unit' ? this.props.scope.id : null)) ids.add(u.id)
       return ids
-    }, [units, this.root, this.props.scope.type, this.props.scope.id])
+    }, [units, root, this.props.scope.type, this.props.scope.id])
     this.publish({ openPath })
     return { openPath }
   }
@@ -97,11 +98,15 @@ export class ScopeTree extends ViewBase {
   }
 
   get results(): OrgUnit[] {
-    return this.memo('results', [this.filtering, this.units, this.needle], () => this.filtering
+    return this.memo('results', [this.units, this.needle], () => {
+      const needle = this.needle
+      const filtering = needle.trim().length > 0
+      return filtering
     ? this.units
-        .filter(u => foldIncludes(`${u.name} ${orgUnitPath(this.units, u.id).map(p => p.name).join(' ')}`, this.needle.trim()))
+        .filter(u => foldIncludes(`${u.name} ${orgUnitPath(this.units, u.id).map(p => p.name).join(' ')}`, needle.trim()))
         .sort((a, b) => a.name.localeCompare(b.name))
-    : [])
+    : []
+    })
   }
 
   get isInstance(): boolean {
@@ -132,9 +137,9 @@ export class ScopeTree extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.needle, this.tr, this.units], () => {
+    return this.memo('part1_props', [this.needle, this.memo, this.tr, this.units], () => {
       if (!(this.units.length > FILTER_THRESHOLD)) return undefined as never
-      return ({ needle: this.needle, setNeedle: this.setNeedle.bind(this), t: this.tr })
+      return ({ needle: this.needle, setNeedle: this.memo("setNeedle:bound", [], () => this.setNeedle.bind(this)), t: this.tr })
     })
   }
 
@@ -186,9 +191,9 @@ export class ScopeTree extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.rows, this.props, this.tr, this.filtering], () => {
+    return this.memo('part2_props', [this.rows, this.props, this.memo, this.expanded, this.openPath, this.setExpanded, this.tr, this.filtering], () => {
       if (!(!(this.filtering))) return undefined as never
-      return ({ rows: this.rows, scope: this.props.scope, isOpen: this.isOpen.bind(this), toggle: this.toggle.bind(this), onChange: this.props.onChange, rowClass: this.rowClass.bind(this), overriding: this.props.overriding, t: this.tr })
+      return ({ rows: this.rows, scope: this.props.scope, isOpen: this.memo("isOpen:bound", [], () => this.isOpen.bind(this)), toggle: this.memo("toggle:bound", [], () => this.toggle.bind(this)), onChange: this.props.onChange, rowClass: this.memo("rowClass:bound", [], () => this.rowClass.bind(this)), overriding: this.props.overriding, t: this.tr })
     })
   }
 

@@ -32,7 +32,7 @@ export class UsersPanel extends ViewBase {
   @bind accessor pendingReset = false
   tr!: UsersPanelStores['t']
   can!: UsersPanelStores['can']
-  params!: UsersPanelStores['params']
+  params!: URLSearchParams
   navigate!: UsersPanelStores['navigate']
   search!: UsersPanelStores['search']
   setSearch!: UsersPanelStores['setSearch']
@@ -40,11 +40,11 @@ export class UsersPanel extends ViewBase {
   toast!: UsersPanelStores['toast']
   confirm!: UsersPanelStores['confirm']
   confirmState!: UsersPanelStores['confirmState']
-  handleConfirm!: UsersPanelStores['handleConfirm']
-  handleCancel!: UsersPanelStores['handleCancel']
-  scope!: UsersPanelStores['scope']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  scope!: OrgUnitScope
   setScope!: UsersPanelStores['setScope']
-  selected!: UsersPanelStores['selected']
+  selected!: Set<string>
   setSelected!: UsersPanelStores['setSelected']
   units!: UsersPanelStores['units']
   data!: UsersPanelHooks['data']
@@ -101,6 +101,7 @@ export class UsersPanel extends ViewBase {
           },
         }).then((r) => r.data),
     })
+    this.publish({ data })
     const bulkMove = useMutation({
       mutationFn: (orgUnitId: string) =>
         api.post<{ moved: number }>('/admin/users/bulk/org-unit', {
@@ -117,6 +118,7 @@ export class UsersPanel extends ViewBase {
       },
       onError: (err) => toast.error(errMessage(err) ?? t('admin.update_error')),
     })
+    this.publish({ bulkMove })
     return { data, bulkMove }
   }
 
@@ -128,23 +130,23 @@ export class UsersPanel extends ViewBase {
     this.publish({ data: h.data, bulkMove: h.bulkMove })
   }
 
-  get limit() {
+  get limit(): 20 {
     return 20
   }
 
-  get scopedUnits() {
+  get scopedUnits(): string[] {
     return this.memo('scopedUnits', [this.scope], () => this.scope.mode === 'selected' ? this.scope.unitIds : [])
   }
 
-  get pageIds() {
+  get pageIds(): string[] {
     return this.memo('pageIds', [this.data], () => (this.data?.users ?? []).map(u => u.id))
   }
 
-  get allOnPage() {
+  get allOnPage(): boolean {
     return this.pageIds.length > 0 && this.pageIds.every(id => this.selected.has(id))
   }
 
-  get canBulk() {
+  get canBulk(): boolean {
     return this.can(PRIV.USERS_UPDATE) && this.can(PRIV.ORG_UNITS_READ)
   }
 
@@ -180,9 +182,9 @@ export class UsersPanel extends ViewBase {
   }
 
   get org_unit_scope_panel_props() {
-    return this.memo('org_unit_scope_panel_props', [this.units, this.scope, this.setScope, this.page, this.panelCollapsed, this.can], () => {
+    return this.memo('org_unit_scope_panel_props', [this.units, this.scope, this.setScope, this.page, this.panelCollapsed, this.memo, this.can], () => {
       if (!(this.can(PRIV.ORG_UNITS_READ))) return undefined as never
-      return ({ units: this.units ?? [], value: this.scope, onChange: next => { this.setScope(next); this.page = 0 }, collapsed: this.panelCollapsed, onCollapsedChange: this.setPanelCollapsed.bind(this) } as React.ComponentProps<typeof OrgUnitScopePanel>)
+      return ({ units: this.units ?? [], value: this.scope, onChange: next => { this.setScope(next); this.page = 0 }, collapsed: this.panelCollapsed, onCollapsedChange: this.memo("setPanelCollapsed:bound", [], () => this.setPanelCollapsed.bind(this)) } as React.ComponentProps<typeof OrgUnitScopePanel>)
     })
   }
 
@@ -215,7 +217,7 @@ export class UsersPanel extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.canBulk, this.allOnPage, this.tr, this.can, this.data, this.selected, this.ROLE_COLORS, this.toggleActive], () => ({ canBulk: this.canBulk, allOnPage: this.allOnPage, togglePage: this.togglePage.bind(this), t: this.tr, can: this.can, data: this.data, openUser: this.openUser.bind(this), selected: this.selected, toggleOne: this.toggleOne.bind(this), unitName: this.unitName.bind(this), ROLE_COLORS: this.ROLE_COLORS, toggleActive: this.toggleActive }))
+    return this.memo('part1_props', [this.canBulk, this.allOnPage, this.memo, this.setSelected, this.pageIds, this.tr, this.can, this.data, this.pendingReset, this.navigate, this.selected, this.units, this.ROLE_COLORS, this.toggleActive], () => ({ canBulk: this.canBulk, allOnPage: this.allOnPage, togglePage: this.memo("togglePage:bound", [], () => this.togglePage.bind(this)), t: this.tr, can: this.can, data: this.data, openUser: this.memo("openUser:bound", [], () => this.openUser.bind(this)), selected: this.selected, toggleOne: this.memo("toggleOne:bound", [], () => this.toggleOne.bind(this)), unitName: this.memo("unitName:bound", [], () => this.unitName.bind(this)), ROLE_COLORS: this.ROLE_COLORS, toggleActive: this.toggleActive }))
   }
 
   /** A part of the screen still written in React (<table> has no .kbview element yet). */
@@ -251,9 +253,9 @@ export class UsersPanel extends ViewBase {
   }
 
   get org_unit_picker_props() {
-    return this.memo('org_unit_picker_props', [this.tr, this.selected, this.bulkPicker], () => {
+    return this.memo('org_unit_picker_props', [this.tr, this.selected, this.memo, this.confirm, this.units, this.bulkMove, this.bulkPicker], () => {
       if (!(this.bulkPicker)) return undefined as never
-      return ({ title: this.tr('admin.bulk_ou_title', { count: this.selected.size }), currentId: null, onSelect: this.askBulkMove.bind(this), onClose: () => this.bulkPicker = false } as React.ComponentProps<typeof OrgUnitPicker>)
+      return ({ title: this.tr('admin.bulk_ou_title', { count: this.selected.size }), currentId: null, onSelect: this.memo("askBulkMove:bound", [], () => this.askBulkMove.bind(this)), onClose: () => this.bulkPicker = false } as React.ComponentProps<typeof OrgUnitPicker>)
     })
   }
 

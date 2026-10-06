@@ -1,0 +1,34 @@
+<!-- Sidebar — converted from Sidebar.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel HtmlTag="Aside" Class="{Binding aside_class}">
+  <Panel Visible="{Binding show_active_config}" Class="px-3 mb-1">
+    <!-- TODO(views-migrate): <NavLink> is no .kbview element (react-router-dom#NavLink) -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Panel>
+  <Stack Gap="0" Visible="{Binding visible2}" Class="flex-1 min-h-0 overflow-y-auto">
+    <!-- TODO(views-migrate): <activeConfig.SidebarBody> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+  </Stack>
+  <Panel Visible="{Binding visible3}" Class="px-3 mb-3">
+    <!-- TODO(views-migrate): <DropdownMenu.Root> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+  </Panel>
+  <Panel HtmlTag="Nav" Visible="{Binding visible4}" Class="flex-1 px-3 space-y-0.5">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_module_items}">
+      <!-- TODO(views-migrate): <SidebarLink> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding SidebarLink}" Props="{Binding sidebar_link_props}"/>
+    </Repeater>
+  </Panel>
+  <Panel HtmlTag="Nav" Visible="{Binding show_not_active_config}" Class="flex-1 px-3 space-y-0.5">
+    <!-- TODO(views-migrate): <SidebarLink> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding SidebarLink2}" Props="{Binding sidebar_link_props}"/>
+    <Panel Visible="{Binding show_module_root_items}" Class="mx-0 my-2 h-px bg-border"/>
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_module_root_items}">
+      <!-- TODO(views-migrate): <SidebarLink> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding SidebarLink2}" Props="{Binding sidebar_link_props}"/>
+    </Repeater>
+  </Panel>
+  <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+  <ReactHost Component="{Binding Slot}" Props="{Binding slot_props}"/>
+  <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+  <ReactHost Component="{Binding Slot}" Props="{Binding slot_props2}"/>
+</Panel>

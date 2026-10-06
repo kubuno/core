@@ -1,0 +1,32 @@
+<!-- SpeechToTextPanel — converted from SpeechToTextPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-12">
+    <Spinner/>
+  </Stack>
+  <Label Text="{Res admin.stt_load_error}" Overflow="Wrap" ForeColor="Danger" Visible="{Binding show_case_2}" Class="py-8"/>
+  <Panel Visible="{Binding show_main}">
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" Class="mb-4 p-4 bg-primary-light/50 rounded-xl">
+      <Icon Name="Mic" Class="text-primary mt-0.5 shrink-0"/>
+      <Label Text="{Res admin.stt_intro}" Overflow="Wrap" ForeColor="TextSecondary"/>
+    </Stack>
+    <Stack Direction="LeftToRight"
+           Gap="0"
+           CrossAlign="Center"
+           Justify="SpaceBetween"
+           Class="mb-3 p-4 bg-white rounded-xl border border-border">
+      <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center">
+        <!-- TODO(views-migrate): <span> with a computed style -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <Panel>
+          <Label Text="{Res admin.stt_enable_title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary"/>
+          <Label Text="{Binding p_text}" Overflow="Wrap" ForeColor="TextTertiary"/>
+        </Panel>
+      </Stack>
+      <Switch On="{Binding enabled}" Enabled="{Binding enabled_unless_set_enabled_is_pending}" OnCheckedChanged="switch_checked_changed"/>
+    </Stack>
+    <!-- TODO(views-migrate): <GlobalSettingsCard> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding GlobalSettingsCard}" Props="{Binding global_settings_card_props}"/>
+    <!-- TODO(views-migrate): <div aria-disabled>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+  </Panel>
+</Panel>

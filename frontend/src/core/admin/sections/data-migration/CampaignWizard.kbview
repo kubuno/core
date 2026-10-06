@@ -1,0 +1,190 @@
+<!-- CampaignWizard — converted from CampaignWizard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="CampaignWizardProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow ConfirmText="{Binding confirm_text}"
+                  ConfirmEnabled="{Binding enabled_unless_last_can_submit_next_disabled}"
+                  ConfirmBusy="{Binding confirm_busy}"
+                  CancelText="{Res admin.migr_cancel}"
+                  HostStrings="true"
+                  Title="{Res admin.migr_new_title}"
+                  Width="860"
+                  Modal="true"
+                  OnConfirm="floating_window_confirm"
+                  OnClose="floating_window_close">
+    <Stack Gap="16" Class="p-4">
+      <!-- TODO(views-migrate): <Stepper> steps: no .kbview property -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <Stack Gap="12" Visible="{Binding show_step_service}">
+        <Label Text="{Res admin.migr_service_intro}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-body)]"/>
+        <Repeater ItemKey="key" ItemsSource="{Binding rows_services}">
+          <Panel HtmlTag="Label" Class="{Binding label_class}">
+            <!-- TODO(views-migrate): <input> has no .kbview element yet -->
+            <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+            <Panel HtmlTag="Span" Class="min-w-0">
+              <Label HtmlTag="Span"
+                     Text="{Binding span_text}"
+                     FontWeight="Medium"
+                     Overflow="Wrap"
+                     ForeColor="TextPrimary"
+                     InheritFontSize="true"
+                     Class="block [font-size:var(--kb-text-body)]"/>
+              <Label HtmlTag="Span"
+                     Text="{Binding span_text2}"
+                     Overflow="Wrap"
+                     ForeColor="TextSecondary"
+                     InheritFontSize="true"
+                     Class="block [font-size:var(--kb-text-meta)]"/>
+            </Panel>
+          </Panel>
+        </Repeater>
+        <Callout Variant="Warning" Body="{Res admin.migr_no_service}" Visible="{Binding show_usable}"/>
+      </Stack>
+      <Stack Gap="16" Visible="{Binding show_step_source}">
+        <!-- TODO(views-migrate): <TextField> autoFocus: no .kbview property -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" WrapContents="true">
+          <Panel Class="min-w-56 flex-1">
+            <TextField Text="{Binding host, Mode=TwoWay}" Label="{Res admin.migr_field_host}" MaxLength="255" Placeholder="imap.exemple.fr"/>
+          </Panel>
+          <Panel Class="w-28">
+            <!-- TODO(views-migrate): <TextField> inputMode: no .kbview property -->
+            <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+          </Panel>
+          <Stack Gap="4" Class="w-48">
+            <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+            <ComboBox HostStrings="true"
+                      SelectedValue="{Binding security}"
+                      ItemsSource="{Binding items_source}"
+                      OnSelectedValueChanged="combo_box_selected_value_changed"/>
+          </Stack>
+        </Stack>
+        <Callout Body="{Res admin.migr_source_note}"/>
+        <Callout Variant="Warning" Body="{Res admin.migr_security_none_warn}" Visible="{Binding show_security_none}"/>
+      </Stack>
+      <Stack Gap="16" Visible="{Binding show_step_mapping}">
+        <Label Text="{Res admin.migr_mapping_intro}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-body)]"/>
+        <Stack>
+          <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+          <!-- TODO(views-migrate): <textarea> has no .kbview element yet -->
+          <ReactHost Component="{Binding Part7}" Props="{Binding part7_props}"/>
+          <Stack Direction="LeftToRight" CrossAlign="Center">
+            <Button Variant="Secondary"
+                    Size="Sm"
+                    Enabled="{Binding enabled_unless_bulk_trim}"
+                    Text="{Res admin.migr_bulk_apply}"
+                    OnClick="applyBulk"/>
+            <Button Variant="Ghost" Size="Sm" Text="{Res admin.migr_add_one}" OnClick="button_click"/>
+            <Label HtmlTag="Span"
+                   Text="{Res admin.migr_bulk_hint}"
+                   Overflow="Wrap"
+                   ForeColor="TextTertiary"
+                   InheritFontSize="true"
+                   Class="ms-auto [font-size:var(--kb-text-meta)]"/>
+          </Stack>
+        </Stack>
+        <Stack Visible="{Binding show_drafts}" Class="max-h-72 overflow-y-auto rounded border border-border p-2">
+          <Repeater ItemKey="key" ItemsSource="{Binding rows_drafts}">
+            <Stack Direction="LeftToRight" CrossAlign="End" WrapContents="true">
+              <Panel Class="min-w-48 flex-1">
+                <TextField Label="{Res admin.migr_col_source}" Text="{Binding d.login}" OnTextChanged="text_field_text_changed"/>
+              </Panel>
+              <Panel Class="w-40">
+                <TextField Label="{Res admin.migr_col_password}"
+                           InputType="Password"
+                           Text="{Binding d.password}"
+                           OnTextChanged="text_field_text_changed2"/>
+              </Panel>
+              <Stack Gap="4" Class="min-w-56 flex-1">
+                <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (a local or dynamic component) -->
+                <ReactHost Component="{Binding Part8}" Props="{Binding part8_props}"/>
+                <ComboBox HostStrings="true"
+                          SelectedValue="{Binding selected_value}"
+                          ItemsSource="{Binding userOptions}"
+                          Placeholder="{Res admin.migr_col_target_ph}"
+                          OnSelectedValueChanged="combo_box_selected_value_changed2"/>
+              </Stack>
+              <Panel HtmlTag="Span" Class="flex items-center gap-1 pb-2">
+                <Icon Name="Check" Size="16" Visible="{Binding complete}" Class="text-success"/>
+                <Icon Name="AlertTriangle" Size="16" Visible="{Binding show_not_complete}" Class="text-warning"/>
+                <Panel AccessibleRole="PushButton"
+                       AutoSize="true"
+                       AccessibleName="{Res admin.migr_remove_row}"
+                       ToolTip="{Res admin.migr_remove_row}"
+                       Class="rounded p-1 text-text-tertiary transition-colors hover:bg-surface-2 hover:text-danger"
+                       OnClick="panel_click">
+                  <Icon Name="Trash2" Size="14"/>
+                </Panel>
+              </Panel>
+            </Stack>
+          </Repeater>
+        </Stack>
+        <Stack Direction="LeftToRight" Gap="12" CrossAlign="Center" WrapContents="true">
+          <Badge Variant="{Binding variant}" Text="{Res admin.migr_ready_count, Count={Binding ready.length}}"/>
+          <Panel HtmlTag="Span"
+                 ForeColor="Warning"
+                 Visible="{Binding show_unresolved}"
+                 Class="flex items-center gap-1.5 [font-size:var(--kb-text-meta)]">
+            <Icon Name="AlertTriangle" Size="14"/>
+            <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+          </Panel>
+        </Stack>
+      </Stack>
+      <Stack Gap="16" Visible="{Binding show_step_range}">
+        <Stack Direction="LeftToRight" Gap="12" CrossAlign="End" WrapContents="true">
+          <Panel Class="w-52">
+            <!-- TODO(views-migrate): <TextField type="date">: no .kbview value -->
+            <ReactHost Component="{Binding Part9}" Props="{Binding part9_props}"/>
+          </Panel>
+          <Button Variant="Secondary"
+                  Enabled="{Binding enabled_unless_probe_is_pending}"
+                  Text="{Binding button_text}"
+                  OnClick="button_click2"/>
+        </Stack>
+        <Callout Variant="Warning" Body="{Binding probeMsg}" Visible="{Binding show_probe_msg}"/>
+        <Stack Visible="{Binding show_folders_folders}">
+          <!-- TODO(views-migrate): <FieldLabel> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part10}" Props="{Binding part10_props}"/>
+          <Stack Direction="LeftToRight" WrapContents="true">
+            <Repeater ItemKey="key" ItemsSource="{Binding rows_folders}">
+              <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click2">
+                <Icon Name="X" Size="12" Visible="{Binding off}"/>
+                <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding text}"/>
+                <Label HtmlTag="Span" Text="{Binding f.messages}" Overflow="Wrap" ForeColor="TextTertiary" InheritFontSize="true"/>
+              </Panel>
+            </Repeater>
+          </Stack>
+          <Label HtmlTag="Span"
+                 Text="{Res admin.migr_exclude_hint}"
+                 Overflow="Wrap"
+                 ForeColor="TextTertiary"
+                 InheritFontSize="true"
+                 Class="[font-size:var(--kb-text-meta)]"/>
+        </Stack>
+        <Callout Body="{Res admin.migr_probe_intro}" Visible="{Binding show_folders}"/>
+        <Panel BackColor="Surface1" Class="rounded border border-border px-3 py-2">
+          <Switch On="{Binding startNow, Mode=TwoWay}" Label="{Res admin.migr_start_now}" Description="{Res admin.migr_start_now_desc}"/>
+        </Panel>
+        <Callout Body="{Res admin.migr_summary, Accounts={Binding ready.length}, Host={Binding migr_summary_host}}"/>
+      </Stack>
+      <Label Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             InheritFontSize="true"
+             AccessibleRole="Alert"
+             Visible="{Binding show_error}"
+             Class="[font-size:var(--kb-text-body)]"/>
+      <Panel Visible="{Binding show_index}">
+        <Button Variant="Ghost" Size="Sm" Text="{Res admin.migr_back}" OnClick="back"/>
+      </Panel>
+    </Stack>
+  </FloatingWindow>
+</Panel>

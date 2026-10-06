@@ -73,7 +73,7 @@ export class ConditionTester extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.text, this.suggestion, this.tr], () => ({ text: this.text, setText: this.setText.bind(this), suggestion: this.suggestion, t: this.tr }))
+    return this.memo('part1_props', [this.text, this.memo, this.suggestion, this.tr], () => ({ text: this.text, setText: this.memo("setText:bound", [], () => this.setText.bind(this)), suggestion: this.suggestion, t: this.tr }))
   }
 
   /** A part of the screen still written in React (<TextArea> rows, spellCheck: no .kbview property). */

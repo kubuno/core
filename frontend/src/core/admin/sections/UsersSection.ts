@@ -4,8 +4,11 @@
 import { useTranslation } from "react-i18next"
 import UsersPanel from "../UsersPanel"
 import UserDetailSection from "./user-detail/UserDetailSection"
+import type { AdminSectionProps } from "./registry"
 
 import { ViewBase } from './UsersSection.kbview'
+
+export type { AdminSectionProps }
 
 export class UsersSection extends ViewBase {
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
@@ -19,7 +22,7 @@ export class UsersSection extends ViewBase {
     this.useStores()
   }
 
-  get userId() {
+  get userId(): string | null {
     return this.props.params.get('user')
   }
 

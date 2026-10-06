@@ -79,7 +79,7 @@ export class RoleCreateDialog extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.name, this.slugTouched], () => ({ t: this.tr, name: this.name, setName: this.setName.bind(this), slugTouched: this.slugTouched, setSlug: this.setSlug.bind(this) }))
+    return this.memo('part1_props', [this.tr, this.name, this.memo, this.slugTouched, this.slug], () => ({ t: this.tr, name: this.name, setName: this.memo("setName:bound", [], () => this.setName.bind(this)), slugTouched: this.slugTouched, setSlug: this.memo("setSlug:bound", [], () => this.setSlug.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<TextField> label: an object value for a text property). */
@@ -88,7 +88,7 @@ export class RoleCreateDialog extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.tr, this.description], () => ({ t: this.tr, description: this.description, setDescription: this.setDescription.bind(this) }))
+    return this.memo('part2_props', [this.tr, this.description, this.memo], () => ({ t: this.tr, description: this.description, setDescription: this.memo("setDescription:bound", [], () => this.setDescription.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<TextArea> rows: no .kbview property). */
@@ -128,7 +128,7 @@ export class RoleCreateDialog extends ViewBase {
   }
 
   get privilege_list_props() {
-    return this.memo('privilege_list_props', [this.keys, this.props, this.selected], () => ({ keys: this.keys, catalogue: this.props.catalogue, selected: this.selected, onToggle: this.toggle.bind(this) }))
+    return this.memo('privilege_list_props', [this.keys, this.props, this.selected, this.memo, this.setSelected], () => ({ keys: this.keys, catalogue: this.props.catalogue, selected: this.selected, onToggle: this.memo("toggle:bound", [], () => this.toggle.bind(this)) }))
   }
 
   get show_error() {

@@ -117,17 +117,37 @@ export class ReportSummary extends ViewBase {
     return !(this.facts.length === 0)
   }
 
+  get show_model_snapshot_model() {
+    if (!(!(this.facts.length === 0))) return undefined as never
+    return !this.props.model.snapshot && this.props.model.delta !== null
+  }
+
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.props, this.tone, this.Arrow, this.i18n, this.facts], () => {
-      if (!(!(this.facts.length === 0))) return undefined as never
-      return ({ t: this.tr, model: this.props.model, tone: this.tone, Arrow: this.Arrow, model_delta: this.props.model?.delta, i18n: this.i18n, facts: this.facts })
+    return this.memo('part1_props', [this.tone, this.Arrow, this.props, this.i18n, this.facts], () => {
+      if (!(!(this.facts.length === 0)) || !(!this.props.model.snapshot && this.props.model.delta !== null)) return undefined as never
+      return ({ tone: this.tone, Arrow: this.Arrow, model_delta: this.props.model?.delta, i18n: this.i18n })
     })
   }
 
-  /** A part of the screen still written in React (<section data-report-card data-report-summary>: attribute(s) without a .kbview property). */
+  /** A part of the screen still written in React (<p> with a computed style). */
   get Part1() {
-    if (!(!(this.facts.length === 0))) return undefined as never
+    if (!(!(this.facts.length === 0)) || !(!this.props.model.snapshot && this.props.model.delta !== null)) return undefined as never
     return __parts.Part1
+  }
+
+  /** A part of the screen still written in React (<span data-tone>: data attributes on a text). */
+  get Part2() {
+    return __parts.Part2
+  }
+
+  /** The rows of the Repeater over `facts`. */
+  get rows_facts() {
+    return this.memo('rows_facts', [this.facts], () => {
+      if (!(!(this.facts.length === 0))) return undefined as never
+      return this.facts.map((f, i) => {
+      return { f, i, key: i }
+    })
+    })
   }
 
   pct(v: number) {

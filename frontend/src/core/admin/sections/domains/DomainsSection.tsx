@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom"
 import { AlertTriangle, ShieldCheck } from "lucide-react"
 import { Badge, Button, type DataTableColumn, type DataTableRowAction } from "@ui"
 import { usePrivileges } from "../../../authz/usePrivileges"
+import type { AdminSectionProps } from "../registry"
 import { adminUrl, adminUrlWith } from "../../adminAction"
 import { DOMAINS_MANAGE } from "./privileges"
 import AddDomainDialog from "./AddDomainDialog"
@@ -15,6 +16,8 @@ import { errorMessage, useDomains, useVerifyDomain, type Domain } from "./api"
 
 import { ViewBase } from './DomainsSection.kbview'
 import * as __parts from './DomainsSection.parts'
+
+export type { AdminSectionProps }
 
 export class DomainsSection extends ViewBase {
   @bind accessor adding = false
@@ -153,7 +156,7 @@ export class DomainsSection extends ViewBase {
   }
 
   get rowActions(): DataTableRowAction<Domain>[] {
-    return this.memo('rowActions', [this.tr, this.selected], () => {
+    return this.memo('rowActions', [this.tr, this.props, this.selected], () => {
       if (!(!(this.selected))) return undefined as never
       return [
     { id: 'open', label: this.tr('admin.dom_action_open'), onClick: r => this.open(r.id) },
@@ -178,7 +181,7 @@ export class DomainsSection extends ViewBase {
   }
 
   get domain_detail_props() {
-    return this.memo('domain_detail_props', [this.selected, this.canManage], () => {
+    return this.memo('domain_detail_props', [this.selected, this.canManage, this.props], () => {
       if (!(this.selected)) return undefined as never
       return ({ domainId: this.selected, canManage: this.canManage, onGone: () => this.open(null) } as React.ComponentProps<typeof DomainDetail>)
     })
@@ -233,9 +236,9 @@ export class DomainsSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.selected, this.overview, this.canManage], () => {
+    return this.memo('part1_props', [this.memo, this.adding, this.tr, this.selected, this.overview, this.canManage], () => {
       if (!(!(this.selected)) || !(this.overview) || !(this.canManage)) return undefined as never
-      return ({ setAdding: this.setAdding.bind(this), t: this.tr })
+      return ({ setAdding: this.memo("setAdding:bound", [], () => this.setAdding.bind(this)), t: this.tr })
     })
   }
 
@@ -266,9 +269,9 @@ export class DomainsSection extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.tr, this.domains, this.columns, this.isLoading, this.rowActions, this.isError, this.refetch, this.canManage, this.selected], () => {
+    return this.memo('part2_props', [this.tr, this.domains, this.columns, this.isLoading, this.rowActions, this.memo, this.props, this.isError, this.refetch, this.canManage, this.adding, this.selected], () => {
       if (!(!(this.selected))) return undefined as never
-      return ({ t: this.tr, domains: this.domains, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, open: this.open.bind(this), isError: this.isError, refetch: this.refetch, canManage: this.canManage, setAdding: this.setAdding.bind(this) })
+      return ({ t: this.tr, domains: this.domains, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, open: this.memo("open:bound", [], () => this.open.bind(this)), isError: this.isError, refetch: this.refetch, canManage: this.canManage, setAdding: this.memo("setAdding:bound", [], () => this.setAdding.bind(this)) })
     })
   }
 

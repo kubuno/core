@@ -114,7 +114,7 @@ export class FeaturesTab extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.data, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.props], () => ({ data: this.data, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, canManage: this.props.canManage, setEditing: this.setEditing.bind(this) }))
+    return this.memo('part1_props', [this.data, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.props, this.memo, this.editing], () => ({ data: this.data, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, canManage: this.props.canManage, setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<DataTable> columns, rowKey, onRetry, rowActions, onRowClick, t, toolbar, emptyState: no .kbview property). */

@@ -1,11 +1,9 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Key, Shield, User, Laptop, Bell, Palette, Download, HardDriveDownload, ChevronRight, type LucideIcon } from 'lucide-react'
+import { Key, Shield, User, Laptop, Bell, Palette, Download, HardDriveDownload, type LucideIcon } from 'lucide-react'
 import { useSidebarStore } from '../store/sidebarStore'
 import { useAuthStore, type MeFeatures } from '../store/authStore'
-import { Slot } from '../slots/SlotRegistry'
-
 export type Tab = 'profile' | 'notifications' | 'themes' | 'clients' | 'security' | 'sessions' | 'api-tokens' | 'my-data'
 
 export interface NavItem {
@@ -95,39 +93,3 @@ useSidebarStore.getState().register({
   SidebarBody:   SettingsSidebar,
   collapsedBody: true,
 })
-
-/**
- * Section index (mobile only). The section nav lives in the left panel, which on
- * a phone is an off-canvas drawer — so a mobile user landing on /settings would
- * see "Profile" and no hint that six other sections exist. Below `lg`, /settings
- * (with no ?tab=) becomes a plain list of sections, and picking one drills into
- * it with a back row. Same URLs, so links and the desktop layout are untouched.
- */
-export function MobileSettingsIndex() {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
-  const nav = useSettingsNav()
-  return (
-    <div className="pb-2">
-      <h1 className="text-xl font-medium text-text-primary px-1 mb-3">{t('settings.page_title')}</h1>
-      <div className="divide-y divide-border rounded-xl border border-border overflow-hidden bg-white">
-        {nav.map(({ id, labelKey, defaultLabel, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => navigate(`/settings?tab=${id}`)}
-            className="w-full flex items-center gap-4 px-4 h-[56px] text-left active:bg-surface-2 transition-colors"
-          >
-            <Icon size={21} className="shrink-0 text-text-secondary" />
-            <span className="flex-1 min-w-0 truncate text-[15px] text-text-primary">
-              {t(labelKey, { defaultValue: defaultLabel })}
-            </span>
-            <ChevronRight size={18} className="shrink-0 text-text-tertiary" />
-          </button>
-        ))}
-      </div>
-      {/* Module-contributed sections stay reachable from the index. */}
-      <div className="mt-4"><Slot name="settings-sections" /></div>
-    </div>
-  )
-}

@@ -1,0 +1,23 @@
+<!-- KnownConnectionsCard — converted from KnownConnectionsCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="KnownConnectionsCardProps" Class="contents">
+  <Panel Visible="{Binding show_case_2}">
+    <Label HtmlTag="H3"
+           Text="{Binding props.heading}"
+           FontWeight="Medium"
+           Overflow="Wrap"
+           InheritFontSize="true"
+           Visible="{Binding show_heading}"
+           Class="mb-2 [font-size:var(--kb-text-body)]"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_body}"/>
+  </Panel>
+  <Card Title="{Res admin.dbconn_title}"
+        IconSize="16"
+        Icon="Database"
+        Subtitle="{Res admin.dbconn_subtitle}"
+        Visible="{Binding show_main}"
+        Class="mb-4">
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_body2}"/>
+  </Card>
+</Panel>

@@ -1,43 +1,41 @@
 <!-- SettingsGroupPanel — converted from SettingsGroupPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<Panel x:Props="Props" Class="contents">
-  <Panel Visible="{Binding show_main}" Class="{Binding containerClass}">
-    <!-- TODO(views-migrate): <SettingScopeBar> is no .kbview element (./SettingScopeBar#default) -->
-    <ReactHost Component="{Binding SettingScopeBar}" Props="{Binding setting_scope_bar_props}"/>
-    <Panel Visible="{Binding show_can_manage}" Class="mb-4">
-      <Callout Body="{Res admin.settings_read_only}"/>
-    </Panel>
-    <Panel Visible="{Binding show_error}" Class="mb-4">
-      <Callout Variant="Danger" Dismissible="true" Body="{Binding error}" OnDismiss="callout_dismiss"/>
-    </Panel>
-    <Panel Class="{Binding div_class}">
-      <Repeater ItemKey="key" ItemsSource="{Binding rows_sections}">
-        <Panel HtmlTag="Section" Class="{Binding section_class}">
-          <Label HtmlTag="H3"
-                 Text="{Binding section.title}"
-                 FontWeight="SemiBold"
-                 Overflow="Wrap"
-                 ForeColor="TextPrimary"
-                 Class="border-b border-border pb-2"/>
-          <Label Text="{Binding section.desc}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_section_desc}" Class="mt-2"/>
-          <Panel Class="mt-3 space-y-3">
-            <!-- TODO(views-migrate): a list inside a list (nested Repeater) -->
-            <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
-          </Panel>
-        </Panel>
-      </Repeater>
-    </Panel>
-    <Stack Direction="LeftToRight"
-           Gap="12"
-           CrossAlign="Center"
-           BackColor="Surface"
-           Visible="{Binding show_pending_keys}"
-           Class="sticky bottom-4 mt-4 rounded-xl border border-border px-4 py-3 shadow-md">
-      <Button Loading="{Binding update.isPending}" Text="{Binding button_text}" OnClick="button_click"/>
-      <Button Variant="Ghost" Text="{Res common.cancel}" OnClick="button_click2"/>
-    </Stack>
-    <!-- TODO(views-migrate): <InheritanceChainWindow> is no .kbview element (./InheritanceChainWindow#default) -->
-    <ReactHost Component="{Binding InheritanceChainWindow}"
-               Props="{Binding inheritance_chain_window_props}"
-               Visible="{Binding show_chain_key}"/>
+<Panel x:Props="Props" Visible="{Binding show_main}" Class="{Binding containerClass}">
+  <!-- TODO(views-migrate): <SettingScopeBar> is no .kbview element (./SettingScopeBar#default) -->
+  <ReactHost Component="{Binding SettingScopeBar}" Props="{Binding setting_scope_bar_props}"/>
+  <Panel Visible="{Binding show_can_manage}" Class="mb-4">
+    <Callout Body="{Res admin.settings_read_only}"/>
   </Panel>
+  <Panel Visible="{Binding show_error}" Class="mb-4">
+    <Callout Variant="Danger" Dismissible="true" Body="{Binding error}" OnDismiss="callout_dismiss"/>
+  </Panel>
+  <Panel Class="{Binding div_class}">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_sections}">
+      <Panel HtmlTag="Section" Class="{Binding section_class}">
+        <Label HtmlTag="H3"
+               Text="{Binding section.title}"
+               FontWeight="SemiBold"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               Class="border-b border-border pb-2"/>
+        <Label Text="{Binding section.desc}" Overflow="Wrap" ForeColor="TextTertiary" Visible="{Binding show_section_desc}" Class="mt-2"/>
+        <Panel Class="mt-3 space-y-3">
+          <!-- TODO(views-migrate): a list inside a list (nested Repeater) -->
+          <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        </Panel>
+      </Panel>
+    </Repeater>
+  </Panel>
+  <Stack Direction="LeftToRight"
+         Gap="12"
+         CrossAlign="Center"
+         BackColor="Surface"
+         Visible="{Binding show_pending_keys}"
+         Class="sticky bottom-4 mt-4 rounded-xl border border-border px-4 py-3 shadow-md">
+    <Button Loading="{Binding update.isPending}" Text="{Binding button_text}" OnClick="button_click"/>
+    <Button Variant="Ghost" Text="{Res common.cancel}" OnClick="button_click2"/>
+  </Stack>
+  <!-- TODO(views-migrate): <InheritanceChainWindow> is no .kbview element (./InheritanceChainWindow#default) -->
+  <ReactHost Component="{Binding InheritanceChainWindow}"
+             Props="{Binding inheritance_chain_window_props}"
+             Visible="{Binding show_chain_key}"/>
 </Panel>

@@ -1,3 +1,46 @@
 <!-- CreateTokenForm — converted from CreateTokenForm.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<!-- TODO(views-migrate): <Card Icon>: an icon size the element cannot take -->
-<ReactHost x:Props="CreateTokenFormProps" Component="{Binding Part1}" Props="{Binding part1_props}"/>
+<Card x:Props="CreateTokenFormProps" Title="{Res settings.tok_new}" IconSize="15" Icon="Plus" Dense="true" Class="mb-5">
+  <Panel HtmlTag="Form" Class="space-y-4" OnSubmit="panel_submit">
+    <Panel Class="flex flex-col sm:flex-row gap-3">
+      <Panel Class="flex-1">
+        <TextField Text="{Binding name, Mode=TwoWay}"
+                   Label="{Res settings.tok_name}"
+                   Placeholder="{Res settings.tok_name_ph}"
+                   MaxLength="255"/>
+      </Panel>
+      <Panel Class="sm:w-52">
+        <!-- TODO(views-migrate): <TextField> min, max: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <Label Text="{Res settings.tok_max_ttl, Days={Binding maxTtlDays}}"
+               Role="Meta"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               Class="mt-1"/>
+      </Panel>
+    </Panel>
+    <Panel>
+      <Panel HtmlTag="P" ForeColor="TextPrimary" Class="text-xs font-medium mb-1">
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res settings.tok_scopes}"/>
+        <Label HtmlTag="Span"
+               Text="{Res settings.tok_scopes_selected, Count={Binding scopes.length}}"
+               FontWeight="Regular"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               InheritFontSize="true"
+               Visible="{Binding show_scopes}"
+               Class="ml-2"/>
+      </Panel>
+      <Label Text="{Res settings.tok_scopes_desc}" Role="Meta" Overflow="Wrap" ForeColor="TextSecondary" Class="mb-2"/>
+      <!-- TODO(views-migrate): <ApiTokenScopePicker> is no .kbview element (./ApiTokenScopePicker#default) -->
+      <ReactHost Component="{Binding ApiTokenScopePicker}" Props="{Binding api_token_scope_picker_props}"/>
+    </Panel>
+    <Callout Variant="Warning"
+             Title="{Res settings.tok_expiry_required_title}"
+             Body="{Res settings.tok_expiry_required_desc}"
+             Visible="{Binding expiryMandatory}"/>
+    <Label Text="{Binding error}" Role="Meta" Overflow="Wrap" ForeColor="Danger" Visible="{Binding show_error}"/>
+    <Stack Direction="LeftToRight" Gap="0" Justify="End">
+      <Button ButtonType="Submit" Loading="{Binding create.isPending}" Text="{Res settings.create}" Class="whitespace-nowrap"/>
+    </Stack>
+  </Panel>
+</Card>

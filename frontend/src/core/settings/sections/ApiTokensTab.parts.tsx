@@ -22,7 +22,7 @@ export function Part1({ t, soonest }: { t: NonNullable<ApiTokensTab['tr']>; soon
   )
 }
 
-export function Part2({ isExpired, graceOver }: { isExpired: ApiTokensTab['rows_tokens'][number]['isExpired']; graceOver: ApiTokensTab['rows_tokens'][number]['graceOver'] }) {
+export function Part2({ isExpired, graceOver }: { isExpired: NonNullable<ApiTokensTab['rows_tokens']>[number]['isExpired']; graceOver: NonNullable<ApiTokensTab['rows_tokens']>[number]['graceOver'] }) {
   return (
     <Key
                           size={15}

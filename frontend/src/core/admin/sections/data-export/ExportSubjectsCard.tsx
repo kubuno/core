@@ -1,27 +1,14 @@
-// Which accounts one export covered, and what each of them actually produced.
-//
-// ## Why this is a separate read, and a separate card
-//
-// An instance-wide export has thousands of subjects and the history opens on
-// thirty runs; carrying the accounts inside every row would make the page's
-// first paint proportional to the largest export ever taken.
-//
-// It matters more than a detail view usually does. After an incident the
-// question is never "was there an export" — the history answers that — it is
-// **"whose data was in it"**, and a list that is queryable is the difference
-// between an answer and an afternoon. It is also where a partial export becomes
-// legible: `services_ko` says which service could not answer for which account,
-// which is exactly what the person receiving the archive has to be told before
-// they rely on it.
+/**
+ * Code-behind of `ExportSubjectsCard.kbview` (converted from `ExportSubjectsCard.tsx` by @kubuno/views-migrate).
+ */
+import { type EventArgs, type MouseEventArgs } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { Badge, type DataTableColumn } from "@ui"
+import { formatBytes } from "../format"
+import { useExportSubjects, type ExportSubject } from "./api"
 
-import { useTranslation } from 'react-i18next'
-import { X } from 'lucide-react'
-import {
-  Badge, Button, Card, DataTable, EmptyState, Spinner,
-  type DataTableColumn,
-} from '@ui'
-import { formatBytes } from '../format'
-import { useExportSubjects, type ExportSubject } from './api'
+import { ViewBase } from './ExportSubjectsCard.kbview'
+import * as __parts from './ExportSubjectsCard.parts'
 
 const STATUS_SKIN: Record<string, 'neutral' | 'success' | 'warning' | 'danger'> = {
   pending: 'neutral',
@@ -30,17 +17,44 @@ const STATUS_SKIN: Record<string, 'neutral' | 'success' | 'warning' | 'danger'> 
   failed:  'danger',
 }
 
-export default function ExportSubjectsCard({ exportId, onClose }: {
+export type ExportSubjectsCardProps = {
   exportId: string
   onClose:  () => void
-}) {
-  const { t } = useTranslation()
-  const { data, isLoading, isError, refetch } = useExportSubjects(exportId)
+}
 
-  const columns: DataTableColumn<ExportSubject>[] = [
+export class ExportSubjectsCard extends ViewBase {
+  tr!: ExportSubjectsCardStores['t']
+  data!: ExportSubjectsCardHooks['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: ExportSubjectsCardHooks['refetch']
+
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    return { t }
+  }
+
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const { data, isLoading, isError, refetch } = useExportSubjects(this.props.exportId)
+    this.publish({ data, isLoading, isError, refetch })
+    return { data, isLoading, isError, refetch }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t })
+    const h = this.useHooks()
+    this.publish({ data: h.data, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch })
+  }
+
+  get columns(): DataTableColumn<ExportSubject>[] {
+    return this.memo('columns', [this.tr], () => [
     {
       id: 'account',
-      header: t('admin.dx_sub_col_account'),
+      header: this.tr('admin.dx_sub_col_account'),
       primary: true,
       minWidth: 220,
       sortValue: r => r.user_label,
@@ -55,18 +69,18 @@ export default function ExportSubjectsCard({ exportId, onClose }: {
     },
     {
       id: 'status',
-      header: t('admin.dx_sub_col_status'),
+      header: this.tr('admin.dx_sub_col_status'),
       minWidth: 120,
       sortValue: r => r.status,
       cell: r => (
         <Badge variant={STATUS_SKIN[r.status] ?? 'neutral'}>
-          {t(`admin.dx_sub_status_${r.status}`, { defaultValue: r.status })}
+          {this.tr(`admin.dx_sub_status_${r.status}`, { defaultValue: r.status })}
         </Badge>
       ),
     },
     {
       id: 'services',
-      header: t('admin.dx_sub_col_services'),
+      header: this.tr('admin.dx_sub_col_services'),
       minWidth: 240,
       cell: r => (
         <span className="flex min-w-0 flex-wrap gap-1">
@@ -86,7 +100,7 @@ export default function ExportSubjectsCard({ exportId, onClose }: {
     },
     {
       id: 'size',
-      header: t('admin.dx_sub_col_size'),
+      header: this.tr('admin.dx_sub_col_size'),
       align: 'right',
       minWidth: 100,
       sortValue: r => r.size_bytes ?? -1,
@@ -94,7 +108,7 @@ export default function ExportSubjectsCard({ exportId, onClose }: {
     },
     {
       id: 'error',
-      header: t('admin.dx_sub_col_notes'),
+      header: this.tr('admin.dx_sub_col_notes'),
       minWidth: 260,
       defaultHidden: true,
       cell: r => (
@@ -103,53 +117,45 @@ export default function ExportSubjectsCard({ exportId, onClose }: {
         </span>
       ),
     },
-  ]
+  ])
+  }
 
-  return (
-    <Card
-      className="mt-4"
-      flush
-      title={t('admin.dx_sub_title')}
-      subtitle={t('admin.dx_sub_desc')}
-      actions={(
-        <Button size="sm" variant="ghost" icon={<X size={15} />} onClick={onClose}>
-          {t('common.close')}
-        </Button>
-      )}
-    >
-      {isLoading && <div className="flex justify-center py-10"><Spinner /></div>}
-      {!isLoading && (isError || !data) && (
-        <div className="p-4">
-          <EmptyState
-            icon={<X size={26} />}
-            variant="error"
-            title={t('admin.dx_sub_failed')}
-            action={{ label: t('admin.dx_retry'), onClick: () => void refetch() }}
-            compact
-            t={t}
-          />
-        </div>
-      )}
-      {!isLoading && data && (
-        <DataTable
-          rows={data}
-          columns={columns}
-          rowKey={r => r.id}
-          defaultSort={null}
-          pageSize={25}
-          minTableWidth={820}
-          configurableColumns
-          t={t}
-          emptyState={(
-            <EmptyState
-              icon={<X size={26} />}
-              title={t('admin.dx_sub_empty')}
-              compact
-              t={t}
-            />
-          )}
-        />
-      )}
-    </Card>
-  )
+  get show_is_loading_is_error_data() {
+    return !this.isLoading && (this.isError || !this.data)
+  }
+
+  get show_is_loading_data() {
+    return this.memo('show_is_loading_data', [this.isLoading, this.data], () => !!(!this.isLoading && this.data))
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.data, this.columns, this.tr, this.isLoading], () => {
+      if (!(!this.isLoading && this.data)) return undefined as never
+      return ({ data: this.data, columns: this.columns, t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, defaultSort, minTableWidth, configurableColumns, t, emptyState: no .kbview property). */
+  get Part1() {
+    if (!(!this.isLoading && this.data)) return undefined as never
+    return __parts.Part1
+  }
+
+  button_click(_sender: unknown, _args: MouseEventArgs) {
+    this.props.onClose?.()
+  }
+
+  empty_state_action(_sender: unknown, _args: EventArgs) {
+    if (!(!this.isLoading && (this.isError || !this.data))) return undefined as never
+    void this.refetch()
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ExportSubjectsCardStores = ReturnType<ExportSubjectsCard['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type ExportSubjectsCardHooks = ReturnType<ExportSubjectsCard['useHooks']>
+
+export default ExportSubjectsCard.component()

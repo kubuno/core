@@ -1,0 +1,42 @@
+<!-- SubscriptionSection — converted from SubscriptionSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_1}" Class="py-16">
+    <Spinner/>
+  </Stack>
+  <EmptyState ActionLabel="{Res admin.sub_retry}"
+              IconSize="26"
+              Icon="Scale"
+              Variant="Error"
+              Title="{Res admin.sub_load_failed}"
+              Description="{Res admin.sub_load_failed_desc}"
+              Visible="{Binding show_case_2}"
+              OnAction="empty_state_action"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Label HtmlTag="H1"
+           Text="{Res admin.nav_subscription}"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+    <Label Text="{Res admin.sub_intro}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="mt-1 max-w-3xl [font-size:var(--kb-text-body)]"/>
+    <Callout Title="{Res admin.sub_model_title}" Body="{Res admin.sub_model_desc}" Class="mt-4"/>
+    <Panel Class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <!-- TODO(views-migrate): <LicenceCard> is no .kbview element (./LicenceCard#default) -->
+      <ReactHost Component="{Binding LicenceCard}" Props="{Binding licence_card_props}"/>
+      <!-- TODO(views-migrate): <InstanceCard> is no .kbview element (./InstanceCard#default) -->
+      <ReactHost Component="{Binding InstanceCard}" Props="{Binding instance_card_props}"/>
+    </Panel>
+    <Panel Class="mt-4">
+      <!-- TODO(views-migrate): <SupportCard> is no .kbview element (./SupportCard#default) -->
+      <ReactHost Component="{Binding SupportCard}" Props="{Binding support_card_props}"/>
+    </Panel>
+    <Panel Visible="{Binding show_data_modules_data}" Class="mt-4">
+      <!-- TODO(views-migrate): <ModulesLicenceCard> is no .kbview element (./ModulesLicenceCard#default) -->
+      <ReactHost Component="{Binding ModulesLicenceCard}" Props="{Binding modules_licence_card_props}"/>
+    </Panel>
+  </Panel>
+</Panel>

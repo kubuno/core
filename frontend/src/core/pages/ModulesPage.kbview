@@ -1,0 +1,33 @@
+<!-- ModulesPage — converted from ModulesPage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Stack Gap="16" CrossAlign="Center" Justify="Center" Visible="{Binding show_case_1}" Class="py-32 text-center">
+    <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="Center" BackColor="Surface2" Class="w-20 h-20 rounded-3xl">
+      <Icon Name="LayoutGrid" Size="40" Class="text-text-tertiary"/>
+    </Stack>
+    <Panel>
+      <Label HtmlTag="H1" Text="{Res modules.title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-xl mb-2"/>
+      <Label Text="{Res modules.empty}" Overflow="Wrap" ForeColor="TextSecondary" Class="max-w-xs mx-auto"/>
+    </Panel>
+  </Stack>
+  <Panel Visible="{Binding show_main}" Class="max-w-3xl mx-auto">
+    <Label HtmlTag="H1" Text="{Res modules.title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-xl mb-5"/>
+    <Panel Visible="{Binding show_standalone_apps}" Class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1 mb-4">
+      <!-- TODO(views-migrate): elements held in an expression -->
+      <ReactHost Component="{Binding Fragment}" Props="{Binding content_standalone_apps_map_render_cell}"/>
+    </Panel>
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_module_groups}">
+      <Panel Class="mb-4">
+        <Label HtmlTag="Div"
+               Text="{Binding group.label}"
+               FontWeight="SemiBold"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               Class="px-3 pb-1.5 text-[11px] uppercase tracking-wide"/>
+        <Panel Class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1">
+          <!-- TODO(views-migrate): elements held in an expression -->
+          <ReactHost Component="{Binding Fragment}" Props="{Binding content_group_apps_map}"/>
+        </Panel>
+      </Panel>
+    </Repeater>
+  </Panel>
+</Panel>

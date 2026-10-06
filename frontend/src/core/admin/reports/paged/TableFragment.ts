@@ -1,6 +1,7 @@
 /**
  * Code-behind of `TableFragment.kbview` (converted from `TableFragment.tsx` by @kubuno/views-migrate).
  */
+import { Fragment } from 'react'
 import { useTranslation } from "react-i18next"
 import type { TableItem } from "./types"
 
@@ -51,13 +52,33 @@ export class TableFragment extends ViewBase {
     return this.props.slice?.last ?? true
   }
 
-  get part1_props() {
-    return this.memo('part1_props', [this.props, this.tr, this.from, this.to, this.last], () => ({ slice: this.props.slice, t: this.tr, item: this.props.item, widths: this.props.widths, from: this.from, to: this.to, last: this.last, item_foot: this.props.item?.foot, item_note: this.props.item?.note }))
+  get h2_text() {
+    return this.props.slice?.continued ? this.tr('admin.rep_continued', { title: this.props.item.title }) : this.props.item.title
   }
 
-  /** A part of the screen still written in React (<section data-report-card data-paged-block>: attribute(s) without a .kbview property). */
+  get part1_props() {
+    return this.memo('part1_props', [this.props, this.from, this.to, this.last], () => ({ item: this.props.item, widths: this.props.widths, from: this.from, to: this.to, last: this.last, item_foot: this.props.item?.foot }))
+  }
+
+  /** A part of the screen still written in React (<table> has no .kbview element yet). */
   get Part1() {
     return __parts.Part1
+  }
+
+  get show_last_item_note() {
+    return this.memo('show_last_item_note', [this.last, this.props], () => !!(this.last && this.props.item.note))
+  }
+
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_item_note() {
+    return this.memo('content_item_note', [this.props, this.last], () => {
+      if (!(this.last && this.props.item.note)) return undefined as never
+      return ({ children: this.props.item.note })
+    })
   }
 
 }

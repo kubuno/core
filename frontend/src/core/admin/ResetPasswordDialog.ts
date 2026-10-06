@@ -59,6 +59,7 @@ export class ResetPasswordDialog extends ViewBase {
   /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
   useHooks() {
     const t = this.tr
+    const onDone = this.props.onDone
     const reset = useMutation({
       mutationFn: () =>
         api
@@ -73,13 +74,14 @@ export class ResetPasswordDialog extends ViewBase {
       onSuccess: data => {
         this.outcome = data
         this.error = null
-        this.props.onDone?.()
+        onDone?.()
       },
       onError: (e: unknown) => {
         const detail = apiErrorDetail(e)
         this.error = detail || t('pwreset.err_generic')
       },
     })
+    this.publish({ reset })
     return { reset }
   }
 
@@ -91,7 +93,7 @@ export class ResetPasswordDialog extends ViewBase {
     this.publish({ reset: h.reset })
   }
 
-  get sessions() {
+  get sessions(): number {
     if (!(!!(this.outcome))) return undefined as never
     return this.outcome.sessions_revoked
   }
@@ -189,9 +191,9 @@ export class ResetPasswordDialog extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.password, this.tr, this.outcome, this.mode], () => {
+    return this.memo('part1_props', [this.password, this.memo, this.error, this.tr, this.outcome, this.mode], () => {
       if (!(!(this.outcome)) || !(this.mode === 'manual')) return undefined as never
-      return ({ password: this.password, setPassword: this.setPassword.bind(this), setError: this.setError.bind(this), t: this.tr })
+      return ({ password: this.password, setPassword: this.memo("setPassword:bound", [], () => this.setPassword.bind(this)), setError: this.memo("setError:bound", [], () => this.setError.bind(this)), t: this.tr })
     })
   }
 

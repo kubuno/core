@@ -26,7 +26,7 @@ export class LifecycleCard extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.props, this.i18n], () => ({ t: this.tr, user: this.props.user, i18n: this.i18n }))
+    return this.memo('part1_props', [this.tr, this.props, this.i18n], () => ({ t: this.tr, user: this.props.user, i18n: this.i18n, user_last_login_at: this.props.user?.last_login_at }))
   }
 
   /** A part of the screen still written in React (<dl> has no .kbview element yet). */

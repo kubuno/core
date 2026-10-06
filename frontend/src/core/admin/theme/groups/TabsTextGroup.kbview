@@ -1,0 +1,9 @@
+<!-- TabsTextGroup — converted from TabsTextGroup.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="space-y-3">
+  <!-- TODO(views-migrate): <Tabs> tabs: no .kbview property -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  <Panel Class="w-full max-w-md">
+    <!-- TODO(views-migrate): <RichText> is no .kbview element (@ui#RichText) -->
+    <ReactHost Component="{Binding RichText}" Props="{Binding rich_text_props}"/>
+  </Panel>
+</Panel>

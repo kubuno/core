@@ -1,5 +1,5 @@
 import { useReauthStore } from '../store/reauthStore'
-import { ReauthDialog } from '../auth/ReauthDialog'
+import ReauthDialog from '../auth/ReauthDialog'
 
 /**
  * Global host rendered once; shows the re-authentication dialog whenever a

@@ -1,30 +1,19 @@
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Database, Check, TriangleAlert, ArrowRightLeft, Copy, Trash2, RefreshCw } from 'lucide-react'
-import { Button, Callout, Card, Spinner, useToast } from '@ui'
-import ConfirmDialog from '@ui/ConfirmDialog'
-import { api } from '../../api/client'
-import { apiErrorMessage } from '../../api/errorMessage'
-import { useConfirm } from '../../hooks/useConfirm'
-import { usePrivileges } from '../../authz/usePrivileges'
-
 /**
- * Administration ▸ Database ▸ "Known connections" — the registry of every
- * database a scope (the main database or one module) has pointed at, so an
- * administrator never loses access to a previous database after a switch.
- *
- * Per row (except the current one):
- *   • Switch (existing data) — re-point at it and restart, using ITS data as-is.
- *   • Switch (overwrite)     — copy the current data onto it, then re-point.
- *   • Update its data        — copy the current data onto it WITHOUT switching.
- *   • Forget                 — drop it from the registry (never the current one).
- *
- * `basePath` is the scope's admin base (`/admin/database` or
- * `/admin/modules/<id>/database`); `queryKey` scopes the cache. `onChanged` lets
- * the parent card refresh its own view after a switch. Passwords are never shown:
- * a row reports only whether one is stored.
+ * Code-behind of `KnownConnectionsCard.kbview` (converted from `KnownConnectionsCard.tsx` by @kubuno/views-migrate).
  */
+import { bind } from '@kubuno/views'
+import { Fragment } from 'react'
+import { useTranslation } from "react-i18next"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Check, TriangleAlert, ArrowRightLeft, Copy, Trash2, RefreshCw } from "lucide-react"
+import { Button, Callout, Spinner, useToast } from "@ui"
+import ConfirmDialog from "@ui/ConfirmDialog"
+import { api } from "../../api/client"
+import { apiErrorMessage } from "../../api/errorMessage"
+import { useConfirm } from "../../hooks/useConfirm"
+import { usePrivileges } from "../../authz/usePrivileges"
+
+import { ViewBase } from './KnownConnectionsCard.kbview'
 
 interface Conn {
   id: string
@@ -54,13 +43,7 @@ function fmtDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
 }
 
-export default function KnownConnectionsCard({
-  basePath,
-  queryKey,
-  onChanged,
-  embedded = false,
-  heading,
-}: {
+export type KnownConnectionsCardProps = {
   basePath: string
   queryKey: (string | undefined)[]
   onChanged?: () => void
@@ -68,125 +51,114 @@ export default function KnownConnectionsCard({
   embedded?: boolean
   /** Section heading, used in embedded mode. */
   heading?: string
-}) {
-  const { t } = useTranslation()
-  const { isSuperuser } = usePrivileges()
-  const toast = useToast()
-  const qc = useQueryClient()
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+}
 
-  const [error, setError] = useState<string | null>(null)
-  const [busyId, setBusyId] = useState<string | null>(null)
+export class KnownConnectionsCard extends ViewBase {
+  @bind accessor error: string | null = null
+  @bind accessor busyId: string | null = null
+  tr!: KnownConnectionsCardStores['t']
+  isSuperuser!: boolean
+  toast!: KnownConnectionsCardStores['toast']
+  qc!: KnownConnectionsCardStores['qc']
+  confirm!: KnownConnectionsCardStores['confirm']
+  confirmState!: KnownConnectionsCardStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  q!: KnownConnectionsCardHooks['q']
+  switchMut!: KnownConnectionsCardHooks['switchMut']
+  syncMut!: KnownConnectionsCardHooks['syncMut']
+  forgetMut!: KnownConnectionsCardHooks['forgetMut']
 
-  const q = useQuery<ConnectionsResponse>({
-    queryKey: ['db-connections', ...queryKey],
-    queryFn: () => api.get<ConnectionsResponse>(`${basePath}/connections`).then(r => r.data),
-    enabled: isSuperuser,
-    staleTime: 15_000,
-  })
-
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ['db-connections', ...queryKey] })
-    onChanged?.()
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const { isSuperuser } = usePrivileges()
+    const toast = useToast()
+    const qc = useQueryClient()
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    return { t, isSuperuser, toast, qc, confirm, confirmState, handleConfirm, handleCancel }
   }
 
-  const switchMut = useMutation({
-    mutationFn: (v: { id: string; overwrite: boolean }) =>
-      api.post(`${basePath}/connections/${v.id}/switch`, { overwrite: v.overwrite }).then(r => r.data),
-    onMutate: (v) => { setBusyId(v.id); setError(null) },
-    onSuccess: (data: { restart_required?: boolean }) => {
-      toast.success(data?.restart_required ? t('admin.dbconn_switched_restart') : t('admin.dbconn_switched'))
-      refresh()
-    },
-    onError: (e: unknown) => setError(apiErrorMessage(e, t('admin.dbconn_switch_failed'))),
-    onSettled: () => setBusyId(null),
-  })
-
-  const syncMut = useMutation({
-    mutationFn: (id: string) => api.post(`${basePath}/connections/${id}/sync`).then(r => r.data),
-    onMutate: (id) => { setBusyId(id); setError(null) },
-    onSuccess: () => { toast.success(t('admin.dbconn_synced')); refresh() },
-    onError: (e: unknown) => setError(apiErrorMessage(e, t('admin.dbconn_sync_failed'))),
-    onSettled: () => setBusyId(null),
-  })
-
-  const forgetMut = useMutation({
-    mutationFn: (id: string) => api.delete(`${basePath}/connections/${id}`).then(r => r.data),
-    onMutate: (id) => { setBusyId(id); setError(null) },
-    onSuccess: () => { toast.success(t('admin.dbconn_forgotten')); refresh() },
-    onError: (e: unknown) => setError(apiErrorMessage(e, t('admin.dbconn_forget_failed'))),
-    onSettled: () => setBusyId(null),
-  })
-
-  if (!isSuperuser) return null
-
-  const onSwitchExisting = async (c: Conn) => {
-    const ok = await confirm({
-      title: t('admin.dbconn_switch_existing'),
-      message: t('admin.dbconn_switch_existing_confirm', { label: c.label }),
-      confirmLabel: t('admin.dbconn_switch_existing'),
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const t = this.tr
+    const isSuperuser = this.isSuperuser
+    const toast = this.toast
+    const q = useQuery<ConnectionsResponse>({
+      queryKey: ['db-connections', ...this.props.queryKey],
+      queryFn: () => api.get<ConnectionsResponse>(`${this.props.basePath}/connections`).then(r => r.data),
+      enabled: isSuperuser,
+      staleTime: 15_000,
     })
-    if (ok) switchMut.mutate({ id: c.id, overwrite: false })
-  }
-
-  const onSwitchOverwrite = async (c: Conn) => {
-    const ok = await confirm({
-      title: t('admin.dbconn_switch_overwrite'),
-      message: t('admin.dbconn_switch_overwrite_confirm', { label: c.label }),
-      confirmLabel: t('admin.dbconn_switch_overwrite'),
-      variant: 'danger',
+    this.publish({ q })
+    const switchMut = useMutation({
+      mutationFn: (v: { id: string; overwrite: boolean }) =>
+        api.post(`${this.props.basePath}/connections/${v.id}/switch`, { overwrite: v.overwrite }).then(r => r.data),
+      onMutate: (v) => { this.busyId = v.id; this.error = null },
+      onSuccess: (data: { restart_required?: boolean }) => {
+        toast.success(data?.restart_required ? t('admin.dbconn_switched_restart') : t('admin.dbconn_switched'))
+        this.refresh()
+      },
+      onError: (e: unknown) => this.error = apiErrorMessage(e, t('admin.dbconn_switch_failed')),
+      onSettled: () => this.busyId = null,
     })
-    if (ok) switchMut.mutate({ id: c.id, overwrite: true })
-  }
-
-  const onSync = async (c: Conn) => {
-    const ok = await confirm({
-      title: t('admin.dbconn_sync'),
-      message: t('admin.dbconn_sync_confirm', { label: c.label }),
-      confirmLabel: t('admin.dbconn_sync'),
-      variant: 'danger',
+    this.publish({ switchMut })
+    const syncMut = useMutation({
+      mutationFn: (id: string) => api.post(`${this.props.basePath}/connections/${id}/sync`).then(r => r.data),
+      onMutate: (id) => { this.busyId = id; this.error = null },
+      onSuccess: () => { toast.success(t('admin.dbconn_synced')); this.refresh() },
+      onError: (e: unknown) => this.error = apiErrorMessage(e, t('admin.dbconn_sync_failed')),
+      onSettled: () => this.busyId = null,
     })
-    if (ok) syncMut.mutate(c.id)
-  }
-
-  const onForget = async (c: Conn) => {
-    const ok = await confirm({
-      title: t('admin.dbconn_forget'),
-      message: t('admin.dbconn_forget_confirm', { label: c.label }),
-      confirmLabel: t('admin.dbconn_forget'),
-      variant: 'danger',
+    this.publish({ syncMut })
+    const forgetMut = useMutation({
+      mutationFn: (id: string) => api.delete(`${this.props.basePath}/connections/${id}`).then(r => r.data),
+      onMutate: (id) => { this.busyId = id; this.error = null },
+      onSuccess: () => { toast.success(t('admin.dbconn_forgotten')); this.refresh() },
+      onError: (e: unknown) => this.error = apiErrorMessage(e, t('admin.dbconn_forget_failed')),
+      onSettled: () => this.busyId = null,
     })
-    if (ok) forgetMut.mutate(c.id)
+    this.publish({ forgetMut })
+    return { q, switchMut, syncMut, forgetMut }
   }
 
-  const meta = (c: Conn) => {
-    const parts: string[] = [t(`admin.mdb_engine_${c.engine}`, c.engine)]
-    if (c.engine === 'sqlite') {
-      if (c.path) parts.push(c.path)
-    } else {
-      const hostPart = c.port ? `${c.host}:${c.port}` : c.host
-      if (hostPart) parts.push(hostPart)
-      if (c.database) parts.push(c.database)
-    }
-    return parts.join(' · ')
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, isSuperuser: s.isSuperuser, toast: s.toast, qc: s.qc, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel })
+    const h = this.useHooks()
+    this.publish({ q: h.q, switchMut: h.switchMut, syncMut: h.syncMut, forgetMut: h.forgetMut })
   }
 
-  const conns = q.data?.connections ?? []
+  get embedded() {
+    return this.props.embedded ?? false
+  }
 
-  const body = (
+  get conns(): Conn[] {
+    return this.memo('conns', [this.q, this.isSuperuser], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      return this.q.data?.connections ?? []
+    })
+  }
+
+  get body() {
+    return this.memo('body', [this.q, this.tr, this.conns, this.error, this.isSuperuser, this.confirm, this.switchMut, this.syncMut, this.forgetMut, this.confirmState, this.handleConfirm, this.handleCancel, this.busyId], () => {
+      if (!(!(!this.isSuperuser))) return undefined as never
+      const busyId = this.busyId
+      return (
     <>
-      {q.isLoading ? (
+      {this.q.isLoading ? (
         <div className="py-6 flex justify-center"><Spinner /></div>
-      ) : q.isError ? (
-        <Callout variant="danger" icon={<TriangleAlert size={16} />}>{t('admin.dbconn_load_error')}</Callout>
-      ) : conns.length === 0 ? (
+      ) : this.q.isError ? (
+        <Callout variant="danger" icon={<TriangleAlert size={16} />}>{this.tr('admin.dbconn_load_error')}</Callout>
+      ) : this.conns.length === 0 ? (
         <p className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {t('admin.dbconn_empty')}
+          {this.tr('admin.dbconn_empty')}
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {error && <Callout variant="danger" title={t('admin.dbconn_error')}>{error}</Callout>}
-          {conns.map((c) => {
+          {this.error && <Callout variant="danger" title={this.tr('admin.dbconn_error')}>{this.error}</Callout>}
+          {this.conns.map((c) => {
             const rowBusy = busyId === c.id
             return (
               <div key={c.id} className="rounded-lg border border-border p-3">
@@ -197,16 +169,16 @@ export default function KnownConnectionsCard({
                       {c.is_current && (
                         <span className="inline-flex items-center gap-1 text-success"
                           style={{ fontSize: 'var(--kb-text-meta)' }}>
-                          <Check size={13} />{t('admin.dbconn_current')}
+                          <Check size={13} />{this.tr('admin.dbconn_current')}
                         </span>
                       )}
                     </div>
                     <div className="text-text-secondary truncate" style={{ fontSize: 'var(--kb-text-meta)' }}>
-                      {meta(c)}
+                      {this.meta(c)}
                     </div>
                     <div className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-                      {t('admin.dbconn_last_used', { when: fmtDate(c.last_used_at) })}
-                      {c.last_synced_at && ` · ${t('admin.dbconn_last_synced', { when: fmtDate(c.last_synced_at) })}`}
+                      {this.tr('admin.dbconn_last_used', { when: fmtDate(c.last_used_at) })}
+                      {c.last_synced_at && ` · ${this.tr('admin.dbconn_last_synced', { when: fmtDate(c.last_synced_at) })}`}
                     </div>
                   </div>
                 </div>
@@ -214,21 +186,21 @@ export default function KnownConnectionsCard({
                 {!c.is_current && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <Button variant="secondary" size="sm" icon={<ArrowRightLeft size={14} />}
-                      onClick={() => onSwitchExisting(c)}
-                      disabled={rowBusy} loading={rowBusy && switchMut.isPending}>
-                      {t('admin.dbconn_switch_existing')}
+                      onClick={() => this.onSwitchExisting(c)}
+                      disabled={rowBusy} loading={rowBusy && this.switchMut.isPending}>
+                      {this.tr('admin.dbconn_switch_existing')}
                     </Button>
                     <Button variant="secondary" size="sm" icon={<Copy size={14} />}
-                      onClick={() => onSwitchOverwrite(c)} disabled={rowBusy}>
-                      {t('admin.dbconn_switch_overwrite')}
+                      onClick={() => this.onSwitchOverwrite(c)} disabled={rowBusy}>
+                      {this.tr('admin.dbconn_switch_overwrite')}
                     </Button>
                     <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />}
-                      onClick={() => onSync(c)} disabled={rowBusy}>
-                      {t('admin.dbconn_sync')}
+                      onClick={() => this.onSync(c)} disabled={rowBusy}>
+                      {this.tr('admin.dbconn_sync')}
                     </Button>
                     <Button variant="ghost" size="sm" icon={<Trash2 size={14} />}
-                      onClick={() => onForget(c)} disabled={rowBusy}>
-                      {t('admin.dbconn_forget')}
+                      onClick={() => this.onForget(c)} disabled={rowBusy}>
+                      {this.tr('admin.dbconn_forget')}
                     </Button>
                   </div>
                 )}
@@ -237,27 +209,117 @@ export default function KnownConnectionsCard({
           })}
         </div>
       )}
-      {confirmState && (
-        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
+      {this.confirmState && (
+        <ConfirmDialog {...this.confirmState} onConfirm={this.handleConfirm} onCancel={this.handleCancel} />
       )}
     </>
   )
-
-  if (embedded) {
-    return (
-      <div>
-        {heading && (
-          <h3 className="mb-2 font-medium" style={{ fontSize: 'var(--kb-text-body)' }}>{heading}</h3>
-        )}
-        {body}
-      </div>
-    )
+    })
   }
 
-  return (
-    <Card title={t('admin.dbconn_title')} icon={<Database size={16} />} className="mb-4"
-      subtitle={t('admin.dbconn_subtitle')}>
-      {body}
-    </Card>
-  )
+  get show_case_1() {
+    return !!(!this.isSuperuser)
+  }
+
+  get show_case_2() {
+    return !(!this.isSuperuser) && !!(this.embedded)
+  }
+
+  get show_heading() {
+    if (!(!(!this.isSuperuser)) || !(this.embedded)) return undefined as never
+    return !!(this.props.heading)
+  }
+
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_body() {
+    return this.memo('content_body', [this.body, this.isSuperuser, this.embedded], () => {
+      if (!(!(!this.isSuperuser)) || !(this.embedded)) return undefined as never
+      return ({ children: this.body })
+    })
+  }
+
+  get show_main() {
+    return !(!this.isSuperuser) && !(this.embedded)
+  }
+
+  get content_body2() {
+    return this.memo('content_body2', [this.body, this.isSuperuser, this.embedded], () => {
+      if (!(!(!this.isSuperuser)) || !(!(this.embedded))) return undefined as never
+      return ({ children: this.body })
+    })
+  }
+
+  refresh() {
+    void this.qc.invalidateQueries({ queryKey: ['db-connections', ...this.props.queryKey] })
+    this.props.onChanged?.()
+  }
+
+  async onSwitchExisting(c: Conn) {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    const ok = await this.confirm({
+      title: this.tr('admin.dbconn_switch_existing'),
+      message: this.tr('admin.dbconn_switch_existing_confirm', { label: c.label }),
+      confirmLabel: this.tr('admin.dbconn_switch_existing'),
+    })
+    if (ok) this.switchMut.mutate({ id: c.id, overwrite: false })
+  }
+
+  async onSwitchOverwrite(c: Conn) {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    const ok = await this.confirm({
+      title: this.tr('admin.dbconn_switch_overwrite'),
+      message: this.tr('admin.dbconn_switch_overwrite_confirm', { label: c.label }),
+      confirmLabel: this.tr('admin.dbconn_switch_overwrite'),
+      variant: 'danger',
+    })
+    if (ok) this.switchMut.mutate({ id: c.id, overwrite: true })
+  }
+
+  async onSync(c: Conn) {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    const ok = await this.confirm({
+      title: this.tr('admin.dbconn_sync'),
+      message: this.tr('admin.dbconn_sync_confirm', { label: c.label }),
+      confirmLabel: this.tr('admin.dbconn_sync'),
+      variant: 'danger',
+    })
+    if (ok) this.syncMut.mutate(c.id)
+  }
+
+  async onForget(c: Conn) {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    const ok = await this.confirm({
+      title: this.tr('admin.dbconn_forget'),
+      message: this.tr('admin.dbconn_forget_confirm', { label: c.label }),
+      confirmLabel: this.tr('admin.dbconn_forget'),
+      variant: 'danger',
+    })
+    if (ok) this.forgetMut.mutate(c.id)
+  }
+
+  meta(c: Conn) {
+    if (!(!(!this.isSuperuser))) return undefined as never
+    const parts: string[] = [this.tr(`admin.mdb_engine_${c.engine}`, c.engine)]
+    if (c.engine === 'sqlite') {
+      if (c.path) parts.push(c.path)
+    } else {
+      const hostPart = c.port ? `${c.host}:${c.port}` : c.host
+      if (hostPart) parts.push(hostPart)
+      if (c.database) parts.push(c.database)
+    }
+    return parts.join(' · ')
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type KnownConnectionsCardStores = ReturnType<KnownConnectionsCard['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type KnownConnectionsCardHooks = ReturnType<KnownConnectionsCard['useHooks']>
+
+export default KnownConnectionsCard.component()

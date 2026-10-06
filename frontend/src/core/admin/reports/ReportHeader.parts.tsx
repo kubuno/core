@@ -2,7 +2,6 @@
  * The parts of `ReportHeader.kbview` still written in React (the codemod could not convert them; see the
  * TODO comments in the view). Each is rendered by a `<ReactHost>` with the values it reads as props.
  */
-import { InstanceLogo } from "../../shell/InstanceLogo"
 import type { ReactNode } from "react"
 import type { ReportHeader } from './ReportHeader'
 
@@ -18,26 +17,9 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 export { Fact }
 
-export function Part1({ instance, title, about, t, periodLabel, model, generatedAt, generatedBy }: { instance: NonNullable<ReportHeader['props']['instance']>; title: NonNullable<ReportHeader['props']['title']>; about: NonNullable<ReportHeader['props']['about']>; t: NonNullable<ReportHeader['tr']>; periodLabel: NonNullable<ReportHeader['props']['periodLabel']>; model: NonNullable<ReportHeader['props']['model']>; generatedAt: NonNullable<ReportHeader['props']['generatedAt']>; generatedBy: NonNullable<ReportHeader['props']['generatedBy']> }) {
+export function Part1({ t, periodLabel, model, generatedAt, generatedBy }: { t: NonNullable<ReportHeader['tr']>; periodLabel: NonNullable<ReportHeader['props']['periodLabel']>; model: NonNullable<ReportHeader['props']['model']>; generatedAt: NonNullable<ReportHeader['props']['generatedAt']>; generatedBy: NonNullable<ReportHeader['props']['generatedBy']> }) {
   return (
-    <header data-report-card className="rounded-xl border border-border bg-surface-0 p-4">
-          {/* Whose sheet this is: the instance's own mark when an administrator set
-              one (`instance.logo_url`), the product mark otherwise. A report that
-              leaves the console should carry the organisation that produced it. */}
-          <div className="flex items-center gap-2">
-            <InstanceLogo size={20} className="text-primary" />
-            <p className="min-w-0 truncate text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-              {instance}
-            </p>
-          </div>
-          <h1 className="mt-1 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-            {title}
-          </h1>
-          <p className="mt-1 max-w-3xl text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-            {about}
-          </p>
-    
-          <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-3">
+    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-3">
             <Fact label={t('admin.rep_period')}>
               {periodLabel}
             </Fact>
@@ -50,6 +32,5 @@ export function Part1({ instance, title, about, t, periodLabel, model, generated
             <Fact label={t('admin.rep_generated')}>{generatedAt}</Fact>
             <Fact label={t('admin.rep_generated_by')}>{generatedBy}</Fact>
           </dl>
-        </header>
   )
 }

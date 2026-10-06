@@ -8,13 +8,13 @@ import type { InheritanceChainWindow } from './InheritanceChainWindow'
 const fmt = (v: unknown) =>
   typeof v === 'string' ? v : JSON.stringify(v)
 
-export function Part1({ l, i, t }: { l: InheritanceChainWindow['rows_items'][number]['l']; i: InheritanceChainWindow['rows_items'][number]['i']; t: NonNullable<InheritanceChainWindow['tr']> }) {
+export function Part1({ l, i, t }: { l: NonNullable<InheritanceChainWindow['rows_items']>[number]['l']; i: NonNullable<InheritanceChainWindow['rows_items']>[number]['i']; t: NonNullable<InheritanceChainWindow['tr']> }) {
   return (
     <li
                   key={`${l.scope_type}-${l.scope_id ?? 'x'}-${i}`}
                   className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${
-                    l.is_winner ? 'border-primary bg-primary-light' : 'border-border bg-surface-1'
-                  }`}
+                l.is_winner ? 'border-primary bg-primary-light' : 'border-border bg-surface-1'
+              }`}
                   style={{ marginLeft: Math.min(i, 6) * 12 }}
                 >
                   <span className="mt-0.5 w-4 shrink-0">

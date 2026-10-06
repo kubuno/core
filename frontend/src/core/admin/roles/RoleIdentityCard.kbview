@@ -1,3 +1,0 @@
-<!-- RoleIdentityCard — converted from RoleIdentityCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<!-- TODO(views-migrate): <EditableCard> is no .kbview element (../inline-edit/EditableCard#default) -->
-<ReactHost x:Props="RoleIdentityCardProps" Component="{Binding Part1}" Props="{Binding part1_props}"/>

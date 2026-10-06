@@ -146,9 +146,9 @@ export class RoomStatsTab extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.period, this.periodOptions, this.isLoading, this.data], () => {
+    return this.memo('part1_props', [this.period, this.memo, this.periodOptions, this.isLoading, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.data && !this.data.available))) return undefined as never
-      return ({ period: this.period, setPeriod: this.setPeriod.bind(this), periodOptions: this.periodOptions })
+      return ({ period: this.period, setPeriod: this.memo("setPeriod:bound", [], () => this.setPeriod.bind(this)), periodOptions: this.periodOptions })
     })
   }
 
@@ -194,21 +194,21 @@ export class RoomStatsTab extends ViewBase {
   }
 
   get stat_card_props2() {
-    return this.memo('stat_card_props2', [this.tr, this.data, this.isLoading], () => {
+    return this.memo('stat_card_props2', [this.tr, this.nf1, this.data, this.isLoading], () => {
       if (!(!(this.isLoading)) || !(!(this.data && !this.data.available))) return undefined as never
       return ({ label: this.tr('admin.rs_booked_hours'), icon: Clock, value: this.hours(this.data?.booked_hours ?? 0) })
     })
   }
 
   get stat_card_props3() {
-    return this.memo('stat_card_props3', [this.tr, this.data, this.nf, this.isLoading], () => {
+    return this.memo('stat_card_props3', [this.tr, this.i18n, this.data, this.nf, this.isLoading], () => {
       if (!(!(this.isLoading)) || !(!(this.data && !this.data.available))) return undefined as never
       return ({ label: this.tr('admin.rs_rate'), icon: Gauge, value: this.pct(this.data?.booking_rate), accent: this.tr('admin.rs_rate_sub', { hours: this.nf.format(Math.round(this.data?.available_hours ?? 0)) }) })
     })
   }
 
   get stat_card_props4() {
-    return this.memo('stat_card_props4', [this.tr, this.acceptance, this.isLoading, this.data], () => {
+    return this.memo('stat_card_props4', [this.tr, this.i18n, this.acceptance, this.isLoading, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.data && !this.data.available))) return undefined as never
       return ({ label: this.tr('admin.rs_acceptance'), icon: ThumbsUp, value: this.pct(this.acceptance), accent: this.tr('admin.rs_acceptance_sub') })
     })

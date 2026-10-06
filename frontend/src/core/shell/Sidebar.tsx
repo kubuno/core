@@ -1,86 +1,61 @@
-import { useLocation, NavLink } from 'react-router-dom'
-import { Plus, ChevronLeft } from 'lucide-react'
-import { getIcon } from '../utils/iconMap'
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { useModulesStore } from '../store/modulesStore'
-import { useUiStore } from '../store/uiStore'
-import { useSidebarStore, resolveActiveSidebarConfig } from '../store/sidebarStore'
-import { WaffleAppRegistry } from '../registry/WaffleAppRegistry'
-import { Slot, SlotRegistry } from '../slots/SlotRegistry'
-import type { SidebarItem } from '../types'
+/**
+ * Code-behind of `Sidebar.kbview` (converted from `Sidebar.tsx` by @kubuno/views-migrate).
+ */
+import { useLocation } from "react-router-dom"
+import { useModulesStore } from "../store/modulesStore"
+import { useUiStore } from "../store/uiStore"
+import { useSidebarStore, resolveActiveSidebarConfig } from "../store/sidebarStore"
+import { WaffleAppRegistry } from "../registry/WaffleAppRegistry"
+import { Slot, SlotRegistry } from "../slots/SlotRegistry"
+import type { SidebarItem } from "../types"
 
-function SidebarIcon({ name }: { name: string }) {
-  const Icon = getIcon(name)
-  return <Icon size={20} />
-}
+import { ViewBase } from './Sidebar.kbview'
+import * as __parts from './Sidebar.parts'
+import { ModuleRootIcon } from './Sidebar.parts'
 
-/** Résout l'icône d'une entrée racine de module via WaffleAppRegistry en priorité. */
-function ModuleRootIcon({ moduleId, item }: { moduleId: string; item: SidebarItem }) {
-  const entry = WaffleAppRegistry.get(moduleId)
-  if (entry) {
-    const app = entry.apps.find(a => a.path === item.path) ?? entry.apps[0]
-    if (app) return <app.Icon size={20} />
+export class Sidebar extends ViewBase {
+  pathname!: string
+  activeModules!: SidebarStores['activeModules']
+  configs!: SidebarStores['configs']
+  sidebarOpen!: boolean
+  closeSidebar!: () => void
+
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { pathname } = useLocation()
+    const { activeModules } = useModulesStore()
+    const { configs } = useSidebarStore()
+    const { sidebarOpen, closeSidebar } = useUiStore()
+    return { pathname, activeModules, configs, sidebarOpen, closeSidebar }
   }
-  return <SidebarIcon name={item.icon} />
-}
 
-function SidebarLink({ item, iconOverride }: { item: SidebarItem; iconOverride?: React.ReactNode }) {
-  const { closeSidebar } = useUiStore()
-  return (
-    <NavLink
-      to={item.path}
-      end={item.path === '/'}
-      onClick={closeSidebar}
-      className={({ isActive }) =>
-        `group flex items-center gap-3 px-3 py-2 rounded-full text-sm font-medium relative
-         transition-all cursor-pointer select-none
-         ${isActive
-           ? 'bg-primary-light text-text-nav-active'
-           : 'text-text-nav hover:bg-surface-2'
-         }`
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <span className={isActive ? 'text-primary' : 'text-text-secondary group-hover:text-text-nav'}>
-            {iconOverride ?? <SidebarIcon name={item.icon} />}
-          </span>
-          <span className="flex-1 truncate">{item.label}</span>
-          {item.badge != null && item.badge > 0 && (
-            <span className="text-xs bg-danger text-white rounded-full min-w-[18px] h-[18px]
-                             flex items-center justify-center px-1 font-medium">
-              {item.badge > 99 ? '99+' : item.badge}
-            </span>
-          )}
-        </>
-      )}
-    </NavLink>
-  )
-}
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ pathname: s.pathname, activeModules: s.activeModules, configs: s.configs, sidebarOpen: s.sidebarOpen, closeSidebar: s.closeSidebar })
+  }
 
-export default function Sidebar() {
-  const { pathname } = useLocation()
-  const { activeModules } = useModulesStore()
-  const { configs } = useSidebarStore()
-  const { sidebarOpen, closeSidebar } = useUiStore()
+  get activeConfig() {
+    return this.memo('activeConfig', [this.configs, this.pathname], () => resolveActiveSidebarConfig(this.configs, this.pathname))
+  }
 
-  // Which module (if any) is the user currently inside?
-  const activeConfig = resolveActiveSidebarConfig(configs, pathname)
-
-  // Running instance for the active module (has its sidebar_items)
-  const activeModule = activeConfig
-    ? activeModules.find((m) => m.module_id === activeConfig.moduleId)
+  get activeModule() {
+    return this.memo('activeModule', [this.activeModules, this.activeConfig], () => {
+      const activeConfig = this.activeConfig
+      return activeConfig
+    ? this.activeModules.find((m) => m.module_id === activeConfig.moduleId)
     : null
+    })
+  }
 
-  // Items shown when inside a module
-  const moduleItems = [...(activeModule?.sidebar_items ?? [])].sort(
+  get moduleItems(): SidebarItem[] {
+    return this.memo('moduleItems', [this.activeModule], () => [...(this.activeModule?.sidebar_items ?? [])].sort(
     (a, b) => a.position - b.position,
-  )
+  ))
+  }
 
-  // One root item per running module for the default view (lowest position = entry point)
-  // - Label from WaffleAppRegistry (module display name like "Office", not sub-item like "Documents")
-  // - Icon from WaffleAppRegistry (single source of truth, same as waffle menu)
-  const moduleRootItems = activeModules
+  get moduleRootItems(): (SidebarItem & { _moduleId: string; })[] {
+    return this.memo('moduleRootItems', [this.activeModules], () => this.activeModules
     .map((m) => {
       const sorted = [...m.sidebar_items].sort((a, b) => a.position - b.position)
       const first = sorted[0]
@@ -93,117 +68,164 @@ export default function Sidebar() {
       }
     })
     .filter(Boolean)
-    .sort((a, b) => a!.position - b!.position) as (SidebarItem & { _moduleId: string })[]
+    .sort((a, b) => a!.position - b!.position) as (SidebarItem & { _moduleId: string })[])
+  }
 
-  // "New" button only shown when a module with new-actions is active
-  const hasNewActions =
-    activeConfig != null &&
+  get hasNewActions(): boolean {
+    const activeConfig = this.activeConfig
+    return activeConfig != null &&
     SlotRegistry.getSlot('sidebar-new-actions').some(
       (entry) => entry.moduleId === activeConfig.moduleId,
     )
+  }
 
-  return (
-    <aside
-      className={`fixed left-0 top-14 bottom-0 w-64 bg-white flex flex-col py-3 overflow-y-auto
+  get aside_class() {
+    return `fixed left-0 top-14 bottom-0 w-64 bg-white flex flex-col py-3 overflow-y-auto
                   z-50 transition-transform duration-200 ease-in-out
-                  ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-                  lg:translate-x-0`}
-      style={{ borderRight: '1px solid #dadce0' }}
-    >
-      {activeConfig ? (
-        /* ── INSIDE A MODULE ──────────────────────────────────────── */
-        <>
-          {/* Back to home */}
-          <div className="px-3 mb-1">
-            <NavLink
-              to="/"
-              onClick={closeSidebar}
-              className="flex items-center gap-2 px-3 py-2 rounded-full text-sm
-                         text-text-secondary hover:bg-surface-2 transition-colors"
-            >
-              <ChevronLeft size={16} />
-              <span>Accueil</span>
-            </NavLink>
-          </div>
+                  ${this.sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+                  lg:translate-x-0`
+  }
 
-          {/* Module provides its own full sidebar body */}
-          {activeConfig.SidebarBody ? (
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
-              <activeConfig.SidebarBody />
-            </div>
-          ) : (
-            <>
-              {/* Module "New" button — only if module registered new-actions */}
-              {hasNewActions && (
-                <div className="px-3 mb-3">
-                  <DropdownMenu.Root>
-                    <DropdownMenu.Trigger asChild>
-                      <button
-                        className="flex items-center gap-2 px-5 py-2.5 bg-white rounded-2xl text-sm font-medium
-                                   text-text-primary border border-border shadow-sm hover:shadow-md
-                                   transition-shadow w-full"
-                      >
-                        <Plus size={18} className="text-text-secondary" />
-                        {activeConfig.newButtonLabel ?? 'Nouveau'}
-                      </button>
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content
-                        side="bottom"
-                        align="start"
-                        sideOffset={4}
-                        className="min-w-48 bg-white rounded-[5px] shadow-lg border border-border py-1 z-50"
-                      >
-                        <Slot
-                          name="sidebar-new-actions"
-                          fallback={
-                            <div className="px-3 py-2 text-xs text-text-tertiary">
-                              Aucune action disponible
-                            </div>
-                          }
-                        />
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu.Root>
-                </div>
-              )}
+  get show_active_config() {
+    return this.memo('show_active_config', [this.activeConfig], () => !!(this.activeConfig))
+  }
 
-              {/* Module navigation items */}
-              <nav className="flex-1 px-3 space-y-0.5">
-                {moduleItems.map((item) => (
-                  <SidebarLink key={item.id} item={item} />
-                ))}
-              </nav>
-            </>
-          )}
-        </>
-      ) : (
-        /* ── DEFAULT VIEW: module list ────────────────────────────── */
-        <nav className="flex-1 px-3 space-y-0.5">
-          {/* Core: home */}
-          <SidebarLink
-            item={{ id: 'home', label: 'Accueil', icon: 'Home', path: '/', position: 0 }}
-          />
+  get show_not_active_config() {
+    return this.memo('show_not_active_config', [this.activeConfig], () => !(this.activeConfig))
+  }
 
-          {/* One entry per running module — icon from WaffleAppRegistry for consistency */}
-          {moduleRootItems.length > 0 && (
-            <div className="mx-0 my-2 h-px bg-border" />
-          )}
-          {moduleRootItems.map((item) => (
-            <SidebarLink
-              key={item.id}
-              item={item}
-              iconOverride={<ModuleRootIcon moduleId={item._moduleId} item={item} />}
-            />
-          ))}
-        </nav>
-      )}
+  get part1_props() {
+    return this.memo('part1_props', [this.closeSidebar, this.activeConfig], () => {
+      if (!(this.activeConfig)) return undefined as never
+      return ({ closeSidebar: this.closeSidebar })
+    })
+  }
 
-      {/* Persistent footer slots (storage gauge, etc.) */}
-      <Slot name="sidebar-storage" />
-      <Slot name="sidebar-footer" />
+  /** A part of the screen still written in React (<NavLink> is no .kbview element (react-router-dom#NavLink)). */
+  get Part1() {
+    if (!(this.activeConfig)) return undefined as never
+    return __parts.Part1
+  }
 
-      {/* Lien Administration déplacé dans le menu du compte (UserPanel). */}
-    </aside>
-  )
+  get show_active_config_sidebar_body() {
+    return this.memo('show_active_config_sidebar_body', [this.activeConfig], () => {
+      if (!(this.activeConfig)) return undefined as never
+      return !!(this.activeConfig.SidebarBody)
+    })
+  }
+
+  get show_not_active_config_sidebar_body() {
+    return this.memo('show_not_active_config_sidebar_body', [this.activeConfig], () => {
+      if (!(this.activeConfig)) return undefined as never
+      return !(this.activeConfig.SidebarBody)
+    })
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.activeConfig], () => {
+      if (!(this.activeConfig) || !(this.activeConfig.SidebarBody)) return undefined as never
+      return ({ ActiveConfig_SidebarBody: this.activeConfig?.SidebarBody })
+    })
+  }
+
+  /** A part of the screen still written in React (<activeConfig.SidebarBody> is no .kbview element (a local or dynamic component)). */
+  get Part2() {
+    if (!(this.activeConfig) || !(this.activeConfig.SidebarBody)) return undefined as never
+    return __parts.Part2
+  }
+
+  get part3_props() {
+    return this.memo('part3_props', [this.activeConfig, this.hasNewActions], () => {
+      if (!(this.activeConfig) || !(!(this.activeConfig.SidebarBody)) || !(this.hasNewActions)) return undefined as never
+      return ({ activeConfig: this.activeConfig })
+    })
+  }
+
+  /** A part of the screen still written in React (<DropdownMenu.Root> is no .kbview element (a local or dynamic component)). */
+  get Part3() {
+    if (!(this.activeConfig) || !(!(this.activeConfig.SidebarBody)) || !(this.hasNewActions)) return undefined as never
+    return __parts.Part3
+  }
+
+  /** `<SidebarLink>`, rendered by a ReactHost. */
+  get SidebarLink() {
+    if (!(this.activeConfig) || !(!(this.activeConfig.SidebarBody))) return undefined as never
+    return __parts.SidebarLink
+  }
+
+  /** The rows of the Repeater over `moduleItems`. */
+  get rows_module_items() {
+    return this.memo('rows_module_items', [this.moduleItems, this.activeConfig], () => {
+      if (!(this.activeConfig) || !(!(this.activeConfig.SidebarBody))) return undefined as never
+      return this.moduleItems.map((item) => {
+      return { item, sidebar_link_props: ((this.activeConfig) && (!(this.activeConfig.SidebarBody))) ? ({ item: item }) : undefined, key: item.id }
+    })
+    })
+  }
+
+  get visible() {
+    return this.memo('visible', [this.hasNewActions, this.show_not_active_config_sidebar_body, this.activeConfig], () => {
+      if (!(this.activeConfig)) return undefined as never
+      return this.hasNewActions && this.show_not_active_config_sidebar_body
+    })
+  }
+
+  get visible2() {
+    return this.memo('visible2', [this.show_active_config_sidebar_body, this.show_active_config], () => this.show_active_config_sidebar_body && this.show_active_config)
+  }
+
+  get visible3() {
+    return this.memo('visible3', [this.visible, this.show_active_config], () => this.visible && this.show_active_config)
+  }
+
+  get visible4() {
+    return this.memo('visible4', [this.show_not_active_config_sidebar_body, this.show_active_config], () => this.show_not_active_config_sidebar_body && this.show_active_config)
+  }
+
+  /** `<SidebarLink>`, rendered by a ReactHost. */
+  get SidebarLink2() {
+    if (!(!(this.activeConfig))) return undefined as never
+    return __parts.SidebarLink
+  }
+
+  get sidebar_link_props() {
+    return this.memo('sidebar_link_props', [this.activeConfig], () => {
+      if (!(!(this.activeConfig))) return undefined as never
+      return ({ item: { id: 'home', label: 'Accueil', icon: 'Home', path: '/', position: 0 } })
+    })
+  }
+
+  get show_module_root_items() {
+    if (!(!(this.activeConfig))) return undefined as never
+    return this.moduleRootItems.length > 0
+  }
+
+  /** The rows of the Repeater over `moduleRootItems`. */
+  get rows_module_root_items() {
+    return this.memo('rows_module_root_items', [this.moduleRootItems, this.activeConfig], () => {
+      if (!(!(this.activeConfig))) return undefined as never
+      return this.moduleRootItems.map((item) => {
+      return { item, sidebar_link_props: ((!(this.activeConfig))) ? ({ item: item, iconOverride: <ModuleRootIcon moduleId={item._moduleId} item={item} /> }) : undefined, key: item.id }
+    })
+    })
+  }
+
+  /** `<Slot>`, rendered by a ReactHost. */
+  get Slot() {
+    return Slot
+  }
+
+  get slot_props() {
+    return this.memo('slot_props', [], () => ({ name: "sidebar-storage" }))
+  }
+
+  get slot_props2() {
+    return this.memo('slot_props2', [], () => ({ name: "sidebar-footer" }))
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type SidebarStores = ReturnType<Sidebar['useStores']>
+
+export default Sidebar.component()

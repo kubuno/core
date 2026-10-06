@@ -5,8 +5,11 @@ import { type ValueChangedEventArgs } from '@kubuno/views'
 import { useTranslation } from "react-i18next"
 import ProvenanceLine from "../../settings/ProvenanceLine"
 import { AUDIENCE_OPTIONS } from "./keys"
+import { type RowProps } from "./PolicyRow"
 
 import { ViewBase } from './AudienceRow.kbview'
+
+export type { RowProps }
 
 export class AudienceRow extends ViewBase {
   tr!: AudienceRowStores['t']

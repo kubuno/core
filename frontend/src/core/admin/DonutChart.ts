@@ -40,7 +40,7 @@ export class DonutChart extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.size, this.hi, this.r, this.stroke, this.total, this.props, this.c, this.offset, this.active], () => ({ size: this.size, setHi: this.setHi.bind(this), r: this.r, stroke: this.stroke, total: this.total, data: this.props.data, hi: this.hi, c: this.c, offset: this.offset, active: this.active, centerValue: this.props.centerValue, centerLabel: this.props.centerLabel }))
+    return this.memo('part1_props', [this.size, this.memo, this.hi, this.r, this.stroke, this.total, this.props, this.c, this.offset, this.active], () => ({ size: this.size, setHi: this.memo("setHi:bound", [], () => this.setHi.bind(this)), r: this.r, stroke: this.stroke, total: this.total, data: this.props.data, hi: this.hi, c: this.c, offset: this.offset, active: this.active, centerValue: this.props.centerValue, centerLabel: this.props.centerLabel }))
   }
 
   /** A part of the screen still written in React (<div> with a computed style). */

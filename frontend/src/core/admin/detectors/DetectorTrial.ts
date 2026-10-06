@@ -95,7 +95,7 @@ export class DetectorTrial extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.sample, this.tr], () => ({ sample: this.sample, setSample: this.setSample.bind(this), t: this.tr }))
+    return this.memo('part2_props', [this.sample, this.memo, this.tr], () => ({ sample: this.sample, setSample: this.memo("setSample:bound", [], () => this.setSample.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<textarea> has no .kbview element yet). */

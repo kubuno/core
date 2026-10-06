@@ -74,7 +74,8 @@ export class AuthMethodsPanel extends ViewBase {
           .then(r => r.data.settings),
     })
     this.publish({ data, isLoading, isError })
-    const methods = useMemo(() => asMethods(this.methodsSetting?.value), [this.methodsSetting])
+    const methodsSetting = this.methodsSetting
+    const methods = useMemo(() => asMethods(methodsSetting?.value), [methodsSetting])
     this.publish({ methods })
     const write = useMutation({
       mutationFn: ({ key, value }: { key: string; value: unknown }) =>
@@ -184,21 +185,21 @@ export class AuthMethodsPanel extends ViewBase {
   }
 
   get method_row_props() {
-    return this.memo('method_row_props', [this.methods, this.lockedAbove, this.write, this.tr, this.isLoading, this.isError, this.data], () => {
+    return this.memo('method_row_props', [this.methods, this.lockedAbove, this.write, this.toast, this.tr, this.confirm, this.isLoading, this.isError, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
       return ({ id: "local", icon: <KeyRound size={17} />, checked: this.methods.includes('local'), disabled: this.lockedAbove || this.write.isPending, onChange: v => this.toggleMethod('local', v), t: this.tr } as React.ComponentProps<typeof __parts.MethodRow>)
     })
   }
 
   get method_row_props2() {
-    return this.memo('method_row_props2', [this.methods, this.lockedAbove, this.write, this.tr, this.isLoading, this.isError, this.data], () => {
+    return this.memo('method_row_props2', [this.methods, this.lockedAbove, this.write, this.toast, this.tr, this.confirm, this.isLoading, this.isError, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
       return ({ id: "directory", icon: <Network size={17} />, checked: this.methods.includes('directory'), disabled: this.lockedAbove || this.write.isPending, onChange: v => this.toggleMethod('directory', v), t: this.tr } as React.ComponentProps<typeof __parts.MethodRow>)
     })
   }
 
   get method_row_props3() {
-    return this.memo('method_row_props3', [this.methods, this.lockedAbove, this.write, this.tr, this.isLoading, this.isError, this.data], () => {
+    return this.memo('method_row_props3', [this.methods, this.lockedAbove, this.write, this.toast, this.tr, this.confirm, this.isLoading, this.isError, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
       return ({ id: "sso", icon: <ShieldCheck size={17} />, checked: this.methods.includes('sso'), disabled: this.lockedAbove || this.write.isPending, onChange: v => this.toggleMethod('sso', v), t: this.tr } as React.ComponentProps<typeof __parts.MethodRow>)
     })

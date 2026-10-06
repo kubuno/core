@@ -68,7 +68,7 @@ export class ScopeEditor extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.props, this.tr, this.full, this.userOptions, this.includeMenu], () => ({ Bucket: this.Bucket.bind(this), includeMenu: this.includeMenu }))
+    return this.memo('part1_props', [this.memo, this.props, this.tr, this.full, this.userOptions, this.includeMenu], () => ({ Bucket: this.memo("Bucket:bound", [], () => this.Bucket.bind(this)), includeMenu: this.includeMenu }))
   }
 
   /** A part of the screen still written in React (<Bucket> is no .kbview element (a local or dynamic component)). */
@@ -77,7 +77,7 @@ export class ScopeEditor extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.props, this.tr, this.full, this.userOptions, this.excludeMenu], () => ({ Bucket: this.Bucket.bind(this), excludeMenu: this.excludeMenu }))
+    return this.memo('part2_props', [this.memo, this.props, this.tr, this.full, this.userOptions, this.excludeMenu], () => ({ Bucket: this.memo("Bucket:bound", [], () => this.Bucket.bind(this)), excludeMenu: this.excludeMenu }))
   }
 
   /** A part of the screen still written in React (<Bucket> is no .kbview element (a local or dynamic component)). */

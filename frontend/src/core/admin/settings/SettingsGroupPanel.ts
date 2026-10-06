@@ -92,15 +92,15 @@ export class SettingsGroupPanel extends ViewBase {
           })
         }
       },
-      onSuccess: this.afterWrite.bind(this),
-      onError:   this.reportError.bind(this),
+      onSuccess: this.memo("afterWrite:bound", [], () => this.afterWrite.bind(this)),
+      onError:   this.memo("reportError:bound", [], () => this.reportError.bind(this)),
     })
     this.publish({ update })
     const revert = useMutation({
       mutationFn: (key: string) =>
         api.delete(`/admin/settings/scoped/${encodeURIComponent(key)}`, { params: this.scopeParams }),
-      onSuccess: this.afterWrite.bind(this),
-      onError:   this.reportError.bind(this),
+      onSuccess: this.memo("afterWrite:bound", [], () => this.afterWrite.bind(this)),
+      onError:   this.memo("reportError:bound", [], () => this.reportError.bind(this)),
     })
     this.publish({ revert })
     const lock = useMutation({
@@ -110,17 +110,18 @@ export class SettingsGroupPanel extends ViewBase {
           scope_id:   scope.id,
           locked:     p.locked,
         }),
-      onSuccess: this.afterWrite.bind(this),
-      onError:   this.reportError.bind(this),
+      onSuccess: this.memo("afterWrite:bound", [], () => this.afterWrite.bind(this)),
+      onError:   this.memo("reportError:bound", [], () => this.reportError.bind(this)),
     })
     this.publish({ lock })
     useEffect(() => { this.edits = {}; this.error = null }, [scope.type, scope.id])
+    const highlight = this.highlight
     useEffect(() => {
-      if (!this.highlight || !highlightRef.current) return
+      if (!highlight || !highlightRef.current) return
       highlightRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
       // `settings` is a dependency because the row does not exist before the list
       // has loaded, which is exactly when the deep link arrives.
-    }, [this.highlight, settings])
+    }, [highlight, settings])
     const sections = useMemo(() => {
       if (!settings) return []
       const byKey = new Map(settings.map(s => [s.key, s]))
@@ -190,16 +191,20 @@ export class SettingsGroupPanel extends ViewBase {
   }
 
   get pendingKeys(): string[] {
-    return this.memo('pendingKeys', [this.edits, this.settings], () => Object.keys(this.edits).filter(k => {
-    const s = this.settings?.find(x => x.key === k)
+    return this.memo('pendingKeys', [this.edits, this.settings], () => {
+      const settings = this.settings
+      return Object.keys(this.edits).filter(k => {
+    const s = settings?.find(x => x.key === k)
     return s ? this.isBuffered(s) : false
-  }))
+  })
+    })
   }
 
   get chainSetting(): ResolvedSetting | undefined {
-    return this.memo('chainSetting', [this.chainKey, this.settings, this.canRead, this.sections], () => {
+    return this.memo('chainSetting', [this.settings, this.canRead, this.sections, this.chainKey], () => {
       if (!(!(!this.canRead || !this.settings || this.sections.length === 0))) return undefined as never
-      return this.chainKey ? this.settings.find(s => s.key === this.chainKey) : undefined
+      const chainKey = this.chainKey
+      return chainKey ? this.settings.find(s => s.key === chainKey) : undefined
     })
   }
 
@@ -262,10 +267,10 @@ export class SettingsGroupPanel extends ViewBase {
 
   /** The rows of the Repeater over `sections`. */
   get rows_sections() {
-    return this.memo('rows_sections', [this.sections, this.canRead, this.settings, this.canManage, this.update, this.highlight, this.highlightRef, this.revert, this.lock], () => {
+    return this.memo('rows_sections', [this.sections, this.canRead, this.settings, this.memo, this.edits, this.canManage, this.update, this.highlight, this.highlightRef, this.revert, this.lock, this.chainKey], () => {
       if (!(!(!this.canRead || !this.settings || this.sections.length === 0))) return undefined as never
       return this.sections.map((section) => {
-      return { section, show_section_desc: ((!(!this.canRead || !this.settings || this.sections.length === 0))) ? (!!(section.desc)) : undefined, part1_props: ((!(!this.canRead || !this.settings || this.sections.length === 0))) ? ({ section: section, visibleForBranch: this.visibleForBranch.bind(this), currentValue: this.currentValue.bind(this), canManage: this.canManage, setEdits: this.setEdits.bind(this), update: this.update, highlight: this.highlight, highlightRef: this.highlightRef, revert: this.revert, lock: this.lock, setChainKey: this.setChainKey.bind(this) }) : undefined, key: section.id }
+      return { section, show_section_desc: ((!(!this.canRead || !this.settings || this.sections.length === 0))) ? (!!(section.desc)) : undefined, part1_props: ((!(!this.canRead || !this.settings || this.sections.length === 0))) ? ({ section: section, visibleForBranch: this.memo("visibleForBranch:bound", [], () => this.visibleForBranch.bind(this)), currentValue: this.memo("currentValue:bound", [], () => this.currentValue.bind(this)), canManage: this.canManage, setEdits: this.memo("setEdits:bound", [], () => this.setEdits.bind(this)), update: this.update, highlight: this.highlight, highlightRef: this.highlightRef, revert: this.revert, lock: this.lock, setChainKey: this.memo("setChainKey:bound", [], () => this.setChainKey.bind(this)) }) : undefined, key: section.id }
     })
     })
   }
@@ -327,7 +332,7 @@ export class SettingsGroupPanel extends ViewBase {
     return (s.key in this.edits ? this.edits[s.key] : s.value)
   }
 
-  visibleForBranch(s: ResolvedSetting) {
+  visibleForBranch(s: ResolvedSetting): boolean {
     if (!(!(!this.canRead || !this.settings || this.sections.length === 0))) return undefined as never
     const rule = VISIBLE_WHEN[s.key]
     if (!rule) return true

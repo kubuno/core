@@ -85,7 +85,7 @@ export class ReconciliationCard extends ViewBase {
 
   /** The rows of the Repeater over `blocks`. */
   get rows_blocks() {
-    return this.memo('rows_blocks', [this.blocks, this.tr, this.props], () => {
+    return this.memo('rows_blocks', [this.blocks, this.props, this.tr], () => {
       if (!(this.blocks.length > 0)) return undefined as never
       return this.blocks.map((b, i) => {
       return { b, i, span_text: ((this.blocks.length > 0)) ? (b.module_id

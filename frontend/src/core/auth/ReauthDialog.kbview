@@ -1,0 +1,25 @@
+<!-- ReauthDialog — converted from ReauthDialog.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<FloatingWindow x:Props="Props"
+                Title="{Res reauth.title}"
+                IconSize="16"
+                Icon="ShieldCheck"
+                Width="420"
+                Modal="true"
+                OnClose="floating_window_close">
+  <Panel HtmlTag="Form" Class="space-y-4" OnSubmit="panel_submit">
+    <Label Text="{Res reauth.intro}" Overflow="Wrap" ForeColor="TextSecondary"/>
+    <Callout Variant="Warning" Title="{Res reauth.no_method_title}" Body="{Res reauth.no_method_desc}" Visible="{Binding noMethod}"/>
+    <!-- TODO(views-migrate): <TextField> ref: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_not_no_method}"/>
+    <Label Text="{Res reauth.backup_hint, Count={Binding backup_hint_count}}"
+           Role="Meta"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           Visible="{Binding usesCode}"/>
+    <Label Text="{Binding error}" Overflow="Wrap" ForeColor="Danger" Visible="{Binding show_error}"/>
+    <Stack Direction="LeftToRight" Class="pt-1">
+      <Button Variant="Secondary" Text="{Res common.cancel}" Class="flex-1" OnClick="button_click"/>
+      <Button ButtonType="Submit" Enabled="{Binding enabled_unless_busy_no_method_value}" Text="{Res reauth.confirm}" Class="flex-1"/>
+    </Stack>
+  </Panel>
+</FloatingWindow>

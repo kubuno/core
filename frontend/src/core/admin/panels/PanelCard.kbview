@@ -66,9 +66,9 @@
     <ReactHost Component="{Binding DonutChart}" Props="{Binding donut_chart_props}" Visible="{Binding visible13}"/>
     <!-- TODO(views-migrate): <HBarList> is no .kbview element (../HBarList#default) -->
     <ReactHost Component="{Binding HBarList}" Props="{Binding hbar_list_props}" Visible="{Binding visible14}"/>
-    <!-- TODO(views-migrate): <AreaChart> is no .kbview element (../AreaChart#default) -->
+    <!-- TODO(views-migrate): <AreaChart> is no .kbview element (../AreaChart#AreaChart) -->
     <ReactHost Component="{Binding AreaChart}" Props="{Binding area_chart_props}" Visible="{Binding visible15}"/>
-    <!-- TODO(views-migrate): <BarChart> is no .kbview element (../BarChart#default) -->
+    <!-- TODO(views-migrate): <BarChart> is no .kbview element (../BarChart#BarChart) -->
     <ReactHost Component="{Binding BarChart}" Props="{Binding bar_chart_props}" Visible="{Binding visible16}"/>
   </Panel>
   <Label Text="{Binding caveat}"

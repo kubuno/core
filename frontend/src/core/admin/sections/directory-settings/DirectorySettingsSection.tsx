@@ -151,10 +151,10 @@ export class DirectorySettingsSection extends ViewBase {
 
   /** The rows of the Repeater over `SHARING_KEYS`. */
   get rows_sharing_keys() {
-    return this.memo('rows_sharing_keys', [this.canRead, this.policy, this.known, this.canManage], () => {
+    return this.memo('rows_sharing_keys', [this.canRead, this.policy, this.known, this.canManage, this.memo, this.chainKey], () => {
       if (!(!(!this.canRead)) || !(!(this.policy.isError)) || !(!(!this.policy.isLoading && this.known.length === 0))) return undefined as never
       return SHARING_KEYS.map((key) => {
-      return { key, toggle_row_props: ((!(!this.canRead)) && (!(this.policy.isError)) && (!(!this.policy.isLoading && this.known.length === 0))) ? ({ setting: this.policy.setting(key), policy: this.policy, readOnly: !this.canManage, onShowChain: this.setChainKey.bind(this) }) : undefined, rowKey: key }
+      return { key, toggle_row_props: ((!(!this.canRead)) && (!(this.policy.isError)) && (!(!this.policy.isLoading && this.known.length === 0))) ? ({ setting: this.policy.setting(key), policy: this.policy, readOnly: !this.canManage, onShowChain: this.memo("setChainKey:bound", [], () => this.setChainKey.bind(this)) }) : undefined, rowKey: key }
     })
     })
   }
@@ -167,10 +167,10 @@ export class DirectorySettingsSection extends ViewBase {
 
   /** The rows of the Repeater over `PROFILE_KEYS`. */
   get rows_profile_keys() {
-    return this.memo('rows_profile_keys', [this.canRead, this.policy, this.known, this.canManage], () => {
+    return this.memo('rows_profile_keys', [this.canRead, this.policy, this.known, this.canManage, this.memo, this.chainKey], () => {
       if (!(!(!this.canRead)) || !(!(this.policy.isError)) || !(!(!this.policy.isLoading && this.known.length === 0))) return undefined as never
       return PROFILE_KEYS.map((key) => {
-      return { key, checkbox_row_props: ((!(!this.canRead)) && (!(this.policy.isError)) && (!(!this.policy.isLoading && this.known.length === 0))) ? ({ setting: this.policy.setting(key), policy: this.policy, readOnly: !this.canManage, onShowChain: this.setChainKey.bind(this), personal: PERSONAL_DATA_KEYS.includes(key) }) : undefined, rowKey: key }
+      return { key, checkbox_row_props: ((!(!this.canRead)) && (!(this.policy.isError)) && (!(!this.policy.isLoading && this.known.length === 0))) ? ({ setting: this.policy.setting(key), policy: this.policy, readOnly: !this.canManage, onShowChain: this.memo("setChainKey:bound", [], () => this.setChainKey.bind(this)), personal: PERSONAL_DATA_KEYS.includes(key) }) : undefined, rowKey: key }
     })
     })
   }
@@ -198,9 +198,9 @@ export class DirectorySettingsSection extends ViewBase {
   }
 
   get audience_row_props() {
-    return this.memo('audience_row_props', [this.policy, this.canManage, this.canRead, this.known], () => {
+    return this.memo('audience_row_props', [this.policy, this.canManage, this.memo, this.chainKey, this.canRead, this.known], () => {
       if (!(!(!this.canRead)) || !(!(this.policy.isError)) || !(!(!this.policy.isLoading && this.known.length === 0))) return undefined as never
-      return ({ setting: this.policy.setting(DIR_AUDIENCE), policy: this.policy, readOnly: !this.canManage, onShowChain: this.setChainKey.bind(this) })
+      return ({ setting: this.policy.setting(DIR_AUDIENCE), policy: this.policy, readOnly: !this.canManage, onShowChain: this.memo("setChainKey:bound", [], () => this.setChainKey.bind(this)) })
     })
   }
 

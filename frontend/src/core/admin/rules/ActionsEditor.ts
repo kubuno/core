@@ -86,10 +86,10 @@ export class ActionsEditor extends ViewBase {
 
   /** The rows of the Repeater over `value`. */
   get rows_value() {
-    return this.memo('rows_value', [this.props], () => this.props.value.map((spec, index) => {
+    return this.memo('rows_value', [this.props, this.memo], () => this.props.value.map((spec, index) => {
       const def = this.props.catalogue.find(a => a.key === spec.action)
       const schema = def?.params_schema ?? []
-      return { spec, index, def, schema, span_text: def?.label ?? spec.action, badge_text: def?.module_id ?? '?', show_def_is_reversible: !!(def?.is_reversible), show_not_def_is_reversible: !(def?.is_reversible), show_def_is_blocking: !!(def?.is_blocking), show_def_is_orphan: !!(def?.is_orphan), show_def_description: !!(def?.description), p_text: ((def?.description)) ? (def.description) : undefined, show_schema: schema.length > 0, part3_props: ((schema.length > 0)) ? ({ schema: schema, spec: spec, setParam: this.setParam.bind(this), index: index, disabled: this.props.disabled }) : undefined, key: `${spec.action}-${index}` }
+      return { spec, index, def, schema, span_text: def?.label ?? spec.action, badge_text: def?.module_id ?? '?', show_def_is_reversible: !!(def?.is_reversible), show_not_def_is_reversible: !(def?.is_reversible), show_def_is_blocking: !!(def?.is_blocking), show_def_is_orphan: !!(def?.is_orphan), show_def_description: !!(def?.description), p_text: ((def?.description)) ? (def.description) : undefined, show_schema: schema.length > 0, part3_props: ((schema.length > 0)) ? ({ schema: schema, spec: spec, setParam: this.memo("setParam:bound", [], () => this.setParam.bind(this)), index: index, disabled: this.props.disabled }) : undefined, key: `${spec.action}-${index}` }
     }))
   }
 

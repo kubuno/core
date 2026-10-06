@@ -1,0 +1,4 @@
+<!-- GlobalMaintenanceBanner — converted from GlobalMaintenanceBanner.tsx by @kubuno/views-migrate. -->
+<Panel Visible="{Binding show_main}" Class="px-1 pt-1 no-print">
+  <Callout Variant="Warning" Title="{Res shell.maintenance_global_title}" Body="{Binding callout_text}"/>
+</Panel>

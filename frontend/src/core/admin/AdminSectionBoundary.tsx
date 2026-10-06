@@ -1,56 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
 import { EmptyState } from '@ui'
-import { Compass, Lock, ShieldAlert } from 'lucide-react'
-import { ADMIN_ROOT } from './adminRoute'
-
-/**
- * "You may not open this section" — the explicit state a refusal must produce.
- *
- * Reached two ways: the tab was filtered out of the navigation and someone typed
- * its URL anyway, or the section itself hit a refusal deeper in. Either way the
- * answer is a sentence, never a blank page.
- */
-export function AdminForbidden({ titleKey }: { titleKey?: string }) {
-  const { t } = useTranslation()
-  return (
-    <EmptyState
-      variant="unavailable"
-      icon={<Lock />}
-      title={t('admin.forbidden_title')}
-      description={
-        titleKey
-          ? t('admin.forbidden_desc_section', { section: t(titleKey) })
-          : t('admin.forbidden_desc')
-      }
-      t={t}
-    />
-  )
-}
-
-/**
- * "That address names no section" — what `/admin/nawak` produces.
- *
- * Since the section lives in the PATH, a typo (or a link to a section this build
- * no longer has) is a reachable URL that resolves to nothing. Redirecting to the
- * landing would silently pretend the address was right; a blank page would say
- * nothing at all. This says what happened and offers the way back.
- */
-export function AdminSectionNotFound({ tab }: { tab: string }) {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
-  return (
-    <EmptyState
-      variant="no-results"
-      icon={<Compass />}
-      title={t('admin.unknown_section_title')}
-      description={t('admin.unknown_section_desc', { section: tab })}
-      action={{ label: t('admin.unknown_section_action'), onClick: () => navigate(ADMIN_ROOT) }}
-      t={t}
-    />
-  )
-}
+import { ShieldAlert } from 'lucide-react'
 
 function SectionCrashed() {
   const { t } = useTranslation()

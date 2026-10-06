@@ -16,13 +16,13 @@ export class MyDataTab extends ViewBase {
   i18n!: MyDataTabStores['i18n']
   toast!: MyDataTabStores['toast']
   data!: MyDataTabStores['data']
-  isLoading!: MyDataTabStores['isLoading']
-  isError!: MyDataTabStores['isError']
-  error!: MyDataTabStores['error']
+  isLoading!: boolean
+  isError!: boolean
+  error!: Error | null
   request!: MyDataTabStores['request']
-  selected!: MyDataTabStores['selected']
+  selected!: Set<string>
   setSelected!: MyDataTabStores['setSelected']
-  steps!: MyDataTabStores['steps']
+  steps!: StepDef[]
   stepper!: MyDataTabStores['stepper']
   landed!: MyDataTabStores['landed']
 
@@ -72,7 +72,7 @@ export class MyDataTab extends ViewBase {
     return this.memo('goTo', [this.stepper], () => (this.stepper).goTo)
   }
 
-  get hasSomething() {
+  get hasSomething(): boolean {
     return !!this.data?.active || !!this.data?.history.some(r => r.status === 'ready' && r.downloadable)
   }
 
@@ -102,9 +102,9 @@ export class MyDataTab extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.stepper, this.goTo, this.hasSomething, this.data, this.selected, this.setSelected, this.maxFileMb, this.i18n, this.isLoading, this.isError], () => {
+    return this.memo('part2_props', [this.stepper, this.goTo, this.hasSomething, this.data, this.selected, this.setSelected, this.maxFileMb, this.memo, this.i18n, this.isLoading, this.isError], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
-      return ({ stepper: this.stepper, goTo: this.goTo, hasSomething: this.hasSomething, data: this.data, selected: this.selected, setSelected: this.setSelected, maxFileMb: this.maxFileMb, setMaxFileMb: this.setMaxFileMb.bind(this), i18n: this.i18n, startOver: this.startOver.bind(this) })
+      return ({ stepper: this.stepper, goTo: this.goTo, hasSomething: this.hasSomething, data: this.data, selected: this.selected, setSelected: this.setSelected, maxFileMb: this.maxFileMb, setMaxFileMb: this.memo("setMaxFileMb:bound", [], () => this.setMaxFileMb.bind(this)), i18n: this.i18n, startOver: this.memo("startOver:bound", [], () => this.startOver.bind(this)) })
     })
   }
 

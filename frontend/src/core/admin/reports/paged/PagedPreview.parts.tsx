@@ -12,20 +12,20 @@ const RAIL_W  = 150
 export function Part1({ geos, firstOrientation }: { geos: NonNullable<PagedPreview['geos']>; firstOrientation: NonNullable<PagedPreview['firstOrientation']> }) {
   return (
     <style>{`
-            @page kb-portrait  { size: ${geos.current.portrait.widthMm}mm ${geos.current.portrait.heightMm}mm;  margin: 0; }
-            @page kb-landscape { size: ${geos.current.landscape.widthMm}mm ${geos.current.landscape.heightMm}mm; margin: 0; }
-            @page { size: ${geos.current[firstOrientation].widthMm}mm ${geos.current[firstOrientation].heightMm}mm; margin: 0; }
-            @media print {
-              /* The document STARTS in the first sheet's page context. Without this
-                 the root carries the unnamed page, the first sheet switches context,
-                 and switching forces a break — a blank sheet ahead of page 1, in the
-                 browser's default paper. Seen on a proof: five pages for four. */
-              html, body { page: kb-${firstOrientation}; }
-              [data-sheet][data-o="portrait"]  { page: kb-portrait; }
-              [data-sheet][data-o="landscape"] { page: kb-landscape; }
-              [data-sheet] { height: calc(var(--sheet-h) - 0.5mm) !important; }
-            }
-          `}</style>
+        @page kb-portrait  { size: ${geos.current.portrait.widthMm}mm ${geos.current.portrait.heightMm}mm;  margin: 0; }
+        @page kb-landscape { size: ${geos.current.landscape.widthMm}mm ${geos.current.landscape.heightMm}mm; margin: 0; }
+        @page { size: ${geos.current[firstOrientation].widthMm}mm ${geos.current[firstOrientation].heightMm}mm; margin: 0; }
+        @media print {
+          /* The document STARTS in the first sheet's page context. Without this
+             the root carries the unnamed page, the first sheet switches context,
+             and switching forces a break — a blank sheet ahead of page 1, in the
+             browser's default paper. Seen on a proof: five pages for four. */
+          html, body { page: kb-${firstOrientation}; }
+          [data-sheet][data-o="portrait"]  { page: kb-portrait; }
+          [data-sheet][data-o="landscape"] { page: kb-landscape; }
+          [data-sheet] { height: calc(var(--sheet-h) - 0.5mm) !important; }
+        }
+      `}</style>
   )
 }
 

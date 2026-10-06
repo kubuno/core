@@ -38,7 +38,7 @@ export class CalendarDialog extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.name], () => ({ t: this.tr, name: this.name, setName: this.setName.bind(this) }))
+    return this.memo('part1_props', [this.tr, this.name, this.memo], () => ({ t: this.tr, name: this.name, setName: this.memo("setName:bound", [], () => this.setName.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<TextField> autoFocus: no .kbview property). */
@@ -65,7 +65,7 @@ export class CalendarDialog extends ViewBase {
   }
 
   panel_mouse_down(_sender: unknown, args: MouseEventArgs) {
-    const e = args.native as MouseEvent
+    const e = args.native as React.MouseEvent<HTMLDivElement, MouseEvent>
     e.stopPropagation()
   }
 

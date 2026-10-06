@@ -1,10 +1,10 @@
 /**
  * Code-behind of `ReportBlock.kbview` (converted from `ReportBlock.tsx` by @kubuno/views-migrate).
  */
+import { Fragment } from 'react'
 import type { ReactNode } from "react"
 
 import { ViewBase } from './ReportBlock.kbview'
-import * as __parts from './ReportBlock.parts'
 
 export type ReportBlockProps = {
   title:    string
@@ -15,13 +15,28 @@ export type ReportBlockProps = {
 }
 
 export class ReportBlock extends ViewBase {
-  get part1_props() {
-    return this.memo('part1_props', [this.props], () => ({ table: this.props.table, title: this.props.title, children: this.props.children, note: this.props.note }))
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
   }
 
-  /** A part of the screen still written in React (<section data-report-card>: attribute(s) without a .kbview property). */
-  get Part1() {
-    return __parts.Part1
+  get content_children() {
+    return this.memo('content_children', [this.props], () => ({ children: this.props.children }))
+  }
+
+  get show_note() {
+    return this.memo('show_note', [this.props], () => !!(this.props.note))
+  }
+
+  get content_note() {
+    return this.memo('content_note', [this.props], () => {
+      if (!(this.props.note)) return undefined as never
+      return ({ children: this.props.note })
+    })
+  }
+
+  get section_data() {
+    return [((v: unknown) => (v === undefined || v === null ? '' : "report-card=" + String(v)))(this.props.table ? 'table' : '')].filter(Boolean).join('; ')
   }
 
 }

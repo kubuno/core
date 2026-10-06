@@ -1,106 +1,96 @@
-// One campaign's sheet: what it is copying, from where, and where every account
-// has got to.
-//
-// ## The account table is the report
-//
-// There is no separate "rapport final" screen, and that is deliberate: a report
-// that exists only at the end is a screen nobody can consult while it matters,
-// and one that duplicates the live table is two places to keep in agreement. So
-// the table IS the report — it shows the same rows during and after, and a
-// finished campaign simply stops moving.
-//
-// ## Retry is per account
-//
-// The whole point of recording a cursor per mailbox is that a failure costs one
-// mailbox and resumes where it stopped. So the failed row carries the button,
-// not the page: "tout relancer" on a campaign whose only problem is four wrong
-// passwords would re-walk two hundred mailboxes to fix four.
+/**
+ * Code-behind of `CampaignDetail.kbview` (converted from `CampaignDetail.tsx` by @kubuno/views-migrate).
+ */
+import { useTranslation } from "react-i18next"
+import { RotateCw } from "lucide-react"
+import { Button, useToast, type DataTableColumn } from "@ui"
+import ConfirmDialog from "@ui/ConfirmDialog"
+import { useConfirm } from "../../../hooks/useConfirm"
+import { useAdminCrumbs } from "../../AdminBreadcrumb"
+import { errorMessage, useCampaignDetail, useDeleteCampaign, usePauseCampaign, useRetryAccount, useStartCampaign, type MigrationAccount } from "./api"
 
-import { useTranslation } from 'react-i18next'
-import {
-  AlertTriangle, CheckCircle2, Clock, Loader2, Pause, Play, RotateCw, Trash2,
-} from 'lucide-react'
-import {
-  Badge, Button, Callout, Card, DataTable, ProgressBar, useToast,
-  type DataTableColumn,
-} from '@ui'
-import ConfirmDialog from '@ui/ConfirmDialog'
-import { useConfirm } from '../../../hooks/useConfirm'
-import { useAdminCrumbs } from '../../AdminBreadcrumb'
-import {
-  errorMessage, useCampaignDetail, useDeleteCampaign, usePauseCampaign,
-  useRetryAccount, useStartCampaign, type MigrationAccount,
-} from './api'
+import { ViewBase } from './CampaignDetail.kbview'
+import * as __parts from './CampaignDetail.parts'
+import { StatusChip } from './CampaignDetail.parts'
 
-function StatusChip({ status }: { status: MigrationAccount['status'] }) {
-  const { t } = useTranslation()
-  const label = t(`admin.migr_acc_status_${status}`)
-  if (status === 'done') {
-    return (
-      <span className="flex items-center gap-1.5 text-success">
-        <CheckCircle2 size={14} /> {label}
-      </span>
-    )
-  }
-  if (status === 'failed') {
-    return (
-      <span className="flex items-center gap-1.5 text-danger">
-        <AlertTriangle size={14} /> {label}
-      </span>
-    )
-  }
-  if (status === 'running') {
-    return (
-      <span className="flex items-center gap-1.5 text-primary">
-        <Loader2 size={14} className="animate-spin" /> {label}
-      </span>
-    )
-  }
-  return (
-    <span className="flex items-center gap-1.5 text-text-tertiary">
-      <Clock size={14} /> {label}
-    </span>
-  )
-}
-
-export default function CampaignDetail({
-  campaignId, canManage, onGone,
-}: {
+export type CampaignDetailProps = {
   campaignId: string
   canManage: boolean
   /** Called after a removal, so the page can return to the list. */
   onGone: () => void
-}) {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+}
 
-  const { data, isLoading, isError, refetch } = useCampaignDetail(campaignId)
-  const start  = useStartCampaign()
-  const pause  = usePauseCampaign()
-  const retry  = useRetryAccount()
-  const remove = useDeleteCampaign()
+export class CampaignDetail extends ViewBase {
+  tr!: CampaignDetailStores['t']
+  toast!: CampaignDetailStores['toast']
+  confirm!: CampaignDetailStores['confirm']
+  confirmState!: CampaignDetailStores['confirmState']
+  handleConfirm!: () => void
+  handleCancel!: () => void
+  data!: CampaignDetailHooks['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: CampaignDetailHooks['refetch']
+  start!: CampaignDetailStores['start']
+  pause!: CampaignDetailStores['pause']
+  retry!: CampaignDetailStores['retry']
+  remove!: CampaignDetailStores['remove']
 
-  const campaign = data?.campaign
-  const accounts = data?.accounts ?? []
-
-  useAdminCrumbs(campaign ? [{ label: campaign.name }] : [])
-
-  if (isLoading || !campaign) {
-    return (
-      <p className="text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-        {isError ? t('admin.migr_load_failed') : t('admin.migr_loading')}
-      </p>
-    )
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    const toast = useToast()
+    const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
+    const start  = useStartCampaign()
+    const pause  = usePauseCampaign()
+    const retry  = useRetryAccount()
+    const remove = useDeleteCampaign()
+    return { t, toast, confirm, confirmState, handleConfirm, handleCancel, start, pause, retry, remove }
   }
 
-  const tally = campaign.tally
-  const progress = tally.total > 0 ? Math.min(100, Math.round((tally.copied / tally.total) * 100)) : 0
+  /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
+  useHooks() {
+    const { data, isLoading, isError, refetch } = useCampaignDetail(this.props.campaignId)
+    this.publish({ data, isLoading, isError, refetch })
+    useAdminCrumbs(this.campaign ? [{ label: this.campaign.name }] : [])
+    return { data, isLoading, isError, refetch }
+  }
 
-  const columns: DataTableColumn<MigrationAccount>[] = [
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, toast: s.toast, confirm: s.confirm, confirmState: s.confirmState, handleConfirm: s.handleConfirm, handleCancel: s.handleCancel, start: s.start, pause: s.pause, retry: s.retry, remove: s.remove })
+    const h = this.useHooks()
+    this.publish({ data: h.data, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch })
+  }
+
+  get campaign() {
+    return this.memo('campaign', [this.data], () => this.data?.campaign)
+  }
+
+  get accounts(): MigrationAccount[] {
+    return this.memo('accounts', [this.data], () => this.data?.accounts ?? [])
+  }
+
+  get tally() {
+    return this.memo('tally', [this.campaign, this.isLoading], () => {
+      if (!(!(this.isLoading || !this.campaign))) return undefined as never
+      return this.campaign.tally
+    })
+  }
+
+  get progress(): number {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.tally.total > 0 ? Math.min(100, Math.round((this.tally.copied / this.tally.total) * 100)) : 0
+  }
+
+  get columns(): DataTableColumn<MigrationAccount>[] {
+    return this.memo('columns', [this.tr, this.props, this.retry, this.toast, this.isLoading, this.campaign], () => {
+      if (!(!(this.isLoading || !this.campaign))) return undefined as never
+      return [
     {
       id: 'source',
-      header: t('admin.migr_col_source'),
+      header: this.tr('admin.migr_col_source'),
       primary: true,
       minWidth: 200,
       sortValue: r => r.source_login,
@@ -108,7 +98,7 @@ export default function CampaignDetail({
     },
     {
       id: 'target',
-      header: t('admin.migr_col_target'),
+      header: this.tr('admin.migr_col_target'),
       minWidth: 200,
       sortValue: r => r.target_email ?? '',
       cell: r => (
@@ -124,7 +114,7 @@ export default function CampaignDetail({
     },
     {
       id: 'status',
-      header: t('admin.migr_col_status'),
+      header: this.tr('admin.migr_col_status'),
       minWidth: 180,
       sortValue: r => r.status,
       cell: r => (
@@ -140,14 +130,14 @@ export default function CampaignDetail({
     },
     {
       id: 'items',
-      header: t('admin.migr_col_items'),
+      header: this.tr('admin.migr_col_items'),
       align: 'right',
       minWidth: 140,
       sortValue: r => r.items_copied,
       cell: r => (
         <span className="text-text-secondary">
           {r.items_total > 0
-            ? t('admin.migr_items_of', { copied: r.items_copied, total: r.items_total })
+            ? this.tr('admin.migr_items_of', { copied: r.items_copied, total: r.items_total })
             : r.items_copied || '—'}
         </span>
       ),
@@ -158,140 +148,196 @@ export default function CampaignDetail({
       align: 'right',
       minWidth: 120,
       cell: r => (
-        r.status === 'failed' && canManage
+        r.status === 'failed' && this.props.canManage
           ? (
             <Button
               variant="secondary"
               size="sm"
-              disabled={retry.isPending}
+              disabled={this.retry.isPending}
               onClick={e => {
                 e.stopPropagation()
-                retry.mutate(
-                  { id: campaignId, accountId: r.id },
+                this.retry.mutate(
+                  { id: this.props.campaignId, accountId: r.id },
                   {
-                    onSuccess: () => toast.success(t('admin.migr_retry_queued')),
-                    onError:   err => toast.error(errorMessage(err, t('admin.migr_retry_failed'))),
+                    onSuccess: () => this.toast.success(this.tr('admin.migr_retry_queued')),
+                    onError:   err => this.toast.error(errorMessage(err, this.tr('admin.migr_retry_failed'))),
                   },
                 )
               }}
             >
-              <RotateCw size={14} /> {t('admin.migr_retry')}
+              <RotateCw size={14} /> {this.tr('admin.migr_retry')}
             </Button>
           )
           : null
       ),
     },
   ]
+    })
+  }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="min-w-0 truncate text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-            {campaign.name}
-          </h1>
-          <p className="mt-1 text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-            {t('admin.migr_detail_sub', {
-              service: t(`admin.migr_service_${campaign.service}`),
-              host:    campaign.source_host,
-            })}
-          </p>
-        </div>
-        {canManage && (
-          <div className="flex items-center gap-2">
-            {campaign.status === 'running' ? (
-              <Button
-                variant="secondary"
-                disabled={pause.isPending}
-                onClick={() => pause.mutate(campaignId, {
-                  onError: err => toast.error(errorMessage(err, t('admin.migr_save_failed'))),
-                })}
-              >
-                <Pause size={16} /> {t('admin.migr_pause')}
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                disabled={start.isPending}
-                onClick={() => start.mutate(campaignId, {
-                  onError: err => toast.error(errorMessage(err, t('admin.migr_save_failed'))),
-                })}
-              >
-                <Play size={16} /> {campaign.started_at ? t('admin.migr_resume') : t('admin.migr_start')}
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => void confirm({
-                title:   t('admin.migr_delete_title'),
-                message: t('admin.migr_delete_message', { name: campaign.name }),
-                confirmLabel: t('admin.migr_delete'),
-                variant: 'danger',
-              }).then(ok => {
-                if (!ok) return
-                remove.mutate(campaignId, {
-                  onSuccess: () => { toast.success(t('admin.migr_deleted')); onGone() },
-                  onError:   err => toast.error(errorMessage(err, t('admin.migr_save_failed'))),
-                })
-              })}
-            >
-              <Trash2 size={16} /> {t('admin.migr_delete')}
-            </Button>
-          </div>
-        )}
-      </div>
+  get show_case_1() {
+    return !!(this.isLoading || !this.campaign)
+  }
 
-      {campaign.error && <Callout variant="warning" t={t}>{campaign.error}</Callout>}
+  get p_text() {
+    if (!(this.isLoading || !this.campaign)) return undefined as never
+    return this.isError ? this.tr('admin.migr_load_failed') : this.tr('admin.migr_loading')
+  }
 
-      <Card>
-        <div className="flex flex-col gap-3 p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant={campaign.status === 'running' ? 'primary' : 'neutral'}>
-              {t(`admin.migr_status_${campaign.status}`)}
-            </Badge>
-            <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              {t('admin.migr_accounts_summary', {
-                done:   tally.done,
-                total:  tally.accounts,
-                failed: tally.failed,
-              })}
-            </span>
-            {campaign.since_date && (
-              <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-                {t('admin.migr_since_summary', { date: campaign.since_date })}
-              </span>
-            )}
-            {campaign.exclude_folders.length > 0 && (
-              <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-                {t('admin.migr_excluded_summary', { folders: campaign.exclude_folders.join(', ') })}
-              </span>
-            )}
-          </div>
-          {/* The total is an estimate the module refines as it discovers
-              folders, so the bar is honest about being approximate rather than
-              claiming a precision it does not have. */}
-          <ProgressBar value={progress} />
-          <span className="text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {tally.total > 0
-              ? t('admin.migr_items_progress', { copied: tally.copied, total: tally.total })
-              : t('admin.migr_items_unknown', { copied: tally.copied })}
-          </span>
-        </div>
-      </Card>
+  get show_main() {
+    return !(this.isLoading || !this.campaign)
+  }
 
-      <DataTable<MigrationAccount>
-        t={t}
-        rows={accounts}
-        columns={columns}
-        rowKey={r => r.id}
-        pageSize={25}
-        error={isError ? t('admin.migr_load_failed') : undefined}
-        onRetry={() => void refetch()}
-      />
+  get h1_text() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.campaign.name
+  }
 
-      {confirmState && (
-        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
-      )}
-    </div>
-  )
+  get migr_detail_sub_service() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.tr(`admin.migr_service_${this.campaign.service}`)
+  }
+
+  get migr_detail_sub_host() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.campaign.source_host
+  }
+
+  get show_campaign_status_running() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage)) return undefined as never
+    return this.campaign.status === 'running'
+  }
+
+  get show_not_campaign_status_running() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage)) return undefined as never
+    return !(this.campaign.status === 'running')
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.pause, this.props, this.toast, this.tr, this.isLoading, this.campaign], () => {
+      if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage) || !(this.campaign.status === 'running')) return undefined as never
+      return ({ pause: this.pause, campaignId: this.props.campaignId, toast: this.toast, t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<Button> with element children). */
+  get Part1() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage) || !(this.campaign.status === 'running')) return undefined as never
+    return __parts.Part1
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.start, this.props, this.toast, this.tr, this.campaign, this.isLoading], () => {
+      if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage) || !(!(this.campaign.status === 'running'))) return undefined as never
+      return ({ start: this.start, campaignId: this.props.campaignId, toast: this.toast, t: this.tr, campaign: this.campaign })
+    })
+  }
+
+  /** A part of the screen still written in React (<Button> with element children). */
+  get Part2() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage) || !(!(this.campaign.status === 'running'))) return undefined as never
+    return __parts.Part2
+  }
+
+  get part3_props() {
+    return this.memo('part3_props', [this.confirm, this.tr, this.campaign, this.remove, this.props, this.toast, this.isLoading], () => {
+      if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage)) return undefined as never
+      return ({ confirm: this.confirm, t: this.tr, campaign: this.campaign, remove: this.remove, campaignId: this.props.campaignId, toast: this.toast, onGone: this.props.onGone })
+    })
+  }
+
+  /** A part of the screen still written in React (<Button> with element children). */
+  get Part3() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.props.canManage)) return undefined as never
+    return __parts.Part3
+  }
+
+  get show_campaign_error() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return !!(this.campaign.error)
+  }
+
+  get callout_text() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.campaign.error)) return undefined as never
+    return this.campaign.error
+  }
+
+  get variant() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.campaign.status === 'running' ? 'primary' : 'neutral'
+  }
+
+  get badge_text() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.tr(`admin.migr_status_${this.campaign.status}`)
+  }
+
+  get show_campaign_since_date() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return !!(this.campaign.since_date)
+  }
+
+  get migr_since_summary_date() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.campaign.since_date)) return undefined as never
+    return this.campaign.since_date
+  }
+
+  get show_campaign_exclude_folders() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.campaign.exclude_folders.length > 0
+  }
+
+  get migr_excluded_summary_folders() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.campaign.exclude_folders.length > 0)) return undefined as never
+    return this.campaign.exclude_folders.join(', ')
+  }
+
+  get span_text() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return this.tally.total > 0
+              ? this.tr('admin.migr_items_progress', { copied: this.tally.copied, total: this.tally.total })
+              : this.tr('admin.migr_items_unknown', { copied: this.tally.copied })
+  }
+
+  get part4_props() {
+    return this.memo('part4_props', [this.tr, this.accounts, this.columns, this.isError, this.refetch, this.isLoading, this.campaign], () => {
+      if (!(!(this.isLoading || !this.campaign))) return undefined as never
+      return ({ t: this.tr, accounts: this.accounts, columns: this.columns, isError: this.isError, refetch: this.refetch })
+    })
+  }
+
+  /** A part of the screen still written in React (<DataTable> t, columns, rowKey, onRetry: no .kbview property). */
+  get Part4() {
+    if (!(!(this.isLoading || !this.campaign))) return undefined as never
+    return __parts.Part4
+  }
+
+  get show_confirm_state() {
+    return this.memo('show_confirm_state', [this.confirmState, this.isLoading, this.campaign], () => {
+      if (!(!(this.isLoading || !this.campaign))) return undefined as never
+      return !!(this.confirmState)
+    })
+  }
+
+  /** `<ConfirmDialog>`, rendered by a ReactHost. */
+  get ConfirmDialog() {
+    if (!(!(this.isLoading || !this.campaign)) || !(this.confirmState)) return undefined as never
+    return ConfirmDialog
+  }
+
+  get confirm_dialog_props() {
+    return this.memo('confirm_dialog_props', [this.confirmState, this.handleConfirm, this.handleCancel, this.isLoading, this.campaign], () => {
+      if (!(!(this.isLoading || !this.campaign)) || !(this.confirmState)) return undefined as never
+      return ({ ...this.confirmState, onConfirm: this.handleConfirm, onCancel: this.handleCancel })
+    })
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type CampaignDetailStores = ReturnType<CampaignDetail['useStores']>
+
+/** What `useHooks()` gives (the types of the fields it fills). */
+export type CampaignDetailHooks = ReturnType<CampaignDetail['useHooks']>
+
+export default CampaignDetail.component()

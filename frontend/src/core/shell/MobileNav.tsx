@@ -1,86 +1,93 @@
-import { NavLink, useLocation } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { useSidebarStore, resolveActiveSidebarConfig, type MobileNavTab } from '../store/sidebarStore'
-
 /**
- * Primary mobile navigation. Two placements share one set of destinations:
- *  · `variant="bottom"` (default) — a fixed bottom bar, used in portrait.
- *  · `variant="rail"` — a vertical left rail rendered in the shell's flex flow,
- *    used in landscape where a bottom bar would eat the already-short height
- *    (mirrors the Google Drive tablet/landscape layout).
- *
- * Destinations come from the active module's `mobileTabs` (Drive: Home /
- * Starred / Shared / Files). NO fallback: outside a module that declares tabs
- * there is no bar at all (the drawer + waffle FAB carry the navigation) — a
- * generic Home/Modules/Settings bar was pure clutter. Modules never render
- * their own bar — that would stack two of them.
+ * Code-behind of `MobileNav.kbview` (converted from `MobileNav.tsx` by @kubuno/views-migrate).
  */
-export default function MobileNav({ variant = 'bottom' }: { variant?: 'bottom' | 'rail' }) {
-  const { pathname } = useLocation()
-  const configs = useSidebarStore(s => s.configs)
+import { Fragment } from 'react'
+import { useLocation } from "react-router-dom"
+import { useSidebarStore, resolveActiveSidebarConfig, type MobileNavTab } from "../store/sidebarStore"
 
-  const active = resolveActiveSidebarConfig(configs, pathname)
-  // Modules that own their whole chrome (office/paintsharp editors) get no bar
-  // at all — same rule as AppSidebar (an immersive editor registers a
-  // most-specific config with hideSidebar).
-  if (active?.hideSidebar) return null
-  const tabs = active?.mobileTabs
-  if (!tabs?.length) return null
+import { ViewBase } from './MobileNav.kbview'
+import * as __parts from './MobileNav.parts'
+import { NavItem } from './MobileNav.parts'
 
-  const items = tabs.map(tab => <NavItem key={tab.id} tab={tab} rail={variant === 'rail'} />)
+export type MobileNavProps = { variant?: 'bottom' | 'rail' }
 
-  if (variant === 'rail') {
-    // Rendered in the shell's flex flow (left of the module area) only when the
-    // shell decides we're a phone in landscape — no visibility variants here.
-    return (
-      <nav data-app-chrome
-           className="flex flex-col items-stretch gap-1 py-2 w-[68px] h-full overflow-y-auto
-                      rounded-xl bg-white border border-border">
-        {items}
-      </nav>
-    )
+export class MobileNav extends ViewBase {
+  pathname!: string
+  configs!: MobileNavStores['configs']
+
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { pathname } = useLocation()
+    const configs = useSidebarStore(s => s.configs)
+    return { pathname, configs }
   }
 
-  return (
-    <nav data-app-chrome
-         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-         className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-border lg:hidden">
-      {/* 56px row of items; the nav's safe-area padding extends the white
-          background below it, over the home indicator. */}
-      <div className="flex justify-around items-center h-14">
-        {items}
-      </div>
-    </nav>
-  )
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ pathname: s.pathname, configs: s.configs })
+  }
+
+  get variant() {
+    return this.props.variant ?? 'bottom'
+  }
+
+  get active() {
+    return this.memo('active', [this.configs, this.pathname], () => resolveActiveSidebarConfig(this.configs, this.pathname))
+  }
+
+  get tabs(): MobileNavTab[] | undefined {
+    return this.memo('tabs', [this.active], () => {
+      if (!(!(this.active?.hideSidebar))) return undefined as never
+      return this.active?.mobileTabs
+    })
+  }
+
+  get items() {
+    return this.memo('items', [this.tabs, this.variant, this.active], () => {
+      if (!(!(this.active?.hideSidebar)) || !(!(!this.tabs?.length))) return undefined as never
+      return this.tabs.map(tab => <NavItem key={tab.id} tab={tab} rail={this.variant === 'rail'} />)
+    })
+  }
+
+  get show_case_1() {
+    return !!(this.active?.hideSidebar)
+  }
+
+  get show_case_2() {
+    return !(this.active?.hideSidebar) && !!(!this.tabs?.length)
+  }
+
+  get show_case_3() {
+    return !(this.active?.hideSidebar) && !(!this.tabs?.length) && !!(this.variant === 'rail')
+  }
+
+  /** `React.Fragment`: renders the elements an expression holds. */
+  get Fragment() {
+    return Fragment
+  }
+
+  get content_items() {
+    return this.memo('content_items', [this.items, this.active, this.tabs, this.variant], () => {
+      if (!(!(this.active?.hideSidebar)) || !(!(!this.tabs?.length)) || !(this.variant === 'rail')) return undefined as never
+      return ({ children: this.items })
+    })
+  }
+
+  get show_main() {
+    return !(this.active?.hideSidebar) && !(!this.tabs?.length) && !(this.variant === 'rail')
+  }
+
+  get content_items2() {
+    return this.memo('content_items2', [this.items, this.active, this.tabs, this.variant], () => {
+      if (!(!(this.active?.hideSidebar)) || !(!(!this.tabs?.length)) || !(!(this.variant === 'rail'))) return undefined as never
+      return ({ children: this.items })
+    })
+  }
+
 }
 
-/** One destination. Active state mirrors the Drive/Material look: a tinted
- *  rounded rectangle behind the icon (bottom bar) or wrapping the whole item —
- *  icon + label — with side margins (rail). */
-function NavItem({ tab, rail }: { tab: MobileNavTab; rail: boolean }) {
-  const { t } = useTranslation()
-  const label = tab.labelKey ? t(tab.labelKey, { defaultValue: tab.label ?? tab.id }) : (tab.label ?? tab.id)
-  const Icon = tab.Icon
-  return (
-    <NavLink to={tab.path} end={tab.end ?? false} title={label}
-             className={({ isActive }) => `flex flex-col items-center gap-0.5 min-w-0 transition-colors
-               ${rail
-                 ? `mx-2 px-1 py-2 rounded-lg ${isActive ? 'bg-primary-light text-primary' : 'text-text-secondary'}`
-                 : 'px-3 py-1 text-xs'}`}>
-      {({ isActive }) => (
-        <>
-          {/* Bottom bar keeps the pill behind the icon; the rail highlights the
-              whole item (icon colour inherited from the NavLink). */}
-          <span className={`flex items-center justify-center h-7 transition-colors
-                            ${rail ? 'w-full' : `w-16 rounded-2xl ${isActive ? 'bg-primary-light text-primary' : 'text-text-secondary'}`}`}>
-            <Icon size={21} />
-          </span>
-          <span className={`truncate ${rail ? 'max-w-[60px] text-[11px]' : 'max-w-[5.5rem] text-xs'}
-                            ${isActive ? 'text-primary font-medium' : 'text-text-secondary'}`}>
-            {label}
-          </span>
-        </>
-      )}
-    </NavLink>
-  )
-}
+/** What `useStores()` gives (the types of the fields it fills). */
+export type MobileNavStores = ReturnType<MobileNav['useStores']>
+
+export default MobileNav.component()

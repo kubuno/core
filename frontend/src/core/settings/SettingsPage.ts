@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { useIsMobile } from "@ui"
 import { Slot } from "../slots/SlotRegistry"
-import { useSettingsNav, MobileSettingsIndex, type Tab } from "./navigation"
+import { useSettingsNav, type Tab } from "./navigation"
 import ProfileTab from "./sections/ProfileTab"
 import NotificationsTab from "./sections/NotificationsTab"
 import ThemesTab from "./sections/ThemesTab"
@@ -17,6 +17,7 @@ import ApiTokensTab from "./sections/ApiTokensTab"
 import MyDataTab from "./sections/my-data/MyDataTab"
 
 import { ViewBase } from './SettingsPage.kbview'
+import MobileSettingsIndex from './MobileSettingsIndex'
 
 export class SettingsPage extends ViewBase {
   tr!: SettingsPageStores['t']

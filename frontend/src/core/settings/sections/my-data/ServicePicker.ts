@@ -39,10 +39,10 @@ function groupByModule(services: MyExportService[]): Group[] {
 
 export class ServicePicker extends ViewBase {
   tr!: ServicePickerStores['t']
-  groups!: ServicePickerHooks['groups']
-  unfolded!: ServicePickerStores['unfolded']
+  groups!: Group[]
+  unfolded!: Set<string>
   setUnfolded!: ServicePickerStores['setUnfolded']
-  required!: ServicePickerHooks['required']
+  required!: string[]
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
   useStores() {
@@ -54,10 +54,12 @@ export class ServicePicker extends ViewBase {
   /** The screen's hooks that read its members (run after the fields of `useStores()` are set). React's rules apply: `use()` runs them on every render. */
   useHooks() {
     const groups = useMemo(() => groupByModule(this.props.services), [this.props.services])
+    this.publish({ groups })
     const required = useMemo(
       () => this.props.services.filter(s => s.required).map(s => s.id),
       [this.props.services],
     )
+    this.publish({ required })
     return { groups, required }
   }
 
@@ -81,7 +83,7 @@ export class ServicePicker extends ViewBase {
 
   /** The rows of the Repeater over `groups`. */
   get rows_groups() {
-    return this.memo('rows_groups', [this.groups, this.props, this.unfolded, this.tr], () => this.groups.map((group) => {
+    return this.memo('rows_groups', [this.groups, this.props, this.unfolded, this.memo, this.setUnfolded, this.tr, this.required], () => this.groups.map((group) => {
       const ids = group.items.map(s => s.id)
       const kept = ids.filter(id => this.props.selected.has(id))
       const all = kept.length === ids.length
@@ -89,7 +91,7 @@ export class ServicePicker extends ViewBase {
       const splittable = group.items.length > 1
       const open = this.unfolded.has(group.moduleId)
       const head = group.items[0]
-      return { group, ids, kept, all, some, splittable, open, head, check_state: ({"true":"Indeterminate","false":"Unchecked"} as Record<string, string>)[String(some)], enabled_unless_group_items_every: !(group.items.every(s => s.required)), p_text: splittable ? moduleName(group.moduleId) : head.label, show_splittable_head_description: !!(!splittable && (head.description || head.format)), p_text2: ((!splittable && (head.description || head.format))) ? (String(head.description ?? '') + String(head.description && head.format ? ' · ' : '') + String(head.format ?? '')) : undefined, part1_props: ((splittable)) ? ({ toggleFold: this.toggleFold.bind(this), group: group, open: open, t: this.tr }) : undefined, show_splittable_open: splittable && open, part2_props: ((splittable && open)) ? ({ group: group, selected: this.props.selected, toggle: this.toggle.bind(this) }) : undefined, key: group.moduleId }
+      return { group, ids, kept, all, some, splittable, open, head, check_state: ({"true":"Indeterminate","false":"Unchecked"} as Record<string, string>)[String(some)], enabled_unless_group_items_every: !(group.items.every(s => s.required)), p_text: splittable ? moduleName(group.moduleId) : head.label, show_splittable_head_description: !!(!splittable && (head.description || head.format)), p_text2: ((!splittable && (head.description || head.format))) ? (String(head.description ?? '') + String(head.description && head.format ? ' · ' : '') + String(head.format ?? '')) : undefined, part1_props: ((splittable)) ? ({ toggleFold: this.memo("toggleFold:bound", [], () => this.toggleFold.bind(this)), group: group, open: open, t: this.tr }) : undefined, show_splittable_open: splittable && open, part2_props: ((splittable && open)) ? ({ group: group, selected: this.props.selected, toggle: this.memo("toggle:bound", [], () => this.toggle.bind(this)) }) : undefined, key: group.moduleId }
     }))
   }
 

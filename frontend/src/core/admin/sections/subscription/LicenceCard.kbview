@@ -1,0 +1,34 @@
+<!-- LicenceCard — converted from LicenceCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Card x:Props="LicenceCardProps"
+      Title="{Res admin.sub_licence_title}"
+      IconSize="16"
+      Icon="Scale"
+      Subtitle="{Res admin.sub_licence_subtitle}">
+  <Panel Class="contents">
+    <Stack Direction="LeftToRight" CrossAlign="Center" WrapContents="true">
+      <Badge Variant="Primary" Text="{Binding props.licence.spdx}"/>
+      <Label HtmlTag="Span"
+             Text="{Res admin.sub_licence_free}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-meta)]"/>
+    </Stack>
+    <Label Text="{Res admin.sub_licence_grants}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="mt-3 [font-size:var(--kb-text-body)]"/>
+    <Label Text="{Res admin.sub_licence_network}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="mt-2 [font-size:var(--kb-text-body)]"/>
+    <Panel Class="mt-4 flex flex-wrap gap-x-5 gap-y-1 border-t border-border pt-3 [font-size:var(--kb-text-body)]">
+      <!-- TODO(views-migrate): <ExternalLink> is no .kbview element (./ExternalLink#ExternalLink) -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+      <!-- TODO(views-migrate): <ExternalLink> is no .kbview element (./ExternalLink#ExternalLink) -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+    </Panel>
+  </Panel>
+</Card>

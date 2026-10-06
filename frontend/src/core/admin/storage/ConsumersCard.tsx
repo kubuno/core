@@ -136,7 +136,7 @@ export class ConsumersCard extends ViewBase {
   }
 
   get rowActions(): DataTableRowAction<Consumer>[] {
-    return this.memo('rowActions', [this.tr, this.inspecting, this.canEdit], () => [
+    return this.memo('rowActions', [this.tr, this.inspecting, this.canEdit, this.navigate], () => [
     { id: 'detail', label: this.tr('admin.sto_action_detail'), onClick: r => this.inspecting = r },
     ...(this.canEdit
       ? [{ id: 'quota', label: this.tr('admin.sto_action_quota'), onClick: (r: Consumer) => this.openQuota(r.id) }]
@@ -145,7 +145,7 @@ export class ConsumersCard extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.filter, this.setFilter, this.sort], () => ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, setInspecting: this.setInspecting.bind(this), filter: this.filter, setFilter: this.setFilter, sort: this.sort, setSort: this.setSort.bind(this) }))
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.rowActions, this.memo, this.inspecting, this.filter, this.setFilter, this.sort], () => ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, rowActions: this.rowActions, setInspecting: this.memo("setInspecting:bound", [], () => this.setInspecting.bind(this)), filter: this.filter, setFilter: this.setFilter, sort: this.sort, setSort: this.memo("setSort:bound", [], () => this.setSort.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<DataTable> columns, rowKey, onRetry, rowActions, onRowClick, filtered, onClearFilters, defaultSort, minTableWidth, t, toolbar, emptyState: no .kbview property). */
@@ -172,7 +172,7 @@ export class ConsumersCard extends ViewBase {
   }
 
   get account_usage_dialog_props() {
-    return this.memo('account_usage_dialog_props', [this.inspecting, this.canEdit], () => {
+    return this.memo('account_usage_dialog_props', [this.inspecting, this.canEdit, this.navigate], () => {
       if (!(this.inspecting)) return undefined as never
       const inspecting = this.inspecting
       return ({ account: inspecting, onClose: () => this.inspecting = null, onEditQuota: this.canEdit

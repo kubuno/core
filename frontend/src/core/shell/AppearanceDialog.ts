@@ -13,6 +13,7 @@ export type AppearanceDialogProps = { moduleId: string; onClose: () => void }
 export class AppearanceDialog extends ViewBase {
   tr!: AppearanceDialogStores['t']
   setPref!: AppearanceDialogStores['setPref']
+  current!: typeof APPEARANCE_DEFAULT
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
   useStores() {
@@ -25,10 +26,9 @@ export class AppearanceDialog extends ViewBase {
   use(): void {
     const s = this.useStores()
     this.publish({ tr: s.t, setPref: s.setPref })
-  }
-
-  get current() {
-    return this.memo('current', [this.props], () => useAppearanceStore((s) => s.byModule[this.props.moduleId]) ?? APPEARANCE_DEFAULT)
+    // A store hook reading a prop: run on every render, in order (React's rules), like the TSX's `const current = …`.
+    const current = useAppearanceStore((st) => st.byModule[this.props.moduleId]) ?? APPEARANCE_DEFAULT
+    this.publish({ current })
   }
 
   get modes(): { id: AppearanceMode; label: string; variant: 'light' | 'dark' | 'system' }[] {

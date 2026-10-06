@@ -20,7 +20,7 @@ export function Part1({ rows, matching, expanded, selected, pick, toggle, multi,
                     aria-expanded={kids > 0 ? open : undefined}
                     onClick={() => pick(u.id)}
                     className={`flex items-center gap-1 rounded cursor-pointer ${
-                      isOn ? 'bg-primary-light text-primary' : 'hover:bg-surface-2 text-text-primary'}`}
+                  isOn ? 'bg-primary-light text-primary' : 'hover:bg-surface-2 text-text-primary'}`}
                     style={{ paddingLeft: depth * 16 }}
                   >
                     <button

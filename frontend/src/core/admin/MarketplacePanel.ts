@@ -134,7 +134,10 @@ export class MarketplacePanel extends ViewBase {
   }
 
   get self(): MarketModule | undefined {
-    return this.memo('self', [this.props, this.data], () => this.props.related ? (this.data ?? []).find((m) => m.id === this.props.related) : undefined)
+    return this.memo('self', [this.data, this.props], () => {
+      const related = this.props.related
+      return related ? (this.data ?? []).find((m) => m.id === related) : undefined
+    })
   }
 
   get relatedActive(): boolean {
@@ -142,7 +145,7 @@ export class MarketplacePanel extends ViewBase {
   }
 
   get visible(): MarketModule[] {
-    return this.memo('visible', [this.relatedActive, this.data], () => this.relatedActive ? (this.data ?? []).filter(this.isRelated.bind(this)) : (this.data ?? []))
+    return this.memo('visible', [this.relatedActive, this.data, this.memo, this.self], () => this.relatedActive ? (this.data ?? []).filter(this.memo("isRelated:bound", [], () => this.isRelated.bind(this))) : (this.data ?? []))
   }
 
   get categories(): string[] {

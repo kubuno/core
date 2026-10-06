@@ -70,7 +70,7 @@ export class UnitsTab extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.unitName, this.tr], () => ({ setPicking: this.setPicking.bind(this), unitName: this.unitName, t: this.tr }))
+    return this.memo('part2_props', [this.memo, this.picking, this.unitName, this.tr], () => ({ setPicking: this.memo("setPicking:bound", [], () => this.setPicking.bind(this)), unitName: this.unitName, t: this.tr }))
   }
 
   /** A part of the screen still written in React (<Button> with element children). */
@@ -96,9 +96,9 @@ export class UnitsTab extends ViewBase {
   }
 
   get part4_props() {
-    return this.memo('part4_props', [this.adding, this.tr, this.calendars, this.unitId, this.props], () => {
+    return this.memo('part4_props', [this.adding, this.tr, this.calendars, this.memo, this.unitId, this.props], () => {
       if (!(this.unitId && this.props.canManage)) return undefined as never
-      return ({ adding: this.adding, t: this.tr, calendars: this.calendars, setAdding: this.setAdding.bind(this) })
+      return ({ adding: this.adding, t: this.tr, calendars: this.calendars, setAdding: this.memo("setAdding:bound", [], () => this.setAdding.bind(this)) })
     })
   }
 
@@ -109,9 +109,9 @@ export class UnitsTab extends ViewBase {
   }
 
   get part5_props() {
-    return this.memo('part5_props', [this.adding, this.setPref, this.tr, this.unitId, this.props], () => {
+    return this.memo('part5_props', [this.adding, this.setPref, this.memo, this.error, this.tr, this.unitId, this.props], () => {
       if (!(this.unitId && this.props.canManage)) return undefined as never
-      return ({ adding: this.adding, setPref: this.setPref, setError: this.setError.bind(this), setAdding: this.setAdding.bind(this), fail: this.fail.bind(this), t: this.tr })
+      return ({ adding: this.adding, setPref: this.setPref, setError: this.memo("setError:bound", [], () => this.setError.bind(this)), setAdding: this.memo("setAdding:bound", [], () => this.setAdding.bind(this)), fail: this.memo("fail:bound", [], () => this.fail.bind(this)), t: this.tr })
     })
   }
 
@@ -161,12 +161,12 @@ export class UnitsTab extends ViewBase {
 
   /** The rows of the Repeater over `(prefs ?? [])`. */
   get rows_items() {
-    return this.memo('rows_items', [this.prefs, this.unitId, this.isLoading, this.props, this.tr, this.setPref], () => {
+    return this.memo('rows_items', [this.prefs, this.unitId, this.isLoading, this.props, this.tr, this.memo, this.error, this.setPref], () => {
       if (!(!(!this.unitId)) || !(!(this.isLoading)) || !(!((this.prefs ?? []).length === 0))) return undefined as never
       return (this.prefs ?? []).map((pref) => {
       return { pref, span_text: ((!(!this.unitId)) && (!(this.isLoading)) && (!((this.prefs ?? []).length === 0))) ? (pref.calendar_id
                   ? `${pref.calendar_name} (${pref.calendar_code})`
-                  : `${pref.holiday_name} — ${pref.holiday_calendar_code}`) : undefined, part6_props: ((!(!this.unitId)) && (!(this.isLoading)) && (!((this.prefs ?? []).length === 0)) && (this.props.canManage)) ? ({ t: this.tr, setError: this.setError.bind(this), setPref: this.setPref, pref: pref, fail: this.fail.bind(this) }) : undefined, key: pref.id }
+                  : `${pref.holiday_name} — ${pref.holiday_calendar_code}`) : undefined, part6_props: ((!(!this.unitId)) && (!(this.isLoading)) && (!((this.prefs ?? []).length === 0)) && (this.props.canManage)) ? ({ t: this.tr, setError: this.memo("setError:bound", [], () => this.setError.bind(this)), setPref: this.setPref, pref: pref, fail: this.memo("fail:bound", [], () => this.fail.bind(this)) }) : undefined, key: pref.id }
     })
     })
   }
@@ -211,7 +211,7 @@ export class UnitsTab extends ViewBase {
   }
 
   fail(e: unknown) {
-    return this.error = errorMessage(e, this.tr('admin.hol_save_failed'))
+    this.error = errorMessage(e, this.tr('admin.hol_save_failed'))
   }
 
   switch_checked_changed(_sender: unknown, args: EventArgs) {
@@ -223,7 +223,7 @@ export class UnitsTab extends ViewBase {
                     calendar_id: pref.calendar_id ?? undefined,
                     holiday_id:  pref.holiday_id ?? undefined,
                     enabled: e.target.checked,
-                  }, { onError: this.fail.bind(this) })
+                  }, { onError: this.memo("fail:bound", [], () => this.fail.bind(this)) })
                 }
 
   /** `setPicking` of the TSX: a value, or an update of the previous one. */

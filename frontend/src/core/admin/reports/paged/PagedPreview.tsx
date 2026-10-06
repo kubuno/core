@@ -366,7 +366,7 @@ export class PagedPreview extends ViewBase {
     return this.memo('part2_props', [this.measureRef, this.props], () => ({ measureRef: this.measureRef, items: this.props.items }))
   }
 
-  /** A part of the screen still written in React (<div ref data-admin-report data-paged-measure>: attribute(s) without a .kbview property). */
+  /** A part of the screen still written in React (<div ref>: attribute(s) without a .kbview property). */
   get Part2() {
     return __parts.Part2
   }
@@ -381,10 +381,10 @@ export class PagedPreview extends ViewBase {
   }
 
   get part4_props() {
-    return this.memo('part4_props', [this.frameRef, this.zoom, this.stackPx, this.stampVars, this.props, this.menuSheet, this.menu, this.sheetRefs, this.geos, this.sheets, this.orientOf, this.flips, this.tr, this.byId, this.cols, this.total], () => ({ frameRef: this.frameRef, zoom: this.zoom, stackPx: this.stackPx, stampVars: this.stampVars, cover: this.props.cover, orientation: this.props.orientation, setMenuSheet: this.setMenuSheet.bind(this), menu: this.menu, sheetRefs: this.sheetRefs, styleOf: this.styleOf.bind(this), geos: this.geos, sheets: this.sheets, orientOf: this.orientOf, setFlips: this.setFlips.bind(this), t: this.tr, sheetContent: this.sheetContent.bind(this) }))
+    return this.memo('part4_props', [this.frameRef, this.zoom, this.stackPx, this.stampVars, this.props, this.memo, this.menuSheet, this.menu, this.sheetRefs, this.geos, this.sheets, this.orientOf, this.flips, this.tr, this.byId, this.cols, this.total], () => ({ frameRef: this.frameRef, zoom: this.zoom, stackPx: this.stackPx, stampVars: this.stampVars, cover: this.props.cover, orientation: this.props.orientation, setMenuSheet: this.memo("setMenuSheet:bound", [], () => this.setMenuSheet.bind(this)), menu: this.menu, sheetRefs: this.sheetRefs, styleOf: this.memo("styleOf:bound", [], () => this.styleOf.bind(this)), geos: this.geos, sheets: this.sheets, orientOf: this.orientOf, setFlips: this.memo("setFlips:bound", [], () => this.setFlips.bind(this)), t: this.tr, sheetContent: this.memo("sheetContent:bound", [], () => this.sheetContent.bind(this)) }))
   }
 
-  /** A part of the screen still written in React (<div ref data-sheets-frame>: attribute(s) without a .kbview property). */
+  /** A part of the screen still written in React (<div ref>: attribute(s) without a .kbview property). */
   get Part4() {
     return __parts.Part4
   }
@@ -394,9 +394,9 @@ export class PagedPreview extends ViewBase {
   }
 
   get part5_props() {
-    return this.memo('part5_props', [this.stampVars, this.bandHeight, this.tr, this.props, this.active, this.sheetRefs, this.geos, this.sheets, this.orientOf, this.byId, this.cols, this.total], () => {
+    return this.memo('part5_props', [this.stampVars, this.bandHeight, this.tr, this.props, this.memo, this.active, this.sheetRefs, this.geos, this.sheets, this.orientOf, this.byId, this.cols, this.total], () => {
       if (!(this.total > 1)) return undefined as never
-      return ({ stampVars: this.stampVars, bandHeight: this.bandHeight, t: this.tr, cover: this.props.cover, thumb: this.thumb.bind(this), geos: this.geos, orientation: this.props.orientation, sheets: this.sheets, orientOf: this.orientOf, sheetContent: this.sheetContent.bind(this) })
+      return ({ stampVars: this.stampVars, bandHeight: this.bandHeight, t: this.tr, cover: this.props.cover, thumb: this.memo("thumb:bound", [], () => this.thumb.bind(this)), geos: this.geos, orientation: this.props.orientation, sheets: this.sheets, orientOf: this.orientOf, sheetContent: this.memo("sheetContent:bound", [], () => this.sheetContent.bind(this)) })
     })
   }
 
@@ -424,7 +424,7 @@ export class PagedPreview extends ViewBase {
   }
 
   get part7_props() {
-    return this.memo('part7_props', [this.active, this.total, this.sheetRefs, this.tr], () => ({ active: this.active, total: this.total, setActive: this.setActive.bind(this), goTo: this.goTo.bind(this), t: this.tr }))
+    return this.memo('part7_props', [this.active, this.total, this.memo, this.sheetRefs, this.tr], () => ({ active: this.active, total: this.total, setActive: this.memo("setActive:bound", [], () => this.setActive.bind(this)), goTo: this.memo("goTo:bound", [], () => this.goTo.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<input> has no .kbview element yet). */

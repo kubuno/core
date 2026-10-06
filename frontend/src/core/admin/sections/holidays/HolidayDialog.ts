@@ -95,7 +95,7 @@ export class HolidayDialog extends ViewBase {
       const timer = setTimeout(() => {
         runPreview.mutate(
           { kind, rule: composed, observance },
-          { onSuccess: this.setPreview.bind(this), onError: () => this.preview = [] },
+          { onSuccess: this.memo("setPreview:bound", [], () => this.setPreview.bind(this)), onError: () => this.preview = [] },
         )
       }, 250)
       return () => clearTimeout(timer)
@@ -437,7 +437,7 @@ export class HolidayDialog extends ViewBase {
   }
 
   panel_mouse_down(_sender: unknown, args: MouseEventArgs) {
-    const e = args.native as MouseEvent
+    const e = args.native as React.MouseEvent<HTMLDivElement, MouseEvent>
     e.stopPropagation()
   }
 

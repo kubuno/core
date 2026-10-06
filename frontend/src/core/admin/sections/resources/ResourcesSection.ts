@@ -4,6 +4,7 @@
 import { useTranslation } from "react-i18next"
 import { type TabDef } from "@ui"
 import { usePrivileges } from "../../../authz/usePrivileges"
+import type { AdminSectionProps } from "../registry"
 import { RESOURCES_MANAGE } from "./privileges"
 import { paneFromParams, type ResourcePane } from "./panes"
 import { adminUrlWith } from "../../adminAction"
@@ -15,6 +16,8 @@ import RoomStatsTab from "./RoomStatsTab"
 
 import { ViewBase } from './ResourcesSection.kbview'
 import * as __parts from './ResourcesSection.parts'
+
+export type { AdminSectionProps }
 
 export class ResourcesSection extends ViewBase {
   tr!: ResourcesSectionStores['t']
@@ -52,7 +55,7 @@ export class ResourcesSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.tabs, this.pane], () => ({ t: this.tr, tabs: this.tabs, pane: this.pane, go: this.go.bind(this) }))
+    return this.memo('part1_props', [this.tr, this.tabs, this.pane, this.memo, this.props], () => ({ t: this.tr, tabs: this.tabs, pane: this.pane, go: this.memo("go:bound", [], () => this.go.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<Tabs> tabs: no .kbview property). */
@@ -71,9 +74,9 @@ export class ResourcesSection extends ViewBase {
   }
 
   get overview_tab_props() {
-    return this.memo('overview_tab_props', [this.pane], () => {
+    return this.memo('overview_tab_props', [this.memo, this.props, this.pane], () => {
       if (!(this.pane === 'overview')) return undefined as never
-      return ({ onGo: this.go.bind(this) })
+      return ({ onGo: this.memo("go:bound", [], () => this.go.bind(this)) })
     })
   }
 

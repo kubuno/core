@@ -1,0 +1,26 @@
+<!-- AdminNavTree — converted from AdminNavTree.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminNavTreeProps" Class="contents">
+  <Panel HtmlTag="Nav" Visible="{Binding show_case_1}" Class="flex-1 min-h-0 overflow-y-auto px-2">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_nav}">
+      <!-- TODO(views-migrate): <Link aria-current> -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Repeater>
+  </Panel>
+  <Panel HtmlTag="Nav" Visible="{Binding show_main}" Class="flex-1 min-h-0 overflow-y-auto px-2 pt-2 pb-2">
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_pinned}" Visible="{Binding show_pinned}">
+      <!-- TODO(views-migrate): <div> with a computed style -->
+      <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    </Repeater>
+    <Panel Visible="{Binding show_pinned}" Class="mx-3 my-2 border-t border-border"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_render_items_primary}"/>
+    <!-- TODO(views-migrate): elements held in an expression -->
+    <ReactHost Component="{Binding Fragment}" Props="{Binding content_show_more_render_items_secondary}"/>
+    <!-- TODO(views-migrate): <a aria-expanded>: attribute(s) without a .kbview property -->
+    <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}" Visible="{Binding show_secondary}"/>
+    <Panel Class="mt-3 border-t border-border pt-3">
+      <!-- TODO(views-migrate): <Link style> -->
+      <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+    </Panel>
+  </Panel>
+</Panel>

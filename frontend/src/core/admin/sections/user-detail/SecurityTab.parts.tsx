@@ -5,7 +5,7 @@
 import { Field } from "./atoms"
 import type { SecurityTab } from './SecurityTab'
 
-export function Part1({ t, user }: { t: NonNullable<SecurityTab['tr']>; user: NonNullable<SecurityTab['props']['user']> }) {
+export function Part1({ t, user, user_oauth_provider }: { t: NonNullable<SecurityTab['tr']>; user: NonNullable<SecurityTab['props']['user']>; user_oauth_provider: string }) {
   return (
     <dl className="divide-y divide-border">
               <Field label={t('admin.ud_must_change_pw')}>
@@ -13,7 +13,7 @@ export function Part1({ t, user }: { t: NonNullable<SecurityTab['tr']>; user: No
               </Field>
               <Field label={t('admin.ud_auth_method')}>
                 {user.oauth_provider
-                  ? t('admin.ud_auth_oauth', { provider: user.oauth_provider })
+                  ? t('admin.ud_auth_oauth', { provider: user_oauth_provider })
                   : t('admin.ud_auth_password')}
               </Field>
             </dl>

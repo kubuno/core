@@ -1,0 +1,73 @@
+<!-- MockRibbon — converted from RibbonMock.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="rounded-lg overflow-hidden border [border-color:var(--kbn-ws-border,_#dadce0)]">
+  <Panel Class="flex items-end gap-1 px-2 pt-1.5 [height:34px] [background:var(--kbn-office-tabstrip,_#1557b0)]">
+    <Label HtmlTag="Div"
+           Text="Fichier"
+           Role="Meta"
+           FontWeight="SemiBold"
+           Overflow="Wrap"
+           Class="px-3.5 h-[26px] flex items-center rounded-t-lg [background:var(--kbn-office-file-accent,_#3f7dd0)] [color:var(--kbn-office-file-accent-text,_#fff)]"/>
+    <Label HtmlTag="Div"
+           Text="Accueil"
+           Role="Meta"
+           FontWeight="Medium"
+           Overflow="Wrap"
+           Class="px-3.5 h-[26px] flex items-center rounded-t-lg [background:var(--kbn-ws-bg,_#ffffff)] [color:var(--kbn-office-tab-active-text,_#1557b0)]"/>
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+      <Label HtmlTag="Div"
+             Text="{Binding l}"
+             Role="Meta"
+             FontWeight="Medium"
+             Overflow="Wrap"
+             Class="px-3.5 h-[26px] flex items-center rounded-t-lg [color:var(--kbn-office-tabstrip-text,_#ffffff)]"/>
+    </Repeater>
+  </Panel>
+  <Panel Class="flex items-stretch px-2 [height:84px] [background:var(--kbn-ws-bg,_#ffffff)]">
+    <Stack Gap="0" Justify="SpaceBetween" Class="px-2 py-1">
+      <Stack Gap="2" Justify="Center" Class="flex-1">
+        <!-- TODO(views-migrate): elements held in an expression -->
+        <ReactHost Component="{Binding Fragment}" Props="{Binding content_small_btn_copy_size}"/>
+        <!-- TODO(views-migrate): elements held in an expression -->
+        <ReactHost Component="{Binding Fragment}" Props="{Binding content_small_btn_pencil_size}"/>
+      </Stack>
+      <!-- TODO(views-migrate): <div> with a computed style -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+    </Stack>
+    <!-- TODO(views-migrate): <div> with a computed style -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    <Stack Gap="0" Justify="SpaceBetween" Class="px-2 py-1">
+      <Stack Direction="LeftToRight" Gap="2" Class="flex-1">
+        <Stack Gap="2" Justify="Center">
+          <!-- TODO(views-migrate): elements held in an expression -->
+          <ReactHost Component="{Binding Fragment}" Props="{Binding content_small_btn_span_class_name}"/>
+          <!-- TODO(views-migrate): elements held in an expression -->
+          <ReactHost Component="{Binding Fragment}" Props="{Binding content_small_btn_span_class_name2}"/>
+        </Stack>
+        <Stack Gap="2" Justify="Center">
+          <!-- TODO(views-migrate): elements held in an expression -->
+          <ReactHost Component="{Binding Fragment}" Props="{Binding content_small_btn_span_class_name3}"/>
+          <!-- TODO(views-migrate): elements held in an expression -->
+          <ReactHost Component="{Binding Fragment}" Props="{Binding content_small_btn_file_text_size}"/>
+        </Stack>
+      </Stack>
+      <!-- TODO(views-migrate): <div> with a computed style -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part1_props}"/>
+    </Stack>
+    <!-- TODO(views-migrate): <div> with a computed style -->
+    <ReactHost Component="{Binding Part4}" Props="{Binding part2_props}"/>
+    <Stack Gap="0" Justify="SpaceBetween" Class="px-2 py-1">
+      <Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="Center" Class="flex-1">
+        <Panel Class="flex flex-col w-14 items-center justify-center gap-1 rounded cursor-default [color:var(--kbn-ws-text,_#202124)]">
+          <Icon Name="Folder" Size="22"/>
+          <Label HtmlTag="Span" Text="Insérer" TextAlign="TopCenter" Overflow="Wrap" Class="text-[10px] leading-tight"/>
+        </Panel>
+      </Stack>
+      <!-- TODO(views-migrate): <div> with a computed style -->
+      <ReactHost Component="{Binding Part5}" Props="{Binding part1_props}"/>
+    </Stack>
+  </Panel>
+  <Panel Class="flex items-center justify-between px-3 text-[11px] [height:22px] [background:var(--kbn-ws-status,_#f8f9fa)] [color:var(--kbn-ws-text-dim,_#5f6368)] [border-top:1px_solid_var(--kbn-ws-border,_#dadce0)]">
+    <Label HtmlTag="Span" Text="Page 1 sur 3 · 428 mots" Overflow="Wrap" InheritFontSize="true"/>
+    <Label HtmlTag="Span" Text="100 %" Overflow="Wrap" InheritFontSize="true"/>
+  </Panel>
+</Panel>

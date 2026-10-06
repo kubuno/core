@@ -1,0 +1,10 @@
+<!-- ModulesLicenceCard — converted from ModulesLicenceCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Card x:Props="ModulesLicenceCardProps"
+      Title="{Res admin.sub_modules_title}"
+      IconSize="16"
+      Icon="Package"
+      Subtitle="{Res admin.sub_modules_subtitle}"
+      Flush="true">
+  <!-- TODO(views-migrate): <DataTable> columns, rowKey, defaultSort, t: no .kbview property -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+</Card>

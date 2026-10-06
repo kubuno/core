@@ -163,9 +163,9 @@ export class LdapSection extends ViewBase {
   }
 
   get ldap_directory_form_props() {
-    return this.memo('ldap_directory_form_props', [this.form, this.setForm, this.editing, this.createM, this.isLoading], () => {
+    return this.memo('ldap_directory_form_props', [this.form, this.setForm, this.memo, this.editing, this.createM, this.updateM, this.isLoading], () => {
       if (!(!(this.isLoading)) || !(this.editing === 'new')) return undefined as never
-      return ({ form: this.form, setForm: this.setForm, isEdit: false, hasStoredPassword: false, onSave: this.submit.bind(this), onCancel: () => this.editing = null, saving: this.createM.isPending } as React.ComponentProps<typeof LdapDirectoryForm>)
+      return ({ form: this.form, setForm: this.setForm, isEdit: false, hasStoredPassword: false, onSave: this.memo("submit:bound", [], () => this.submit.bind(this)), onCancel: () => this.editing = null, saving: this.createM.isPending } as React.ComponentProps<typeof LdapDirectoryForm>)
     })
   }
 
@@ -180,9 +180,9 @@ export class LdapSection extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.list, this.probe, this.authProbe, this.report, this.editing, this.form, this.setForm, this.updateM, this.tr, this.probing, this.testM, this.syncM, this.trial, this.testAuthM, this.isLoading], () => {
+    return this.memo('part2_props', [this.list, this.probe, this.authProbe, this.report, this.editing, this.form, this.setForm, this.memo, this.createM, this.updateM, this.tr, this.confirm, this.deleteM, this.probing, this.testM, this.syncM, this.trial, this.testAuthM, this.isLoading], () => {
       if (!(!(this.isLoading)) || !(!(this.list.length === 0 && this.editing !== 'new'))) return undefined as never
-      return ({ list: this.list, probe: this.probe, authProbe: this.authProbe, report: this.report, editing: this.editing, form: this.form, setForm: this.setForm, submit: this.submit.bind(this), setEditing: this.setEditing.bind(this), updateM: this.updateM, t: this.tr, onDelete: this.onDelete.bind(this), probing: this.probing, setProbe: this.setProbe.bind(this), testM: this.testM, syncM: this.syncM, trial: this.trial, setTrial: this.setTrial.bind(this), testAuthM: this.testAuthM })
+      return ({ list: this.list, probe: this.probe, authProbe: this.authProbe, report: this.report, editing: this.editing, form: this.form, setForm: this.setForm, submit: this.memo("submit:bound", [], () => this.submit.bind(this)), setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)), updateM: this.updateM, t: this.tr, onDelete: this.memo("onDelete:bound", [], () => this.onDelete.bind(this)), probing: this.probing, setProbe: this.memo("setProbe:bound", [], () => this.setProbe.bind(this)), testM: this.testM, syncM: this.syncM, trial: this.trial, setTrial: this.memo("setTrial:bound", [], () => this.setTrial.bind(this)), testAuthM: this.testAuthM })
     })
   }
 

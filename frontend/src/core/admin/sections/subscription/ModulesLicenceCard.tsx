@@ -1,101 +1,105 @@
-import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Package } from 'lucide-react'
-import { Badge, Card, DataTable, type DataTableColumn } from '@ui'
-import { formatDay } from '../format'
-import { ExternalLink } from './Field'
-import type { InstalledModule } from './api'
-
 /**
- * What is installed, at which version, under which licence.
- *
- * The licence column is not decoration: a module is a separate repository with
- * its own manifest, so "the platform is AGPL" is a statement about the core and
- * nothing more. What each module declares is read back from `core.modules`,
- * where the manifest it shipped landed — so a module that ever declares
- * something else shows it here rather than being quietly assumed to match.
- *
- * The version column is the other half of a support request: "which version"
- * is the first question anybody answering one asks.
+ * Code-behind of `ModulesLicenceCard.kbview` (converted from `ModulesLicenceCard.tsx` by @kubuno/views-migrate).
  */
-export default function ModulesLicenceCard({ modules }: { modules: InstalledModule[] }) {
-  const { t, i18n } = useTranslation()
+import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
+import { Badge, type DataTableColumn } from "@ui"
+import { formatDay } from "../format"
+import type { InstalledModule } from "./api"
+import { ExternalLink } from "./ExternalLink"
 
-  const columns = useMemo<DataTableColumn<InstalledModule>[]>(() => [
-    {
-      id: 'name',
-      header: t('admin.sub_mod_col_name'),
-      primary: true,
-      required: true,
-      sortValue: r => r.display_name,
-      cell: r => (
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-text-primary">{r.display_name}</span>
-          <span className="truncate font-mono text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-            {r.id}
+import { ViewBase } from './ModulesLicenceCard.kbview'
+import * as __parts from './ModulesLicenceCard.parts'
+
+export type ModulesLicenceCardProps = { modules: InstalledModule[] }
+
+export class ModulesLicenceCard extends ViewBase {
+  tr!: ModulesLicenceCardStores['t']
+  columns!: DataTableColumn<InstalledModule>[]
+
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t, i18n } = useTranslation()
+    const columns = useMemo<DataTableColumn<InstalledModule>[]>(() => [
+      {
+        id: 'name',
+        header: t('admin.sub_mod_col_name'),
+        primary: true,
+        required: true,
+        sortValue: r => r.display_name,
+        cell: r => (
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-text-primary">{r.display_name}</span>
+            <span className="truncate font-mono text-text-tertiary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+              {r.id}
+            </span>
           </span>
-        </span>
-      ),
-    },
-    {
-      id: 'version',
-      header: t('admin.sub_mod_col_version'),
-      sortValue: r => r.version,
-      cell: r => <span className="tabular-nums">{r.version}</span>,
-    },
-    {
-      id: 'licence',
-      header: t('admin.sub_mod_col_licence'),
-      sortValue: r => r.license ?? '',
-      // A module that declares nothing is shown as declaring nothing. Filling
-      // the gap with the core's own licence would be the console asserting
-      // something the module never said.
-      cell: r => r.license
-        ? <Badge variant="default">{r.license}</Badge>
-        : <span className="text-text-tertiary">{t('admin.sub_mod_licence_unknown')}</span>,
-    },
-    {
-      id: 'state',
-      header: t('admin.sub_mod_col_state'),
-      sortValue: r => r.is_enabled,
-      cell: r => r.is_enabled
-        ? <span className="text-text-secondary">{t('admin.sub_mod_enabled')}</span>
-        : <span className="text-text-tertiary">{t('admin.sub_mod_disabled')}</span>,
-    },
-    {
-      id: 'installed',
-      header: t('admin.sub_mod_col_installed'),
-      sortValue: r => r.installed_at,
-      cell: r => (
-        <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
-          {formatDay(r.installed_at, i18n.language)}
-        </span>
-      ),
-    },
-    {
-      id: 'source',
-      header: t('admin.sub_mod_col_source'),
-      cell: r => r.homepage_url
-        ? <ExternalLink href={r.homepage_url}>{t('admin.sub_mod_source_link')}</ExternalLink>
-        : <span className="text-text-tertiary">—</span>,
-    },
-  ], [t, i18n.language])
+        ),
+      },
+      {
+        id: 'version',
+        header: t('admin.sub_mod_col_version'),
+        sortValue: r => r.version,
+        cell: r => <span className="tabular-nums">{r.version}</span>,
+      },
+      {
+        id: 'licence',
+        header: t('admin.sub_mod_col_licence'),
+        sortValue: r => r.license ?? '',
+        // A module that declares nothing is shown as declaring nothing. Filling
+        // the gap with the core's own licence would be the console asserting
+        // something the module never said.
+        cell: r => r.license
+          ? <Badge variant="default">{r.license}</Badge>
+          : <span className="text-text-tertiary">{t('admin.sub_mod_licence_unknown')}</span>,
+      },
+      {
+        id: 'state',
+        header: t('admin.sub_mod_col_state'),
+        sortValue: r => r.is_enabled,
+        cell: r => r.is_enabled
+          ? <span className="text-text-secondary">{t('admin.sub_mod_enabled')}</span>
+          : <span className="text-text-tertiary">{t('admin.sub_mod_disabled')}</span>,
+      },
+      {
+        id: 'installed',
+        header: t('admin.sub_mod_col_installed'),
+        sortValue: r => r.installed_at,
+        cell: r => (
+          <span className="text-text-secondary" style={{ fontSize: 'var(--kb-text-meta)' }}>
+            {formatDay(r.installed_at, i18n.language)}
+          </span>
+        ),
+      },
+      {
+        id: 'source',
+        header: t('admin.sub_mod_col_source'),
+        cell: r => r.homepage_url
+          ? <ExternalLink href={r.homepage_url}>{t('admin.sub_mod_source_link')}</ExternalLink>
+          : <span className="text-text-tertiary">—</span>,
+      },
+    ], [t, i18n.language])
+    return { t, i18n, columns }
+  }
 
-  return (
-    <Card
-      title={t('admin.sub_modules_title')}
-      icon={<Package size={16} />}
-      subtitle={t('admin.sub_modules_subtitle')}
-      flush
-    >
-      <DataTable
-        rows={modules}
-        columns={columns}
-        rowKey={r => r.id}
-        defaultSort={{ columnId: 'name', direction: 'asc' }}
-        pageSize={0}
-        t={t}
-      />
-    </Card>
-  )
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, columns: s.columns })
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.props, this.columns, this.tr], () => ({ modules: this.props.modules, columns: this.columns, t: this.tr }))
+  }
+
+  /** A part of the screen still written in React (<DataTable> columns, rowKey, defaultSort, t: no .kbview property). */
+  get Part1() {
+    return __parts.Part1
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type ModulesLicenceCardStores = ReturnType<ModulesLicenceCard['useStores']>
+
+export default ModulesLicenceCard.component()

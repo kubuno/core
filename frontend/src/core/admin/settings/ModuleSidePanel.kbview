@@ -1,25 +1,24 @@
 <!-- ModuleSidePanel — converted from ModuleSidePanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<Panel x:Props="ModuleSidePanelProps" Class="contents">
-  <Panel HtmlTag="Aside"
-         BackColor="Surface"
-         Visible="{Binding show_main}"
-         Class="w-full shrink-0 self-start rounded-xl border border-border md:sticky md:top-4 md:w-60 xl:w-64">
-    <Stack Direction="LeftToRight" Gap="10" CrossAlign="Center" Class="border-b border-border px-3 py-3">
-      <Panel HtmlTag="Span" Class="flex h-7 w-7 shrink-0 items-center justify-center">
-        <!-- TODO(views-migrate): <Glyph> is no .kbview element (a local or dynamic component) -->
-        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_glyph}"/>
-      </Panel>
-      <Label HtmlTag="Span"
-             Text="{Binding props.module.display_name}"
-             FontWeight="Medium"
-             Overflow="Wrap"
-             ForeColor="TextPrimary"
-             InheritFontSize="true"
-             Class="min-w-0 flex-1 leading-snug [font-size:var(--kb-text-title)]"/>
-    </Stack>
-    <!-- TODO(views-migrate): <Section> is no .kbview element (a local or dynamic component) -->
-    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding hasPages}"/>
-    <!-- TODO(views-migrate): <Section> is no .kbview element (a local or dynamic component) -->
-    <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}" Visible="{Binding props.scopable}"/>
-  </Panel>
+<Panel x:Props="ModuleSidePanelProps"
+       HtmlTag="Aside"
+       BackColor="Surface"
+       Visible="{Binding show_main}"
+       Class="w-full shrink-0 self-start rounded-xl border border-border md:sticky md:top-4 md:w-60 xl:w-64">
+  <Stack Direction="LeftToRight" Gap="10" CrossAlign="Center" Class="border-b border-border px-3 py-3">
+    <Panel HtmlTag="Span" Class="flex h-7 w-7 shrink-0 items-center justify-center">
+      <!-- TODO(views-migrate): <Glyph> is no .kbview element (a local or dynamic component) -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_glyph}"/>
+    </Panel>
+    <Label HtmlTag="Span"
+           Text="{Binding props.module.display_name}"
+           FontWeight="Medium"
+           Overflow="Wrap"
+           ForeColor="TextPrimary"
+           InheritFontSize="true"
+           Class="min-w-0 flex-1 leading-snug [font-size:var(--kb-text-title)]"/>
+  </Stack>
+  <!-- TODO(views-migrate): <Section> is no .kbview element (a local or dynamic component) -->
+  <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}" Visible="{Binding hasPages}"/>
+  <!-- TODO(views-migrate): <Section> is no .kbview element (a local or dynamic component) -->
+  <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}" Visible="{Binding props.scopable}"/>
 </Panel>

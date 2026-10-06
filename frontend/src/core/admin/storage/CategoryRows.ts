@@ -4,9 +4,9 @@
 import { useTranslation } from "react-i18next"
 import { categoryLabel, type CategoryRules } from "./categories"
 import type { CategoryUsage } from "./api"
-import CategoryRow from "./CategoryBreakdown"
 
 import { ViewBase } from './CategoryRows.kbview'
+import * as __parts from './CategoryRows.parts'
 
 export type CategoryRowsProps = {
   rows:  CategoryUsage[]
@@ -45,7 +45,7 @@ export class CategoryRows extends ViewBase {
   /** `<CategoryRow>`, rendered by a ReactHost. */
   get CategoryRow() {
     if (!(!(this.held.length === 0))) return undefined as never
-    return CategoryRow
+    return __parts.CategoryRow
   }
 
   /** The rows of the Repeater over `held`. */

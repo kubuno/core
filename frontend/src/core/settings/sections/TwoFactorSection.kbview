@@ -6,7 +6,7 @@
       <Icon Name="ShieldCheck" Size="18" Class="text-success shrink-0"/>
       <Label Text="{Res settings.tfa_on_success}" FontWeight="Medium" Overflow="Wrap" ForeColor="Success"/>
     </Stack>
-    <!-- TODO(views-migrate): <BackupCodesPanel> is no .kbview element (./BackupCodesPanel#default) -->
+    <!-- TODO(views-migrate): <BackupCodesPanel> is no .kbview element (./BackupCodesPanel#BackupCodesPanel) -->
     <ReactHost Component="{Binding BackupCodesPanel}" Props="{Binding backup_codes_panel_props}"/>
   </Panel>
   <Panel Visible="{Binding show_case_2}">

@@ -15,6 +15,7 @@ import type { DashboardPanel } from "../panels/types"
 import { useAdminStats } from "./adminStats"
 import { errorMessage, useDashboard } from "./dashboard/api"
 import { DEFAULT_ORDER, panelDef } from "./dashboard/panels"
+import type { AdminSectionProps } from "./registry"
 
 import { ViewBase } from './DashboardSection.kbview'
 import * as __parts from './DashboardSection.parts'
@@ -24,6 +25,8 @@ const LAYOUT_KEYS = {
   cache:        'kubuno-admin-dashboard',
   defaultOrder: DEFAULT_ORDER,
 }
+
+export type { AdminSectionProps }
 
 export class DashboardSection extends ViewBase {
   @bind accessor period = 'last_30_days'
@@ -157,9 +160,9 @@ export class DashboardSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.statsLoading, this.i18n, this.stats, this.activePct, this.can], () => {
+    return this.memo('part1_props', [this.tr, this.memo, this.statsLoading, this.i18n, this.stats, this.activePct, this.can], () => {
       if (!(!(!this.can(PRIV.STATS_READ)))) return undefined as never
-      return ({ t: this.tr, n: this.n.bind(this), stats: this.stats, activePct: this.activePct })
+      return ({ t: this.tr, n: this.memo("n:bound", [], () => this.n.bind(this)), stats: this.stats, activePct: this.activePct })
     })
   }
 
@@ -184,9 +187,9 @@ export class DashboardSection extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.period, this.periodOptions, this.can], () => {
+    return this.memo('part2_props', [this.period, this.memo, this.periodOptions, this.can], () => {
       if (!(!(!this.can(PRIV.STATS_READ)))) return undefined as never
-      return ({ period: this.period, setPeriod: this.setPeriod.bind(this), periodOptions: this.periodOptions })
+      return ({ period: this.period, setPeriod: this.memo("setPeriod:bound", [], () => this.setPeriod.bind(this)), periodOptions: this.periodOptions })
     })
   }
 
@@ -197,9 +200,9 @@ export class DashboardSection extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.editing, this.tr, this.can], () => {
+    return this.memo('part3_props', [this.editing, this.memo, this.tr, this.can], () => {
       if (!(!(!this.can(PRIV.STATS_READ)))) return undefined as never
-      return ({ editing: this.editing, setEditing: this.setEditing.bind(this), t: this.tr })
+      return ({ editing: this.editing, setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)), t: this.tr })
     })
   }
 

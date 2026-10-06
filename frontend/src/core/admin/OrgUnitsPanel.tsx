@@ -91,13 +91,13 @@ export class OrgUnitsPanel extends ViewBase {
     const move = useMutation({
       mutationFn: (p: { id: string; parent_id: string }) =>
         api.patch(`/admin/org-units/${p.id}`, { parent_id: p.parent_id }),
-      onSuccess: this.invalidate_.bind(this),
+      onSuccess: this.memo("invalidate_:bound", [], () => this.invalidate_.bind(this)),
       onError: err => toast.error(errMessage(err) ?? t('admin.ou_move_error')),
     })
     this.publish({ move })
     const remove = useMutation({
       mutationFn: (id: string) => api.delete(`/admin/org-units/${id}`),
-      onSuccess: this.invalidate_.bind(this),
+      onSuccess: this.memo("invalidate_:bound", [], () => this.invalidate_.bind(this)),
       onError: err => toast.error(errMessage(err) ?? t('admin.ou_delete_error')),
     })
     this.publish({ remove })
@@ -147,7 +147,7 @@ export class OrgUnitsPanel extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.can, this.rows, this.own], () => ({ t: this.tr, can: this.can, rows: this.rows, own: this.own, subtreeCount: this.subtreeCount.bind(this), setDialog: this.setDialog.bind(this), setMoveUnit: this.setMoveUnit.bind(this), openMenu: this.openMenu.bind(this) }))
+    return this.memo('part1_props', [this.tr, this.can, this.rows, this.own, this.memo, this.units, this.dialog, this.moveUnit, this.menu], () => ({ t: this.tr, can: this.can, rows: this.rows, own: this.own, subtreeCount: this.memo("subtreeCount:bound", [], () => this.subtreeCount.bind(this)), setDialog: this.memo("setDialog:bound", [], () => this.setDialog.bind(this)), setMoveUnit: this.memo("setMoveUnit:bound", [], () => this.setMoveUnit.bind(this)), openMenu: this.memo("openMenu:bound", [], () => this.openMenu.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<table> has no .kbview element yet). */
@@ -160,9 +160,9 @@ export class OrgUnitsPanel extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.menu], () => {
+    return this.memo('part2_props', [this.memo, this.tr, this.dialog, this.moveUnit, this.confirm, this.remove, this.menu], () => {
       if (!(this.menu)) return undefined as never
-      return ({ menuItems: this.menuItems.bind(this), menu: this.menu, setMenu: this.setMenu.bind(this) })
+      return ({ menuItems: this.memo("menuItems:bound", [], () => this.menuItems.bind(this)), menu: this.menu, setMenu: this.memo("setMenu:bound", [], () => this.setMenu.bind(this)) })
     })
   }
 

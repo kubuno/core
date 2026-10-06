@@ -98,9 +98,9 @@ export class ModuleSidePanel extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.tr, this.openPages, this.props, this.hasPages], () => {
+    return this.memo('part2_props', [this.tr, this.openPages, this.memo, this.props, this.hasPages], () => {
       if (!(!(!this.hasPages && !this.props.scopable)) || !(this.hasPages)) return undefined as never
-      return ({ t: this.tr, openPages: this.openPages, setOpenPages: this.setOpenPages.bind(this), groups: this.props.groups, activeGroup: this.props.activeGroup, module: this.props.module })
+      return ({ t: this.tr, openPages: this.openPages, setOpenPages: this.memo("setOpenPages:bound", [], () => this.setOpenPages.bind(this)), groups: this.props.groups, activeGroup: this.props.activeGroup, module: this.props.module })
     })
   }
 
@@ -111,9 +111,9 @@ export class ModuleSidePanel extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.tr, this.openScope, this.props, this.overridingUnits, this.hasPages], () => {
+    return this.memo('part3_props', [this.tr, this.openScope, this.memo, this.props, this.overridingUnits, this.hasPages], () => {
       if (!(!(!this.hasPages && !this.props.scopable)) || !(this.props.scopable)) return undefined as never
-      return ({ t: this.tr, openScope: this.openScope, setOpenScope: this.setOpenScope.bind(this), scope: this.props.scope, onScopeChange: this.props.onScopeChange, overridingUnits: this.overridingUnits })
+      return ({ t: this.tr, openScope: this.openScope, setOpenScope: this.memo("setOpenScope:bound", [], () => this.setOpenScope.bind(this)), scope: this.props.scope, onScopeChange: this.props.onScopeChange, overridingUnits: this.overridingUnits })
     })
   }
 

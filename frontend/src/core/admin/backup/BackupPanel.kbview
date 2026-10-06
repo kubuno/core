@@ -1,0 +1,16 @@
+<!-- BackupPanel — converted from BackupPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_2}" Class="py-10">
+    <Spinner/>
+  </Stack>
+  <EmptyState ActionLabel="{Res admin.bk_retry}"
+              IconSize="26"
+              Icon="DatabaseBackup"
+              Variant="Error"
+              Title="{Res admin.bk_load_failed}"
+              Description="{Res admin.bk_load_failed_desc}"
+              Visible="{Binding show_case_3}"
+              OnAction="empty_state_action"/>
+  <!-- TODO(views-migrate): <div ref>: attribute(s) without a .kbview property -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding show_main}"/>
+</Panel>

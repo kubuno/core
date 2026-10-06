@@ -10,6 +10,7 @@ import { formatAgo, formatWhen } from "../sections/format"
 import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
 import { adminUrl, useAdminAction } from "../adminAction"
+import type { AdminSectionProps } from "../sections/registry"
 import AlertDetail from "./AlertDetail"
 import { useAlertFacets, useAlerts, useAlertSummary, useAlertVerb, useAlertViews, useBulkAlerts, useDeleteAlertView, useSaveAlertView, useScanNow } from "./useAlerts"
 import { alertSummary, alertTitle, severityLabel, skinOf, statusLabel } from "./labels"
@@ -18,6 +19,8 @@ import { EMPTY_FILTERS, type Alert, type AlertFilters, type AlertStatus } from "
 import { ViewBase } from './AlertsSection.kbview'
 import * as __parts from './AlertsSection.parts'
 import { FilterControls } from './AlertsSection.parts'
+
+export type { AdminSectionProps }
 
 export class AlertsSection extends ViewBase {
   @bind accessor selected: string[] = []
@@ -217,7 +220,7 @@ export class AlertsSection extends ViewBase {
   }
 
   get toolbar() {
-    return this.memo('toolbar', [this.setFilters, this.draft, this.setDraft, this.tr, this.facets, this.sheet, this.openId, this.filters], () => {
+    return this.memo('toolbar', [this.setFilters, this.draft, this.setDraft, this.tr, this.memo, this.facets, this.sheet, this.openId, this.filters], () => {
       if (!(!(this.openId))) return undefined as never
       const filters = this.filters
       const anyFilter = Object.values(filters).some(Boolean)
@@ -230,7 +233,7 @@ export class AlertsSection extends ViewBase {
       {/* The six selects would wrap into a four-line toolbar on a phone; below
           `sm` they live in a sheet behind one button instead. */}
       <div className="hidden flex-wrap items-center gap-2 sm:flex">
-        <FilterControls filters={filters} set={this.set.bind(this)} facets={this.facets} stacked={false} />
+        <FilterControls filters={filters} set={this.memo("set:bound", [], () => this.set.bind(this))} facets={this.facets} stacked={false} />
       </div>
       <Button variant="secondary" size="sm" className="sm:hidden"
         icon={<SlidersHorizontal size={14} />} onClick={() => this.sheet = true}>
@@ -311,9 +314,9 @@ export class AlertsSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.anyFilter, this.setFilters, this.setDraft, this.toolbar, this.canManage, this.selected, this.bulkActions, this.rowActions, this.props, this.summary, this.i18n, this.scan, this.toast, this.openId], () => {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.anyFilter, this.setFilters, this.setDraft, this.toolbar, this.canManage, this.selected, this.memo, this.bulkActions, this.rowActions, this.props, this.summary, this.i18n, this.scan, this.toast, this.openId], () => {
       if (!(!(this.openId))) return undefined as never
-      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, anyFilter: this.anyFilter, setFilters: this.setFilters, setDraft: this.setDraft, toolbar: this.toolbar, canManage: this.canManage, selected: this.selected, setSelected: this.setSelected.bind(this), bulkActions: this.bulkActions, rowActions: this.rowActions, navigate: this.props.navigate, summary: this.summary, summary_last_scan_at: this.summary?.last_scan_at, i18n: this.i18n, scan: this.scan, toast: this.toast })
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, anyFilter: this.anyFilter, setFilters: this.setFilters, setDraft: this.setDraft, toolbar: this.toolbar, canManage: this.canManage, selected: this.selected, setSelected: this.memo("setSelected:bound", [], () => this.setSelected.bind(this)), bulkActions: this.bulkActions, rowActions: this.rowActions, navigate: this.props.navigate, summary: this.summary, summary_last_scan_at: this.summary?.last_scan_at, i18n: this.i18n, scan: this.scan, toast: this.toast })
     })
   }
 
@@ -334,9 +337,9 @@ export class AlertsSection extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.sheet, this.tr, this.filters, this.setFilters, this.facets, this.openId], () => {
+    return this.memo('part2_props', [this.sheet, this.memo, this.tr, this.filters, this.setFilters, this.facets, this.openId], () => {
       if (!(!(this.openId))) return undefined as never
-      return ({ sheet: this.sheet, setSheet: this.setSheet.bind(this), t: this.tr, filters: this.filters, set: this.set.bind(this), facets: this.facets })
+      return ({ sheet: this.sheet, setSheet: this.memo("setSheet:bound", [], () => this.setSheet.bind(this)), t: this.tr, filters: this.filters, set: this.memo("set:bound", [], () => this.set.bind(this)), facets: this.facets })
     })
   }
 
@@ -409,7 +412,7 @@ export class AlertsSection extends ViewBase {
 
   text_field_key_down(_sender: unknown, args: EventArgs) {
     if (!(!(this.openId)) || !(this.saving)) return undefined as never
-    const e = args.native as KeyboardEvent
+    const e = args.native as React.KeyboardEvent<HTMLInputElement>
  if (e.key === 'Enter') this.doSaveView() }
 
   button_click2(_sender: unknown, _args: MouseEventArgs) {

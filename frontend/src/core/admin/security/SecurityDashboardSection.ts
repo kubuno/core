@@ -6,6 +6,7 @@ import { useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
+import type { AdminSectionProps } from "../sections/registry"
 import { errorMessage, useSecurityDashboard, type SecurityPanel } from "./api"
 import { reportUrl } from "../panels/report"
 import { panelDef } from "./panels"
@@ -13,6 +14,8 @@ import { applyLayout, usePanelLayout } from "./usePanelLayout"
 
 import { ViewBase } from './SecurityDashboardSection.kbview'
 import * as __parts from './SecurityDashboardSection.parts'
+
+export type { AdminSectionProps }
 
 export class SecurityDashboardSection extends ViewBase {
   @bind accessor period = 'last_30_days'
@@ -106,9 +109,9 @@ export class SecurityDashboardSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.period, this.periodOptions, this.can], () => {
+    return this.memo('part1_props', [this.period, this.memo, this.periodOptions, this.can], () => {
       if (!(!(!this.can(PRIV.AUDIT_READ)))) return undefined as never
-      return ({ period: this.period, setPeriod: this.setPeriod.bind(this), periodOptions: this.periodOptions })
+      return ({ period: this.period, setPeriod: this.memo("setPeriod:bound", [], () => this.setPeriod.bind(this)), periodOptions: this.periodOptions })
     })
   }
 
@@ -119,9 +122,9 @@ export class SecurityDashboardSection extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.editing, this.tr, this.can], () => {
+    return this.memo('part2_props', [this.editing, this.memo, this.tr, this.can], () => {
       if (!(!(!this.can(PRIV.AUDIT_READ)))) return undefined as never
-      return ({ editing: this.editing, setEditing: this.setEditing.bind(this), t: this.tr })
+      return ({ editing: this.editing, setEditing: this.memo("setEditing:bound", [], () => this.setEditing.bind(this)), t: this.tr })
     })
   }
 

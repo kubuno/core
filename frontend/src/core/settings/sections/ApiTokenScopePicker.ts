@@ -19,13 +19,13 @@ export type ApiTokenScopePickerProps = {
 export class ApiTokenScopePicker extends ViewBase {
   @bind accessor query = ''
   tr!: ApiTokenScopePickerStores['t']
-  domainLabel!: ApiTokenScopePickerStores['domainLabel']
+  domainLabel!: (domain: string) => string
   privilegeLabel!: ApiTokenScopePickerStores['privilegeLabel']
   privilegeDescription!: ApiTokenScopePickerStores['privilegeDescription']
-  collapsed!: ApiTokenScopePickerStores['collapsed']
+  collapsed!: Set<string>
   setCollapsed!: ApiTokenScopePickerStores['setCollapsed']
-  chosen!: ApiTokenScopePickerHooks['chosen']
-  groups!: ApiTokenScopePickerHooks['groups']
+  chosen!: Set<string>
+  groups!: [string, TokenScope[]][]
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
   useStores() {
@@ -40,6 +40,7 @@ export class ApiTokenScopePicker extends ViewBase {
     const privilegeLabel = this.privilegeLabel
     const privilegeDescription = this.privilegeDescription
     const chosen = useMemo(() => new Set(this.props.selected), [this.props.selected])
+    this.publish({ chosen })
     const groups = useMemo(() => {
       const needle = this.query.trim().toLowerCase()
       // Matched on the displayed wording, so a search types what the eye reads.
@@ -58,6 +59,7 @@ export class ApiTokenScopePicker extends ViewBase {
       }
       return [...byDomain.entries()]
     }, [this.props.scopes, this.query, privilegeLabel, privilegeDescription])
+    this.publish({ groups })
     return { chosen, groups }
   }
 
@@ -78,9 +80,9 @@ export class ApiTokenScopePicker extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.chosen, this.props, this.privilegeLabel, this.tr], () => {
+    return this.memo('part1_props', [this.chosen, this.memo, this.props, this.privilegeLabel, this.tr], () => {
       if (!(!(this.props.scopes.length === 0))) return undefined as never
-      return ({ chosen: this.chosen, toggle: this.toggle.bind(this), scopes: this.props.scopes, privilegeLabel: this.privilegeLabel, t: this.tr })
+      return ({ chosen: this.chosen, toggle: this.memo("toggle:bound", [], () => this.toggle.bind(this)), scopes: this.props.scopes, privilegeLabel: this.privilegeLabel, t: this.tr })
     })
   }
 
@@ -107,9 +109,9 @@ export class ApiTokenScopePicker extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.groups, this.chosen, this.collapsed, this.setCollapsed, this.domainLabel, this.tr, this.privilegeLabel, this.privilegeDescription, this.props], () => {
+    return this.memo('part2_props', [this.groups, this.chosen, this.collapsed, this.setCollapsed, this.domainLabel, this.memo, this.props, this.tr, this.privilegeLabel, this.privilegeDescription], () => {
       if (!(!(this.props.scopes.length === 0))) return undefined as never
-      return ({ groups: this.groups, chosen: this.chosen, collapsed: this.collapsed, setCollapsed: this.setCollapsed, domainLabel: this.domainLabel, toggleGroup: this.toggleGroup.bind(this), t: this.tr, toggle: this.toggle.bind(this), privilegeLabel: this.privilegeLabel, privilegeDescription: this.privilegeDescription })
+      return ({ groups: this.groups, chosen: this.chosen, collapsed: this.collapsed, setCollapsed: this.setCollapsed, domainLabel: this.domainLabel, toggleGroup: this.memo("toggleGroup:bound", [], () => this.toggleGroup.bind(this)), t: this.tr, toggle: this.memo("toggle:bound", [], () => this.toggle.bind(this)), privilegeLabel: this.privilegeLabel, privilegeDescription: this.privilegeDescription })
     })
   }
 

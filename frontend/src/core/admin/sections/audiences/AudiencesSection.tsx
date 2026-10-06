@@ -9,6 +9,7 @@ import { Button, Input, foldIncludes, type DataTableColumn, type DataTableRowAct
 import { usePrivileges } from "../../../authz/usePrivileges"
 import { useConfirm } from "../../../hooks/useConfirm"
 import ConfirmDialog from "@ui/ConfirmDialog"
+import type { AdminSectionProps } from "../registry"
 import { adminUrlWith } from "../../adminAction"
 import { AUDIENCES_MANAGE } from "./privileges"
 import { useAudiences, useAudienceMutations, type Audience } from "./api"
@@ -22,6 +23,8 @@ function errMessage(err: unknown): string | undefined {
   const e = err as { message?: string; response?: { data?: { message?: string } } }
   return e?.response?.data?.message ?? e?.message
 }
+
+export type { AdminSectionProps }
 
 export class AudiencesSection extends ViewBase {
   @bind accessor creating = false
@@ -132,7 +135,7 @@ export class AudiencesSection extends ViewBase {
   }
 
   get rowActions(): DataTableRowAction<Audience>[] {
-    return this.memo('rowActions', [this.canManage, this.tr, this.open], () => {
+    return this.memo('rowActions', [this.canManage, this.tr, this.open, this.confirm, this.remove], () => {
       if (!(!(this.open))) return undefined as never
       return this.canManage
     ? [{
@@ -205,9 +208,9 @@ export class AudiencesSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.q, this.toolbar, this.rowActions, this.open], () => {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.q, this.memo, this.toolbar, this.rowActions, this.props, this.open], () => {
       if (!(!(this.open))) return undefined as never
-      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, q: this.q, setQ: this.setQ.bind(this), toolbar: this.toolbar, rowActions: this.rowActions, go: this.go.bind(this) })
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, q: this.q, setQ: this.memo("setQ:bound", [], () => this.setQ.bind(this)), toolbar: this.toolbar, rowActions: this.rowActions, go: this.memo("go:bound", [], () => this.go.bind(this)) })
     })
   }
 
@@ -224,7 +227,7 @@ export class AudiencesSection extends ViewBase {
   }
 
   get audience_dialog_props() {
-    return this.memo('audience_dialog_props', [this.create, this.creating, this.open], () => {
+    return this.memo('audience_dialog_props', [this.create, this.creating, this.props, this.open], () => {
       if (!(!(this.open)) || !(this.creating)) return undefined as never
       return ({ busy: this.create.isPending, error: errMessage(this.create.error), onCancel: () => this.creating = false, onSave: v => this.create.mutate(v, {
             onSuccess: r => { this.creating = false; this.go(r.audience.id) },

@@ -25,9 +25,9 @@ import type { FlowItem } from "./paged/types"
 import DonutChart from "../DonutChart"
 import HBarList from "../HBarList"
 import ProgressRing from "../ProgressRing"
-import ReportSeriesChart from "../ReportSeriesChart"
-import CaveatBlock from "./CaveatBlock"
-import MethodBlock from "./MethodBlock"
+import { ReportSeriesChart } from "../ReportSeriesChart"
+import { CaveatBlock } from "./CaveatBlock"
+import { MethodBlock } from "./MethodBlock"
 import ReportBlock from "./ReportBlock"
 
 import { ViewBase } from './ReportDocument.kbview'
@@ -429,7 +429,7 @@ export class ReportDocument extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.barRef, this.crumbH, this.props, this.periodOptions, this.paper, this.tr, this.orientation, this.cover, this.watermark, this.setWatermark, this.exportCsv], () => ({ barRef: this.barRef, crumbH: this.crumbH, periodId: this.props.periodId, onPeriod: this.props.onPeriod, periodOptions: this.periodOptions, paper: this.paper, setPaper: this.setPaper.bind(this), t: this.tr, orientation: this.orientation, setOrientation: this.setOrientation.bind(this), cover: this.cover, setCover: this.setCover.bind(this), watermark: this.watermark, setWatermark: this.setWatermark, exportCsv: this.exportCsv }))
+    return this.memo('part1_props', [this.barRef, this.crumbH, this.props, this.periodOptions, this.paper, this.memo, this.tr, this.orientation, this.cover, this.watermark, this.setWatermark, this.exportCsv], () => ({ barRef: this.barRef, crumbH: this.crumbH, periodId: this.props.periodId, onPeriod: this.props.onPeriod, periodOptions: this.periodOptions, paper: this.paper, setPaper: this.memo("setPaper:bound", [], () => this.setPaper.bind(this)), t: this.tr, orientation: this.orientation, setOrientation: this.memo("setOrientation:bound", [], () => this.setOrientation.bind(this)), cover: this.cover, setCover: this.memo("setCover:bound", [], () => this.setCover.bind(this)), watermark: this.watermark, setWatermark: this.setWatermark, exportCsv: this.exportCsv }))
   }
 
   /** A part of the screen still written in React (<div ref>: attribute(s) without a .kbview property). */
@@ -443,7 +443,7 @@ export class ReportDocument extends ViewBase {
   }
 
   get paged_preview_props() {
-    return this.memo('paged_preview_props', [this.items, this.paper, this.orientation, this.revision, this.cover, this.watermark, this.crumbH, this.barH, this.props, this.title, this.about, this.periodLabel, this.generatedAt, this.model, this.tr], () => ({ items: this.items, format: PAPER[this.paper] ?? PAPER.a4, orientation: this.orientation, revision: `${this.revision}|${this.cover}`, watermark: this.watermark, bandHeight: this.crumbH + this.barH, onToggleCover: () => this.cover = !this.cover, onOrientation: this.setOrientation.bind(this), cover: this.cover ? (
+    return this.memo('paged_preview_props', [this.items, this.paper, this.orientation, this.revision, this.cover, this.watermark, this.crumbH, this.barH, this.memo, this.props, this.title, this.about, this.periodLabel, this.generatedAt, this.model, this.tr], () => ({ items: this.items, format: PAPER[this.paper] ?? PAPER.a4, orientation: this.orientation, revision: `${this.revision}|${this.cover}`, watermark: this.watermark, bandHeight: this.crumbH + this.barH, onToggleCover: () => this.cover = !this.cover, onOrientation: this.memo("setOrientation:bound", [], () => this.setOrientation.bind(this)), cover: this.cover ? (
           <CoverSheet
             instance={this.props.instance}
             title={this.title}
@@ -453,7 +453,7 @@ export class ReportDocument extends ViewBase {
             generatedBy={this.props.author}
             model={this.model}
           />
-        ) : undefined, footer: this.footer.bind(this) } as React.ComponentProps<typeof PagedPreview>))
+        ) : undefined, footer: this.memo("footer:bound", [], () => this.footer.bind(this)) } as React.ComponentProps<typeof PagedPreview>))
   }
 
   footer(page: number, total: number) {

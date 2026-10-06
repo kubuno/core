@@ -180,7 +180,7 @@ export class ModuleSettingRow extends ViewBase {
     })
   }
 
-  describeDefault() {
+  describeDefault(): string {
     if (this.props.item.type === 'bool') {
       return this.props.item.default
         ? this.tr('common.enabled', { defaultValue: 'activé' })

@@ -58,7 +58,9 @@ export class ProvenanceLine extends ViewBase {
   }
 
   get own(): boolean {
-    return this.props.setting.has_own_value && !this.locked
+    const setting = this.props.setting
+    const locked = setting.locked_above
+    return setting.has_own_value && !locked
   }
 
   get fromName(): string {
@@ -70,27 +72,31 @@ export class ProvenanceLine extends ViewBase {
   }
 
   get items(): MenuItem[] {
-    return this.memo('items', [this.tr, this.props, this.locked], () => [
+    return this.memo('items', [this.tr, this.props], () => {
+      const setting = this.props.setting
+      const locked = setting.locked_above
+      return [
     {
       type: 'action',
       label: this.tr('admin.setting_revert'),
       icon: <CornerDownRight size={15} />,
       // Nothing to revert when the value is already inherited, and a lock above
       // forbids touching this level at all.
-      disabled: !this.props.setting.has_own_value || this.locked,
+      disabled: !setting.has_own_value || locked,
       onClick: this.props.onRevert,
     },
     {
       type: 'action',
-      label: this.props.setting.locked_here ? this.tr('admin.setting_unlock') : this.tr('admin.setting_lock'),
+      label: setting.locked_here ? this.tr('admin.setting_unlock') : this.tr('admin.setting_lock'),
       icon: <Lock size={15} />,
       // Locking pins a value for the levels below, so there must be one here.
-      disabled: this.locked || (!this.props.setting.locked_here && !this.props.setting.has_own_value),
-      onClick: () => this.props.onLock(!this.props.setting.locked_here),
+      disabled: locked || (!setting.locked_here && !setting.has_own_value),
+      onClick: () => this.props.onLock(!setting.locked_here),
     },
     { type: 'separator' },
     { type: 'action', label: this.tr('admin.setting_chain'), onClick: this.props.onShowChain },
-  ])
+  ]
+    })
   }
 
   get show_not_locked() {
@@ -121,7 +127,7 @@ export class ProvenanceLine extends ViewBase {
   get part1_props() {
     return this.memo('part1_props', [this.items, this.menu, this.theme], () => {
       if (!(this.menu.pos)) return undefined as never
-      return ({ items: this.items, menu_pos: this.menu.pos, menu: this.menu, theme: this.theme })
+      return ({ items: this.items, menu_pos: this.menu?.pos, menu: this.menu, theme: this.theme })
     })
   }
 

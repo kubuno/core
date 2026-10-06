@@ -1,0 +1,27 @@
+<!-- CalloutsAndProgress — converted from CalloutsAndProgress.tsx by @kubuno/views-migrate. -->
+<Stack Gap="12">
+  <Stack>
+    <Callout Title="{Res admin.t_prev_co_info_t}" Body="{Res admin.t_prev_co_info}"/>
+    <Callout HostStrings="true" Variant="Success" Dismissible="true" Body="{Res admin.t_prev_co_ok}"/>
+    <Callout ActionLabel="{Res admin.t_prev_co_warn_a}"
+             Variant="Warning"
+             Title="{Res admin.t_prev_co_warn_t}"
+             Body="{Res admin.t_prev_co_warn}"
+             OnAction="callout_action"/>
+    <Callout ActionLabel="{Res ui.retry}"
+             HostStrings="true"
+             Variant="Danger"
+             Title="{Res admin.t_prev_co_err_t}"
+             Dismissible="true"
+             Body="{Res admin.t_prev_co_err}"
+             OnAction="callout_action2"/>
+  </Stack>
+  <Panel Class="grid gap-3 sm:grid-cols-2">
+    <ProgressBar HostStrings="true" Value="38" Label="{Res admin.t_prev_pb_ok}" ShowValue="true"/>
+    <ProgressBar HostStrings="true" Value="80" Label="{Res admin.t_prev_pb_warn}" ShowValue="true"/>
+    <ProgressBar HostStrings="true" Value="95" Label="{Res admin.t_prev_pb_dang}" ShowValue="true"/>
+    <ProgressBar HostStrings="true" Value="95" Variant="Primary" Label="{Res admin.t_prev_pb_pin}" ShowValue="true"/>
+    <ProgressBar HostStrings="true" Indeterminate="true" Label="{Res admin.t_prev_pb_ind}"/>
+    <ProgressBar HostStrings="true" Size="Sm" Value="62" Label="{Res admin.t_prev_pb_sm}" ShowValue="true"/>
+  </Panel>
+</Stack>

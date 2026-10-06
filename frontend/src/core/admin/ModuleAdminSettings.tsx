@@ -25,10 +25,10 @@ import { hasScopableSettings, prefixedKey, useResolvedModuleSettings } from "./s
 import { INSTANCE_SCOPE, type ActiveScope, type ResolvedSetting } from "./settings/scopeTypes"
 import { isVisible, outOfRange, sameValue, type SettingItem } from "./settings/moduleSettingSchema"
 import { apiErrorDetail } from "../api/errorMessage"
+import ScopeHeadline from "./settings/ScopeHeadline"
 
 import { ViewBase } from './ModuleAdminSettings.kbview'
 import * as __parts from './ModuleAdminSettings.parts'
-import ScopeHeadline from './settings/ScopeHeadline'
 
 export function useModuleInstanceSettings(moduleId: string, enabled = true) {
   const query = useQuery({
@@ -136,7 +136,7 @@ export class ModuleAdminSettings extends ViewBase {
         }
       },
       onSuccess: (_data, changes) => this.afterWrite(Object.keys(changes)),
-      onError:   this.reportError.bind(this),
+      onError:   this.memo("reportError:bound", [], () => this.reportError.bind(this)),
     })
     this.publish({ save })
     const revert = useMutation({
@@ -145,7 +145,7 @@ export class ModuleAdminSettings extends ViewBase {
           params: { scope_type: this.scope.type, scope_id: this.scope.id ?? undefined },
         }),
       onSuccess: (_data, key) => this.afterWrite([key]),
-      onError:   this.reportError.bind(this),
+      onError:   this.memo("reportError:bound", [], () => this.reportError.bind(this)),
     })
     this.publish({ revert })
     const lock = useMutation({
@@ -156,7 +156,7 @@ export class ModuleAdminSettings extends ViewBase {
           locked:     p.locked,
         }),
       onSuccess: (_data, p) => this.afterWrite([p.key]),
-      onError:   this.reportError.bind(this),
+      onError:   this.memo("reportError:bound", [], () => this.reportError.bind(this)),
     })
     this.publish({ lock })
     const groupIds   = useMemo(() => new Set(this.groups.map(g => g.id)), [this.groups])
@@ -181,7 +181,7 @@ export class ModuleAdminSettings extends ViewBase {
       [items, this.paged, groupIds, this.firstGroup, this.page],
     )
     const pageCategories = useMemo(
-      () => this.splitByCategory(pageItems.filter(this.visible.bind(this))),
+      () => this.splitByCategory(pageItems.filter(this.memo("visible:bound", [], () => this.visible.bind(this)))),
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [pageItems, this.edits, byKey, t],
     )
@@ -255,7 +255,8 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   get activeTab(): string {
-    return this.tabs.some(x => x.id === this.tab) ? (this.tab as string) : (this.tabs[0]?.id ?? '')
+    const tab = this.tab
+    return this.tabs.some(x => x.id === tab) ? (tab as string) : (this.tabs[0]?.id ?? '')
   }
 
   get dirtyCount(): number {
@@ -356,7 +357,7 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   get content_render_matches_matches() {
-    return this.memo('content_render_matches_matches', [this.matches, this.isLoading, this.items, this.filtering], () => {
+    return this.memo('content_render_matches_matches', [this.isLoading, this.items, this.tr, this.paged, this.props, this.scoped, this.resolvedByKey, this.edits, this.filtering, this.opened, this.scopeAside, this.byKey, this.groupIds, this.firstGroup, this.page, this.tab, this.CATEGORY_TAB, this.invalidKeys, this.busySection, this.savedSection, this.confirm, this.save, this.advOpen, this.memo, this.scopable, this.revert, this.lock, this.chainKey, this.groups, this.matches], () => {
       if (!(!(this.isLoading)) || !(!(this.items.length === 0)) || !(this.filtering)) return undefined as never
       return ({ children: this.renderMatches(this.matches ?? []) })
     })
@@ -373,9 +374,9 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tabs, this.activeTab, this.tr, this.isLoading, this.items, this.filtering, this.paged], () => {
+    return this.memo('part1_props', [this.tabs, this.activeTab, this.memo, this.tab, this.tr, this.isLoading, this.items, this.filtering, this.paged], () => {
       if (!(!(this.isLoading)) || !(!(this.items.length === 0)) || !(!(this.filtering)) || !(this.paged) || !(this.tabs.length > 1)) return undefined as never
-      return ({ tabs: this.tabs, activeTab: this.activeTab, setTab: this.setTab.bind(this), t: this.tr })
+      return ({ tabs: this.tabs, activeTab: this.activeTab, setTab: this.memo("setTab:bound", [], () => this.setTab.bind(this)), t: this.tr })
     })
   }
 
@@ -427,7 +428,7 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   get content_category_section_active_tab_active_categ() {
-    return this.memo('content_category_section_active_tab_active_categ', [this.activeTab, this.activeCategory, this.isLoading, this.items, this.filtering, this.paged, this.ExtraTab], () => {
+    return this.memo('content_category_section_active_tab_active_categ', [this.isLoading, this.items, this.scoped, this.resolvedByKey, this.edits, this.tr, this.filtering, this.opened, this.scopeAside, this.byKey, this.paged, this.groupIds, this.firstGroup, this.page, this.props, this.tab, this.CATEGORY_TAB, this.invalidKeys, this.busySection, this.savedSection, this.confirm, this.save, this.advOpen, this.memo, this.scopable, this.revert, this.lock, this.chainKey, this.activeTab, this.activeCategory, this.ExtraTab], () => {
       if (!(!(this.isLoading)) || !(!(this.items.length === 0)) || !(!(this.filtering)) || !(this.paged) || !(!(this.ExtraTab)) || !(this.activeCategory)) return undefined as never
       return ({ children: this.categorySection(
                 this.activeTab, this.activeCategory.category,
@@ -487,9 +488,9 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.pageCategories, this.isLoading, this.items, this.filtering, this.paged], () => {
+    return this.memo('part3_props', [this.pageCategories, this.memo, this.isLoading, this.items, this.scoped, this.resolvedByKey, this.edits, this.tr, this.filtering, this.opened, this.scopeAside, this.byKey, this.paged, this.groupIds, this.firstGroup, this.page, this.props, this.tab, this.CATEGORY_TAB, this.invalidKeys, this.busySection, this.savedSection, this.confirm, this.save, this.advOpen, this.scopable, this.revert, this.lock, this.chainKey], () => {
       if (!(!(this.isLoading)) || !(!(this.items.length === 0)) || !(!(this.filtering)) || !(!(this.paged))) return undefined as never
-      return ({ pageCategories: this.pageCategories, categorySection: this.categorySection.bind(this) })
+      return ({ pageCategories: this.pageCategories, categorySection: this.memo("categorySection:bound", [], () => this.categorySection.bind(this)) })
     })
   }
 
@@ -548,7 +549,7 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   get content_elsewhere_action_object_keys() {
-    return this.memo('content_elsewhere_action_object_keys', [this.edits, this.isLoading, this.items, this.showsSections, this.dirtyCount], () => {
+    return this.memo('content_elsewhere_action_object_keys', [this.isLoading, this.items, this.byKey, this.tr, this.paged, this.groupIds, this.firstGroup, this.page, this.props, this.tab, this.CATEGORY_TAB, this.opened, this.edits, this.showsSections, this.dirtyCount], () => {
       if (!(!(this.isLoading)) || !(!(this.items.length === 0)) || !(!this.showsSections && this.dirtyCount > 0)) return undefined as never
       return ({ children: this.elsewhereAction(Object.keys(this.edits)) })
     })
@@ -625,7 +626,7 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   setValue(item: SettingItem, v: unknown) {
-    return this.edits = ((prev) => {
+    this.edits = ((prev) => {
       const next = { ...prev, [item.key]: v }
       if (item.type === 'bool' && !v) {
         for (const child of this.items) {
@@ -656,7 +657,7 @@ export class ModuleAdminSettings extends ViewBase {
   }
 
   visible(s: SettingItem) {
-    return isVisible(s, this.valueOf.bind(this), key => this.byKey.has(key))
+    return isVisible(s, this.memo("valueOf:bound", [], () => this.valueOf.bind(this)), key => this.byKey.has(key))
   }
 
   categoryOf(s: SettingItem) {
@@ -726,7 +727,7 @@ export class ModuleAdminSettings extends ViewBase {
 
   cancelSection(keys: string[]) {
     if (!(!(this.isLoading)) || !(!(this.items.length === 0))) return undefined as never
-    return this.edits = ((prev) => {
+    this.edits = ((prev) => {
       const next = { ...prev }
       for (const key of keys) delete next[key]
       return next
@@ -894,7 +895,7 @@ export class ModuleAdminSettings extends ViewBase {
           advanced={advanced}
           advancedOpen={this.filtering || (this.advOpen[key] ?? false)}
           onToggleAdvanced={() => this.advOpen = ({ ...this.advOpen, [key]: !(this.advOpen[key] ?? false) })}
-          renderRow={this.renderRow.bind(this)}
+          renderRow={this.memo("renderRow:bound", [], () => this.renderRow.bind(this))}
         />
       </SettingSectionCard>
     )

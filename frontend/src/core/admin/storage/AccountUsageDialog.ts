@@ -74,7 +74,7 @@ export class AccountUsageDialog extends ViewBase {
   }
 
   panel_mouse_down(_sender: unknown, args: MouseEventArgs) {
-    const e = args.native as MouseEvent
+    const e = args.native as React.MouseEvent<HTMLDivElement, MouseEvent>
     e.stopPropagation()
   }
 

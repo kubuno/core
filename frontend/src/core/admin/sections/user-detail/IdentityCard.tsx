@@ -10,10 +10,10 @@ import { useAuthStore } from "../../../store/authStore"
 import type { OrgUnit, User } from "../../../types"
 import { PRIV } from "../../../authz/types"
 import { usePrivileges } from "../../../authz/usePrivileges"
-import { UserAvatar } from "./atoms"
 import { formatAgo, formatDay } from "../format"
 import RoleBadge from "./RoleBadge"
 import StatusBadge from "./StatusBadge"
+import { UserAvatar } from "./UserAvatar"
 
 import { ViewBase } from './IdentityCard.kbview'
 import * as __parts from './IdentityCard.parts'
@@ -34,7 +34,7 @@ export type { Props }
 export class IdentityCard extends ViewBase {
   tr!: IdentityCardStores['t']
   can!: IdentityCardStores['can']
-  me!: IdentityCardStores['me']
+  me!: User | null
   units!: IdentityCardStores['units']
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
@@ -57,11 +57,11 @@ export class IdentityCard extends ViewBase {
     this.publish({ tr: s.t, can: s.can, me: s.me, units: s.units })
   }
 
-  get isSelf() {
+  get isSelf(): boolean {
     return this.me?.id === this.props.user.id
   }
 
-  get unitName() {
+  get unitName(): string | undefined {
     return this.units?.find(u => u.id === this.props.user.org_unit_id)?.name
   }
 

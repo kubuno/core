@@ -6,13 +6,13 @@ import { Fragment } from 'react'
 import { useTranslation } from "react-i18next"
 import { PRIV } from "../authz/types"
 import { usePrivileges } from "../authz/usePrivileges"
-import { AdminForbidden } from "./AdminSectionBoundary"
 import { useAdminAction } from "./adminAction"
 import { useAdminParams } from "./adminRoute"
 import { errorMessage, usePrivilegeCatalogue, useRoles } from "./roles/api"
 import RoleDetail from "./roles/RoleDetail"
 import RoleCreateDialog from "./roles/RoleCreateDialog"
 import RolesList from "./roles/RolesList"
+import AdminForbidden from "./AdminForbidden"
 
 import { ViewBase } from './AdminRolesPanel.kbview'
 

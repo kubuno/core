@@ -87,7 +87,7 @@ export class RoleDetail extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.assignments, this.isLoading, this.tr, this.canGrant], () => ({ assignments: this.assignments, isLoading: this.isLoading, t: this.tr, canGrant: this.canGrant, setAssignOpen: this.setAssignOpen.bind(this), when: this.when.bind(this), askRevoke: this.askRevoke.bind(this) }))
+    return this.memo('part1_props', [this.assignments, this.isLoading, this.tr, this.canGrant, this.memo, this.assignOpen, this.confirm, this.roleName, this.props, this.revoke, this.toast], () => ({ assignments: this.assignments, isLoading: this.isLoading, t: this.tr, canGrant: this.canGrant, setAssignOpen: this.memo("setAssignOpen:bound", [], () => this.setAssignOpen.bind(this)), when: this.memo("when:bound", [], () => this.when.bind(this)), askRevoke: this.memo("askRevoke:bound", [], () => this.askRevoke.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<DataTable> rowKey, emptyState, columns, rowActions, configurableColumns, t: no .kbview property). */

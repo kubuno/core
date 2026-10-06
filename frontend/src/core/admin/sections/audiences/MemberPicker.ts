@@ -98,7 +98,7 @@ export class MemberPicker extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.props, this.chosen, this.addedReach, this.q, this.shown, this.picked], () => ({ t: this.tr, onCancel: this.props.onCancel, chosen: this.chosen, addedReach: this.addedReach, onAdd: this.props.onAdd, busy: this.props.busy, q: this.q, setQ: this.setQ.bind(this), shown: this.shown, picked: this.picked, toggle: this.toggle.bind(this), error: this.props.error }))
+    return this.memo('part1_props', [this.tr, this.props, this.chosen, this.addedReach, this.q, this.memo, this.shown, this.picked], () => ({ t: this.tr, onCancel: this.props.onCancel, chosen: this.chosen, addedReach: this.addedReach, onAdd: this.props.onAdd, busy: this.props.busy, q: this.q, setQ: this.memo("setQ:bound", [], () => this.setQ.bind(this)), shown: this.shown, picked: this.picked, toggle: this.memo("toggle:bound", [], () => this.toggle.bind(this)), error: this.props.error }))
   }
 
   /** A part of the screen still written in React (<FloatingWindow> actions.extra: no .kbview property). */
@@ -107,7 +107,7 @@ export class MemberPicker extends ViewBase {
   }
 
   toggle(c: Candidate) {
-    return this.picked = ((p) => {
+    this.picked = ((p) => {
     const k = `${c.member_type}:${c.member_id}`
     const next = { ...p }
     if (next[k]) delete next[k]; else next[k] = c
@@ -116,7 +116,7 @@ export class MemberPicker extends ViewBase {
   }
 
   panel_mouse_down(_sender: unknown, args: MouseEventArgs) {
-    const e = args.native as MouseEvent
+    const e = args.native as React.MouseEvent<HTMLDivElement, MouseEvent>
     e.stopPropagation()
   }
 

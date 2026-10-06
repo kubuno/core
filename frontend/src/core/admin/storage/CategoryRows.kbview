@@ -8,7 +8,7 @@
          Class="py-2 [font-size:var(--kb-text-meta)]"/>
   <Panel HtmlTag="Ul" Visible="{Binding show_main}" Class="flex flex-col divide-y divide-border">
     <Repeater ItemKey="key" ItemsSource="{Binding rows_held}">
-      <!-- TODO(views-migrate): <CategoryRow> is no .kbview element (./CategoryBreakdown#default) -->
+      <!-- TODO(views-migrate): <CategoryRow> is no .kbview element (a local or dynamic component) -->
       <ReactHost Component="{Binding CategoryRow}" Props="{Binding category_row_props}"/>
     </Repeater>
   </Panel>

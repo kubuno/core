@@ -127,7 +127,7 @@ export class OrgUnitPicker extends ViewBase {
   }
 
   get results(): OrgUnit[] {
-    return this.memo('results', [this.needle, this.units], () => this.needle.trim()
+    return this.memo('results', [this.needle, this.units, this.props], () => this.needle.trim()
     ? this.units.filter(u => !this.excluded(u) && ouMatches(this.units, u, this.needle.trim()))
           .sort((a, b) => a.name.localeCompare(b.name))
     : [])
@@ -138,7 +138,7 @@ export class OrgUnitPicker extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.needle, this.tr], () => ({ needle: this.needle, setNeedle: this.setNeedle.bind(this), t: this.tr }))
+    return this.memo('part1_props', [this.needle, this.memo, this.tr], () => ({ needle: this.needle, setNeedle: this.memo("setNeedle:bound", [], () => this.setNeedle.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<TextField LeftIcon>: an icon size the element cannot take). */
@@ -197,9 +197,9 @@ export class OrgUnitPicker extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.treeRef, this.props, this.visible, this.needle, this.root], () => {
+    return this.memo('part2_props', [this.treeRef, this.props, this.memo, this.sel, this.visible, this.setSel, this.expanded, this.setExpanded, this.addUnder, this.name, this.createError, this.tr, this.create, this.needle, this.root], () => {
       if (!(!(this.needle.trim())) || !(this.root)) return undefined as never
-      return ({ treeRef: this.treeRef, title: this.props.title, onTreeKey: this.onTreeKey.bind(this), visible: this.visible, renderRow: this.renderRow.bind(this) })
+      return ({ treeRef: this.treeRef, title: this.props.title, onTreeKey: this.memo("onTreeKey:bound", [], () => this.onTreeKey.bind(this)), visible: this.visible, renderRow: this.memo("renderRow:bound", [], () => this.renderRow.bind(this)) })
     })
   }
 
@@ -347,7 +347,7 @@ export class OrgUnitPicker extends ViewBase {
   }
 
   panel_mouse_down(_sender: unknown, args: MouseEventArgs) {
-    const e = args.native as MouseEvent
+    const e = args.native as React.MouseEvent<HTMLDivElement, MouseEvent>
     e.stopPropagation()
   }
 

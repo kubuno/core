@@ -254,8 +254,8 @@ export function Part3({ p, r, r_authorization_endpoint, r_detail, r_hint }: { p:
                       <pre className="mt-2 max-w-full overflow-x-auto rounded-md border border-border bg-surface-1 px-2.5 py-2 font-mono text-text-primary"
                            style={{ fontSize: 'var(--kb-text-meta)' }}>
     {`authorization_endpoint  ${r_authorization_endpoint}
-    token_endpoint          ${r.token_endpoint ?? ''}
-    userinfo_endpoint       ${r.userinfo_endpoint ?? ''}`}
+token_endpoint          ${r.token_endpoint ?? ''}
+userinfo_endpoint       ${r.userinfo_endpoint ?? ''}`}
                       </pre>
                     )}
                     {r.detail && (

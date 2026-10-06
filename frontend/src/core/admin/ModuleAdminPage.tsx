@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next"
 import { SlidersHorizontal } from "lucide-react"
 import { Button, Callout, Card, EmptyState, Spinner, type Crumb } from "@ui"
 import { formatDay } from "./sections/format"
+import type { AdminSectionProps } from "./sections/registry"
 import { adminUrl } from "./adminAction"
 import { adminPath } from "./adminRoute"
 import { useAdminCrumbs } from "./AdminBreadcrumb"
@@ -21,6 +22,8 @@ import { INSTANCE_SCOPE, type ActiveScope } from "./settings/scopeTypes"
 import { ViewBase } from './ModuleAdminPage.kbview'
 import * as __parts from './ModuleAdminPage.parts'
 import { ModuleStateCard, GroupHeading } from './ModuleAdminPage.parts'
+
+export type { AdminSectionProps }
 
 export class ModuleAdminPage extends ViewBase {
   tr!: ModuleAdminPageStores['t']
@@ -56,27 +59,28 @@ export class ModuleAdminPage extends ViewBase {
     const ownSections = useModuleAdminSections(this.id)
     this.publish({ ownSections })
     useEffect(() => { setScope(INSTANCE_SCOPE) }, [this.id])
-    const groups   = useMemo(() => groupsOf(this.module), [this.module])
+    const module = this.module
+    const groups   = useMemo(() => groupsOf(module), [module])
     this.publish({ groups })
     useAdminCrumbs(useMemo(
       () => {
-        if (!this.module) return []
+        if (!module) return []
         const crumbs: Crumb[] = [{
-          label: this.module.display_name,
-          title: this.module.display_name,
+          label: module.display_name,
+          title: module.display_name,
           // The module's own address, so the trail leads back to the page the
           // menu lands on rather than being dead text next to a live segment.
-          href:  this.active ? adminPath('modules', this.module.id) : undefined,
+          href:  this.active ? adminPath('modules', module.id) : undefined,
         }]
         if (this.active) crumbs.push({ label: this.active.label, title: this.active.label })
         return crumbs
       },
-      [this.module?.id, this.module?.display_name, this.active?.id, this.active?.label], // eslint-disable-line react-hooks/exhaustive-deps
+      [module?.id, module?.display_name, this.active?.id, this.active?.label], // eslint-disable-line react-hooks/exhaustive-deps
     ))
     useEffect(() => {
-      if (!this.module || !this.active || this.wanted === this.active.id) return
-      this.props.navigate(adminPath('modules', this.module.id, this.active.id), { replace: true })
-    }, [this.module?.id, this.active?.id, this.wanted])
+      if (!module || !this.active || this.wanted === this.active.id) return
+      this.props.navigate(adminPath('modules', module.id, this.active.id), { replace: true })
+    }, [module?.id, this.active?.id, this.wanted])
     return { settings, hasOwnAdmin, ownSections, groups }
   }
 
@@ -113,7 +117,7 @@ export class ModuleAdminPage extends ViewBase {
   }
 
   get here(): ModuleAdminSection[] {
-    return this.memo('here', [this.ownSections, this.active], () => this.ownSections.filter(s => !this.active || this.placed(s) === this.active.id))
+    return this.memo('here', [this.ownSections, this.active, this.groups], () => this.ownSections.filter(s => !this.active || this.placed(s) === this.active.id))
   }
 
   get inline(): ModuleAdminSection[] {
@@ -191,11 +195,11 @@ export class ModuleAdminPage extends ViewBase {
   }
 
   get backLink() {
-    return this.memo('backLink', [this.tr, this.isLoading, this.isError, this.module], () => {
+    return this.memo('backLink', [this.memo, this.props, this.tr, this.isLoading, this.isError, this.module], () => {
       if (!(!(this.isLoading)) || !(!(this.isError)) || !(!(!this.module))) return undefined as never
       return (
     <div className="mt-4">
-      <Button variant="ghost" size="sm" onClick={this.backToList.bind(this)}>{this.tr('admin.m_back_to_list')}</Button>
+      <Button variant="ghost" size="sm" onClick={this.memo("backToList:bound", [], () => this.backToList.bind(this))}>{this.tr('admin.m_back_to_list')}</Button>
     </div>
   )
     })
@@ -230,7 +234,7 @@ export class ModuleAdminPage extends ViewBase {
   }
 
   get content_columns_group_heading_group() {
-    return this.memo('content_columns_group_heading_group', [this.active, this.isFirst, this.scopeCallout, this.module, this.state, this.inline, this.ownSlot, this.settings, this.configError, this.groups, this.asTabs, this.scope, this.backLink, this.isLoading, this.isError, this.paged], () => {
+    return this.memo('content_columns_group_heading_group', [this.isLoading, this.isError, this.module, this.groups, this.active, this.perUnit, this.scope, this.setScope, this.isFirst, this.scopeCallout, this.state, this.inline, this.ownSlot, this.settings, this.configError, this.asTabs, this.backLink, this.paged], () => {
       if (!(!(this.isLoading)) || !(!(this.isError)) || !(!(!this.module)) || !(this.paged && this.active)) return undefined as never
       return ({ children: this.columns(
           <>
@@ -293,7 +297,7 @@ export class ModuleAdminPage extends ViewBase {
   }
 
   get content_columns_scope_callout_module_state_card() {
-    return this.memo('content_columns_scope_callout_module_state_card', [this.scopeCallout, this.module, this.state, this.ownSections, this.ownSlot, this.settings, this.configError, this.hasAdmin, this.backLink, this.tr, this.scope, this.isLoading, this.isError, this.paged, this.active], () => {
+    return this.memo('content_columns_scope_callout_module_state_card', [this.isLoading, this.isError, this.module, this.groups, this.active, this.perUnit, this.scope, this.setScope, this.scopeCallout, this.state, this.ownSections, this.ownSlot, this.settings, this.configError, this.hasAdmin, this.backLink, this.tr, this.memo, this.props, this.paged], () => {
       if (!(!(this.isLoading)) || !(!(this.isError)) || !(!(!this.module)) || !(!(this.paged && this.active))) return undefined as never
       return ({ children: this.columns(
         <>
@@ -326,7 +330,7 @@ export class ModuleAdminPage extends ViewBase {
                   icon={<SlidersHorizontal size={22} />}
                   title={this.tr('admin.m_no_settings_title')}
                   description={this.tr('admin.m_no_settings_desc')}
-                  action={{ label: this.tr('admin.m_back_to_list'), onClick: this.backToList.bind(this) }}
+                  action={{ label: this.tr('admin.m_back_to_list'), onClick: this.memo("backToList:bound", [], () => this.backToList.bind(this)) }}
                   t={this.tr}
                 />
               </Card>

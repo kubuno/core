@@ -1,0 +1,46 @@
+<!-- DataExportSection — converted from DataExportSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <Stack Direction="LeftToRight" Gap="0" Justify="Center" Visible="{Binding show_case_2}" Class="py-10">
+    <Spinner/>
+  </Stack>
+  <EmptyState ActionLabel="{Res admin.dx_retry}"
+              IconSize="26"
+              Icon="DatabaseZap"
+              Variant="Error"
+              Title="{Res admin.dx_load_failed}"
+              Description="{Res admin.dx_load_failed_desc}"
+              Visible="{Binding show_case_3}"
+              OnAction="empty_state_action"/>
+  <Panel Visible="{Binding show_main}" Class="min-w-0">
+    <Card IconSize="18" Icon="DatabaseZap" Title="{Res admin.dx_title}" Subtitle="{Res admin.dx_intro}">
+      <Card.Actions>
+        <Button Size="Sm"
+                Variant="Secondary"
+                IconSize="15"
+                Icon="FileArchive"
+                Enabled="{Binding enabled_unless_data_eligibility_ok}"
+                Text="{Res admin.dx_new}"
+                Visible="{Binding canExecute}"
+                OnClick="button_click"/>
+      </Card.Actions>
+      <Panel Class="space-y-4">
+        <!-- TODO(views-migrate): <Eligibility> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Eligibility}" Props="{Binding eligibility_props}"/>
+        <!-- TODO(views-migrate): <ActiveRun> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding ActiveRun}" Props="{Binding active_run_props}"/>
+        <!-- TODO(views-migrate): <Coverage> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Coverage}" Props="{Binding coverage_props}"/>
+        <!-- TODO(views-migrate): <PolicySummary> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding PolicySummary}" Props="{Binding coverage_props}"/>
+      </Panel>
+    </Card>
+    <!-- TODO(views-migrate): <History> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding History}" Props="{Binding history_props}"/>
+    <!-- TODO(views-migrate): <ExportSubjectsCard> is no .kbview element (./ExportSubjectsCard#default) -->
+    <ReactHost Component="{Binding ExportSubjectsCard}" Props="{Binding export_subjects_card_props}" Visible="{Binding show_selected}"/>
+    <!-- TODO(views-migrate): <ExportRequestDialog> is no .kbview element (./ExportRequestDialog#default) -->
+    <ReactHost Component="{Binding ExportRequestDialog}" Props="{Binding export_request_dialog_props}" Visible="{Binding composing}"/>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Panel>

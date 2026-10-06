@@ -104,7 +104,7 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.steps, this.step, this.tr], () => ({ steps: this.steps, step: this.step, setStep: this.setStep.bind(this), t: this.tr }))
+    return this.memo('part1_props', [this.steps, this.step, this.memo, this.tr], () => ({ steps: this.steps, step: this.step, setStep: this.memo("setStep:bound", [], () => this.setStep.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<Stepper> steps: no .kbview property). */
@@ -117,9 +117,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part2_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'connection')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, isEdit: this.props.isEdit, set: this.set.bind(this) })
+      return ({ t: this.tr, form: this.props.form, isEdit: this.props.isEdit, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -130,9 +130,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part3_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'connection')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this) })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -155,9 +155,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part6_props() {
-    return this.memo('part6_props', [this.tr, this.props, this.securityOptions, this.step], () => {
+    return this.memo('part6_props', [this.tr, this.props, this.memo, this.securityOptions, this.step], () => {
       if (!(this.step === 'connection')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, onSecurityChange: this.onSecurityChange.bind(this), securityOptions: this.securityOptions })
+      return ({ t: this.tr, form: this.props.form, onSecurityChange: this.memo("onSecurityChange:bound", [], () => this.onSecurityChange.bind(this)), securityOptions: this.securityOptions })
     })
   }
 
@@ -196,9 +196,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part7_props() {
-    return this.memo('part7_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part7_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'connection') || !(this.props.form.security !== 'none') || !(this.props.form.verify_certificate)) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this) })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -233,9 +233,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part9_props() {
-    return this.memo('part9_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part9_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'service')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this) })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -246,9 +246,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part10_props() {
-    return this.memo('part10_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part10_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'service')) return undefined as never
-      return ({ t: this.tr, hasStoredPassword: this.props.hasStoredPassword, form: this.props.form, set: this.set.bind(this) })
+      return ({ t: this.tr, hasStoredPassword: this.props.hasStoredPassword, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -288,9 +288,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part13_props() {
-    return this.memo('part13_props', [this.tr, this.props, this.scopeOptions, this.step], () => {
+    return this.memo('part13_props', [this.tr, this.props, this.memo, this.scopeOptions, this.step], () => {
       if (!(this.step === 'service')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this), scopeOptions: this.scopeOptions })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)), scopeOptions: this.scopeOptions })
     })
   }
 
@@ -305,9 +305,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part14_props() {
-    return this.memo('part14_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part14_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'mapping')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this) })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -353,9 +353,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part18_props() {
-    return this.memo('part18_props', [this.tr, this.props, this.unitOptions, this.step], () => {
+    return this.memo('part18_props', [this.tr, this.props, this.memo, this.unitOptions, this.step], () => {
       if (!(this.step === 'sync')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this), unitOptions: this.unitOptions })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)), unitOptions: this.unitOptions })
     })
   }
 
@@ -373,9 +373,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part19_props() {
-    return this.memo('part19_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part19_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'sync') || !(this.props.form.sync_groups)) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this) })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -417,9 +417,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part24_props() {
-    return this.memo('part24_props', [this.tr, this.props, this.step], () => {
+    return this.memo('part24_props', [this.tr, this.props, this.memo, this.step], () => {
       if (!(this.step === 'sync') || !(this.props.form.sync_enabled)) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this) })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)) })
     })
   }
 
@@ -430,9 +430,9 @@ export class LdapDirectoryForm extends ViewBase {
   }
 
   get part25_props() {
-    return this.memo('part25_props', [this.tr, this.props, this.missingOptions, this.step], () => {
+    return this.memo('part25_props', [this.tr, this.props, this.memo, this.missingOptions, this.step], () => {
       if (!(this.step === 'sync')) return undefined as never
-      return ({ t: this.tr, form: this.props.form, set: this.set.bind(this), missingOptions: this.missingOptions })
+      return ({ t: this.tr, form: this.props.form, set: this.memo("set:bound", [], () => this.set.bind(this)), missingOptions: this.missingOptions })
     })
   }
 

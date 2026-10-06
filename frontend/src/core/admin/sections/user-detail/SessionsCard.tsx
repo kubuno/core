@@ -30,11 +30,11 @@ export class SessionsCard extends ViewBase {
   toast!: SessionsCardStores['toast']
   confirm!: SessionsCardStores['confirm']
   confirmState!: SessionsCardStores['confirmState']
-  handleConfirm!: SessionsCardStores['handleConfirm']
-  handleCancel!: SessionsCardStores['handleCancel']
+  handleConfirm!: () => void
+  handleCancel!: () => void
   data!: SessionsCardHooks['data']
-  isLoading!: SessionsCardHooks['isLoading']
-  isError!: SessionsCardHooks['isError']
+  isLoading!: boolean
+  isError!: boolean
   refetch!: SessionsCardHooks['refetch']
   revoke!: SessionsCardHooks['revoke']
   revokeAll!: SessionsCardHooks['revokeAll']
@@ -56,16 +56,19 @@ export class SessionsCard extends ViewBase {
       queryKey: ['admin-user-sessions', this.props.user.id],
       queryFn:  () => api.get<{ sessions: Session[] }>(`/admin/users/${this.props.user.id}/sessions`).then(r => r.data.sessions),
     })
+    this.publish({ data, isLoading, isError, refetch })
     const revoke = useMutation({
       mutationFn: (id: string) => api.delete(`/admin/users/${this.props.user.id}/sessions/${id}`),
       onSuccess: () => { this.invalidate_(); toast.success(t('admin.ud_ses_revoked')) },
       onError:   () => toast.error(t('admin.ud_ses_revoke_error')),
     })
+    this.publish({ revoke })
     const revokeAll = useMutation({
       mutationFn: () => api.delete<{ revoked: number }>(`/admin/users/${this.props.user.id}/sessions`).then(r => r.data),
       onSuccess: (res) => { this.invalidate_(); toast.success(t('admin.ud_ses_revoked_all', { count: res?.revoked ?? 0 })) },
       onError:   () => toast.error(t('admin.ud_ses_revoke_error')),
     })
+    this.publish({ revokeAll })
     return { data, isLoading, isError, refetch, revoke, revokeAll }
   }
 
@@ -137,7 +140,7 @@ export class SessionsCard extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.sessions, this.columns, this.isLoading, this.isError, this.refetch], () => ({ t: this.tr, sessions: this.sessions, columns: this.columns, isLoading: this.isLoading, isError: this.isError, refetch: this.refetch, askRevoke: this.askRevoke.bind(this) }))
+    return this.memo('part1_props', [this.tr, this.sessions, this.columns, this.isLoading, this.isError, this.refetch, this.memo, this.confirm, this.revoke], () => ({ t: this.tr, sessions: this.sessions, columns: this.columns, isLoading: this.isLoading, isError: this.isError, refetch: this.refetch, askRevoke: this.memo("askRevoke:bound", [], () => this.askRevoke.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<DataTable> t, columns, rowKey, skeletonRows, onRetry, configurableColumns, minTableWidth, rowActions, emptyState: no .kbview property). */

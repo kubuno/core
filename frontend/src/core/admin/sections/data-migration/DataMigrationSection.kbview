@@ -1,0 +1,29 @@
+<!-- DataMigrationSection — converted from DataMigrationSection.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel x:Props="AdminSectionProps" Class="contents">
+  <!-- TODO(views-migrate): <CampaignDetail> is no .kbview element (./CampaignDetail#default) -->
+  <ReactHost Component="{Binding CampaignDetail}" Props="{Binding campaign_detail_props}" Visible="{Binding show_case_1}"/>
+  <Stack Gap="16" Visible="{Binding show_main}" Class="min-w-0">
+    <Stack Direction="LeftToRight" Gap="12" CrossAlign="Start" WrapContents="true">
+      <Panel Class="min-w-0 flex-1">
+        <Label HtmlTag="H1"
+               Text="{Res admin.nav_data_migration}"
+               Overflow="Wrap"
+               ForeColor="TextPrimary"
+               InheritFontSize="true"
+               Class="min-w-0 [font-size:var(--kb-text-page)]"/>
+        <Label Text="{Res admin.migr_intro}"
+               Overflow="Wrap"
+               ForeColor="TextSecondary"
+               InheritFontSize="true"
+               Class="mt-1 max-w-3xl [font-size:var(--kb-text-body)]"/>
+      </Panel>
+      <!-- TODO(views-migrate): <Button> with element children -->
+      <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}" Visible="{Binding canManage}"/>
+    </Stack>
+    <Callout Variant="Warning" Body="{Res admin.migr_no_service}" Visible="{Binding noService}"/>
+    <!-- TODO(views-migrate): <DataTable> t, columns, rowKey, rowActions, onRowClick, onRetry, emptyState: no .kbview property -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part2_props}"/>
+    <!-- TODO(views-migrate): <CampaignWizard> is no .kbview element (./CampaignWizard#default) -->
+    <ReactHost Component="{Binding CampaignWizard}" Props="{Binding campaign_wizard_props}" Visible="{Binding composing}"/>
+  </Stack>
+</Panel>

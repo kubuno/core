@@ -11,6 +11,7 @@ import { PRIV } from "../../authz/types"
 import { usePrivileges } from "../../authz/usePrivileges"
 import { useConfirm } from "../../hooks/useConfirm"
 import { adminUrl, useAdminAction } from "../adminAction"
+import type { AdminSectionProps } from "../sections/registry"
 import { formatAgo, formatWhen } from "../sections/format"
 import RuleEditor, { type Pane } from "./RuleEditor"
 import { useCreateRule, useDeleteRule, useExecutions, useRuleCatalog, useRules, useSetRuleMode } from "./api"
@@ -21,6 +22,8 @@ import { ViewBase } from './RulesSection.kbview'
 import * as __parts from './RulesSection.parts'
 
 const RECENT_WINDOW = 200
+
+export type { AdminSectionProps }
 
 export class RulesSection extends ViewBase {
   @bind accessor q = ''
@@ -285,7 +288,7 @@ export class RulesSection extends ViewBase {
   }
 
   get toolbar() {
-    return this.memo('toolbar', [this.q, this.tr, this.modeFilter, this.moduleFilter, this.modules, this.creating, this.openId], () => {
+    return this.memo('toolbar', [this.q, this.tr, this.memo, this.modeFilter, this.moduleFilter, this.modules, this.creating, this.openId], () => {
       if (!(!(this.creating || this.openId))) return undefined as never
       const q = this.q
       const modeFilter = this.modeFilter
@@ -297,7 +300,7 @@ export class RulesSection extends ViewBase {
         leftIcon={<Search size={15} />} className="w-52 pl-9" />
       <Combobox
         value={modeFilter}
-        onChange={this.setModeFilter.bind(this)}
+        onChange={this.memo("setModeFilter:bound", [], () => this.setModeFilter.bind(this))}
         options={[
           { value: '', label: this.tr('admin.rl_filter_all_modes') },
           ...MODE_ORDER.map(m => ({ value: m, label: modeLabel(this.tr, m) })),
@@ -307,7 +310,7 @@ export class RulesSection extends ViewBase {
       />
       <Combobox
         value={moduleFilter}
-        onChange={this.setModuleFilter.bind(this)}
+        onChange={this.memo("setModuleFilter:bound", [], () => this.setModuleFilter.bind(this))}
         options={[
           { value: '', label: this.tr('admin.rl_filter_all_modules') },
           ...this.modules.map(m => ({ value: m, label: m })),
@@ -390,9 +393,9 @@ export class RulesSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.anyFilter, this.q, this.modeFilter, this.moduleFilter, this.toolbar, this.rowActions, this.props, this.canWrite, this.creating, this.openId], () => {
+    return this.memo('part1_props', [this.rows, this.columns, this.isLoading, this.isError, this.tr, this.refetch, this.anyFilter, this.memo, this.q, this.modeFilter, this.moduleFilter, this.toolbar, this.rowActions, this.props, this.canWrite, this.creating, this.openId], () => {
       if (!(!(this.creating || this.openId))) return undefined as never
-      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, anyFilter: this.anyFilter, setQ: this.setQ.bind(this), setModeFilter: this.setModeFilter.bind(this), setModuleFilter: this.setModuleFilter.bind(this), toolbar: this.toolbar, rowActions: this.rowActions, navigate: this.props.navigate, canWrite: this.canWrite })
+      return ({ rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, t: this.tr, refetch: this.refetch, anyFilter: this.anyFilter, setQ: this.memo("setQ:bound", [], () => this.setQ.bind(this)), setModeFilter: this.memo("setModeFilter:bound", [], () => this.setModeFilter.bind(this)), setModuleFilter: this.memo("setModuleFilter:bound", [], () => this.setModuleFilter.bind(this)), toolbar: this.toolbar, rowActions: this.rowActions, navigate: this.props.navigate, canWrite: this.canWrite })
     })
   }
 

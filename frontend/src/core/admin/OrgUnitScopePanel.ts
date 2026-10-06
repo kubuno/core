@@ -143,9 +143,9 @@ export class OrgUnitScopePanel extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.rows, this.matching, this.expanded, this.selected, this.multi, this.props], () => {
+    return this.memo('part1_props', [this.rows, this.matching, this.expanded, this.selected, this.memo, this.multi, this.props, this.setExpanded], () => {
       if (!(!(this.props.collapsed))) return undefined as never
-      return ({ rows: this.rows, matching: this.matching, expanded: this.expanded, selected: this.selected, pick: this.pick.bind(this), toggle: this.toggle.bind(this), multi: this.multi, counts: this.props.counts })
+      return ({ rows: this.rows, matching: this.matching, expanded: this.expanded, selected: this.selected, pick: this.memo("pick:bound", [], () => this.pick.bind(this)), toggle: this.memo("toggle:bound", [], () => this.toggle.bind(this)), multi: this.multi, counts: this.props.counts })
     })
   }
 

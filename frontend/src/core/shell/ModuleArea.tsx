@@ -3,10 +3,10 @@ import { useLocation } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import { ThemeScopeContext } from '@ui'
 import { ContextMenuProvider } from './ContextMenuProvider'
-import { ModuleMaintenanceBanner } from './MaintenanceBanner'
 import { useToolbarStore, resolveToolbarConfig, moduleAreaPaddingStyle, MODULE_AREA_PADDING } from '../store/toolbarStore'
 import { ModuleSettingsRegistry } from '../slots/SlotRegistry'
 import { useAppearanceStore } from '../store/appearanceStore'
+import ModuleMaintenanceBanner from './ModuleMaintenanceBanner'
 
 /** Tracks the OS colour-scheme preference for the `system` appearance mode. */
 function useSystemDark(): boolean {

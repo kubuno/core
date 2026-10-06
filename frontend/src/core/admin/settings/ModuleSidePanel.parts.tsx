@@ -63,10 +63,10 @@ export function Part2({ t, openPages, setOpenPages, groups, activeGroup, module 
                       title={g.label}
                       aria-current={isActive ? 'page' : undefined}
                       className={`flex w-full min-w-0 items-center gap-2 rounded-full px-2 py-1.5 text-sm
-                                  transition-colors ${
-                        isActive
-                          ? 'bg-primary-light font-medium text-primary'
-                          : 'text-text-secondary hover:bg-surface-2'}`}
+                              transition-colors ${
+                    isActive
+                      ? 'bg-primary-light font-medium text-primary'
+                      : 'text-text-secondary hover:bg-surface-2'}`}
                     >
                       <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                         {Icon && <Icon size={16} strokeWidth={1.5} />}

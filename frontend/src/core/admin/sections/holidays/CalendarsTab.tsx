@@ -170,7 +170,7 @@ export class CalendarsTab extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.search, this.tr], () => ({ search: this.search, setSearch: this.setSearch.bind(this), t: this.tr }))
+    return this.memo('part1_props', [this.search, this.memo, this.tr], () => ({ search: this.search, setSearch: this.memo("setSearch:bound", [], () => this.setSearch.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<TextField LeftIcon>: an icon size the element cannot take). */
@@ -179,9 +179,9 @@ export class CalendarsTab extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.tr, this.props], () => {
+    return this.memo('part2_props', [this.memo, this.creating, this.tr, this.props], () => {
       if (!(this.props.canManage)) return undefined as never
-      return ({ setCreating: this.setCreating.bind(this), t: this.tr })
+      return ({ setCreating: this.memo("setCreating:bound", [], () => this.setCreating.bind(this)), t: this.tr })
     })
   }
 
@@ -196,7 +196,7 @@ export class CalendarsTab extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.tr, this.data, this.columns, this.isLoading, this.rowActions, this.props, this.isError, this.refetch, this.search, this.countriesOnly], () => ({ t: this.tr, data: this.data, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, onOpen: this.props.onOpen, isError: this.isError, refetch: this.refetch, search: this.search, countriesOnly: this.countriesOnly, setSearch: this.setSearch.bind(this), setCountriesOnly: this.setCountriesOnly.bind(this) }))
+    return this.memo('part3_props', [this.tr, this.data, this.columns, this.isLoading, this.rowActions, this.props, this.isError, this.refetch, this.search, this.countriesOnly, this.memo], () => ({ t: this.tr, data: this.data, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, onOpen: this.props.onOpen, isError: this.isError, refetch: this.refetch, search: this.search, countriesOnly: this.countriesOnly, setSearch: this.memo("setSearch:bound", [], () => this.setSearch.bind(this)), setCountriesOnly: this.memo("setCountriesOnly:bound", [], () => this.setCountriesOnly.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<DataTable> t, columns, rowKey, rowActions, onRowClick, onRetry, filtered, onClearFilters, emptyState: no .kbview property). */

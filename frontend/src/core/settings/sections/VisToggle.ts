@@ -24,7 +24,7 @@ export class VisToggle extends ViewBase {
     this.publish({ tr: s.t })
   }
 
-  get isPublic() {
+  get isPublic(): boolean {
     return this.props.value === 'public'
   }
 

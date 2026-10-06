@@ -1,0 +1,35 @@
+<!-- TableDemo — converted from TableDemo.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack Gap="12">
+  <Stack Direction="LeftToRight" Gap="6" CrossAlign="Center" WrapContents="true">
+    <Label HtmlTag="Span"
+           Text="{Res admin.t_prev_dt_state}"
+           Overflow="Wrap"
+           ForeColor="TextTertiary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-meta)]"/>
+    <Repeater ItemKey="key" ItemsSource="{Binding rows_states}">
+      <Panel AccessibleRole="PushButton" AutoSize="true" Class="{Binding button_class}" OnClick="panel_click">
+        <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Binding s.label}"/>
+      </Panel>
+    </Repeater>
+  </Stack>
+  <!-- TODO(views-migrate): <DataTable> t, columns, rowKey, onRetry, filtered, onClearFilters, defaultSort, selectedIds, onSelectionChange, configurableColumns, toolbar, bulkActions, rowActions: no .kbview property -->
+  <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  <Card Dense="true" Title="{Res admin.t_prev_card_title}" IconSize="15" Icon="Shield">
+    <Card.Actions>
+      <Badge Variant="Success" Text="{Res admin.t_prev_card_ok}"/>
+    </Card.Actions>
+    <Card.Footer>
+      <Label Text="{Res admin.t_prev_card_footer}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Class="[font-size:var(--kb-text-meta)]"/>
+    </Card.Footer>
+    <Label Text="{Res admin.t_prev_card_body}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-body)]"/>
+  </Card>
+</Stack>

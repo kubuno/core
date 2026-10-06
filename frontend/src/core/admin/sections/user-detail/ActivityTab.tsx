@@ -27,7 +27,7 @@ export class ActivityTab extends ViewBase {
   i18n!: ActivityTabStores['i18n']
   asTarget!: ActivityTabHooks['asTarget']
   asActor!: ActivityTabHooks['asActor']
-  rows!: ActivityTabHooks['rows']
+  rows!: AuditEntry[]
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
   useStores() {
@@ -45,12 +45,14 @@ export class ActivityTab extends ViewBase {
         })
         .then(r => r.data),
     })
+    this.publish({ asTarget })
     const asActor = useQuery({
       queryKey: ['admin-audit-user-actor', this.props.user.id],
       queryFn: () => api
         .get<AuditPage>('/admin/audit', { params: { actor_id: this.props.user.id, limit: SCOPE_LIMIT } })
         .then(r => r.data),
     })
+    this.publish({ asActor })
     const rows = useMemo(() => {
       const merged = new Map<number, AuditEntry>()
       for (const e of [...(asTarget.data?.entries ?? []), ...(asActor.data?.entries ?? [])]) {
@@ -61,6 +63,7 @@ export class ActivityTab extends ViewBase {
         (a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id,
       )
     }, [asTarget.data, asActor.data, this.props.user.id])
+    this.publish({ rows })
     return { asTarget, asActor, rows }
   }
 
@@ -72,21 +75,23 @@ export class ActivityTab extends ViewBase {
     this.publish({ asTarget: h.asTarget, asActor: h.asActor, rows: h.rows })
   }
 
-  get isLoading() {
+  get isLoading(): boolean {
     return this.asTarget.isLoading || this.asActor.isLoading
   }
 
-  get isError() {
+  get isError(): boolean {
     return this.asTarget.isError || this.asActor.isError
   }
 
-  get truncated() {
+  get truncated(): boolean {
     return (this.asTarget.data?.entries.length ?? 0) >= SCOPE_LIMIT ||
     (this.asActor.data?.entries.length ?? 0) >= SCOPE_LIMIT
   }
 
   get columns(): DataTableColumn<AuditEntry>[] {
-    return this.memo('columns', [this.tr, this.i18n, this.props, this.open], () => [
+    return this.memo('columns', [this.tr, this.i18n, this.props, this.open], () => {
+      const open = this.open
+      return [
     {
       id: 'when',
       header: this.tr('admin.audit_col_when'),
@@ -159,7 +164,7 @@ export class ActivityTab extends ViewBase {
       // Disclosure inside the cell: the table has no row-expansion API, and a
       // side panel would hide the row the operator is comparing against.
       cell: (e) => {
-        const expanded = this.open === e.id
+        const expanded = open === e.id
         const hasBody = e.detail != null || e.before != null || e.after != null
         if (!hasBody) return <span className="text-text-tertiary">—</span>
         return (
@@ -188,7 +193,8 @@ export class ActivityTab extends ViewBase {
         )
       },
     },
-  ])
+  ]
+    })
   }
 
   get subtitle() {

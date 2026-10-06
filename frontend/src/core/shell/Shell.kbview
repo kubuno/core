@@ -1,0 +1,41 @@
+<!-- Shell — converted from Shell.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel BackColor="Background" DataAttributes="app-shell" Class="h-screen flex flex-col overflow-hidden [height:100dvh]">
+  <!-- TODO(views-migrate): <TitleTooltips> is no .kbview element (./TitleTooltips#default) -->
+  <ReactHost Component="{Binding TitleTooltips}"/>
+  <!-- TODO(views-migrate): <AppHeader> is no .kbview element (./AppHeader#default) -->
+  <ReactHost Component="{Binding AppHeader}" Visible="{Binding show_header_hidden}"/>
+  <!-- TODO(views-migrate): <GlobalMaintenanceBanner> is no .kbview element (./GlobalMaintenanceBanner#default) -->
+  <ReactHost Component="{Binding GlobalMaintenanceBanner}"/>
+  <Stack Direction="LeftToRight" Gap="4" DataAttributes="{Binding div_data}" Class="flex-1 overflow-hidden lg:pb-1">
+    <Panel DataAttributes="app-chrome"
+           Visible="{Binding sidebarOpen}"
+           Class="fixed inset-0 bg-black/40 z-40 lg:hidden"
+           OnClick="panel_click"/>
+    <Panel DataAttributes="app-chrome" Visible="{Binding mobileLandscape}" Class="flex-shrink-0">
+      <!-- TODO(views-migrate): <MobileNav> is no .kbview element (./MobileNav#default) -->
+      <ReactHost Component="{Binding MobileNav}" Props="{Binding mobile_nav_props}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <AppSidebar> is no .kbview element (./AppSidebar#default) -->
+    <ReactHost Component="{Binding AppSidebar}" Visible="{Binding show_is_home}"/>
+    <Panel DataAttributes="app-chrome" Visible="{Binding show_is_home}" Class="hidden lg:flex flex-shrink-0">
+      <!-- TODO(views-migrate): <LeftRail> is no .kbview element (./LeftRail#default) -->
+      <ReactHost Component="{Binding LeftRail}"/>
+    </Panel>
+    <!-- TODO(views-migrate): <ModuleArea> is no .kbview element (./ModuleArea#default) -->
+    <ReactHost Component="{Binding ModuleArea}"/>
+    <Panel DataAttributes="app-chrome" Visible="{Binding show_is_home}" Class="hidden lg:flex flex-shrink-0">
+      <!-- TODO(views-migrate): <RightPanel> is no .kbview element (./RightPanel#default) -->
+      <ReactHost Component="{Binding RightPanel}"/>
+      <!-- TODO(views-migrate): <RightRail> is no .kbview element (./RightRail#default) -->
+      <ReactHost Component="{Binding RightRail}"/>
+    </Panel>
+  </Stack>
+  <!-- TODO(views-migrate): <MobileFab> is no .kbview element (./MobileFab#default) -->
+  <ReactHost Component="{Binding MobileFab}"/>
+  <!-- TODO(views-migrate): <MobileNav> is no .kbview element (./MobileNav#default) -->
+  <ReactHost Component="{Binding MobileNav2}" Visible="{Binding show_mobile_landscape}"/>
+  <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+  <ReactHost Component="{Binding Slot}" Props="{Binding slot_props}"/>
+  <!-- TODO(views-migrate): <Slot> is no .kbview element (../slots/SlotRegistry#Slot) -->
+  <ReactHost Component="{Binding Slot}" Props="{Binding slot_props2}"/>
+</Panel>

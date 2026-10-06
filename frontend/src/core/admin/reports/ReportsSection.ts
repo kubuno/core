@@ -3,9 +3,12 @@
  */
 import { useTranslation } from "react-i18next"
 import { findPanel } from "../panels/catalog"
+import type { AdminSectionProps } from "../sections/registry"
 
 import { ViewBase } from './ReportsSection.kbview'
 import * as __parts from './ReportsSection.parts'
+
+export type { AdminSectionProps }
 
 export class ReportsSection extends ViewBase {
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */

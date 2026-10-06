@@ -195,7 +195,7 @@ export class RuleEditor extends ViewBase {
   }
 
   get basics() {
-    return this.memo('basics', [this.tr, this.input, this.readOnly, this.setInput, this.setTree, this.verdicts, this.triggerOptions, this.trigger], () => (
+    return this.memo('basics', [this.tr, this.input, this.readOnly, this.setInput, this.memo, this.setTree, this.verdicts, this.triggerOptions, this.trigger], () => (
     <div className="flex min-w-0 flex-col gap-4">
       <Input label={this.tr('admin.rl_name')} value={this.input.name} disabled={this.readOnly}
         onChange={e => this.set('name', e.target.value)} placeholder={this.tr('admin.rl_name_ph')} />
@@ -204,7 +204,7 @@ export class RuleEditor extends ViewBase {
         hint={this.tr('admin.rl_description_hint')} />
       <div>
         <label className="mb-1 block text-sm font-medium text-text-primary">{this.tr('admin.rl_trigger')}</label>
-        <Combobox value={this.input.trigger || null} onChange={this.setTrigger.bind(this)} options={this.triggerOptions}
+        <Combobox value={this.input.trigger || null} onChange={this.memo("setTrigger:bound", [], () => this.setTrigger.bind(this))} options={this.triggerOptions}
           disabled={this.readOnly} placeholder={this.tr('admin.rl_trigger_ph')}
           aria-label={this.tr('admin.rl_trigger')} />
         {this.trigger && (
@@ -223,7 +223,7 @@ export class RuleEditor extends ViewBase {
   }
 
   get conditions() {
-    return this.memo('conditions', [this.triggerOk, this.tr, this.isMobile, this.tree, this.setTree, this.leafCtx, this.verdicts, this.readOnly, this.trigger, this.limits, this.wire], () => {
+    return this.memo('conditions', [this.triggerOk, this.tr, this.isMobile, this.tree, this.setTree, this.leafCtx, this.verdicts, this.readOnly, this.trigger, this.memo, this.limits, this.wire], () => {
       const limits = this.limits
       const overDepth = wireDepth(this.wire) > limits.condition_depth
       const overLeaves = wireLeaves(this.wire) > limits.condition_leaves
@@ -248,7 +248,7 @@ export class RuleEditor extends ViewBase {
             <ConditionTree root={this.tree} onChange={this.setTree} ctx={this.leafCtx} limits={limits}
               verdicts={this.verdicts ?? undefined} disabled={this.readOnly} />
             <Card title={this.tr('admin.rl_test_title')} icon={<FlaskConical size={15} />} dense>
-              <ConditionTester root={this.tree} ctx={this.leafCtx} trigger={this.trigger} onVerdicts={this.setVerdicts.bind(this)} />
+              <ConditionTester root={this.tree} ctx={this.leafCtx} trigger={this.trigger} onVerdicts={this.memo("setVerdicts:bound", [], () => this.setVerdicts.bind(this))} />
             </Card>
           </>
         )
@@ -392,7 +392,7 @@ export class RuleEditor extends ViewBase {
   }
 
   get header() {
-    return this.memo('header', [this.isNew, this.tr, this.input, this.detail, this.busy, this.error, this.wire, this.toast, this.create, this.props, this.update, this.nameOk, this.triggerOk, this.overDepth, this.overLeaves, this.leafProblems], () => {
+    return this.memo('header', [this.isNew, this.tr, this.input, this.detail, this.busy, this.memo, this.error, this.wire, this.toast, this.create, this.props, this.update, this.nameOk, this.triggerOk, this.overDepth, this.overLeaves, this.leafProblems], () => {
       const canWrite = this.props.canWrite
       const canSave = this.nameOk && this.triggerOk && !this.overDepth && !this.overLeaves
     && this.leafProblems.length === 0 && canWrite
@@ -407,7 +407,7 @@ export class RuleEditor extends ViewBase {
       <div className="ms-auto flex items-center gap-2">
         {canWrite && (
           <Button variant="primary" size="sm" icon={this.isNew ? <Sparkles size={14} /> : <Save size={14} />}
-            disabled={!canSave} loading={this.busy} onClick={this.save.bind(this)}>
+            disabled={!canSave} loading={this.busy} onClick={this.memo("save:bound", [], () => this.save.bind(this))}>
             {this.isNew ? this.tr('admin.rl_create') : this.tr('admin.rl_save')}
           </Button>
         )}

@@ -1,3 +1,0 @@
-<!-- TrendChart — converted from TrendChart.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
-<!-- TODO(views-migrate): <div ref>: attribute(s) without a .kbview property -->
-<ReactHost x:Props="TrendChartProps" Component="{Binding Part1}" Props="{Binding part1_props}"/>

@@ -132,11 +132,11 @@ export class AssignRoleDialog extends ViewBase {
   }
 
   get content_kind_button_user_t() {
-    return this.memo('content_kind_button_user_t', [this.tr], () => ({ children: this.kindButton('user', this.tr('admin.assign_subject_user'), Users) }))
+    return this.memo('content_kind_button_user_t', [this.kind, this.error, this.tr], () => ({ children: this.kindButton('user', this.tr('admin.assign_subject_user'), Users) }))
   }
 
   get content_kind_button_group_t() {
-    return this.memo('content_kind_button_group_t', [this.tr, this.canGroups], () => ({ children: this.kindButton('group', this.tr('admin.assign_subject_group'), Building2, this.canGroups) }))
+    return this.memo('content_kind_button_group_t', [this.kind, this.error, this.tr, this.canGroups], () => ({ children: this.kindButton('group', this.tr('admin.assign_subject_group'), Building2, this.canGroups) }))
   }
 
   get show_kind_user() {
@@ -214,9 +214,9 @@ export class AssignRoleDialog extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.groupId, this.groups, this.tr, this.kind], () => {
+    return this.memo('part1_props', [this.groupId, this.memo, this.groups, this.tr, this.kind], () => {
       if (!(!(this.kind === 'user'))) return undefined as never
-      return ({ groupId: this.groupId, setGroupId: this.setGroupId.bind(this), groups: this.groups, t: this.tr })
+      return ({ groupId: this.groupId, setGroupId: this.memo("setGroupId:bound", [], () => this.setGroupId.bind(this)), groups: this.groups, t: this.tr })
     })
   }
 
@@ -286,7 +286,7 @@ export class AssignRoleDialog extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.expiresAt, this.tr], () => ({ expiresAt: this.expiresAt, setExpiresAt: this.setExpiresAt.bind(this), t: this.tr }))
+    return this.memo('part3_props', [this.expiresAt, this.memo, this.tr], () => ({ expiresAt: this.expiresAt, setExpiresAt: this.memo("setExpiresAt:bound", [], () => this.setExpiresAt.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<DatePicker> clearable, minDate: no .kbview property). */
@@ -305,9 +305,9 @@ export class AssignRoleDialog extends ViewBase {
   }
 
   get org_unit_picker_props() {
-    return this.memo('org_unit_picker_props', [this.tr, this.unitId, this.pickerOpen], () => {
+    return this.memo('org_unit_picker_props', [this.tr, this.unitId, this.memo, this.pickerOpen], () => {
       if (!(this.pickerOpen)) return undefined as never
-      return ({ title: this.tr('admin.assign_pick_unit'), currentId: this.unitId, onSelect: this.setUnitId.bind(this), onClose: () => this.pickerOpen = false } as React.ComponentProps<typeof OrgUnitPicker>)
+      return ({ title: this.tr('admin.assign_pick_unit'), currentId: this.unitId, onSelect: this.memo("setUnitId:bound", [], () => this.setUnitId.bind(this)), onClose: () => this.pickerOpen = false } as React.ComponentProps<typeof OrgUnitPicker>)
     })
   }
 
@@ -380,7 +380,7 @@ export class AssignRoleDialog extends ViewBase {
 
   panel_click3(_sender: unknown, args: MouseEventArgs) {
     if (!(this.scope === 'org_unit' && this.props.role.ou_delegable)) return undefined as never
-    const e = args.native as MouseEvent
+    const e = args.native as React.MouseEvent<HTMLButtonElement, MouseEvent>
  e.preventDefault(); this.pickerOpen = true }
 
   /** `setGroupId` of the TSX: a value, or an update of the previous one. */

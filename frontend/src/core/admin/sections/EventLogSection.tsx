@@ -213,7 +213,7 @@ export class EventLogSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.type, this.typeOptions], () => ({ t: this.tr, type: this.type, setType: this.setType.bind(this), typeOptions: this.typeOptions }))
+    return this.memo('part1_props', [this.tr, this.type, this.memo, this.typeOptions], () => ({ t: this.tr, type: this.type, setType: this.memo("setType:bound", [], () => this.setType.bind(this)), typeOptions: this.typeOptions }))
   }
 
   /** A part of the screen still written in React (<ComboBox> width, searchPlaceholder: no .kbview property). */
@@ -222,7 +222,7 @@ export class EventLogSection extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.tr, this.rows, this.columns, this.isLoading, this.isError, this.refetch, this.type], () => ({ t: this.tr, rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, refetch: this.refetch, type: this.type, setType: this.setType.bind(this) }))
+    return this.memo('part2_props', [this.tr, this.rows, this.columns, this.isLoading, this.isError, this.refetch, this.type, this.memo], () => ({ t: this.tr, rows: this.rows, columns: this.columns, isLoading: this.isLoading, isError: this.isError, refetch: this.refetch, type: this.type, setType: this.memo("setType:bound", [], () => this.setType.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<DataTable> t, columns, rowKey, skeletonRows, onRetry, filtered, onClearFilters, manualSort, configurableColumns, minTableWidth, emptyState: no .kbview property). */

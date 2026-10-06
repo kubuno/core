@@ -1,33 +1,44 @@
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Dropdown } from '@ui'
-import { FileText } from 'lucide-react'
-import { MockContextMenu } from '../mocks/ShellMocks'
+/**
+ * Code-behind of `MenusGroup.kbview` (converted from `MenusGroup.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { FileText } from "lucide-react"
+import MockContextMenu from "../mocks/MockContextMenu"
 
-/** Select dropdown + a context menu shown open. */
-export default function MenusGroup() {
-  const { t } = useTranslation()
-  const [sortVal, setSortVal] = useState('name')
+import { ViewBase } from './MenusGroup.kbview'
 
-  return (
-    <div className="flex flex-wrap items-start gap-6">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-text-tertiary">{t('admin.t_prev_select', { defaultValue: 'Sélecteur' })}</span>
-        <Dropdown
-          value={sortVal}
-          onChange={setSortVal}
-          options={[
+export class MenusGroup extends ViewBase {
+  @bind accessor sortVal = 'name'
+
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t } = useTranslation()
+    return { t }
+  }
+
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    this.useStores()
+  }
+
+  get items_source() {
+    return this.memo('items_source', [], () => [
             { value: 'name', label: 'Nom', icon: <FileText size={14} /> },
             { value: 'date', label: 'Date de modification' },
             { value: 'size', label: 'Taille' },
             { value: 'type', label: 'Type' },
-          ]}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-text-tertiary">{t('admin.t_prev_ctxmenu', { defaultValue: 'Menu contextuel' })}</span>
-        <MockContextMenu />
-      </div>
-    </div>
-  )
+          ])
+  }
+
+  /** `<MockContextMenu>`, rendered by a ReactHost. */
+  get MockContextMenu() {
+    return MockContextMenu
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type MenusGroupStores = ReturnType<MenusGroup['useStores']>
+
+export default MenusGroup.component()

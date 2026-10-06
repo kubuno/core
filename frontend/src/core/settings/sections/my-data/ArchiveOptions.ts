@@ -23,7 +23,7 @@ function humanMb(mb: number): string {
 
 export class ArchiveOptions extends ViewBase {
   tr!: ArchiveOptionsStores['t']
-  options!: ArchiveOptionsHooks['options']
+  options!: { value: string; label: string; description: string | undefined; }[]
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
   useStores() {
@@ -44,6 +44,7 @@ export class ArchiveOptions extends ViewBase {
           : undefined,
       }))
     }, [this.props.policy.max_file_mb, t])
+    this.publish({ options })
     return { options }
   }
 

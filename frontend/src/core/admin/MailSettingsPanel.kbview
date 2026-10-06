@@ -1,0 +1,110 @@
+<!-- MailSettingsPanel — converted from MailSettingsPanel.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="contents">
+  <Label Text="{Res common.loading}"
+         Overflow="Wrap"
+         ForeColor="TextTertiary"
+         InheritFontSize="true"
+         Visible="{Binding show_case_1}"
+         Class="[font-size:var(--kb-text-body)]"/>
+  <Panel Visible="{Binding show_main}" Class="max-w-3xl space-y-4">
+    <Label Text="{Res mailsetup.subtitle}"
+           Overflow="Wrap"
+           ForeColor="TextSecondary"
+           InheritFontSize="true"
+           Class="[font-size:var(--kb-text-body)]"/>
+    <Callout Variant="{Binding variant}" Body="{Binding callout_text}" Visible="{Binding show_settings_usable}"/>
+    <Card Title="{Res mailsetup.section_server}" IconSize="17" Icon="Server">
+      <Panel Class="space-y-4">
+        <Stack Direction="LeftToRight" Gap="16" CrossAlign="Start" Justify="SpaceBetween">
+          <Panel Class="min-w-0">
+            <Label Text="{Res mailsetup.enabled}"
+                   FontWeight="Medium"
+                   Overflow="Wrap"
+                   ForeColor="TextPrimary"
+                   InheritFontSize="true"
+                   Class="[font-size:var(--kb-text-body)]"/>
+            <Label Text="{Res mailsetup.enabled_hint}"
+                   Overflow="Wrap"
+                   ForeColor="TextTertiary"
+                   InheritFontSize="true"
+                   Class="mt-0.5 [font-size:var(--kb-text-meta)]"/>
+          </Panel>
+          <Switch On="{Binding on}" OnCheckedChanged="switch_checked_changed"/>
+        </Stack>
+        <Panel Class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Panel Class="sm:col-span-2">
+            <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+          </Panel>
+          <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+        </Panel>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part3}" Props="{Binding part3_props}"/>
+        <Panel Class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part4}" Props="{Binding part1_props}"/>
+          <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+        </Panel>
+        <Button Variant="Ghost"
+                Size="Sm"
+                Enabled="{Binding enabled_unless_save_is_pending}"
+                Text="{Res mailsetup.password_clear}"
+                Visible="{Binding show_settings_has_password}"
+                OnClick="clearPassword"/>
+      </Panel>
+    </Card>
+    <Card Title="{Res mailsetup.section_sender}" IconSize="17" Icon="User">
+      <Panel Class="space-y-4">
+        <Panel Class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part6}" Props="{Binding part1_props}"/>
+          <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+          <ReactHost Component="{Binding Part7}" Props="{Binding part1_props}"/>
+        </Panel>
+        <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+        <ReactHost Component="{Binding Part8}" Props="{Binding part1_props}"/>
+      </Panel>
+    </Card>
+    <Stack Direction="LeftToRight"
+           Gap="12"
+           CrossAlign="Center"
+           BackColor="Surface"
+           Visible="{Binding dirty}"
+           Class="sticky bottom-4 z-10 rounded-xl border border-border px-4 py-3 shadow-md">
+      <Label HtmlTag="Span"
+             Text="{Res mailsetup.unsaved}"
+             Overflow="Wrap"
+             ForeColor="TextSecondary"
+             InheritFontSize="true"
+             Class="flex-1 [font-size:var(--kb-text-meta)]"/>
+      <Button Variant="Ghost" Text="{Res common.cancel}" OnClick="button_click"/>
+      <Button Loading="{Binding save.isPending}" Text="{Res mailsetup.save}" OnClick="submit"/>
+    </Stack>
+    <Card Title="{Res mailsetup.section_test}" IconSize="17" Icon="Mail">
+      <Panel Class="space-y-3">
+        <Label Text="{Res mailsetup.test_hint}"
+               Overflow="Wrap"
+               ForeColor="TextTertiary"
+               InheritFontSize="true"
+               Class="[font-size:var(--kb-text-meta)]"/>
+        <Stack Direction="LeftToRight" Gap="12" CrossAlign="End" WrapContents="true">
+          <Panel Class="min-w-[240px] flex-1">
+            <!-- TODO(views-migrate): <Field> is no .kbview element (a local or dynamic component) -->
+            <ReactHost Component="{Binding Part9}" Props="{Binding part9_props}"/>
+          </Panel>
+          <Button IconSize="15"
+                  Icon="Send"
+                  Loading="{Binding sendTest.isPending}"
+                  Enabled="{Binding enabled_unless_dirty}"
+                  Text="{Res mailsetup.test_send}"
+                  OnClick="button_click2"/>
+        </Stack>
+        <Callout Body="{Res mailsetup.unsaved}" Visible="{Binding dirty}"/>
+        <!-- TODO(views-migrate): <Callout> with element children -->
+        <ReactHost Component="{Binding Part10}" Props="{Binding part10_props}" Visible="{Binding show_result}"/>
+      </Panel>
+    </Card>
+  </Panel>
+</Panel>

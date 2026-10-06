@@ -19,10 +19,10 @@ export class ApiTokensTab extends ViewBase {
   @bind accessor newToken: string | null = null
   tr!: ApiTokensTabStores['t']
   tokens!: ApiTokensTabStores['tokens']
-  isLoading!: ApiTokensTabStores['isLoading']
+  isLoading!: boolean
   revoke!: ApiTokensTabStores['revoke']
-  legacy!: ApiTokensTabStores['legacy']
-  soonest!: ApiTokensTabStores['soonest']
+  legacy!: ApiToken[]
+  soonest!: string
 
   /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
   useStores() {
@@ -67,7 +67,7 @@ export class ApiTokensTab extends ViewBase {
   get new_token_banner_props() {
     return this.memo('new_token_banner_props', [this.newToken], () => {
       if (!(this.newToken)) return undefined as never
-      return ({ token: this.newToken, onClose: () => this.newToken = null })
+      return ({ token: this.newToken, onClose: () => this.newToken = null } as React.ComponentProps<typeof NewTokenBanner>)
     })
   }
 
@@ -94,7 +94,7 @@ export class ApiTokensTab extends ViewBase {
   }
 
   get create_token_form_props() {
-    return this.memo('create_token_form_props', [], () => ({ onCreated: this.setNewToken.bind(this) }))
+    return this.memo('create_token_form_props', [this.memo, this.newToken], () => ({ onCreated: this.memo("setNewToken:bound", [], () => this.setNewToken.bind(this)) }))
   }
 
   get show_tokens_tokens() {

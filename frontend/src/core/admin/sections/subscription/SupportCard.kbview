@@ -1,0 +1,59 @@
+<!-- SupportCard — converted from SupportCard.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Card x:Props="SupportCardProps"
+      Title="{Res admin.sub_support_title}"
+      IconSize="16"
+      Icon="LifeBuoy"
+      Subtitle="{Res admin.sub_support_subtitle}">
+  <Card.Actions>
+    <Button Variant="Text"
+            Size="Sm"
+            IconSize="14"
+            Icon="Trash2"
+            Loading="{Binding remove.isPending}"
+            Text="{Res admin.sub_remove}"
+            Visible="{Binding show_can_manage_contract}"
+            OnClick="button_click"/>
+  </Card.Actions>
+  <Panel Class="contents">
+    <!-- TODO(views-migrate): <ContractDetails> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding ContractDetails}" Props="{Binding contract_details_props}" Visible="{Binding show_contract}"/>
+    <!-- TODO(views-migrate): <CommunitySupport> is no .kbview element (a local or dynamic component) -->
+    <ReactHost Component="{Binding CommunitySupport}" Props="{Binding community_support_props}" Visible="{Binding show_not_contract}"/>
+    <Panel Visible="{Binding props.canManage}" Class="mt-4 border-t border-border pt-4">
+      <Panel Visible="{Binding formOpen}" Class="min-w-0">
+        <!-- TODO(views-migrate): <TextArea> spellCheck, autoComplete: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <Stack Direction="LeftToRight" WrapContents="true" Class="mt-3">
+          <Button Size="Sm"
+                  Loading="{Binding register.isPending}"
+                  Enabled="{Binding enabled_unless_draft_trim}"
+                  Text="{Res admin.sub_key_submit}"
+                  OnClick="button_click2"/>
+          <Button Variant="Secondary" Size="Sm" Text="{Res admin.sub_key_cancel}" OnClick="button_click3"/>
+        </Stack>
+      </Panel>
+      <Button Variant="Secondary"
+              Size="Sm"
+              IconSize="14"
+              Icon="FileKey"
+              Text="{Binding button_text}"
+              Visible="{Binding show_not_form_open}"
+              OnClick="button_click4"/>
+      <Label Text="{Res admin.sub_offer_hint}"
+             Overflow="Wrap"
+             ForeColor="TextTertiary"
+             InheritFontSize="true"
+             Visible="{Binding show_contract_form_open}"
+             Class="mt-2 [font-size:var(--kb-text-meta)]"/>
+      <Label Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             InheritFontSize="true"
+             AccessibleRole="Alert"
+             Visible="{Binding show_error}"
+             Class="mt-3 [font-size:var(--kb-text-body)]"/>
+    </Panel>
+    <!-- TODO(views-migrate): <ConfirmDialog {...spread}> (spread props) -->
+    <ReactHost Component="{Binding ConfirmDialog}" Props="{Binding confirm_dialog_props}" Visible="{Binding show_confirm_state}"/>
+  </Panel>
+</Card>

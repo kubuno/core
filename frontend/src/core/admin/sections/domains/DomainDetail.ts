@@ -126,9 +126,9 @@ export class DomainDetail extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.domain, this.props, this.verify, this.toast, this.isLoading], () => {
+    return this.memo('part1_props', [this.tr, this.domain, this.props, this.verify, this.memo, this.error, this.toast, this.isLoading], () => {
       if (!(!(this.isLoading || !this.domain))) return undefined as never
-      return ({ t: this.tr, domain: this.domain, domain_last_error: this.domain?.last_error, canManage: this.props.canManage, verify: this.verify, setError: this.setError.bind(this), toast: this.toast, fail: this.fail.bind(this), domain_last_checked_at: this.domain?.last_checked_at })
+      return ({ t: this.tr, domain: this.domain, domain_last_error: this.domain?.last_error, canManage: this.props.canManage, verify: this.verify, setError: this.memo("setError:bound", [], () => this.setError.bind(this)), toast: this.toast, fail: this.memo("fail:bound", [], () => this.fail.bind(this)), domain_last_checked_at: this.domain?.last_checked_at })
     })
   }
 
@@ -157,9 +157,9 @@ export class DomainDetail extends ViewBase {
   }
 
   get part2_props() {
-    return this.memo('part2_props', [this.domain, this.promote, this.tr, this.confirm, this.toast, this.isLoading, this.props], () => {
+    return this.memo('part2_props', [this.domain, this.promote, this.tr, this.confirm, this.memo, this.error, this.toast, this.isLoading, this.props], () => {
       if (!(!(this.isLoading || !this.domain)) || !(this.props.canManage) || !(this.domain.kind === 'secondary')) return undefined as never
-      return ({ domain: this.domain, promote: this.promote, t: this.tr, confirm: this.confirm, setError: this.setError.bind(this), toast: this.toast, fail: this.fail.bind(this) })
+      return ({ domain: this.domain, promote: this.promote, t: this.tr, confirm: this.confirm, setError: this.memo("setError:bound", [], () => this.setError.bind(this)), toast: this.toast, fail: this.memo("fail:bound", [], () => this.fail.bind(this)) })
     })
   }
 
@@ -185,9 +185,9 @@ export class DomainDetail extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.blockers, this.remove, this.confirm, this.tr, this.domain, this.props, this.isLoading], () => {
+    return this.memo('part3_props', [this.blockers, this.remove, this.confirm, this.tr, this.domain, this.memo, this.error, this.props, this.isLoading], () => {
       if (!(!(this.isLoading || !this.domain)) || !(this.props.canManage)) return undefined as never
-      return ({ blockers: this.blockers, remove: this.remove, confirm: this.confirm, t: this.tr, domain: this.domain, setError: this.setError.bind(this), onGone: this.props.onGone, fail: this.fail.bind(this) })
+      return ({ blockers: this.blockers, remove: this.remove, confirm: this.confirm, t: this.tr, domain: this.domain, setError: this.memo("setError:bound", [], () => this.setError.bind(this)), onGone: this.props.onGone, fail: this.memo("fail:bound", [], () => this.fail.bind(this)) })
     })
   }
 
@@ -219,7 +219,7 @@ export class DomainDetail extends ViewBase {
 
   fail(e: unknown) {
     if (!(!(this.isLoading || !this.domain))) return undefined as never
-    return this.error = errorMessage(e, this.tr('admin.dom_save_failed'))
+    this.error = errorMessage(e, this.tr('admin.dom_save_failed'))
   }
 
   /** `setError` of the TSX: a value, or an update of the previous one. */

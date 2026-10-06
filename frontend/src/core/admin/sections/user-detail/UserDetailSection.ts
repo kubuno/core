@@ -35,14 +35,14 @@ export class UserDetailSection extends ViewBase {
   tr!: UserDetailSectionStores['t']
   qc!: UserDetailSectionStores['qc']
   toast!: UserDetailSectionStores['toast']
-  mobile!: UserDetailSectionStores['mobile']
+  mobile!: boolean
   confirm!: UserDetailSectionStores['confirm']
   confirmState!: UserDetailSectionStores['confirmState']
-  handleConfirm!: UserDetailSectionStores['handleConfirm']
-  handleCancel!: UserDetailSectionStores['handleCancel']
+  handleConfirm!: () => void
+  handleCancel!: () => void
   data!: UserDetailSectionHooks['data']
-  isLoading!: UserDetailSectionHooks['isLoading']
-  isError!: UserDetailSectionHooks['isError']
+  isLoading!: boolean
+  isError!: boolean
   refetch!: UserDetailSectionHooks['refetch']
   toggleActive!: UserDetailSectionHooks['toggleActive']
 
@@ -65,6 +65,7 @@ export class UserDetailSection extends ViewBase {
       queryKey: ['admin-user', this.props.userId],
       queryFn:  () => api.get<{ user: User }>(`/admin/users/${this.props.userId}`).then(r => r.data.user),
     })
+    this.publish({ data, isLoading, isError, refetch })
     const toggleActive = useMutation({
       mutationFn: (is_active: boolean) => api.patch(`/admin/users/${this.props.userId}`, { is_active }),
       onSuccess: () => {
@@ -74,6 +75,7 @@ export class UserDetailSection extends ViewBase {
       },
       onError: () => toast.error(t('admin.update_error')),
     })
+    this.publish({ toggleActive })
     useAdminCrumbs(useMemo(
       () => (data ? [{ label: data.display_name || data.username, title: data.display_name || data.username }] : []),
       [data],
@@ -89,7 +91,7 @@ export class UserDetailSection extends ViewBase {
     this.publish({ data: h.data, isLoading: h.isLoading, isError: h.isError, refetch: h.refetch, toggleActive: h.toggleActive })
   }
 
-  get paneParam() {
+  get paneParam(): Pane | null {
     return this.props.params.get('pane') as Pane | null
   }
 
@@ -97,7 +99,7 @@ export class UserDetailSection extends ViewBase {
     return this.paneParam && PANES.includes(this.paneParam) ? this.paneParam : 'profile'
   }
 
-  get user() {
+  get user(): User {
     return this.memo('user', [this.data, this.isLoading, this.isError], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
       return this.data
@@ -152,16 +154,16 @@ export class UserDetailSection extends ViewBase {
   }
 
   get identity_card_props() {
-    return this.memo('identity_card_props', [this.user, this.mobile, this.toggleActive, this.isLoading, this.isError, this.data], () => {
+    return this.memo('identity_card_props', [this.user, this.mobile, this.toggleActive, this.confirm, this.tr, this.memo, this.props, this.isLoading, this.isError, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
-      return ({ user: this.user, mobile: this.mobile, busy: this.toggleActive.isPending, onToggleActive: () => void this.askToggleActive(this.user), goPane: this.setPane.bind(this) } as React.ComponentProps<typeof IdentityCard>)
+      return ({ user: this.user, mobile: this.mobile, busy: this.toggleActive.isPending, onToggleActive: () => void this.askToggleActive(this.user), goPane: this.memo("setPane:bound", [], () => this.setPane.bind(this)) } as React.ComponentProps<typeof IdentityCard>)
     })
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.tabs, this.pane, this.isLoading, this.isError, this.data], () => {
+    return this.memo('part1_props', [this.tr, this.tabs, this.pane, this.memo, this.confirm, this.props, this.isLoading, this.isError, this.data], () => {
       if (!(!(this.isLoading)) || !(!(this.isError || !this.data))) return undefined as never
-      return ({ t: this.tr, tabs: this.tabs, pane: this.pane, setPane: this.setPane.bind(this) })
+      return ({ t: this.tr, tabs: this.tabs, pane: this.pane, setPane: this.memo("setPane:bound", [], () => this.setPane.bind(this)) })
     })
   }
 

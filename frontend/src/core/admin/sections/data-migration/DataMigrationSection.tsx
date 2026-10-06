@@ -1,64 +1,80 @@
-// Bringing an organisation's data in from another provider.
-//
-// ## What this page can honestly promise
-//
-// The core never copies anything: it may only write its own schema, and a
-// mailbox belongs to the mail module's. So a campaign here is a *plan* — the
-// source, the mapping, the range — and the copying is done by the module that
-// owns the destination, chunk by chunk, with the position saved after each one.
-//
-// That is why the page offers only the services whose module is actually
-// registered, and why a service whose module is missing is shown as unavailable
-// rather than hidden: an operator looking for something this instance cannot do
-// deserves the reason, not an empty menu.
-//
-// ## What is deliberately absent
-//
-// No calendar and no contacts yet — not because the orchestration could not
-// carry them, but because neither module can currently read a remote source,
-// and a service in this list that produced nothing would be exactly the kind of
-// button this project refuses to ship.
+/**
+ * Code-behind of `DataMigrationSection.kbview` (converted from `DataMigrationSection.tsx` by @kubuno/views-migrate).
+ */
+import { bind } from '@kubuno/views'
+import { useTranslation } from "react-i18next"
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
+import { Badge, type DataTableColumn, type DataTableRowAction } from "@ui"
+import { usePrivileges } from "../../../authz/usePrivileges"
+import type { AdminSectionProps } from "../registry"
+import { adminUrlWith } from "../../adminAction"
+import { DATA_MIGRATION_MANAGE } from "./privileges"
+import CampaignWizard from "./CampaignWizard"
+import CampaignDetail from "./CampaignDetail"
+import { useCampaigns, type Campaign } from "./api"
 
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { AlertTriangle, CheckCircle2, Loader2, Plus, ServerCog } from 'lucide-react'
-import {
-  Badge, Button, Callout, DataTable, EmptyState,
-  type DataTableColumn, type DataTableRowAction,
-} from '@ui'
-import { usePrivileges } from '../../../authz/usePrivileges'
-import type { AdminSectionProps } from '../registry'
-import { adminUrlWith } from '../../adminAction'
-import { DATA_MIGRATION_MANAGE } from './privileges'
-import CampaignWizard from './CampaignWizard'
-import CampaignDetail from './CampaignDetail'
-import { useCampaigns, type Campaign } from './api'
+import { ViewBase } from './DataMigrationSection.kbview'
+import * as __parts from './DataMigrationSection.parts'
 
-export default function DataMigrationSection({ params, navigate }: AdminSectionProps) {
-  const { t }   = useTranslation()
-  const { can } = usePrivileges()
-  const canManage = can(DATA_MIGRATION_MANAGE)
+export type { AdminSectionProps }
 
-  const [composing, setComposing] = useState(false)
+export class DataMigrationSection extends ViewBase {
+  @bind accessor composing = false
+  tr!: DataMigrationSectionStores['t']
+  can!: DataMigrationSectionStores['can']
+  data!: DataMigrationSectionStores['data']
+  isLoading!: boolean
+  isError!: boolean
+  refetch!: DataMigrationSectionStores['refetch']
 
-  const { data, isLoading, isError, refetch } = useCampaigns()
-
-  const selected = params.get('campaign')
-  const open = (id: string | null) =>
-    navigate(adminUrlWith('data-migration', params, { campaign: id }))
-
-  if (selected) {
-    return <CampaignDetail campaignId={selected} canManage={canManage} onGone={() => open(null)} />
+  /** The screen's hooks that read nothing of the view (stores, translations…), as the TSX called them. React's rules apply: `use()` runs them on every render. */
+  useStores() {
+    const { t }   = useTranslation()
+    const { can } = usePrivileges()
+    const { data, isLoading, isError, refetch } = useCampaigns()
+    return { t, can, data, isLoading, isError, refetch }
   }
 
-  const campaigns = data?.campaigns ?? []
-  const services  = data?.services ?? []
-  const noService = services.length > 0 && services.every(s => !s.available)
+  /** Runs the hooks and publishes what they give as fields (the bindings, the getters and the methods read them). */
+  use(): void {
+    const s = this.useStores()
+    this.publish({ tr: s.t, can: s.can, data: s.data, isLoading: s.isLoading, isError: s.isError, refetch: s.refetch })
+  }
 
-  const columns: DataTableColumn<Campaign>[] = [
+  get canManage(): boolean {
+    return this.can(DATA_MIGRATION_MANAGE)
+  }
+
+  get selected(): string | null {
+    return this.props.params.get('campaign')
+  }
+
+  get campaigns(): Campaign[] {
+    return this.memo('campaigns', [this.data, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return this.data?.campaigns ?? []
+    })
+  }
+
+  get services() {
+    return this.memo('services', [this.data, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return this.data?.services ?? []
+    })
+  }
+
+  get noService(): boolean {
+    if (!(!(this.selected))) return undefined as never
+    return this.services.length > 0 && this.services.every(s => !s.available)
+  }
+
+  get columns(): DataTableColumn<Campaign>[] {
+    return this.memo('columns', [this.tr, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return [
     {
       id: 'name',
-      header: t('admin.migr_col_campaign'),
+      header: this.tr('admin.migr_col_campaign'),
       primary: true,
       minWidth: 220,
       sortValue: r => r.name,
@@ -73,23 +89,23 @@ export default function DataMigrationSection({ params, navigate }: AdminSectionP
     },
     {
       id: 'service',
-      header: t('admin.migr_col_service'),
+      header: this.tr('admin.migr_col_service'),
       sortValue: r => r.service,
-      cell: r => <Badge variant="neutral">{t(`admin.migr_service_${r.service}`)}</Badge>,
+      cell: r => <Badge variant="neutral">{this.tr(`admin.migr_service_${r.service}`)}</Badge>,
     },
     {
       id: 'accounts',
-      header: t('admin.migr_col_accounts'),
+      header: this.tr('admin.migr_col_accounts'),
       minWidth: 200,
       sortValue: r => r.tally.done,
       cell: r => (
         <span className="flex min-w-0 flex-col">
           <span className="text-text-primary">
-            {t('admin.migr_accounts_done', { done: r.tally.done, total: r.tally.accounts })}
+            {this.tr('admin.migr_accounts_done', { done: r.tally.done, total: r.tally.accounts })}
           </span>
           {r.tally.failed > 0 && (
             <span className="flex items-center gap-1.5 text-danger" style={{ fontSize: 'var(--kb-text-meta)' }}>
-              <AlertTriangle size={12} /> {t('admin.migr_accounts_failed', { count: r.tally.failed })}
+              <AlertTriangle size={12} /> {this.tr('admin.migr_accounts_failed', { count: r.tally.failed })}
             </span>
           )}
         </span>
@@ -97,93 +113,119 @@ export default function DataMigrationSection({ params, navigate }: AdminSectionP
     },
     {
       id: 'items',
-      header: t('admin.migr_col_items'),
+      header: this.tr('admin.migr_col_items'),
       align: 'right',
       sortValue: r => r.tally.copied,
       cell: r => <span className="text-text-secondary">{r.tally.copied || '—'}</span>,
     },
     {
       id: 'status',
-      header: t('admin.migr_col_status'),
+      header: this.tr('admin.migr_col_status'),
       minWidth: 160,
       sortValue: r => r.status,
       cell: r => (
         r.status === 'running'
           ? (
             <span className="flex items-center gap-1.5 text-primary">
-              <Loader2 size={14} className="animate-spin" /> {t('admin.migr_status_running')}
+              <Loader2 size={14} className="animate-spin" /> {this.tr('admin.migr_status_running')}
             </span>
           )
           : r.status === 'done'
             ? (
               <span className="flex items-center gap-1.5 text-success">
-                <CheckCircle2 size={14} /> {t('admin.migr_status_done')}
+                <CheckCircle2 size={14} /> {this.tr('admin.migr_status_done')}
               </span>
             )
             : (
-              <span className="text-text-secondary">{t(`admin.migr_status_${r.status}`)}</span>
+              <span className="text-text-secondary">{this.tr(`admin.migr_status_${r.status}`)}</span>
             )
       ),
     },
   ]
+    })
+  }
 
-  const rowActions: DataTableRowAction<Campaign>[] = [
-    { id: 'open', label: t('admin.migr_action_open'), onClick: r => open(r.id) },
+  get rowActions(): DataTableRowAction<Campaign>[] {
+    return this.memo('rowActions', [this.tr, this.props, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return [
+    { id: 'open', label: this.tr('admin.migr_action_open'), onClick: r => this.open(r.id) },
   ]
+    })
+  }
 
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="min-w-0 text-text-primary" style={{ fontSize: 'var(--kb-text-page)' }}>
-            {t('admin.nav_data_migration')}
-          </h1>
-          <p className="mt-1 max-w-3xl text-text-secondary" style={{ fontSize: 'var(--kb-text-body)' }}>
-            {t('admin.migr_intro')}
-          </p>
-        </div>
-        {canManage && (
-          <Button variant="primary" disabled={noService} onClick={() => setComposing(true)}>
-            <Plus size={16} /> {t('admin.migr_new')}
-          </Button>
-        )}
-      </div>
+  get show_case_1() {
+    return !!(this.selected)
+  }
 
-      {noService && <Callout variant="warning" t={t}>{t('admin.migr_no_service')}</Callout>}
+  /** `<CampaignDetail>`, rendered by a ReactHost. */
+  get CampaignDetail() {
+    if (!(this.selected)) return undefined as never
+    return CampaignDetail
+  }
 
-      <DataTable<Campaign>
-        t={t}
-        rows={campaigns}
-        columns={columns}
-        rowKey={r => r.id}
-        loading={isLoading}
-        rowActions={rowActions}
-        onRowClick={r => open(r.id)}
-        pageSize={0}
-        error={isError ? t('admin.migr_load_failed') : undefined}
-        onRetry={() => void refetch()}
-        emptyState={
-          <EmptyState
-            icon={<ServerCog size={26} />}
-            title={t('admin.migr_empty_title')}
-            description={t('admin.migr_empty_desc')}
-            action={canManage && !noService
-              ? { label: t('admin.migr_new'), onClick: () => setComposing(true), variant: 'primary' }
-              : undefined}
-            t={t}
-          />
-        }
-      />
+  get campaign_detail_props() {
+    return this.memo('campaign_detail_props', [this.selected, this.canManage, this.props], () => {
+      if (!(this.selected)) return undefined as never
+      return ({ campaignId: this.selected, canManage: this.canManage, onGone: () => this.open(null) } as React.ComponentProps<typeof CampaignDetail>)
+    })
+  }
 
-      {composing && (
-        <CampaignWizard
-          services={services}
-          onClose={() => setComposing(false)}
-          // Straight to the sheet: a campaign that was just composed is a
-          // campaign whose accounts one wants to watch.
-          onCreated={c => { setComposing(false); open(c.id) }}
-        />
-      )}
-    </div>
-  )
+  get show_main() {
+    return !(this.selected)
+  }
+
+  get part1_props() {
+    return this.memo('part1_props', [this.noService, this.memo, this.composing, this.tr, this.selected, this.canManage], () => {
+      if (!(!(this.selected)) || !(this.canManage)) return undefined as never
+      return ({ noService: this.noService, setComposing: this.memo("setComposing:bound", [], () => this.setComposing.bind(this)), t: this.tr })
+    })
+  }
+
+  /** A part of the screen still written in React (<Button> with element children). */
+  get Part1() {
+    if (!(!(this.selected)) || !(this.canManage)) return undefined as never
+    return __parts.Part1
+  }
+
+  get part2_props() {
+    return this.memo('part2_props', [this.tr, this.campaigns, this.columns, this.isLoading, this.rowActions, this.memo, this.props, this.isError, this.refetch, this.canManage, this.noService, this.composing, this.selected], () => {
+      if (!(!(this.selected))) return undefined as never
+      return ({ t: this.tr, campaigns: this.campaigns, columns: this.columns, isLoading: this.isLoading, rowActions: this.rowActions, open: this.memo("open:bound", [], () => this.open.bind(this)), isError: this.isError, refetch: this.refetch, canManage: this.canManage, noService: this.noService, setComposing: this.memo("setComposing:bound", [], () => this.setComposing.bind(this)) })
+    })
+  }
+
+  /** A part of the screen still written in React (<DataTable> t, columns, rowKey, rowActions, onRowClick, onRetry, emptyState: no .kbview property). */
+  get Part2() {
+    if (!(!(this.selected))) return undefined as never
+    return __parts.Part2
+  }
+
+  /** `<CampaignWizard>`, rendered by a ReactHost. */
+  get CampaignWizard() {
+    if (!(!(this.selected)) || !(this.composing)) return undefined as never
+    return CampaignWizard
+  }
+
+  get campaign_wizard_props() {
+    return this.memo('campaign_wizard_props', [this.services, this.composing, this.props, this.selected], () => {
+      if (!(!(this.selected)) || !(this.composing)) return undefined as never
+      return ({ services: this.services, onClose: () => this.composing = false, onCreated: c => { this.composing = false; this.open(c.id) } } as React.ComponentProps<typeof CampaignWizard>)
+    })
+  }
+
+  open(id: string | null) {
+    return this.props.navigate(adminUrlWith('data-migration', this.props.params, { campaign: id }))
+  }
+
+  /** `setComposing` of the TSX: a value, or an update of the previous one. */
+  setComposing(value: DataMigrationSection['composing'] | ((prev: DataMigrationSection['composing']) => DataMigrationSection['composing'])) {
+    this.composing = typeof value === 'function' ? (value as (prev: DataMigrationSection['composing']) => DataMigrationSection['composing'])(this.composing) : value
+  }
+
 }
+
+/** What `useStores()` gives (the types of the fields it fills). */
+export type DataMigrationSectionStores = ReturnType<DataMigrationSection['useStores']>
+
+export default DataMigrationSection.component()

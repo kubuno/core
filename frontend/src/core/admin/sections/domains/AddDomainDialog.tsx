@@ -46,7 +46,7 @@ export class AddDomainDialog extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.name], () => ({ t: this.tr, name: this.name, setName: this.setName.bind(this) }))
+    return this.memo('part1_props', [this.tr, this.name, this.memo], () => ({ t: this.tr, name: this.name, setName: this.memo("setName:bound", [], () => this.setName.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<TextField> autoFocus: no .kbview property). */
@@ -64,7 +64,7 @@ export class AddDomainDialog extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.tr], () => ({ Choice: this.Choice.bind(this), t: this.tr }))
+    return this.memo('part3_props', [this.memo, this.kind, this.tr], () => ({ Choice: this.memo("Choice:bound", [], () => this.Choice.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<Choice> is no .kbview element (a local or dynamic component)). */
@@ -105,9 +105,9 @@ export class AddDomainDialog extends ViewBase {
   }
 
   get part6_props() {
-    return this.memo('part6_props', [this.parent, this.tr, this.parents, this.kind], () => {
+    return this.memo('part6_props', [this.parent, this.tr, this.parents, this.memo, this.kind], () => {
       if (!(this.kind === 'alias') || !(!(this.parents.length === 0))) return undefined as never
-      return ({ parent: this.parent, t: this.tr, parents: this.parents, setParent: this.setParent.bind(this) })
+      return ({ parent: this.parent, t: this.tr, parents: this.parents, setParent: this.memo("setParent:bound", [], () => this.setParent.bind(this)) })
     })
   }
 
@@ -159,7 +159,7 @@ export class AddDomainDialog extends ViewBase {
   }
 
   panel_mouse_down(_sender: unknown, args: MouseEventArgs) {
-    const e = args.native as MouseEvent
+    const e = args.native as React.MouseEvent<HTMLDivElement, MouseEvent>
     e.stopPropagation()
   }
 

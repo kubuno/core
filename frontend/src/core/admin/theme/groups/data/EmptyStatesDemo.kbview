@@ -1,0 +1,31 @@
+<!-- EmptyStatesDemo — converted from EmptyStatesDemo.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Panel Class="grid gap-3 sm:grid-cols-2">
+  <Panel Class="{Binding box}">
+    <!-- TODO(views-migrate): <EmptyState> action.icon: no .kbview property -->
+    <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+  </Panel>
+  <Panel Class="{Binding box}">
+    <EmptyState ActionLabel="{Res admin.t_prev_es_nores_a}"
+                Variant="NoResults"
+                IconSize="24"
+                Icon="SearchX"
+                Title="{Res admin.t_prev_es_nores_t}"
+                Description="{Res admin.t_prev_es_nores_d}"
+                Compact="true"
+                OnAction="empty_state_action"/>
+  </Panel>
+  <Panel Class="{Binding box}">
+    <EmptyState ActionLabel="{Res ui.retry}"
+                Variant="Error"
+                IconSize="24"
+                Icon="ServerCrash"
+                Title="{Res admin.t_prev_es_err_t}"
+                Description="{Res admin.t_prev_es_err_d}"
+                Compact="true"
+                OnAction="empty_state_action2"/>
+  </Panel>
+  <Panel Class="{Binding box}">
+    <!-- TODO(views-migrate): <EmptyState> docHref: no .kbview property -->
+    <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+  </Panel>
+</Panel>

@@ -1,0 +1,64 @@
+<!-- RegisterPage — converted from RegisterPage.tsx by @kubuno/views-migrate (partial: see the TODO comments and the report). -->
+<Stack Direction="LeftToRight" Gap="0" CrossAlign="Center" Justify="Center" BackColor="Surface1" Class="min-h-screen p-8">
+  <Panel Class="w-full max-w-md bg-white rounded-xl shadow-sm border border-border p-8">
+    <Stack Direction="LeftToRight" CrossAlign="Center" Class="mb-6">
+      <!-- TODO(views-migrate): <InstanceLogo> is no .kbview element (../shell/InstanceLogo#InstanceLogo) -->
+      <ReactHost Component="{Binding InstanceLogo}" Props="{Binding instance_logo_props}"/>
+      <Label HtmlTag="Span" Text="Kubuno" FontWeight="SemiBold" Overflow="Wrap" ForeColor="TextPrimary" Class="text-xl"/>
+    </Stack>
+    <Label HtmlTag="H1" Text="{Res register.title}" FontWeight="Medium" Overflow="Wrap" ForeColor="TextPrimary" Class="text-xl mb-1"/>
+    <Label Text="{Res register.subtitle}" Overflow="Wrap" ForeColor="TextSecondary" Class="mb-6"/>
+    <Panel HtmlTag="Form" Class="space-y-4" OnSubmit="panel_submit">
+      <Panel Class="grid grid-cols-2 gap-3">
+        <!-- TODO(views-migrate): <TextField> name: no .kbview property -->
+        <ReactHost Component="{Binding Part1}" Props="{Binding part1_props}"/>
+        <!-- TODO(views-migrate): <TextField> label: an object value for a text property -->
+        <ReactHost Component="{Binding Part2}" Props="{Binding part1_props}"/>
+      </Panel>
+      <!-- TODO(views-migrate): <TextField> label: an object value for a text property -->
+      <ReactHost Component="{Binding Part3}" Props="{Binding part1_props}"/>
+      <Panel Class="relative">
+        <!-- TODO(views-migrate): <TextField> label: an object value for a text property -->
+        <ReactHost Component="{Binding Part4}" Props="{Binding part4_props}"/>
+        <Panel AccessibleRole="PushButton"
+               AutoSize="true"
+               Class="absolute right-3 bottom-0 h-9 flex items-center text-text-tertiary hover:text-text-secondary"
+               OnClick="panel_click">
+          <Icon Name="EyeOff" Size="16" Visible="{Binding showPassword}"/>
+          <Icon Name="Eye" Size="16" Visible="{Binding show_not_show_password}"/>
+        </Panel>
+        <Panel Visible="{Binding show_form_password}" Class="mt-1.5">
+          <Stack Direction="LeftToRight" Gap="4" Class="mb-1">
+            <Repeater ItemKey="key" ItemsSource="{Binding rows_items}">
+              <!-- TODO(views-migrate): <div> with a computed style -->
+              <ReactHost Component="{Binding Part5}" Props="{Binding part5_props}"/>
+            </Repeater>
+          </Stack>
+          <!-- TODO(views-migrate): <span> with a computed style -->
+          <ReactHost Component="{Binding Part6}" Props="{Binding part6_props}"/>
+        </Panel>
+      </Panel>
+      <!-- TODO(views-migrate): <TextField> label: an object value for a text property -->
+      <ReactHost Component="{Binding Part7}" Props="{Binding part1_props}"/>
+      <Label HtmlTag="Div"
+             Text="{Binding error}"
+             Overflow="Wrap"
+             ForeColor="Danger"
+             BackColor="DangerLight"
+             Visible="{Binding show_error}"
+             Class="px-3 py-2 rounded-md"/>
+      <Button ButtonType="Submit" Loading="{Binding isLoading}" Text="{Res register.submit}" Class="w-full"/>
+    </Panel>
+    <Panel HtmlTag="P" ForeColor="TextSecondary" Class="mt-4 text-center text-sm">
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text="{Res register.have_account}"/>
+      <Label HtmlTag="Span" InheritFontSize="true" Overflow="Wrap" Text=" "/>
+      <LinkLabel Href="/login"
+                 Text="{Res login.submit}"
+                 FontWeight="Medium"
+                 ForeColor="Primary"
+                 InheritFontSize="true"
+                 Class="hover:underline"
+                 OnClick="link_label_click"/>
+    </Panel>
+  </Panel>
+</Stack>

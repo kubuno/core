@@ -8,8 +8,8 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react"
 import { fmtBytes, useChartSeries } from "../DashboardCharts"
 import { bucketLabel } from "./bucketLabel"
 import type { DashboardPanel, PanelBucket, PanelDef } from "./types"
-import AreaChart from "../AreaChart"
-import BarChart from "../BarChart"
+import { AreaChart } from "../AreaChart"
+import { BarChart } from "../BarChart"
 import DonutChart from "../DonutChart"
 import HBarList from "../HBarList"
 import ProgressRing from "../ProgressRing"
@@ -157,7 +157,7 @@ export class PanelCard extends ViewBase {
     return this.memo('DeltaIcon', [this.rising, this.falling], () => this.rising ? ArrowUpRight : this.falling ? ArrowDownRight : Minus)
   }
 
-  get deltaColor(): "text-text-secondary" | "text-success" | "text-danger" {
+  get deltaColor(): "text-text-secondary" | "text-danger" | "text-success" {
     return this.worse ? 'text-danger' : this.better ? 'text-success' : 'text-text-secondary'
   }
 

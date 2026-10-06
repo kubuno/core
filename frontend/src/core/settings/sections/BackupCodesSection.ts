@@ -5,7 +5,7 @@ import { bind } from '@kubuno/views'
 import { useCallback, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { api } from "../../api/client"
-import BackupCodesPanel from "./BackupCodesPanel"
+import { BackupCodesPanel } from "./BackupCodesPanel"
 
 import { ViewBase } from './BackupCodesSection.kbview'
 
@@ -65,7 +65,7 @@ export class BackupCodesSection extends ViewBase {
   get backup_codes_panel_props() {
     return this.memo('backup_codes_panel_props', [this.fresh], () => {
       if (!(this.fresh)) return undefined as never
-      return ({ codes: this.fresh, onDone: () => this.fresh = null })
+      return ({ codes: this.fresh, onDone: () => this.fresh = null } as React.ComponentProps<typeof BackupCodesPanel>)
     })
   }
 

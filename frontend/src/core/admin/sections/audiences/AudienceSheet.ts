@@ -116,9 +116,9 @@ export class AudienceSheet extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.tr, this.isLoading, this.data, this.a, this.props], () => {
+    return this.memo('part1_props', [this.memo, this.adding, this.tr, this.isLoading, this.data, this.a, this.props], () => {
       if (!(!(this.isLoading || !this.data)) || !(!this.a.is_everyone) || !(this.props.canManage)) return undefined as never
-      return ({ setAdding: this.setAdding.bind(this), t: this.tr })
+      return ({ setAdding: this.memo("setAdding:bound", [], () => this.setAdding.bind(this)), t: this.tr })
     })
   }
 
@@ -146,7 +146,7 @@ export class AudienceSheet extends ViewBase {
 
   /** The rows of the Repeater over `data.members`. */
   get rows_members() {
-    return this.memo('rows_members', [this.data, this.isLoading, this.a, this.props], () => {
+    return this.memo('rows_members', [this.data, this.isLoading, this.a, this.props, this.confirm, this.tr, this.removeMembers], () => {
       if (!(!(this.isLoading || !this.data)) || !(!this.a.is_everyone) || !(!(this.data.members.length === 0))) return undefined as never
       return this.data.members.map((m) => {
       return { m, member_row_props: ((!(this.isLoading || !this.data)) && (!this.a.is_everyone) && (!(this.data.members.length === 0))) ? ({ m: m, canManage: this.props.canManage, onRemove: () => void this.removeOne(m) } as React.ComponentProps<typeof __parts.MemberRow>) : undefined, key: `${m.member_type}:${m.member_id}` }

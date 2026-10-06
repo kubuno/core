@@ -8,6 +8,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { type DropdownOption } from "@ui"
 import { api } from "../../api/client"
 import { type AuditEntry } from "./auditTypes"
+import type { AdminSectionProps } from "./registry"
 
 import { ViewBase } from './AuditSection.kbview'
 import * as __parts from './AuditSection.parts'
@@ -48,6 +49,8 @@ function filtersFromUrl(params: URLSearchParams): Filters {
     target_type: params.get('audit_target') ?? '',
   }
 }
+
+export type { AdminSectionProps }
 
 export class AuditSection extends ViewBase {
   @bind accessor open: number | null = null
@@ -128,7 +131,7 @@ export class AuditSection extends ViewBase {
   }
 
   get part1_props() {
-    return this.memo('part1_props', [this.filters, this.tr], () => ({ exportCsv: this.exportCsv.bind(this), t: this.tr }))
+    return this.memo('part1_props', [this.memo, this.filters, this.tr], () => ({ exportCsv: this.memo("exportCsv:bound", [], () => this.exportCsv.bind(this)), t: this.tr }))
   }
 
   /** A part of the screen still written in React (<Button> with element children). */
@@ -146,7 +149,7 @@ export class AuditSection extends ViewBase {
   }
 
   get part3_props() {
-    return this.memo('part3_props', [this.filters, this.setFilters, this.facets, this.tr], () => ({ filters: this.filters, set: this.set.bind(this), opt: this.opt.bind(this), facets: this.facets, t: this.tr }))
+    return this.memo('part3_props', [this.filters, this.memo, this.setFilters, this.facets, this.tr], () => ({ filters: this.filters, set: this.memo("set:bound", [], () => this.set.bind(this)), opt: this.memo("opt:bound", [], () => this.opt.bind(this)), facets: this.facets, t: this.tr }))
   }
 
   /** A part of the screen still written in React (<Dropdown> width, height, focusable: no .kbview property). */
@@ -165,7 +168,7 @@ export class AuditSection extends ViewBase {
   }
 
   get part6_props() {
-    return this.memo('part6_props', [this.filters, this.setFilters, this.tr, this.facets], () => ({ filters: this.filters, set: this.set.bind(this), t: this.tr, facets: this.facets }))
+    return this.memo('part6_props', [this.filters, this.memo, this.setFilters, this.tr, this.facets], () => ({ filters: this.filters, set: this.memo("set:bound", [], () => this.set.bind(this)), t: this.tr, facets: this.facets }))
   }
 
   /** A part of the screen still written in React (<Dropdown> width, height, focusable: no .kbview property). */
@@ -174,7 +177,7 @@ export class AuditSection extends ViewBase {
   }
 
   get part7_props() {
-    return this.memo('part7_props', [this.tr, this.filters, this.setFilters], () => ({ t: this.tr, filters: this.filters, set: this.set.bind(this) }))
+    return this.memo('part7_props', [this.tr, this.filters, this.memo, this.setFilters], () => ({ t: this.tr, filters: this.filters, set: this.memo("set:bound", [], () => this.set.bind(this)) }))
   }
 
   /** A part of the screen still written in React (<input> has no .kbview element yet). */
@@ -188,7 +191,7 @@ export class AuditSection extends ViewBase {
   }
 
   get part9_props() {
-    return this.memo('part9_props', [this.tr, this.rows, this.isLoading, this.open, this.i18n], () => ({ t: this.tr, rows: this.rows, isLoading: this.isLoading, open: this.open, setOpen: this.setOpen.bind(this), i18n: this.i18n }))
+    return this.memo('part9_props', [this.tr, this.rows, this.isLoading, this.open, this.memo, this.i18n], () => ({ t: this.tr, rows: this.rows, isLoading: this.isLoading, open: this.open, setOpen: this.memo("setOpen:bound", [], () => this.setOpen.bind(this)), i18n: this.i18n }))
   }
 
   /** A part of the screen still written in React (<table> has no .kbview element yet). */
