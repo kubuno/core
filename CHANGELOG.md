@@ -85,6 +85,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **The Visual Studio designer's bundled page compiles with the project's own element registry.** The page accepts
+  the registry the designer sends (`setHostRegistry`) instead of the one it was built with, so a module whose
+  `@kubuno/ui` is newer than the designer's copy (drive) no longer shows errors such as « `Label` has no property
+  `HtmlTag` » that the build does not report.
 - In screens built as views, a line shown only under a condition (« No units » in a module's scope tree) no longer appears while that condition has no value, cards, notices and badges keep the spacing and dividers of their list, the theme preview gallery renders again (it updated without end), the appearance dialog reads its module's settings on every render, and the shell's application name follows a language change and the modules loading.
 - **A web view whose screen uses a hook returning a new object on every render no longer freezes the page** (the
   « Download my data » settings re-rendered without end once moved to a view): values a view's hooks give during its

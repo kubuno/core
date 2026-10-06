@@ -63,6 +63,7 @@ import {
   openChannel,
   wireDiagnostic,
   wireRect,
+  withHostRegistry,
   type Channel,
   type ComponentEntry,
   type DesignData,
@@ -338,6 +339,16 @@ export class DesignSurface {
         this.projectComponents = m.components
         if (!this.projectLoaded) void this.openCompiler().then(() => this.update())
         break
+      case 'setHostRegistry': {
+        // Bundled mode: compile with the project's own `@kubuno/ui` registry (the one `kbview-tsc` uses).
+        const texts = withHostRegistry(this.registryTexts, this.projectLoaded, m.text)
+        if (texts) {
+          this.registryTexts = texts
+          this.log('host registry: the project\'s (sent by the designer)')
+          void this.openCompiler().then(() => this.update())
+        }
+        break
+      }
       case 'setText':
         this.text = m.text
         void this.update()

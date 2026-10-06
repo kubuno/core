@@ -6,6 +6,13 @@ under the published version number.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Visual Studio designer's bundled page compiles with the project's own element registry.** The page accepts
+  the registry the designer sends (`setHostRegistry`) instead of the one it was built with, so a module whose
+  `@kubuno/ui` is newer than the designer's copy (drive) no longer shows errors such as « `Label` has no property
+  `HtmlTag` » that the build does not report.
+
 ## [0.1.0] - 2026-10-06
 
 ### Added

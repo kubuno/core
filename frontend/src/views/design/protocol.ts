@@ -80,6 +80,7 @@ export type ComponentEntry = Record<string, unknown> & { name: string }
 export type HostMessage =
   | ({ type: 'setDocumentInfo' } & DocumentInfo)
   | { type: 'projectComponents'; components: ComponentEntry[] }
+  | { type: 'setHostRegistry'; text: string }
   | { type: 'setText'; text: string; baseDir: string | null }
   | { type: 'setDesignMode'; on: boolean }
   | { type: 'select'; id: string | null }
@@ -166,6 +167,8 @@ export function decodeHostMessage(data: unknown): HostMessage | null {
     case 'projectComponents':
       if (!Array.isArray(m.components)) return null
       return { type: 'projectComponents', components: m.components.filter((c): c is ComponentEntry => isObj(c) && isStr(c.name)) }
+    case 'setHostRegistry':
+      return isStr(m.text) && m.text.trim() ? { type: 'setHostRegistry', text: m.text } : null
     case 'setText': {
       if (!isStr(m.text)) return null
       const baseDir = strOrNull(m.baseDir)
@@ -290,4 +293,16 @@ export function openChannel(win: Window = window): Channel {
     post: (message) => void hook.outbox.push(message),
     listen: (h) => void handlers.push(h),
   }
+}
+
+/**
+ * The registry texts a page compiles with once the designer sent the project's host registry (`setHostRegistry`):
+ * the bundled page (no `project.json`) replaces the host registry it was built with — older than the project's
+ * whenever the project upgraded `@kubuno/ui` after the extension was built, which made the designer report
+ * « `Label` has no property `HtmlTag` » where `kbview-tsc` compiles clean — and keeps the project registries.
+ * `null` when nothing changes (the project-mode page already has the project's registry, or the same text).
+ */
+export function withHostRegistry(texts: readonly string[], projectLoaded: boolean, host: string): string[] | null {
+  if (projectLoaded || texts[0] === host) return null
+  return [host, ...texts.slice(1)]
 }
