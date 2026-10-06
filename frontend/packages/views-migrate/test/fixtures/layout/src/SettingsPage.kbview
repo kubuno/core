@@ -1,0 +1,3 @@
+<Panel Padding="20">
+  <Label Text="Settings"/>
+</Panel>

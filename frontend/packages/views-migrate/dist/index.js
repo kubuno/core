@@ -9,3 +9,5 @@ export { mapLabelClasses, mapStackClasses, mapContainerClasses, mapStaticStyle, 
 export { cleanJsxText, decodeEntities } from './jsxtext.js';
 export { writeXml } from './xml.js';
 export { main, summary, storeDefaults } from './cli.js';
+export { classify, planLayout, relocate, toControlText, toViewText, nameCollisions, unitsOf, ROLE_FOLDERS, } from './layout.js';
+export { planRelayout, applyRelayout, relayoutReport } from './relayout.js';

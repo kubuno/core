@@ -6,6 +6,13 @@ under the published version number.
 
 ## [Unreleased]
 
+### Changed
+
+- **A user control converted from a component keeps its DOM.** A `.kbcontrol` whose `<UserControl>` root sets nothing
+  of its own (no name, property, DOM event or menu) and holds one element renders that element as its DOM root: the
+  control is as large as its content and its host's child selectors (`space-y-*`, `divide-y`) reach it, as they
+  reached the component. The Visual Studio designer still shows the `UserControl` surface.
+
 ## [0.1.4] - 2026-10-06
 
 ### Fixed

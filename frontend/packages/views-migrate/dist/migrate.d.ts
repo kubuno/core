@@ -1,5 +1,6 @@
 import { Node, type Project, type SourceFile } from 'ts-morph';
 import type { Registry } from './registry.js';
+import { type Role } from './layout.js';
 export type Status = 'converted' | 'partial' | 'skipped';
 export interface MigrateConfig {
     project: Project;
@@ -54,7 +55,13 @@ interface FoundComponent {
 export declare function componentsOf(sf: SourceFile): Array<FoundComponent & {
     exportedAt: boolean;
 }>;
-export declare function migrateFile(cfg: MigrateConfig, sf: SourceFile, wanted?: string): MigrationResult;
+/**
+ * Converts one TSX screen. `opts.role` is what the screen is (VIEWS-SPEC §1.1, `classify` in `layout.ts`): a view
+ * (`X.kbview`, the default) or a user control (`X.kbcontrol`, its markup inside a `<UserControl>` carrying `x:Props`).
+ */
+export declare function migrateFile(cfg: MigrateConfig, sf: SourceFile, wanted?: string, opts?: {
+    role?: Role;
+}): MigrationResult;
 /**
  * Indents every line of `code` but the lines inside a template literal (their spaces belong to the string: the text
  * of a `<pre>` would change).

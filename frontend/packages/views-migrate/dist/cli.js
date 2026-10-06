@@ -1,7 +1,16 @@
 /**
  * `kbview-migrate` — converts TSX screens of a web project to `.kbview` views (WEB-VIEWS.md §6.2, WV-11).
  *
- *   kbview-migrate [--project <dir>] [--write] [--report <file.json>] [--component <Name>] <file.tsx>…
+ *   kbview-migrate [--project <dir>] [--write] [--report <file.json>] [--component <Name>] [--layout --app-root <dir>] <file.tsx>…
+ *   kbview-migrate --relayout [--project <dir>] [--write] [--report <file.json>] [--app-root <dir>]… [--exclude <dir>]…
+ *                  [--split <n>] [--components] [--place <view-or-component>=<dir>]… [--rename <view>=<Name>]…
+ *                  [--move <from>=<to>]…
+ *
+ * Each screen is classified first (VIEWS-SPEC §1.1, `layout.ts`): a page a route renders, a window or a dialog becomes
+ * a view (`X.kbview`); a component other components place becomes a user control (`X.kbcontrol`, root
+ * `<UserControl x:Props>`). With `--layout` the converted files then move to the folder of their role under the app
+ * root(s) given by `--app-root` (VIEWS-SPEC §1.2). `--relayout` does both for the views a project already has (and,
+ * with `--components`, for its React components): extensions, roots, folders (`git mv`), importers.
  *
  * Without `--write` nothing is written: the report says what each file would become (converted, partial with the
  * reasons, or skipped). With `--write` the view, code-behind and parts are written next to the `.tsx`, the `.tsx` is
@@ -11,11 +20,52 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { openProject } from './project.js';
 import { migrateFile, rewriteImporters, targetComponent } from './migrate.js';
 import { splitFile } from './split.js';
+import { classify, listFiles, slash } from './layout.js';
+import { applyRelayout, planRelayout, relayoutReport } from './relayout.js';
+/** Every value of a repeatable flag (`--app-root a --app-root b`). */
+function flags(argv, name) {
+    return argv.flatMap((a, i) => (a === name && argv[i + 1] !== undefined ? [argv[i + 1]] : []));
+}
+/** `--relayout`: classify the project's views again and move them into the layout. */
+function relayoutMain(argv) {
+    const root = resolve(flags(argv, '--project')[0] ?? process.cwd());
+    const split = flags(argv, '--split')[0];
+    const plan = planRelayout({
+        root,
+        appRoots: flags(argv, '--app-root').length ? flags(argv, '--app-root') : undefined,
+        exclude: flags(argv, '--exclude'),
+        split: split ? Number(split) : undefined,
+        components: argv.includes('--components'),
+        rename: flags(argv, '--rename').map((m) => {
+            const [unit, stem] = m.split('=');
+            return { unit, stem };
+        }),
+        place: flags(argv, '--place').map((m) => {
+            const [unit, dir] = m.split('=');
+            return { unit, dir };
+        }),
+        extraMoves: flags(argv, '--move').map((m) => {
+            const [from, to] = m.split('=');
+            return { from, to };
+        }),
+    });
+    const report = relayoutReport(root, plan);
+    for (const line of report.lines)
+        console.log(line);
+    const reportFile = flags(argv, '--report')[0];
+    if (reportFile)
+        writeFileSync(reportFile, JSON.stringify(report.json, null, 2) + '\n');
+    if (argv.includes('--write'))
+        applyRelayout(root, plan);
+    return 0;
+}
 export async function main(argv = process.argv.slice(2)) {
+    if (argv.includes('--relayout'))
+        return relayoutMain(argv);
     const flag = (n) => {
         const i = argv.indexOf(n);
         return i >= 0 ? argv[i + 1] : undefined;
@@ -25,7 +75,8 @@ export async function main(argv = process.argv.slice(2)) {
     const reportFile = flag('--report');
     const component_ = flag('--component');
     const outDir = flag('--out');
-    const skipNext = new Set(['--project', '--report', '--component', '--out']);
+    const skipNext = new Set(['--project', '--report', '--component', '--out', '--app-root', '--exclude', '--split']);
+    const layout = argv.includes('--layout');
     const split = argv.includes('--split');
     let files = argv.filter((a, i) => !a.startsWith('--') && !skipNext.has(argv[i - 1] ?? '')).map((f) => resolve(f));
     if (!files.length) {
@@ -63,13 +114,23 @@ export async function main(argv = process.argv.slice(2)) {
         files = next;
     }
     const same = (a, b) => resolve(a) === resolve(b);
+    // What each screen is (a view or a user control), from how the project uses it, before anything changes.
+    const roles = new Map();
+    {
+        const sources = new Map(ctx.project.getSourceFiles().map((sf) => [slash(sf.getFilePath()), sf.getFullText()]));
+        const units = files.map((f) => ({ stem: basename(f).replace(/\.tsx?$/, ''), dir: slash(dirname(f)), module: slash(f), files: [slash(f)] }));
+        for (const c of classify(units, sources, listFiles(join(root, 'src')))) {
+            roles.set(resolve(c.module), c.role);
+            console.log(`${c.role === 'view' ? 'VIEW   ' : 'CONTROL'}   ${relative(root, c.module)}: ${c.reason}`);
+        }
+    }
     // The screens nothing of which maps to a view element stay TSX: known first, so that their importers keep them.
     const leftAsIs = new Map();
     for (const f of files) {
         const sf = ctx.project.getSourceFile(f);
         if (!sf)
             continue;
-        const r = migrateFile(ctx.config, sf, component_);
+        const r = migrateFile(ctx.config, sf, component_, { role: roles.get(resolve(f)) });
         if (r.status === 'skipped' && r.stats.elements > 0 && r.stats.mapped === 0)
             leftAsIs.set(f, r);
     }
@@ -88,7 +149,7 @@ export async function main(argv = process.argv.slice(2)) {
             results.push({ file: f, status: 'skipped', reasons: ['not found in the project'], stats: { elements: 0, mapped: 0, classAttributes: 0, parts: 0, getters: 0, handlers: 0, bindings: 0, resources: 0 }, outputs: {}, deletes: [], edits: {}, defaults: [] });
             continue;
         }
-        const r = leftAsIs.get(f) ?? migrateFile(ctx.config, sf, component_);
+        const r = leftAsIs.get(f) ?? migrateFile(ctx.config, sf, component_, { role: roles.get(resolve(f)) });
         results.push(r);
         const rel = relative(root, f);
         console.log(`${r.status.toUpperCase().padEnd(9)} ${rel}${r.component ? ` (${r.component})` : ''}: ${r.stats.mapped}/${r.stats.elements} elements, ${r.stats.parts} part(s), ${r.stats.classAttributes} Class, ${r.stats.getters} getter(s), ${r.stats.handlers} handler(s)`);
@@ -144,6 +205,19 @@ export async function main(argv = process.argv.slice(2)) {
         const done = storeDefaults(root, results.flatMap((r) => r.defaults));
         for (const line of done.log)
             console.log(line);
+    }
+    // --layout: the converted screens go to the folders of their roles (and their importers follow).
+    if (write && layout) {
+        const converted = new Set(results.flatMap((r) => Object.keys(r.outputs).map((p) => slash(resolve(p)))));
+        const plan = planRelayout({
+            root,
+            appRoots: flags(argv, '--app-root').length ? flags(argv, '--app-root') : undefined,
+            exclude: flags(argv, '--exclude'),
+            only: (u) => u.files.some((f) => converted.has(f)),
+        });
+        for (const line of relayoutReport(root, plan).lines)
+            console.log(line);
+        applyRelayout(root, plan);
     }
     if (reportFile)
         writeFileSync(reportFile, JSON.stringify(summary(root, results), null, 2) + '\n');

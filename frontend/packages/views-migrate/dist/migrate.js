@@ -25,6 +25,7 @@ import { Node, ts } from 'ts-morph';
 import { isSafeLiteral, cleanJsxText, decodeEntities } from './jsxtext.js';
 import { mapContainerClasses, mapLabelClasses, mapStackClasses, mapStaticStyle } from './classes.js';
 import { attr, writeXml } from './xml.js';
+import { toControlText } from './layout.js';
 const HOOK = /^use[A-Z0-9]/;
 const VIEW_MEMBERS = new Set(['props', 'dataContext', 'use', 't', 'invalidate', 'component', 'constructor', 'memo']);
 const INTRINSIC_CONTAINERS = {
@@ -573,7 +574,11 @@ function staticInit(e) {
     visit(e);
     return ok;
 }
-export function migrateFile(cfg, sf, wanted) {
+/**
+ * Converts one TSX screen. `opts.role` is what the screen is (VIEWS-SPEC §1.1, `classify` in `layout.ts`): a view
+ * (`X.kbview`, the default) or a user control (`X.kbcontrol`, its markup inside a `<UserControl>` carrying `x:Props`).
+ */
+export function migrateFile(cfg, sf, wanted, opts = {}) {
     const file = sf.getFilePath();
     const result = {
         file,
@@ -603,7 +608,7 @@ export function migrateFile(cfg, sf, wanted) {
             m.localComponents.add(c.name);
     try {
         const out = convert(m, target);
-        result.outputs = out.outputs;
+        result.outputs = opts.role === 'control' ? asControl(out.outputs, m.stem) : out.outputs;
         result.edits = out.edits;
         // The .tsx goes, unless the code-behind took its very name (a code-behind with JSX is a .tsx).
         result.deletes = Object.keys(out.outputs).some((p) => resolve(p) === resolve(file)) ? [] : [file];
@@ -3055,6 +3060,17 @@ function partsFile(m) {
         imports.push(`import type { ${m.stem} } from './${m.stem}'`);
     const head = [`/**`, ` * The parts of \`${m.stem}.kbview\` still written in React (the codemod could not convert them; see the`, ` * TODO comments in the view). Each is rendered by a \`<ReactHost>\` with the values it reads as props.`, ` */`, ...imports];
     return head.join('\n') + '\n' + text + '\n';
+}
+/** The outputs of a conversion as a user control's: `X.kbcontrol`, its root in a `<UserControl>`, the code-behind and parts naming it. */
+function asControl(outputs, stem) {
+    const out = {};
+    for (const [p, text] of Object.entries(outputs)) {
+        if (p.endsWith(`${stem}.kbview`))
+            out[p.replace(/\.kbview$/, '.kbcontrol')] = toControlText(text);
+        else
+            out[p] = text.split(`\`${stem}.kbview\``).join(`\`${stem}.kbcontrol\``).split(`'./${stem}.kbview'`).join(`'./${stem}.kbcontrol'`);
+    }
+    return out;
 }
 /** The component a file's conversion targets (the exported one named like the file, or the only exported one). */
 export function targetComponent(sf, wanted) {

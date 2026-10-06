@@ -6,6 +6,28 @@ under the published version number.
 
 ## [Unreleased]
 
+### Added
+
+- **Views and user controls told apart.** Each screen is classified before it is converted, from how the project uses
+  it: a page a route renders (a route table, `RouteRegistry.register`, a `lazy` route, what the app's root component
+  renders in place of its routes), a window or a dialog becomes a view (`X.kbview`); a component other components
+  place (JSX, a view's `ReactHost`, a host's slot or extension point) becomes a user control (`X.kbcontrol`, its markup
+  inside `<UserControl x:Props="…">`, its props its properties and its callbacks its events). The report says what each
+  screen is and why.
+- **`--layout --app-root <dir>`**: the converted files go to the folder of their role under the app root — `views/`
+  (pages, windows), `dialogs/`, `pages/` (the user controls one component places, and the rows its lists repeat) and
+  `controls/` (the user controls several components place) — and every importer follows.
+- **`--relayout`** does the same for the views a project already has: each one classified again (`.kbview` ↔
+  `.kbcontrol`, the root wrapped in or taken out of `<UserControl>`), moved with `git mv` so its history follows,
+  every relative import of the project rewritten (`import`, `export … from`, `import()`, `vi.mock()`), the headers of
+  the code-behind and parts renamed. `--components` places the React components the same way; a folder holding more
+  than a dozen views (`--split`) is split by role like the app root, a feature folder below keeps its views and user
+  controls side by side; `--place <unit>=<dir>` puts a unit in a feature folder, `--move <from>=<to>` moves any other
+  file, `--exclude <dir>` leaves a folder alone.
+- A user control is an element named after its file: two user controls of one project, or a user control and a host
+  element, cannot share a name. `--relayout` stops on such a clash and names the files; `--rename <view>=<Name>`
+  renames the user control's files and its class.
+
 ## [0.1.2] - 2026-10-06
 
 ### Fixed

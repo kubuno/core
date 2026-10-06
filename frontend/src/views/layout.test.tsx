@@ -154,3 +154,45 @@ describe('layout elements', () => {
     expect(screen.getByText('deux')).toBeTruthy()
   })
 })
+
+describe('a user control converted from a component', () => {
+  const badge = (rootProps: PlanNode['props'] = undefined): ViewPlan => view({
+    id: '', el: 'UserControl', at, m: '@kubuno/views', x: 'UserControl', dom: 'ref', content: 'children', props: rootProps,
+    children: [{ id: '0', el: 'Stack', at, m: '@kubuno/views', x: 'Stack', dom: 'ref', content: 'children',
+      props: [lit('Direction', 'LeftToRight', 'direction')],
+      children: [{ id: '0.0', el: 'Txt', at, m: 'layout-test', x: 'Txt', props: [lit('Text', 'badge', 'text')] }] }],
+  })
+
+  it('renders its one element as its DOM root when its UserControl root has nothing of its own', () => {
+    const Base = createViewBase(badge())
+    class Badge extends (Base as unknown as new () => object) {}
+    const { container } = render(createElement('div', { className: 'space-y-2' }, createElement(KbView, { view: Badge as never })))
+    const root = container.firstElementChild!.firstElementChild as HTMLElement
+    // The Stack itself, a direct child of its host: no dock box around it.
+    expect(root.style.flexDirection).toBe('row')
+    expect(root.textContent).toBe('badge')
+  })
+
+  it('keeps its box when it lays its element out (a docked body, as the app launcher has)', () => {
+    const docked = view({
+      id: '', el: 'UserControl', at, m: '@kubuno/views', x: 'UserControl', dom: 'ref', content: 'children',
+      children: [{ id: '0', el: 'Stack', at, m: '@kubuno/views', x: 'Stack', dom: 'ref', content: 'children', props: [layout('Dock', 'Fill')] }],
+    })
+    const Base = createViewBase(docked)
+    class Docked extends (Base as unknown as new () => object) {}
+    const { container } = render(createElement(KbView, { view: Docked as never }))
+    expect((container.firstElementChild as HTMLElement).style.minHeight).toBe('0px')
+  })
+
+  it('keeps its box when the root sets something, and in the designer', () => {
+    const Padded = createViewBase(badge([lit('Padding', '4', 'padding')]))
+    class P extends (Padded as unknown as new () => object) {}
+    const { container } = render(createElement(KbView, { view: P as never }))
+    expect((container.firstElementChild as HTMLElement).style.flexDirection).toBe('')
+    cleanup()
+    const Plain = createViewBase(badge())
+    class D extends (Plain as unknown as new () => object) {}
+    const designed = render(createElement(KbView, { view: D as never, design: true }))
+    expect((designed.container.firstElementChild as HTMLElement).style.flexDirection).toBe('')
+  })
+})

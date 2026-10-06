@@ -854,6 +854,23 @@ function hasSizeClasses(plan: ViewPlan): boolean {
   return false
 }
 
+/**
+ * The node a view renders first. A user control whose `<UserControl>` root has nothing of its own — no name, no
+ * property, no DOM event, no menu — and holds one element it does not lay out (no `Dock`, `Anchor` or position)
+ * renders that element as its DOM root (VIEWS-SPEC §1.1, web):
+ * the control is exactly as large as its content and its host's child selectors (`space-y-*`, `divide-y`) reach
+ * it, as they reached the component it was converted from. The designer keeps the root (the surface the control is
+ * designed on).
+ */
+export function contentRoot(plan: ViewPlan, design: boolean): PlanNode {
+  const root = plan.root
+  if (design || plan.kind !== 'control' || root.el !== 'UserControl') return root
+  const own = !!root.name || !!root.props?.length || !!root.events?.some((e) => !e.from.runtime) || !!root.slots || !!root.items || !!root.sc
+  if (own || root.children?.length !== 1) return root
+  const only = root.children[0]
+  return only.props?.some((p) => p.to.runtime === 'layout') ? root : only
+}
+
 function rootEvents(i: Internals, kind: string): void {
   const root = i.cell.plan.root
   for (const e of root.events ?? []) if (e.from.runtime === kind) dispatch(i, root, e, [])
@@ -942,7 +959,7 @@ export function ViewRoot({ cell, cls, props, design }: ViewRootProps): ReactNode
   }, [cell, i])
   const renders = useRef(0)
   renders.current++
-  const content = createElement(KbNode, { node: plan.root, scope: i.scope })
+  const content = createElement(KbNode, { node: contentRoot(plan, i.design), scope: i.scope })
   const body = responsive ? createElement('div', { ref: rootEl, style: { display: 'contents' } }, content) : content
   return createElement(ViewContext.Provider, { value: i }, createElement(RootRender.Provider, { value: renders.current }, body))
 }

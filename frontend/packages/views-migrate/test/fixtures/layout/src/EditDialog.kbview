@@ -1,0 +1,3 @@
+<Panel x:Props="EditDialogProps" OnMouseDown="panel_mouse_down">
+  <FloatingWindow Title="Edit" OnClose="close"/>
+</Panel>

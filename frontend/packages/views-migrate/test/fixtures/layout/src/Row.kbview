@@ -1,0 +1,7 @@
+<!-- Row — converted from Row.tsx by @kubuno/views-migrate. -->
+<Stack x:Props="RowProps"
+       Direction="LeftToRight"
+       Gap="8"
+       Class="px-2">
+  <Label Text="{Binding title}"/>
+</Stack>
