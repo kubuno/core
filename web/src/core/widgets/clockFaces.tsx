@@ -86,20 +86,23 @@ const drawDigital: FaceDraw = (ctx, W, H, _date, ex) => {
 }
 
 // ── Analog — "radio controlled" wall clock (Helvetica dial, Kubuno brand) ─────────
-// Kubuno "IK" monogram, vectorised (viewBox 321×346 with the SVG group transform
-// translate(0,346) scale(0.1,-0.1)). Drawn via Path2D so it scales crisply.
-const KUBUNO_PATHS = [
-  'M264 3307 c-3 -8 -3 -434 -1 -948 3 -913 3 -936 24 -1009 70 -249 198 -454 419 -672 125 -123 303 -268 328 -268 3 0 5 654 4 1452 l-3 1453 -383 3 c-313 2 -383 0 -388 -11z',
-  'M1187 3313 c-4 -3 -7 -680 -7 -1504 l0 -1498 27 -19 c38 -27 279 -165 354 -202 l61 -31 61 32 c34 17 87 47 118 65 31 19 60 34 64 34 3 0 26 14 51 30 l44 31 0 729 c0 608 2 731 14 742 7 7 112 110 233 228 120 118 343 336 496 484 l277 269 -2 306 -3 306 -204 3 -203 2 -87 -83 c-47 -47 -151 -147 -231 -225 l-145 -140 -5 -299 -5 -299 -60 -62 c-32 -34 -63 -62 -67 -62 -4 0 -9 262 -10 583 l-3 582 -381 3 c-209 1 -383 -1 -387 -5z',
-  'M2217 1782 l-118 -117 1 -265 2 -265 225 -225 224 -225 61 64 c133 140 264 349 319 508 l20 58 -143 138 c-294 284 -459 442 -466 444 -4 1 -60 -51 -125 -115z',
+// Kubuno mark (six aperture blades around a plate holding a cube), vectorised from
+// public/kubuno-logo.png in its own 512x567 space. Drawn via Path2D so it scales crisply,
+// in a single colour: blades and plate solid, the cube cut out of the plate and its faces
+// in lighter tones (alpha), the way the monochrome logo is drawn elsewhere.
+const KUBUNO_SOLID = 'M276.44 138.94L395.81 69.41L472.95 113.95A78.09 78.09 0 0 1 512 181.58L512 274.67L391.87 205.92A2 2 0 0 0 391.11 205.14L276.44 138.94ZM392.11 229.32L512 297.93L512 387.01A78.09 78.09 0 0 1 472.95 454.64L392.34 501.19L391.81 362.77A2 2 0 0 0 392.11 361.72L392.11 229.32ZM371.66 374.68L372.19 512.82L295.04 557.36A78.09 78.09 0 0 1 216.96 557.36L136.34 510.81L255.94 441.15A2 2 0 0 0 257 440.88L371.66 374.68ZM235.56 429.66L116.19 499.18L39.05 454.64A78.09 78.09 0 0 1 0 387.01L0 293.92L120.13 362.67A2 2 0 0 0 120.89 363.46L235.56 429.66ZM119.89 339.27L0 270.66L0 181.58A78.09 78.09 0 0 1 39.05 113.95L119.66 67.41L120.19 205.82A2 2 0 0 0 119.89 206.87L119.89 339.27ZM140.34 193.91L139.81 55.78L216.96 11.24A78.09 78.09 0 0 1 295.04 11.24L375.66 57.78L256.06 127.45A2 2 0 0 0 255 127.71L140.34 193.91ZM238.3 160.13A35.4 35.4 0 0 1 273.7 160.13L354.69 206.88A35.4 35.4 0 0 1 372.39 237.54L372.39 331.06A35.4 35.4 0 0 1 354.69 361.71L273.7 408.47A35.4 35.4 0 0 1 238.3 408.47L157.31 361.71A35.4 35.4 0 0 1 139.61 331.06L139.61 237.54A35.4 35.4 0 0 1 157.31 206.88L238.3 160.13ZM243 187.95L180.15 224.23A26 26 0 0 0 167.15 246.75L167.15 319.32A26 26 0 0 0 180.15 341.84L243 378.13A26 26 0 0 0 269 378.13L331.85 341.84A26 26 0 0 0 344.85 319.32L344.85 246.75A26 26 0 0 0 331.85 224.23L269 187.95A26 26 0 0 0 243 187.95Z'
+const KUBUNO_FACES: [string, number][] = [
+  ['M256 381.61A26 26 0 0 1 243 378.13L180.15 341.84A26 26 0 0 1 167.15 319.32L167.15 246.75A26 26 0 0 1 170.63 233.75L245 276.69A22 22 0 0 0 267 276.69L271.14 274.3A30.28 30.28 0 0 0 256 300.52L256 381.61Z', 0.67],
+  ['M341.37 233.75A26 26 0 0 1 344.85 246.75L344.85 319.32A26 26 0 0 1 331.85 341.84L269 378.13A26 26 0 0 1 256 381.61L256 300.52A30.28 30.28 0 0 1 271.14 274.3L341.37 233.75Z', 0.82],
+  ['M170.63 233.75A26 26 0 0 1 180.15 224.23L243 187.95A26 26 0 0 1 269 187.95L331.85 224.23A26 26 0 0 1 341.37 233.75L267 276.69A22 22 0 0 1 245 276.69L170.63 233.75Z', 0.43],
 ]
 function drawKubunoLogo(ctx: Ctx, cx: number, cy: number, h: number, color: string) {
-  const w = (h * 321) / 346
+  const w = (h * 512) / 567
   ctx.save()
-  ctx.translate(cx - w / 2, cy - h / 2); ctx.scale(w / 321, h / 346)
-  ctx.translate(0, 346); ctx.scale(0.1, -0.1)
+  ctx.translate(cx - w / 2, cy - h / 2); ctx.scale(w / 512, h / 567)
   ctx.fillStyle = color
-  for (const d of KUBUNO_PATHS) ctx.fill(new Path2D(d))
+  ctx.fill(new Path2D(KUBUNO_SOLID))
+  for (const [d, alpha] of KUBUNO_FACES) { ctx.globalAlpha = alpha; ctx.fill(new Path2D(d)) }
   ctx.restore()
 }
 // Tapered pointer hand: small tail, widest just off-centre, sharp tip.
@@ -130,7 +133,7 @@ const drawAnalog: Draw100 = (ctx, date) => {
   }
   // Numerals — Helvetica, light weight.
   for (let i = 1; i <= 12; i++) { const [x, y] = P(i * 30, 36); label(ctx, String(i), x, y, `300 9.5px ${HELV}`, '#1a1a1a') }
-  // Brand mark: Kubuno "IK" monogram in grey, below the 12.
+  // Brand mark: the Kubuno mark in grey, below the 12.
   drawKubunoLogo(ctx, 50, 34, 8, '#9aa0a6')
   // Slender tapered hands
   const { h, m, s } = ang(date)

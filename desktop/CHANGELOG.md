@@ -18,6 +18,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The packaging icons show the current Kubuno mark.** The application icons (`windows/packaging/icons`:
+  `icon.ico`, `icon.png`, `32x32`, `128x128`, `StoreLogo`), the Microsoft Store tiles and splash screen
+  (`windows/packaging/Assets`, white mark on the tile colour) and `common/assets/logo.png` no longer show the
+  old "K" monogram; they are rendered from the vector of the current logo.
+
 - **Kubuno Documents moves to the office repository.** The word processor (`kubuno-documents.exe`, crate
   `kubuno-office-desktop`) and its document engine (`kubuno-office-docs-core`) leave `desktop/` for
   [`kubuno/office`](https://github.com/kubuno/office) (`desktop/` and `common/core`), with their history. It builds

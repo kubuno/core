@@ -14,6 +14,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The current Kubuno mark replaces the old "K" monogram everywhere it was still drawn.** The white logo
+  (`web/public/kubuno-logo-white.svg`), the brand mark under the 12 of the analog clock widget and the Android
+  `ic_kubuno_logo` drawables of `mobile/` (`core-ui`: app header; `core-account`: account and notification
+  icons) now show the six aperture blades around the cube, as a true vector traced from `kubuno-logo.png`. They
+  stay single-colour for tinting: the blades and plate are solid, the cube is cut out of the plate and its faces
+  are drawn in lighter tones. The Android drawable keeps its 24 dp height (21.67 dp wide, the logo's ratio).
+
 - **Kubuno Documents moves to the office repository.** The word processor (`kubuno-documents.exe`, crate
   `kubuno-office-desktop`) and its document engine (`kubuno-office-docs-core`) leave the desktop workspace (`desktop/`) for
   [`kubuno/office`](https://github.com/kubuno/office) (`desktop/` and `common/core`), with their history. It builds
