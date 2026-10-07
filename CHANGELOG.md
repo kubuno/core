@@ -73,6 +73,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **The shared PostgreSQL extensions live in `public`, so modules migrate on a fresh install.** The first core
+  migration created `uuid-ossp`, `pg_trgm`, `unaccent` and `citext` without naming a schema, so they landed
+  in `core`. An extension exists once per database, so a module (whose connections look in `<module>, public`)
+  then failed its migrations on a fresh install, and a second, prefixed core sharing the database failed its own
+  with `function uuid_generate_v4() does not exist`. Before migrating, the core now creates these extensions in
+  `public`, and moves them there on an install that has them elsewhere (existing tables are unaffected). Moving
+  an extension needs a PostgreSQL superuser: when the database role is not one, the log names the
+  `ALTER EXTENSION … SET SCHEMA public` statement to run once. No migration file changes.
+
 - **Module dialogs appear again.** Since the shell became a view, the dialogs a module adds once it has loaded —
   drive's « Select a file », « Save », folder picker, audio player, paint editor and remote storage — never opened:
   the shell's dialog area read the module contributions once and never looked again. It now follows them as they are
