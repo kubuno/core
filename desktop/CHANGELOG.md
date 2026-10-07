@@ -9,6 +9,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **The views macros recognise `kubuno-desktop.workspace = true`.** An app that names the framework with Cargo's
+  dotted workspace form (rather than `kubuno-desktop = { workspace = true }`) was not seen as depending on the
+  `kubuno-desktop` facade, so its `.kbview` code was generated against `kubuno_desktop_views` and did not compile.
+  Dotted and quoted dependency keys (`"kubuno-desktop".path = …`) now name their dependency.
+
 ### Changed
 
 - **Kubuno Documents moves to the office repository.** The word processor (`kubuno-documents.exe`, crate

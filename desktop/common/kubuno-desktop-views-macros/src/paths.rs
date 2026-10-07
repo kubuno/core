@@ -43,14 +43,15 @@ pub(crate) fn decide(manifest: &str) -> ViewsPath {
             }
             continue;
         }
-        let Some((key, _)) = line.split_once('=') else { continue };
-        let key = key.trim().trim_matches('"');
+        let Some((raw_key, _)) = line.split_once('=') else { continue };
+        let key = raw_key.trim().trim_matches('"');
         if section == "package" && key == "name" {
             package = line.split_once('=').map(|(_, v)| v.trim().trim_matches('"').to_string());
         }
         if section.ends_with("dependencies") {
-            direct |= key == "kubuno-desktop-views" || key == "kubuno_desktop_views";
-            facade |= key == "kubuno-desktop" || key == "kubuno_desktop";
+            let name = dependency_name(raw_key);
+            direct |= name == "kubuno-desktop-views" || name == "kubuno_desktop_views";
+            facade |= name == "kubuno-desktop" || name == "kubuno_desktop";
         }
     }
     let own = package.as_deref() == Some("kubuno-desktop-views");
@@ -58,6 +59,16 @@ pub(crate) fn decide(manifest: &str) -> ViewsPath {
         ViewsPath::Facade
     } else {
         ViewsPath::Direct
+    }
+}
+
+/// The dependency a key of a `[dependencies]` table names: the key itself (`kubuno-desktop = …`), or the
+/// first segment of a dotted key (`kubuno-desktop.workspace = true`, `"kubuno-desktop".path = …`).
+fn dependency_name(key: &str) -> &str {
+    let key = key.trim();
+    match key.strip_prefix('"') {
+        Some(quoted) => quoted.split('"').next().unwrap_or(quoted),
+        None => key.split('.').next().unwrap_or(key).trim(),
     }
 }
 
@@ -120,6 +131,21 @@ mod tests {
         assert_eq!(decide("[package]\nname = \"app\"\n[dependencies.kubuno-desktop]\npath = \"x\"\n"), ViewsPath::Facade);
         assert_eq!(decide("[package]\nname = \"kubuno-desktop-views\"\n[dev-dependencies]\nkubuno-desktop = { path = \"x\" }\n"), ViewsPath::Direct);
         assert_eq!(decide("[package]\nname = \"app\"\n"), ViewsPath::Direct);
+    }
+
+    #[test]
+    fn dotted_dependency_keys_name_the_dependency() {
+        // `kubuno-desktop.workspace = true` (a workspace dependency, the form Cargo's docs show) is the facade too.
+        assert_eq!(decide("[package]\nname = \"app\"\n[dependencies]\nkubuno-desktop.workspace = true\n"), ViewsPath::Facade);
+        assert_eq!(decide("[package]\nname = \"app\"\n[dependencies]\n\"kubuno-desktop\".workspace = true\n"), ViewsPath::Facade);
+        assert_eq!(
+            decide("[package]\nname = \"app\"\n[dependencies]\nkubuno-desktop.workspace = true\nkubuno-desktop-views.workspace = true\n"),
+            ViewsPath::Direct
+        );
+        // A longer name that starts like the facade is another crate.
+        assert_eq!(decide("[package]\nname = \"app\"\n[dependencies]\nkubuno-desktop-shell-controls.workspace = true\n"), ViewsPath::Direct);
+        assert_eq!(dependency_name(" \"kubuno-desktop\".path "), "kubuno-desktop");
+        assert_eq!(dependency_name("kubuno-desktop-views.workspace"), "kubuno-desktop-views");
     }
 
     #[test]
