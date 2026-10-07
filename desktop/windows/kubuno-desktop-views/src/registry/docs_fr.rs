@@ -104,6 +104,7 @@ fn level_french(key: &str) -> Option<&'static str> {
         "View.TopMost" => "Garde la fenêtre au-dessus des autres fenêtres.",
         "View.Opacity" => "Opacité de la fenêtre, en pourcentage : 100 est opaque, une valeur plus faible laisse voir ce qui est derrière.",
         "View.WindowState" => "Indique si la fenêtre s'ouvre normale, réduite ou agrandie.",
+        "View.FullScreen" => "Affiche la fenêtre sur tout son écran, sans barre de titre ni bordure (un diaporama, F11) ; désactivé, la fenêtre revient où elle était.",
         "View.AcceptButton" => "Bouton cliqué quand on appuie sur Entrée dans la fenêtre : le nom d'un bouton de la vue.",
         "View.CancelButton" => "Bouton cliqué quand on appuie sur Échap dans la fenêtre : le nom d'un bouton de la vue.",
         "View.KeyPreview" => "Permet à la vue de recevoir les événements clavier avant le contrôle qui a le focus.",

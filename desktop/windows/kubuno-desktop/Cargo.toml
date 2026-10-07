@@ -40,3 +40,6 @@ data = ["dep:kubuno-desktop-data"]
 [dev-dependencies]
 # The element tables `#[kubuno_desktop::view]` uses, checked against the registry and this crate's handles.
 kubuno-desktop-views-meta = { workspace = true }
+# The `nested_dialogs` example resizes its window with a plain `SetWindowPos` from a handler, as an
+# application calling Win32 itself does.
+windows = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }

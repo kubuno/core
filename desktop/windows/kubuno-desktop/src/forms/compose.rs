@@ -37,7 +37,7 @@ pub(crate) const BINDING_PREFIX: &str = "__kb.";
 const DYNAMIC: &[&str] = &[
     "Text", "Title", "Enabled", "Visible", "Checked", "On", "Value", "Minimum", "Maximum", "SelectedIndex", "SelectedValue", "Placeholder", "ReadOnly", "Label", "Description",
     "Loading", "Indeterminate", "Invalid", "ToolTip", "Header", "Layout", "ActivePanel", "ForeColor", "BackColor", "ItemsSource", "SelectedItem", "Image",
-    "Initials", "Presence", "StatusText", "IsOpen", "PageIndex", "TotalRows",
+    "Initials", "Presence", "StatusText", "IsOpen", "PageIndex", "TotalRows", "FullScreen",
 ];
 
 /// Bound even when neither the view nor code sets them (what code changes most).
@@ -320,7 +320,7 @@ impl Cx<'_> {
 
         // Properties: bound to the control's value, or written as literals.
         let bindable = |p: &str| match kind {
-            Kind::Root => p == "Title",
+            Kind::Root => p == "Title" || p == "FullScreen",
             Kind::Anonymous => false,
             _ => meta.is_some_and(|m| m.property(p).is_some()),
         };

@@ -229,6 +229,17 @@ impl Form {
         self.root().set_property("Title", Value::Str(text.into()));
     }
 
+    /// Whether the window covers its whole screen (the root's `FullScreen`).
+    pub fn is_full_screen(&self) -> bool {
+        self.root().flag("FullScreen", false)
+    }
+
+    /// Shows the window over its whole screen, without title bar or border (a slide show, F11), or
+    /// puts it back where it was (size, position, maximised). Applied after the current frame.
+    pub fn set_full_screen(&self, on: bool) {
+        self.root().set_property("FullScreen", on);
+    }
+
     /// The size of its page area, in DIP: the open window's current one (WinForms' `ClientSize`
     /// follows the window), else the view's `DesignWidth` × `DesignHeight`.
     pub fn get_client_size(&self) -> (f32, f32) {

@@ -162,6 +162,7 @@ pub const VIEW_PROPERTIES: &[PropertyMeta] = &[
     p("TopMost", PropKind::Bool, "false", "Keeps the window above the other windows.", WINDOW_STYLE).bindable(),
     p("Opacity", PropKind::F32, "100", "Opacity of the window, in percent: 100 is opaque, lower values let what is behind show through.", WINDOW_STYLE).type_converter("Opacity").bindable(),
     p("WindowState", PropKind::Enum(&["Normal", "Minimized", "Maximized"]), "Normal", "Whether the window opens normal, minimized or maximized.", LAYOUT).bindable(),
+    p("FullScreen", PropKind::Bool, "false", "Shows the window over its whole screen, without title bar or border (a slide show, F11); turning it off puts the window back where it was.", LAYOUT).bindable(),
     p("AcceptButton", PropKind::String, "", "Button clicked when Enter is pressed in the window: the name of a button of the view.", MISC).editor("reference:ButtonBase"),
     p("CancelButton", PropKind::String, "", "Button clicked when Escape is pressed in the window: the name of a button of the view.", MISC).editor("reference:ButtonBase"),
     p("KeyPreview", PropKind::Bool, "false", "Lets the view receive the key events before the control that has the focus.", MISC),

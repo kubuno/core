@@ -29,6 +29,9 @@ use kubuno_desktop::prelude::*;
     <Panel>
       <Button x:Name="from_page" Text="Depuis la page" OnClick="page_click" X="24" Y="24" Width="160" Height="32"/>
       <Label x:Name="last" Text="Aucune boîte ouverte." X="24" Y="72" Width="400" Height="24"/>
+      <Button x:Name="full" Text="Plein écran" OnClick="full_click" X="24" Y="120" Width="160" Height="32"/>
+      <Button x:Name="cover" Text="Couvrir l'écran (SetWindowPos)" OnClick="cover_click" X="200" Y="120" Width="260" Height="32"/>
+      <Label x:Name="frames" Text="" X="24" Y="168" Width="400" Height="24"/>
     </Panel>
   </DockArea>
 </Panel>"#)]
@@ -86,6 +89,32 @@ impl MainView {
 
     fn rename_click(&mut self) {
         self.tools.set_property("Title", "Outils (renommé)");
+    }
+
+    /// The framework's full screen: the window covers its monitor, then comes back where it was.
+    fn full_click(&mut self) {
+        let on = !self.is_full_screen();
+        self.set_full_screen(on);
+        self.frames.set_text(format!("Plein écran : {on}"));
+    }
+
+    /// An application resizing its window itself, synchronously, from a handler (inside the frame):
+    /// the window must keep painting at its new size.
+    fn cover_click(&mut self) {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_FRAMECHANGED};
+        let Some(hwnd) = self.form().handle() else { return };
+        let hwnd = HWND(hwnd as *mut core::ffi::c_void);
+        // SAFETY: plain window calls on this example's own window, from its UI thread.
+        unsafe {
+            let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            if GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info).as_bool() {
+                let r = info.rcMonitor;
+                let _ = SetWindowPos(hwnd, Some(HWND_TOP), r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED);
+            }
+        }
+        self.frames.set_text("Fenêtre redimensionnée depuis le gestionnaire");
     }
 }
 

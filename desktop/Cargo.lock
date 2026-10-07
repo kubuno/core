@@ -1705,6 +1705,7 @@ dependencies = [
  "kubuno-desktop-views-meta",
  "serde_json",
  "tracing",
+ "windows 0.62.2",
 ]
 
 [[package]]

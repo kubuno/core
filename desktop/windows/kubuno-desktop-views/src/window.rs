@@ -101,6 +101,7 @@ pub struct FormSpec {
     top_most: Option<PropSource<bool>>,
     opacity: Option<PropSource<f32>>,
     window_state: Option<PropSource<String>>,
+    full_screen: Option<PropSource<bool>>,
     min_size: Option<(f32, f32)>,
     max_size: Option<(f32, f32)>,
     /// `AcceptButton`, `CancelButton`: the `x:Name` of a button.
@@ -210,6 +211,7 @@ impl FormSpec {
             },
             opacity: root.attribute("Opacity").is_some().then(|| props.f32("Opacity", 100.0)).and_then(Result::ok),
             window_state: root.attribute("WindowState").is_some().then(|| props.str("WindowState", "Normal")).and_then(Result::ok),
+            full_screen: root.attribute("FullScreen").is_some().then(|| props.bool("FullScreen", false)).and_then(Result::ok),
             min_size: size("MinimumSize"),
             max_size: size("MaximumSize"),
             accept_button: literal("AcceptButton"),
@@ -323,6 +325,7 @@ impl FormSpec {
                 Some("Maximized") => WindowState::Maximized,
                 _ => WindowState::Normal,
             },
+            full_screen: self.full_screen.as_ref().is_some_and(|f| f.resolve(vm)),
             min_client_size: self.min_size,
             max_client_size: self.max_size,
             chrome: kubuno_desktop_controls::window_chrome::ChromeStyle {

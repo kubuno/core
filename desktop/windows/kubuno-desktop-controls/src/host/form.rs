@@ -93,6 +93,9 @@ pub struct FormOptions {
     /// 0 (transparent) to 1 (opaque).
     pub opacity: f32,
     pub window_state: WindowState,
+    /// The window covers its whole monitor, without frame, band or task bar (`FullScreen`, a slide
+    /// show, F11): the host keeps its placement and puts it back when this goes off.
+    pub full_screen: bool,
     /// The smallest and largest page area, in DIP (0 on an axis = no limit).
     pub min_client_size: Option<(f32, f32)>,
     pub max_client_size: Option<(f32, f32)>,
@@ -233,6 +236,7 @@ impl Default for FormOptions {
             top_most: false,
             opacity: 1.0,
             window_state: WindowState::default(),
+            full_screen: false,
             min_client_size: None,
             max_client_size: None,
             chrome: ChromeStyle::default(),
@@ -315,6 +319,10 @@ pub fn caption_buttons(form: &FormOptions) -> (CaptionButtonState, CaptionButton
 /// only when sizable, the caption buttons and the window menu as asked.
 pub fn window_style(form: &FormOptions, base: WINDOW_STYLE) -> WINDOW_STYLE {
     let mut s = base;
+    if form.full_screen {
+        // A popup the size of the monitor: no caption, no frame (the taskbar steps aside for it).
+        return (s & !(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_POPUP;
+    }
     if !form.border_style.has_caption() {
         s &= !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
         // A borderless window that can still be resized keeps the thick frame (its border is

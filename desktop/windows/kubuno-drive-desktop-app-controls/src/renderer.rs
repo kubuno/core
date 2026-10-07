@@ -189,13 +189,18 @@ impl Renderer {
         self.dpi = dpi;
         unsafe {
             self.d2d_context.SetTarget(None);
-            self.swapchain.ResizeBuffers(
+            if let Err(e) = self.swapchain.ResizeBuffers(
                 2,
                 width_px.max(1),
                 height_px.max(1),
                 DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_SWAP_CHAIN_FLAG(0),
-            )?;
+            ) {
+                // The buffers keep their old size: draw into them again rather than into no target
+                // at all (the window would never paint again).
+                let _ = bind_target(&self.d2d_context, &self.swapchain, dpi);
+                return Err(e);
+            }
             bind_target(&self.d2d_context, &self.swapchain, dpi)?;
             // Commit the tree again so the composition picks up the resized
             // buffer rather than the one it last saw.

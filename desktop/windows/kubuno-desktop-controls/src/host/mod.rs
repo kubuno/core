@@ -904,6 +904,14 @@ struct Host {
     /// wake-up handled inside a modal loop the page opened) is turned into an
     /// invalidation instead of re-entering the paint closure.
     rendering: bool,
+    /// Between `BeginDraw` and `EndDraw`: the swap chain's buffers are in use, so a `WM_SIZE` that
+    /// arrives now (the page resized or re-styled its window from a handler: full screen, a
+    /// maximise, a `SetWindowPos`) is applied once the frame is presented ([`Host::resize`]).
+    drawing: bool,
+    /// A `WM_SIZE` came while [`Host::drawing`]: the swap chain is resized after the frame.
+    resize_pending: bool,
+    /// Full screen ([`FormOptions::full_screen`]): where the window was before, put back when it ends.
+    full_screen_restore: Option<WINDOWPLACEMENT>,
     /// The `Form` properties applied to the window ([`HostOptions::form`], [`set_form`]).
     form: FormOptions,
     /// The window's UI Automation adapter (top-level windows only), fed by [`access::publish`].
@@ -1338,6 +1346,9 @@ fn create(opts: HostOptions, on_paint: PaintFn, role: Role) -> Result<Created> {
             parent,
             pending_forward: Vec::new(),
             rendering: false,
+            drawing: false,
+            resize_pending: false,
+            full_screen_restore: None,
             drop_target: None,
             form: form.clone(),
             access: None,
@@ -1469,6 +1480,9 @@ fn create(opts: HostOptions, on_paint: PaintFn, role: Role) -> Result<Created> {
             }
             if !start_hidden {
                 let _ = ShowWindow(hwnd, form::show_command(form.window_state));
+                if form.full_screen {
+                    host.set_full_screen(true);
+                }
             } else {
                 // A window started hidden gets no `WM_PAINT`, yet its page must start like a
                 // shown one (Windows Forms raises `Load` when the form is created, whatever its
@@ -1851,7 +1865,7 @@ impl Host {
 
     /// Whether the Kubuno band shows (Kubuno chrome, a captioned border style).
     fn has_kubuno_band(&self) -> bool {
-        self.chrome == Chrome::Kubuno && self.form.border_style.has_caption()
+        self.chrome == Chrome::Kubuno && self.form.border_style.has_caption() && !self.form.full_screen
     }
 
     /// The page area the host reserves at the top: the band, unless the page extends under it.
@@ -2097,7 +2111,47 @@ impl Host {
         }
     }
 
+    /// Keeps where the window is (its restore rectangle and whether it is maximised) for the end of
+    /// full screen.
+    fn save_placement(&mut self) {
+        let mut wp = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
+        // SAFETY: reads the placement of the host's own live window into a local.
+        if unsafe { GetWindowPlacement(self.hwnd, &mut wp) }.is_ok() {
+            self.full_screen_restore = Some(wp);
+        }
+    }
+
+    /// Enters or leaves full screen: the window (whose styles `form::apply` already made a frameless
+    /// popup, or gave back) covers its monitor, or returns where it was. Called after the frame
+    /// that asked for it, never while it draws.
+    fn set_full_screen(&mut self, on: bool) {
+        // SAFETY: plain window calls on the host's own live window, from its thread.
+        unsafe {
+            if on {
+                if self.full_screen_restore.is_none() {
+                    self.save_placement();
+                }
+                let monitor = MonitorFromWindow(self.hwnd, windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST);
+                let mut info = windows::Win32::Graphics::Gdi::MONITORINFO { cbSize: std::mem::size_of::<windows::Win32::Graphics::Gdi::MONITORINFO>() as u32, ..Default::default() };
+                if GetMonitorInfoW(monitor, &mut info).as_bool() {
+                    let r = info.rcMonitor;
+                    let _ = SetWindowPos(self.hwnd, Some(HWND_TOP), r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                }
+            } else if let Some(wp) = self.full_screen_restore.take() {
+                let _ = SetWindowPlacement(self.hwnd, &wp);
+                let _ = SetWindowPos(self.hwnd, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            }
+        }
+        self.invalidate();
+    }
+
     fn resize(&mut self) {
+        if self.drawing {
+            // `ResizeBuffers` while the frame still draws into the back buffer fails
+            // (`DXGI_ERROR_INVALID_CALL`, the buffers are referenced): done right after `Present`.
+            self.resize_pending = true;
+            return;
+        }
         let (w, h) = client_px(self.hwnd);
         let dpi = self.dpi;
         if let Some(r) = self.renderer.as_mut() {
@@ -2353,6 +2407,7 @@ impl Host {
                 window_focused: self.window_focused,
             };
             let ctx = &renderer.d2d_context;
+            self.drawing = true;
             unsafe {
                 ctx.BeginDraw();
                 // The page background is painted OPAQUELY: an unpainted pixel comes
@@ -2479,6 +2534,10 @@ impl Host {
             }
             let _ = renderer.present();
         }
+        self.drawing = false;
+        if std::mem::take(&mut self.resize_pending) {
+            self.resize();
+        }
 
         // The floating surfaces the frame requested, painted last into their own
         // top-level popup — over everything, the nav strip included, and free to
@@ -2547,6 +2606,11 @@ impl Host {
     fn apply_frame_requests(&mut self) {
         if let Some(form) = form::take_pending() {
             if self.parent.is_none() && form != self.form {
+                let full_screen = (form.full_screen != self.form.full_screen).then_some(form.full_screen);
+                if full_screen == Some(true) {
+                    // Saved before the styles change (a maximised window keeps its restore rect).
+                    self.save_placement();
+                }
                 form::apply(self.hwnd, &form, Some(&self.form), WS_OVERLAPPEDWINDOW, self.base_ex_style());
                 if form.title != self.form.title {
                     if let Some(title) = &form.title {
@@ -2557,6 +2621,9 @@ impl Host {
                 let dwm_changed = (&form.chrome, form.corner, form.corner_radius, form.border_color, form.backdrop)
                     != (&self.form.chrome, self.form.corner, self.form.corner_radius, self.form.border_color, self.form.backdrop);
                 self.form = form;
+                if let Some(on) = full_screen {
+                    self.set_full_screen(on);
+                }
                 // A host-rounded window follows a new radius itself (`CornerRadius` changed).
                 if self.rounded.is_some() {
                     let radius = frame::radius_override().unwrap_or_else(|| self.form.corner_radius());
@@ -3712,6 +3779,9 @@ unsafe extern "system" fn wndproc(
                 result
             }
             // ── Kubuno / Custom chrome: strip the system caption, route the buttons ──
+            // Full screen: the whole window is page, no border, no band, no resize edge.
+            WM_NCCALCSIZE if host.form.full_screen && wparam.0 != 0 => LRESULT(0),
+            WM_NCHITTEST if host.form.full_screen => LRESULT(HTCLIENT as isize),
             // A host-rounded window (`frame`) is all client area: its resize band lies in its own
             // shadow margin. Maximised, Windows pushes the (invisible) frame of its style off-screen:
             // taken back in, so the page fills the work area exactly.
