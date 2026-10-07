@@ -15,9 +15,6 @@ number at release time, and CI publishes that section as the GitHub Release note
   Used when a module replaces the content behind a room (a REST save from outside it): the connected
   clients receive `{"type":"replaced"}` and are disconnected, the room's stored state is dropped,
   and stray updates or new joins are refused, so the previous content can never be written back.
-- **Desktop windows: full screen.** `Form::set_full_screen(true)` (or `FullScreen="true"`, bindable, on a view's
-  root) shows a window over its whole monitor, without title bar, border or task bar — a slide show, F11;
-  `set_full_screen(false)` puts it back where it was, maximised or not. `Form::is_full_screen()` reads it.
 - **Mobile foundation** (`mobile/`): the libraries shared by every Kubuno mobile app (API client, device accounts, Compose UI components, in-app viewers, conformance-vector runner) moved here from the `kubuno/mobile` repository with their history. They are published as Maven artifacts `com.kubuno.mobile:*` (version `kubunoMobileVersion`, tag `mobile-v<version>`), and the apps moved to their modules' repositories under `mobile/`. Workflow `mobile.yml` builds and tests them.
 
 ### Changed
@@ -108,26 +105,6 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **Several clients joining an empty collaboration room at once no longer duplicate its content.**
   Only one connection is told the room is empty and seeds it; the others receive the seed through
   the room (the claim passes on if that client leaves without seeding).
-- **Desktop dialogs opened from a ribbon command, a dock panel or any container paint whole.** A modal dialog
-  opened by a handler (`ShowDialog`) inherited the paint state of the window frame it was opened from — the clip of
-  the container the command sat in, its disabled scope, its deferred drawings, its menu requests — so a dialog
-  opened from the ribbon showed only the ribbon's band (about 32 to 146 DIP from its top): its first control and its
-  action bar were cut away. Each view's frame now runs with its own state; the window underneath finds its own
-  again when the dialog closes. Applications no longer need to defer their dialogs to the end of the frame.
-- **Desktop views: a named `<DockPanel>` keeps its `Title`**, which failed with « attribute `Title` must be a literal
-  value »; the title can also be changed from code (`panel.set_property("Title", …)`).
-- **Desktop views: text set from code wins over a `{Res …}` of the view.** A button whose view gives its `Text` from
-  the resources (`Text="{Res save}"`) showed the resource again, over the text the code had set, when the window
-  or dialog opened; as in Windows Forms, the value the code sets now replaces the designer's.
-- **Desktop windows: a click whose press and release arrive before the next paint is no longer lost when the pointer
-  leaves right after it** (a touchpad tap at the edge of a control followed by a quick move out, input relayed by
-  assistive technology, a remote session or a test tool posting `WM_LBUTTONDOWN`/`WM_LBUTTONUP`): the window waits
-  until the page has seen the release where it happened before it moves the pointer away.
-- **Desktop windows keep painting when they are resized from a handler.** A window resized synchronously from an
-  event handler (a `SetWindowPos` to the monitor's size to emulate full screen, F11) resized its swap chain while
-  the frame still drew into it; the resize failed (`[host] resize … 0x887A0001`) and left the window without a
-  drawing target, so it never painted again. The resize is now applied right after the frame is presented, and a
-  failed resize keeps drawing into the previous buffers.
 - **Module dialogs appear again.** Since the shell became a view, the dialogs a module adds once it has loaded —
   drive's « Select a file », « Save », folder picker, audio player, paint editor and remote storage — never opened:
   the shell's dialog area read the module contributions once and never looked again. It now follows them as they are

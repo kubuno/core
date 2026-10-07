@@ -11,10 +11,36 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Dialogs opened from a ribbon command, a dock panel or any container paint whole.** A modal dialog
+  opened by a handler (`ShowDialog`) inherited the paint state of the window frame it was opened from — the clip of
+  the container the command sat in, its disabled scope, its deferred drawings, its menu requests — so a dialog
+  opened from the ribbon showed only the ribbon's band (about 32 to 146 DIP from its top): its first control and its
+  action bar were cut away. Each view's frame now runs with its own state; the window underneath finds its own
+  again when the dialog closes. Applications no longer need to defer their dialogs to the end of the frame.
+- **Views: a named `<DockPanel>` keeps its `Title`**, which failed with « attribute `Title` must be a literal
+  value »; the title can also be changed from code (`panel.set_property("Title", …)`).
+- **Views: text set from code wins over a `{Res …}` of the view.** A button whose view gives its `Text` from
+  the resources (`Text="{Res save}"`) showed the resource again, over the text the code had set, when the window
+  or dialog opened; as in Windows Forms, the value the code sets now replaces the designer's.
+- **Windows: a click whose press and release arrive before the next paint is no longer lost when the pointer
+  leaves right after it** (a touchpad tap at the edge of a control followed by a quick move out, input relayed by
+  assistive technology, a remote session or a test tool posting `WM_LBUTTONDOWN`/`WM_LBUTTONUP`): the window waits
+  until the page has seen the release where it happened before it moves the pointer away.
+- **Windows keep painting when they are resized from a handler.** A window resized synchronously from an
+  event handler (a `SetWindowPos` to the monitor's size to emulate full screen, F11) resized its swap chain while
+  the frame still drew into it; the resize failed (`[host] resize … 0x887A0001`) and left the window without a
+  drawing target, so it never painted again. The resize is now applied right after the frame is presented, and a
+  failed resize keeps drawing into the previous buffers.
 - **The views macros recognise `kubuno-desktop.workspace = true`.** An app that names the framework with Cargo's
   dotted workspace form (rather than `kubuno-desktop = { workspace = true }`) was not seen as depending on the
   `kubuno-desktop` facade, so its `.kbview` code was generated against `kubuno_desktop_views` and did not compile.
   Dotted and quoted dependency keys (`"kubuno-desktop".path = …`) now name their dependency.
+
+### Added
+
+- **Windows: full screen.** `Form::set_full_screen(true)` (or `FullScreen="true"`, bindable, on a view's
+  root) shows a window over its whole monitor, without title bar, border or task bar — a slide show, F11;
+  `set_full_screen(false)` puts it back where it was, maximised or not. `Form::is_full_screen()` reads it.
 
 ### Changed
 
