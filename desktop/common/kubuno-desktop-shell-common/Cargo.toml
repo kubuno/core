@@ -17,3 +17,10 @@ tokio       = { version = "1", features = ["rt-multi-thread", "sync", "time", "m
 serde_json  = "1"
 anyhow      = "1"
 tracing     = "0.1"
+# One Kubuno Desktop per user session (`instance`).
+kubuno-desktop-single-instance = { path = "../kubuno-desktop-single-instance" }
+
+[features]
+# Developer instances (`--dev-instance <name>`, `KUBUNO_DEV_INSTANCE`) in a release build. Debug builds always have
+# them; release packaging never enables this.
+dev-instance = []

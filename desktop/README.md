@@ -158,6 +158,38 @@ icon set and one set of controls:
   [`kubuno/office`](https://github.com/kubuno/office), `desktop/`, with its engine in `common/core`) — native two-pane
   messaging, and a native word processor for the Office module.
 
+### Single instance
+
+Some windows make no sense twice. Three rules, one primitive (`common/kubuno-desktop-single-instance`):
+
+| What | Key | A second launch / open |
+|---|---|---|
+| **Kubuno Desktop** | the user and the session only (SID + session id; uid + `XDG_SESSION_ID`): not the profile, the data directory or the executable's path | hands its command line to the running shell and exits with code 0 before any splash screen; the shell comes back from the tray or the taskbar to the front, on the `--page` asked for. `--background` (the start at logon) changes nothing |
+| **An Office document** (Documents, Spreadsheets, Diagrams, Presentations) | the app, the profile and the document: a server document (server URL + id) or a local file (path normalised: absolute, resolved, no `\\?\`, one separator, case-folded on Windows and macOS) | the window already showing that document comes to the front; another document still opens its own window, like Word. A new blank document is never single |
+| **A secondary window** (Settings, About, a confirmation…) | a string per UI thread: `kubuno_desktop::singleton::show(key, make)` / `show_in_window(key, owner, make, on_closed)` | the open one is focused instead of a copy |
+
+**Developer instances.** A second Kubuno Desktop only runs as an explicit developer instance, compiled in debug builds
+only (or with the shell's `dev-instance` feature, which release packaging never enables): `--dev-instance <name>` or
+`KUBUNO_DEV_INSTANCE=<name>`. A debugging session's offline sample (F5) is one too. A sandboxed profile
+(`KUBUNO_SANDBOX_DIR`) alone is **not**: an agent running a sandboxed shell next to the user's passes
+`--dev-instance <agent>` as well.
+
+**How.** `acquire(key, activation, wait)` takes an OS lock or hands the activation (arguments + working directory, one
+JSON line) to its holder:
+
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| lock | named mutex `Local\kubuno-<app>-<digest>`, DACL current user only; *abandoned* when its owner dies | `flock` on `<runtime>/kubuno-<app>-<digest>.lock` | as Linux |
+| hand-off | named pipe `\\.\pipe\kubuno-<app>-<digest>`, DACL current user only, remote clients rejected, `SECURITY_IDENTIFICATION` | Unix socket `.sock` next to the lock, `0600`, peer uid checked (`SO_PEERCRED`) | as Linux (`getpeereid`) |
+| runtime dir | — | `$XDG_RUNTIME_DIR/kubuno`, else `/tmp/kubuno-<uid>` (`0700`, owner checked) | `$TMPDIR/kubuno-<uid>` |
+| focus | the second launch passes its foreground right (`AllowSetForegroundWindow`); the window restores, comes forward, or flashes when the system refuses | the window system | LaunchServices also reopens a running bundle |
+
+A crashed instance never blocks the next launch: the OS releases the lock with the process and the next instance
+recreates the endpoint (a leftover socket file is removed under the lock). A running instance that does not answer
+within 5 s: the shell does not start a second one (exit code 1, logged); an Office app opens the document anyway (the
+server's digest guard still protects its saves). Every hand-off is logged on both sides
+(`%LOCALAPPDATA%\Kubuno\logs`).
+
 ## Usage (sync daemon)
 
 ```bash

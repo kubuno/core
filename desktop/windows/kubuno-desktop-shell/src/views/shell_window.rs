@@ -19,7 +19,7 @@ use std::time::Instant;
 use kubuno_desktop::prelude::*;
 use kubuno_desktop::views::events::{CloseReason, Key};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, RegisterWindowMessageW, WM_APP, WM_SETTINGCHANGE};
+use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, RegisterWindowMessageW, WM_ACTIVATE, WM_APP, WM_SETTINGCHANGE};
 
 use crate::pages::accounts_page::AccountsPage;
 use crate::pages::activity_page::ActivityPage;
@@ -414,6 +414,8 @@ impl ShellWindow {
         let Some(active) = crate::services::apps::active_instance() else {
             self.state.conn = Conn::Offline;
             self.state.status = Resources::no_account().to_string();
+            // No server to re-check until an account signs in.
+            crate::services::connectivity::idle();
             self.refresh_all();
             return;
         };
@@ -430,7 +432,16 @@ impl ShellWindow {
         if let Some(identity) = r.identity {
             self.state.identity = identity;
         }
+        // The server is back: the sync card drops the error the outage left (it shows the folder again), and the
+        // re-checks stop backing off. Every refresh reports, so the dot, the server line, the sync card and the
+        // header always agree with the last answer of the server.
+        if self.state.conn == Conn::Offline && r.conn != Conn::Offline {
+            self.state.status.clear();
+        }
         self.state.conn = r.conn;
+        if !self.options.sample {
+            crate::services::connectivity::report(r.conn != Conn::Offline);
+        }
         // Keep the last known tiles when a refresh comes back empty: going offline should dim the
         // launcher, not erase it.
         if !r.apps.is_empty() {
@@ -568,6 +579,11 @@ impl ShellWindow {
         }
         self.state.syncing = false;
         self.state.unread = crate::services::activity::count();
+        // The file sync reported something (a cycle, an error): the connection is re-checked soon, at once when the
+        // window thinks the server is down, so the dot, the server line and the sync card follow what the sync sees.
+        if !self.options.sample {
+            crate::services::connectivity::recheck();
+        }
         self.refresh_all();
     }
 
@@ -579,6 +595,9 @@ impl ShellWindow {
         if self.state.syncing {
             return;
         }
+        // The user says the server should be there: the token owner may refresh at once (no cooldown wait), and the
+        // connection is re-checked now if it was down.
+        crate::services::connectivity::poke("sync-now");
         self.state.syncing = true;
         self.state.status = Resources::sync_busy().to_string();
         self.refresh_launcher();
@@ -631,13 +650,16 @@ impl ShellWindow {
     /// Asks before something destructive (an in-window dialog over a veil); `action` runs when
     /// the user confirms.
     fn ask(&mut self, confirmation: Confirmation, action: ConfirmAction) {
-        self.confirm = Some(action);
         let ui = self.ui.clone();
-        ConfirmDialog::new(&confirmation).show_in_window(self.form(), move |result| {
+        // One confirmation at a time: asking again while one is on screen focuses it (and keeps its action).
+        let opened = kubuno_desktop::singleton::show_in_window("shell-confirm", self.form(), || ConfirmDialog::new(&confirmation), move |result| {
             if let Some(ui) = ui {
                 drop(ui.begin_invoke(move |w: &mut ShellWindow| w.confirmed(result == DialogResult::Ok)));
             }
         });
+        if opened {
+            self.confirm = Some(action);
+        }
     }
 
     fn confirmed(&mut self, yes: bool) {
@@ -694,7 +716,8 @@ impl ShellWindow {
     fn ask_sign_out(&mut self, id: String, unsent: u32, retry: bool, navigate: bool) {
         let ui = self.ui.clone();
         let label = Self::account_label(&id);
-        crate::views::signout_dialog::SignOutDialog::new(unsent, &label, retry).show_in_window(self.form(), move |result| {
+        // One sign-out dialog at a time (a second request focuses the open one).
+        kubuno_desktop::singleton::show_in_window("shell-sign-out", self.form(), || crate::views::signout_dialog::SignOutDialog::new(unsent, &label, retry), move |result| {
             let Some(choice) = crate::views::signout_dialog::choice_of(result) else { return };
             if let Some(ui) = ui {
                 drop(ui.begin_invoke(move |w: &mut ShellWindow| w.run_sign_out(id, choice, navigate)));
@@ -954,6 +977,36 @@ impl ShellWindow {
         }
     }
 
+    /// A second launch of Kubuno Desktop handed its command line over (`kubuno_desktop_shell_common::instance`): the
+    /// window comes back from the notification area or the taskbar, to the front (its button flashes when the
+    /// system refuses the focus), on the page the launch asked for. A start at logon (`--background`) changes
+    /// nothing in a running shell. The theme and the language stay as they are: they are the running shell's.
+    fn activated_by_launch(&mut self, activation: kubuno_desktop_single_instance::Activation) {
+        let options = Options::parse(activation.args.iter().cloned());
+        kubuno_desktop::tracing::info!("[shell] a second launch handed over its command line {:?}", activation.args);
+        if options.background {
+            return;
+        }
+        match options.page {
+            Some(StartPage::Page(Page::Login)) => {
+                let cancellable = !self.state.accounts.is_empty();
+                self.open_login(cancellable);
+            }
+            Some(StartPage::Page(page)) => self.go(page),
+            Some(StartPage::Admin(section)) => {
+                if self.state.identity.is_admin {
+                    self.open_admin(Some(section));
+                } else {
+                    self.pending_admin = Some(section);
+                }
+            }
+            None => {}
+        }
+        self.set_visible(true);
+        let foreground = kubuno_desktop_single_instance::windows::bring_to_front(self.hwnd);
+        kubuno_desktop::tracing::info!("[shell] window shown for the second launch (foreground: {foreground})");
+    }
+
     // ── The window's events ──────────────────────────────────────────────────────────────────
 
     fn shell_window_load(&mut self, _sender: &Form, _e: &EventArgs) {
@@ -969,6 +1022,14 @@ impl ShellWindow {
             self.state.unread = crate::services::activity::count();
         }
         self.install_hooks();
+        // A second launch of Kubuno Desktop hands its command line over (one instance per user session,
+        // `kubuno_desktop_shell_common::instance`): this window shows itself and honours `--page`.
+        let ui = self.ui.clone();
+        kubuno_desktop_shell_common::instance::on_activation(move |activation| {
+            if let Some(ui) = &ui {
+                drop(ui.begin_invoke(move |w: &mut ShellWindow| w.activated_by_launch(activation)));
+            }
+        });
         self.refresh_apps();
         if self.state.page == Page::Accounts {
             self.fetch_identities();
@@ -997,6 +1058,15 @@ impl ShellWindow {
             if crate::services::session::is_owner() {
                 crate::services::sync::start(self.hwnd);
             }
+            // The connection state is re-checked while the server is unreachable (capped backoff), and at once when
+            // the network changes or the window gets the focus.
+            let ui = self.ui.clone();
+            crate::services::connectivity::start(move || {
+                if let Some(ui) = &ui {
+                    drop(ui.begin_invoke(|w: &mut ShellWindow| w.refresh_apps()));
+                }
+            });
+            crate::platform::network::watch(self.hwnd);
         }
     }
 
@@ -1074,6 +1144,20 @@ impl ShellWindow {
             drop(post.begin_invoke(|w: &mut ShellWindow| w.on_sync_done()));
             Some(0)
         });
+        // The network changed, or the window got the focus: a server that was down may be back.
+        if !self.options.sample {
+            self.on_message(crate::platform::network::WM_NETWORK_CHANGED, |_| {
+                crate::services::connectivity::poke("network");
+                Some(0)
+            });
+            self.on_message(WM_ACTIVATE, |m| {
+                // LOWORD(wParam) != WA_INACTIVE: activated (by a click or by Alt+Tab).
+                if m.wparam.0 & 0xFFFF != 0 {
+                    crate::services::connectivity::poke("focus");
+                }
+                None
+            });
+        }
         // The system theme or a system setting changed: « Système » follows it, live.
         let post = ui.clone();
         self.on_message(WM_SETTINGCHANGE, move |_| {

@@ -12,8 +12,11 @@
 //!   token again, which the server's **rotation grace** accepts as long as its successor was never used
 //!   (`core/.../handlers/auth/refresh.rs`, `try_rotation_grace`). The same grace covers a lost response;
 //! - **genuine vs transient**: only 401/403 on refresh ends the session (`SessionExpired`, the outbox is kept, the
-//!   feeds pause); network errors, 429 and 5xx start a `cooldown` during which callers fail fast with `Transient`
-//!   instead of hammering `/auth/refresh` (its rate limit is 10/min);
+//!   feeds pause); network errors, 429 and 5xx start a cooldown during which callers fail fast with `Transient`
+//!   instead of hammering `/auth/refresh` (its rate limit is 10/min). The cooldown is a capped exponential backoff
+//!   that never gives up (2 s, 4 s, 8 s… then every 60 s for as long as the server is unreachable), and
+//!   [`TokenOwner::retry_now`] cuts it short when something says the server may be back (the network changed, the
+//!   window got the focus, the user clicked « Synchroniser maintenant »);
 //! - **expiry from the server's clock**: an access token is refreshed `refresh_margin` before `exp - iat` has
 //!   elapsed on the local monotonic clock, so a skewed wall clock never causes a refresh loop.
 
@@ -26,16 +29,24 @@ use kubuno_desktop_secrets::{Secret, SecretName, SecretStore};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::backoff::{Backoff, Retry};
 use crate::key::AccountKey;
 use crate::login::{self, NativeTokens};
 use crate::store::{AccountError, AccountInfo, AccountStore};
+
+/// The shortest time between two refresh attempts that [`TokenOwner::retry_now`] allows.
+pub const RETRY_SPACING: Duration = Duration::from_secs(2);
 
 /// Tunables of the owner.
 #[derive(Debug, Clone)]
 pub struct OwnerConfig {
     /// How long a newly rotated access token is handed out again instead of rotating (5 min).
     pub fresh_ttl: Duration,
-    /// After a transient refresh failure, fail fast for this long (45 s, under the server's 60 s rate window).
+    /// After a first transient refresh failure, fail fast for this long (2 s); the cooldown doubles with each
+    /// consecutive failure up to [`OwnerConfig::cooldown`].
+    pub cooldown_min: Duration,
+    /// The longest cooldown between two refresh attempts while they fail (60 s: one attempt a minute stays far
+    /// under the server's rate limit of 10 a minute).
     pub cooldown: Duration,
     /// Refresh this long before the access token expires.
     pub refresh_margin: Duration,
@@ -51,7 +62,8 @@ impl Default for OwnerConfig {
     fn default() -> Self {
         Self {
             fresh_ttl: Duration::from_secs(300),
-            cooldown: Duration::from_secs(45),
+            cooldown_min: Duration::from_secs(2),
+            cooldown: Duration::from_secs(60),
             refresh_margin: Duration::from_secs(60),
             default_lifetime: Duration::from_secs(900),
             timeout: Duration::from_secs(30),
@@ -111,7 +123,8 @@ impl Cached {
 struct SlotState {
     access: Option<Cached>,
     status: SessionStatus,
-    cooldown_until: Option<Instant>,
+    /// When the next refresh may run after transient failures.
+    retry: Retry,
 }
 
 struct Slot {
@@ -192,7 +205,7 @@ impl TokenOwner {
             let slot = Arc::new(Slot {
                 api: self.api_for(&info.server_url)?,
                 info: info.clone(),
-                state: tokio::sync::Mutex::new(SlotState { access: None, status, cooldown_until: None }),
+                state: tokio::sync::Mutex::new(SlotState { access: None, status, retry: self.new_retry() }),
             });
             self.slots.lock().unwrap_or_else(PoisonError::into_inner).insert(info.key.clone(), slot);
         }
@@ -234,14 +247,14 @@ impl TokenOwner {
                 let was = st.status;
                 st.status = SessionStatus::Active;
                 st.access = Some(cached);
-                st.cooldown_until = None;
+                st.retry.succeeded();
                 was != SessionStatus::Active
             }
             None => {
                 let slot = Arc::new(Slot {
                     api: self.api_for(&info.server_url)?,
                     info: info.clone(),
-                    state: tokio::sync::Mutex::new(SlotState { access: Some(cached), status: SessionStatus::Active, cooldown_until: None }),
+                    state: tokio::sync::Mutex::new(SlotState { access: Some(cached), status: SessionStatus::Active, retry: self.new_retry() }),
                 });
                 self.slots.lock().unwrap_or_else(PoisonError::into_inner).insert(info.key.clone(), slot);
                 false
@@ -265,6 +278,27 @@ impl TokenOwner {
             self.emit(AccountEvent::Switched { account: Some(info.key.clone()) });
         }
         Ok(info)
+    }
+
+    fn new_retry(&self) -> Retry {
+        Retry::new(Backoff::new(self.cfg.cooldown_min, self.cfg.cooldown), RETRY_SPACING.min(self.cfg.cooldown))
+    }
+
+    /// Something says the server may be reachable again (the network changed, the window got the focus, the user
+    /// asked for a sync): the accounts cooling down after transient failures may refresh at once, or as soon as
+    /// [`RETRY_SPACING`] has passed since their last attempt. Never blocks (an account whose refresh is running is
+    /// left alone).
+    pub fn retry_now(&self) {
+        let slots: Vec<Arc<Slot>> = self.slots.lock().unwrap_or_else(PoisonError::into_inner).values().cloned().collect();
+        let now = Instant::now();
+        for slot in slots {
+            if let Ok(mut st) = slot.state.try_lock() {
+                if st.retry.next().is_some() {
+                    st.retry.bring_forward(now);
+                    tracing::debug!(account = %slot.info.key, "refresh brought forward");
+                }
+            }
+        }
     }
 
     fn lifetime_of(&self, token: &AccessToken) -> Duration {
@@ -348,10 +382,8 @@ impl TokenOwner {
                 return Ok(Borrowed { token: c.token.clone(), valid_for: c.remaining() });
             }
         }
-        if let Some(until) = st.cooldown_until {
-            if Instant::now() < until {
-                return Err(AuthError::Transient("refresh cooling down after a failure".to_string()));
-            }
+        if !st.retry.ready(Instant::now()) {
+            return Err(AuthError::Transient("refresh cooling down after a failure".to_string()));
         }
         let key = slot.info.key.clone();
         let secrets = self.secrets.clone();
@@ -367,6 +399,7 @@ impl TokenOwner {
             return Err(AuthError::SessionExpired);
         };
         self.refreshes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        st.retry.attempt(Instant::now());
         match login::refresh(&slot.api, &refresh_token).await {
             Ok(pair) => {
                 // Persist before use, and check the store kept it.
@@ -386,7 +419,7 @@ impl TokenOwner {
                             Err(e) => e.to_string(),
                         };
                         tracing::error!(account = %key, error = %why, "could not persist the rotated refresh token; dropping the new pair (the server's rotation grace heals it)");
-                        st.cooldown_until = Some(Instant::now() + self.cfg.cooldown);
+                        st.retry.failed(Instant::now());
                         return Err(AuthError::Transient("could not persist the rotated refresh token".to_string()));
                     }
                 }
@@ -394,7 +427,10 @@ impl TokenOwner {
                 let cached = Cached { token: pair.access_token, obtained: Instant::now(), lifetime };
                 let out = Borrowed { token: cached.token.clone(), valid_for: cached.remaining() };
                 st.access = Some(cached);
-                st.cooldown_until = None;
+                if st.retry.failures() > 0 {
+                    tracing::info!(account = %key, failures = st.retry.failures(), "refresh succeeded again after transient failures");
+                }
+                st.retry.succeeded();
                 tracing::debug!(account = %key, token = %out.token.fingerprint(), "access token refreshed");
                 Ok(out)
             }
@@ -407,8 +443,9 @@ impl TokenOwner {
                     self.emit(AccountEvent::SessionExpired { account: key });
                     return Err(AuthError::SessionExpired);
                 }
-                tracing::warn!(account = %key, error = %e, transient = (e.class() == ErrorClass::Transient), "refresh failed, cooling down");
-                st.cooldown_until = Some(Instant::now() + self.cfg.cooldown);
+                let now = Instant::now();
+                let retry_in = st.retry.failed(now).saturating_duration_since(now);
+                tracing::warn!(account = %key, error = %e, transient = (e.class() == ErrorClass::Transient), failures = st.retry.failures(), retry_in_s = retry_in.as_secs(), "refresh failed, cooling down");
                 Err(AuthError::Transient(e.to_string()))
             }
         }

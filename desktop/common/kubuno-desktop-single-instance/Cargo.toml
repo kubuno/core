@@ -1,0 +1,35 @@
+[package]
+name         = "kubuno-desktop-single-instance"
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+description  = "Single-instance programs for the Kubuno desktop: an OS-wide lock per key (named mutex on Windows, flock'ed lock file on Linux and macOS, both released by the OS when the holder dies), the hand-off of a second launch's command line to the running instance (named pipe restricted to the current user / Unix domain socket 0600 with peer uid check), and bringing a window to the front."
+
+# Deliberately free of any other Kubuno crate: the apps (office, chat, drive) take it by git tag next to the
+# framework, and the caller passes the profile directory it already knows.
+[dependencies]
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2       = "0.10"
+hex        = "0.4"
+tracing    = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

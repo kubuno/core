@@ -1699,6 +1699,7 @@ dependencies = [
  "kubuno-desktop-print",
  "kubuno-desktop-resources",
  "kubuno-desktop-resources-macros",
+ "kubuno-desktop-single-instance",
  "kubuno-desktop-ui",
  "kubuno-desktop-views",
  "kubuno-desktop-views-macros",
@@ -1953,6 +1954,7 @@ dependencies = [
  "kubuno-desktop-secrets",
  "kubuno-desktop-shell-common",
  "kubuno-desktop-shell-controls",
+ "kubuno-desktop-single-instance",
  "kubuno-desktop-sync",
  "serde",
  "serde_json",
@@ -1974,6 +1976,7 @@ dependencies = [
  "kubuno-desktop-account",
  "kubuno-desktop-api-client",
  "kubuno-desktop-secrets",
+ "kubuno-desktop-single-instance",
  "kubuno-desktop-sync",
  "serde_json",
  "tokio",
@@ -2001,6 +2004,20 @@ name = "kubuno-desktop-shell-macos"
 version = "0.1.1-alpha"
 dependencies = [
  "kubuno-desktop-shell-common",
+]
+
+[[package]]
+name = "kubuno-desktop-single-instance"
+version = "0.1.1-alpha"
+dependencies = [
+ "hex",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

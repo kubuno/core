@@ -29,6 +29,7 @@
 
 #[cfg(feature = "client")]
 pub mod app;
+pub mod backoff;
 pub mod broker;
 pub mod key;
 pub mod login;

@@ -27,6 +27,7 @@ members  = [
     "common/kubuno-desktop-resources-tool",
     "common/kubuno-desktop-secrets",
     "common/kubuno-desktop-shell-common",
+    "common/kubuno-desktop-single-instance",
     "common/kubuno-desktop-sync",
     "common/kubuno-desktop-sync-engine",
     "common/kubuno-desktop-views-macros",
@@ -89,6 +90,7 @@ kubuno-desktop-api-client         = { path = "common/kubuno-desktop-api-client" 
 kubuno-desktop-app-storage        = { path = "common/kubuno-desktop-app-storage" }
 kubuno-desktop-secrets            = { path = "common/kubuno-desktop-secrets" }
 kubuno-desktop-shell-common       = { path = "common/kubuno-desktop-shell-common" }
+kubuno-desktop-single-instance    = { path = "common/kubuno-desktop-single-instance" }
 kubuno-desktop-sync               = { path = "common/kubuno-desktop-sync" }
 kubuno-desktop-sync-engine        = { path = "common/kubuno-desktop-sync-engine" }
 

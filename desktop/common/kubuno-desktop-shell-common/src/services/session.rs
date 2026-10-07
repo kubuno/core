@@ -159,6 +159,14 @@ pub fn is_owner() -> bool {
     matches!(SESSION.get().map(|s| &s.mode), Some(Mode::Owner(_)))
 }
 
+/// Lets the accounts cooling down after transient refresh failures try again now (`TokenOwner::retry_now`): the
+/// network changed, the window got the focus, the user asked for a sync. Nothing outside the owner process.
+pub fn retry_now() {
+    if let Some(Mode::Owner(owner)) = SESSION.get().map(|s| &s.mode) {
+        owner.retry_now();
+    }
+}
+
 /// Receives the account events (session expired, restored, account added or removed), on a background thread.
 pub fn set_event_handler(handler: impl Fn(AccountEvent) + Send + 'static) {
     *HANDLER.lock().unwrap_or_else(PoisonError::into_inner) = Some(Box::new(handler));

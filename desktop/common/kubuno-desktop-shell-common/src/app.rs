@@ -4,6 +4,7 @@
 //! builds its [`Platform`] (the portable defaults, with what that OS overrides) and its [`UiHost`], and calls
 //! [`run`].
 
+use crate::instance;
 use crate::platform::{self, Platform, StartStep, UiHost};
 use crate::services::{backend, session};
 
@@ -45,6 +46,12 @@ pub fn run(platform: Platform, ui: &dyn UiHost) -> i32 {
         tracing::warn!("[shell] a platform was already registered; `{name}` is ignored");
     }
     let launch = ui.launch();
+    // One Kubuno Desktop per user session (`crate::instance`): a second launch hands its command line to the running
+    // one and exits here, before any splash screen or account is touched.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let instance::Claim::Exit(code) = instance::claim(&args, launch.sample) {
+        return code;
+    }
     ui.prepare(&launch);
     backend::set_sample(launch.sample);
     if launch.sample {

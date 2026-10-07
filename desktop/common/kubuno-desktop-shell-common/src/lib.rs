@@ -9,5 +9,6 @@
 //! [`app::run`], together with its user interface ([`platform::UiHost`]).
 
 pub mod app;
+pub mod instance;
 pub mod platform;
 pub mod services;

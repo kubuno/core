@@ -78,6 +78,8 @@ pub mod forms;
 mod message_box;
 pub mod popup;
 pub mod printing;
+/// Windows opened at most once (`singleton::show(key, make)`): a second open focuses the open one.
+pub mod singleton;
 pub mod storage;
 mod view;
 

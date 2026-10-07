@@ -11,6 +11,19 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Kubuno Desktop no longer stays on « Serveur injoignable » after the server comes back.** The connection shown
+  in the window (the rail's dot, the server line, the sync card and the header) was only re-read at start, at
+  sign-in and on account changes, so a server down for a few minutes left « Serveur injoignable » on screen for good
+  while the « En ligne » switch stayed on and the file sync had long reconnected. The window now re-checks the
+  server while it is unreachable, on a backoff that never stops (2 s, 4 s, 8 s… then every minute), every minute
+  while it is reachable, soon after file-sync activity, and at once when the network changes, when the window gets
+  the focus or when you click « Synchroniser maintenant ». When the server is back, the sync card drops the error
+  it was showing.
+- **Accounts: the token refresh retries faster after a network failure, and at once when asked.** After a failed
+  refresh the next attempt waited a fixed 45 s even when the server was back; it now backs off from 2 s up to 60 s
+  and never gives up, and a network change, the window's focus or « Synchroniser maintenant » lets it try again
+  right away (`TokenOwner::retry_now`; at most one attempt every 2 s).
+
 - **A click on a ribbon drop-down no longer goes through to the page.** Picking an item of a gallery or menu
   opened over the page (the Equation gallery over a sheet's grid) also selected what lay under it. An open
   drop-down of the ribbon is now light-dismiss, as in Office: the rest of the window does not see the pointer
@@ -50,6 +63,24 @@ number at release time, and CI publishes that section as the GitHub Release note
   Dotted and quoted dependency keys (`"kubuno-desktop".path = …`) now name their dependency.
 
 ### Added
+
+- **Kubuno Desktop runs once per user session.** Starting it again — from the Start menu, a shortcut, a dev build
+  or a copy in another folder, whatever its profile or data directory — no longer opens a second window: the
+  running Kubuno Desktop comes back from the notification area or the taskbar to the front (restored, focused, its
+  taskbar button flashing when Windows refuses the focus), on the page the new launch asked for (`--page settings`),
+  and the new launch exits quietly with no splash screen. A start at logon (`--background`) leaves a running one as
+  it is. A Kubuno Desktop that crashed or was killed never blocks the next start. Developers can still run a second,
+  named instance in debug builds only: `--dev-instance <name>` or `KUBUNO_DEV_INSTANCE=<name>` (agents running a
+  sandboxed shell next to the user's must now pass one). See `desktop/README.md`, "Single instance".
+- **`kubuno-desktop-single-instance`**: the cross-platform single-instance primitive behind it — an OS lock per key
+  (named mutex on Windows, `flock` on Linux and macOS, both released by the OS with the process), the hand-off of a
+  second launch's command line (named pipe / Unix socket restricted to the current user) and bringing a window to
+  the front. Keys per user session, per profile or per document; paths normalised (case, `\?\`, separators, `..`).
+  The Office apps use it for one window per document.
+- **Windows opened at most once: `kubuno_desktop::singleton`.** `singleton::show(key, make)` and
+  `singleton::show_in_window(key, owner, make, on_closed)` open a window or an in-window dialog unless one is already
+  open under that key, in which case the open one is brought to the front. Kubuno Desktop's confirmations and its
+  sign-out dialog use it. Example: `cargo run -p kubuno-desktop --example singleton`.
 
 - **Ribbon galleries draw custom items.** `kubuno_desktop::ui::ribbon::set_gallery_renderer("gallery_name", …)`
   paints the content of each item of a `<RibbonGallery x:Name="gallery_name">` (a formula preview, a style

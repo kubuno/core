@@ -110,6 +110,34 @@ async fn transient_failures_cool_down_and_keep_the_session() {
     assert_eq!(owner.status(&key).await, Some(SessionStatus::Active));
 }
 
+/// The server came back while the owner was cooling down: `retry_now` (network change, focus, « Synchroniser
+/// maintenant ») lets the next call refresh at once instead of failing until the end of a long backoff.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn retry_now_cuts_a_long_cooldown_short() {
+    let (base, state) = fake_auth::start().await;
+    let dir = tempfile::tempdir().expect("tmp");
+    let owner = TokenOwner::new(
+        Arc::new(MemorySecretStore::new()),
+        AccountStore::new(dir.path()),
+        OwnerConfig { cooldown_min: Duration::from_secs(30), cooldown: Duration::from_secs(60), fresh_ttl: Duration::from_millis(0), ..OwnerConfig::default() },
+    );
+    let (a, r) = state.login("user-1");
+    let key = owner.sign_in(&base, tokens(a.clone(), r)).await.expect("sign in").key;
+    state.fail_before_rotation.store(1, Ordering::SeqCst);
+    let fp = AccessToken::new(a).fingerprint();
+    assert!(matches!(owner.access_after_401(&key, &fp).await, Err(AuthError::Transient(_))));
+    let calls = state.refresh_calls.load(Ordering::SeqCst);
+    // Without a reason to retry, the 30 s cooldown holds.
+    assert!(matches!(owner.access_after_401(&key, &fp).await, Err(AuthError::Transient(_))));
+    assert_eq!(state.refresh_calls.load(Ordering::SeqCst), calls);
+    // The server is back and something says so: after the minimum spacing the refresh runs.
+    tokio::time::sleep(kubuno_desktop_account::owner::RETRY_SPACING + Duration::from_millis(100)).await;
+    owner.retry_now();
+    owner.access_after_401(&key, &fp).await.expect("refreshed without waiting for the cooldown");
+    assert_eq!(state.refresh_calls.load(Ordering::SeqCst), calls + 1);
+    assert_eq!(owner.status(&key).await, Some(SessionStatus::Active));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn revoked_session_expires_then_sign_in_restores_the_same_account() {
     let (owner, state, key, base, _dir, _s) = setup("user-1").await;

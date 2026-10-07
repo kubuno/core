@@ -17,10 +17,17 @@ path = "src/lib.rs"
 name = "kubuno-desktop"
 path = "src/main.rs"
 
+[features]
+# Developer instances (`--dev-instance <name>`, `KUBUNO_DEV_INSTANCE`) in a release build, next to the session's
+# Kubuno Desktop. Debug builds always have them; release packaging never enables this.
+dev-instance = ["kubuno-desktop-shell-common/dev-instance"]
+
 [dependencies]
 # The portable app this crate puts a Windows face on (desktop/common): start-up (`app::run`), the accounts and the
 # token broker, the sync engine's door and its offline sample, the activity log, the platform extension points.
 kubuno-desktop-shell-common = { path = "../../common/kubuno-desktop-shell-common" }
+# One Kubuno Desktop per user session: the window brings itself to the front when a second launch hands over.
+kubuno-desktop-single-instance = { path = "../../common/kubuno-desktop-single-instance" }
 # The Kubuno desktop programming model (Application::run, #[kubuno_desktop::view], user and custom
 # controls, resources): it re-exports kubuno-desktop-views, kubuno-desktop-controls and kubuno-desktop-ui. The shell
 # depends on no other application's crate (module isolation, vskubuno docs/VIEWS-SPEC.md).
@@ -60,6 +67,9 @@ features = [
     "Win32_System_Com",
     "Win32_System_Registry",
     "Win32_Graphics_Gdi",
+    # The network's connectivity changes (`platform::network`): the window re-checks the server at once.
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
     # Cloud Files API + the WinRT sync-root manager: the Explorer integration
     # (navigation-pane entry, status overlays) is kept as-is.
     "Win32_Storage_CloudFilters",

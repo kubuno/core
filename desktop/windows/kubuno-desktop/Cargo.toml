@@ -31,6 +31,8 @@ kubuno-desktop-resources-macros = { workspace = true }
 serde_json = { workspace = true }
 # Data access components (`kubuno_desktop::data`), opt-in: they bring SQLx and a Tokio runtime.
 kubuno-desktop-data         = { workspace = true, optional = true }
+# `singleton::focus`: bringing a window to the front (restore, foreground, flash when the system refuses).
+kubuno-desktop-single-instance = { workspace = true }
 
 [features]
 default = []
