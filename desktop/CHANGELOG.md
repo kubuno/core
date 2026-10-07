@@ -75,7 +75,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **`kubuno-desktop-single-instance`**: the cross-platform single-instance primitive behind it — an OS lock per key
   (named mutex on Windows, `flock` on Linux and macOS, both released by the OS with the process), the hand-off of a
   second launch's command line (named pipe / Unix socket restricted to the current user) and bringing a window to
-  the front. Keys per user session, per profile or per document; paths normalised (case, `\?\`, separators, `..`).
+  the front. Keys per user session, per profile or per document; paths normalised (case, `\\?\`, separators, `..`).
   The Office apps use it for one window per document.
 - **Windows opened at most once: `kubuno_desktop::singleton`.** `singleton::show(key, make)` and
   `singleton::show_in_window(key, owner, make, on_closed)` open a window or an in-window dialog unless one is already

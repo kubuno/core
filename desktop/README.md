@@ -165,7 +165,7 @@ Some windows make no sense twice. Three rules, one primitive (`common/kubuno-des
 | What | Key | A second launch / open |
 |---|---|---|
 | **Kubuno Desktop** | the user and the session only (SID + session id; uid + `XDG_SESSION_ID`): not the profile, the data directory or the executable's path | hands its command line to the running shell and exits with code 0 before any splash screen; the shell comes back from the tray or the taskbar to the front, on the `--page` asked for. `--background` (the start at logon) changes nothing |
-| **An Office document** (Documents, Spreadsheets, Diagrams, Presentations) | the app, the profile and the document: a server document (server URL + id) or a local file (path normalised: absolute, resolved, no `\\?\`, one separator, case-folded on Windows and macOS) | the window already showing that document comes to the front; another document still opens its own window, like Word. A new blank document is never single |
+| **An Office document** (Documents, Spreadsheets, Diagrams, Presentations, Projects) | the app, the profile and the document: a server document (server URL + id) or a local file (path normalised: absolute, resolved, no `\\?\`, one separator, case-folded on Windows and macOS) | the window already showing that document comes to the front; another document still opens its own window, like Word. A new blank document is never single |
 | **A secondary window** (Settings, About, a confirmation…) | a string per UI thread: `kubuno_desktop::singleton::show(key, make)` / `show_in_window(key, owner, make, on_closed)` | the open one is focused instead of a copy |
 
 **Developer instances.** A second Kubuno Desktop only runs as an explicit developer instance, compiled in debug builds
