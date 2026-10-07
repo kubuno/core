@@ -37,7 +37,9 @@ Variables d'environnement importantes :\n\
   RUST_LOG                 Niveau de log (ex: debug, info, warn)"
 )]
 struct Cli {
-    /// Chemin vers le fichier de configuration (défaut : config.toml dans le répertoire courant)
+    /// Fichier de configuration : s'il est donné, c'est le seul lu. Sinon : config.toml du
+    /// répertoire courant, puis le fichier système (/etc/kubuno/config.toml…) pour l'instance
+    /// système uniquement (service, compte de service ou administrateur).
     #[arg(short, long, value_name = "FICHIER", env = "KV_CONFIG_FILE")]
     config: Option<String>,
 }
@@ -62,6 +64,12 @@ async fn main() -> Result<()> {
     let _log_guards = kubuno_core::logging::init(&raw.logging);
 
     tracing::info!("Kubuno Core v{} démarrage…", env!("CARGO_PKG_VERSION"));
+    // Which configuration files were read (paths only, never values), and why
+    // the system file was not, when it was not.
+    match kubuno_core::config::paths::config_plan(cli.config.as_deref()) {
+        Ok(plan) => kubuno_core::config::paths::log_config_plan(&plan),
+        Err(e) => tracing::warn!(error = %e, "Configuration sources could not be listed"),
+    }
 
     // Not installed yet: serve the wizard on the normal port until it succeeds,
     // then carry on with the configuration it has just written. Nothing has to

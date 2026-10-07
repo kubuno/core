@@ -31,7 +31,15 @@ pub fn cli() -> Command {
              \n\
              Toute commande de la forme <module>:<cmd> est routée vers le binaire\n\
              kubuno-<module>. Utilisez `kubuno modules:commands` pour voir toutes\n\
-             les commandes disponibles selon les modules installés.",
+             les commandes disponibles selon les modules installés.\n\
+             \n\
+             CONFIGURATION\n\
+             \n\
+             Les commandes agissent sur l'instance système (configuration\n\
+             /etc/kubuno/config.toml, %ProgramData%\\Kubuno\\config.toml ou\n\
+             /Library/Application Support/Kubuno/config.toml) seulement lancées en\n\
+             root / Administrateur (sudo kubuno …) ou par le compte de service.\n\
+             Pour une autre instance : KV_CONFIG_FILE=<fichier> kubuno …",
         )
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -70,7 +78,7 @@ pub fn cli() -> Command {
                     Arg::new("config")
                         .long("config")
                         .value_name("FICHIER")
-                        .help("Configuration de l'instance (défaut : /etc/kubuno/config.toml)"),
+                        .help("Configuration de l'instance (défaut : le fichier système /etc/kubuno/config.toml, lu seulement sous sudo, par le compte de service ou par le service)"),
                 ),
         )
         // ── db:backup ──

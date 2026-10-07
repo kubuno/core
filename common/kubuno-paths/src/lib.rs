@@ -42,18 +42,28 @@
 //!   copies exist. [`legacy_state_dirs_for`] restricts those locations to the
 //!   default system instance, so a development or second instance never looks
 //!   into the system one;
+//! - [`plan_config_files`]: which configuration files an instance reads. The
+//!   system configuration is read only by the default system instance running
+//!   as the service (or by an administrator), never by a development or second
+//!   instance; [`ServiceContext`] tells which case the process is in;
 //! - [`write_private`], [`create_private_dir`], [`restrict_to_owner`]: `0600`/`0700`
 //!   on Unix, a protected DACL (SYSTEM + Administrators + the service account)
 //!   on Windows, without spawning anything.
 
+mod config_files;
 mod env;
 mod layout;
 mod migrate;
 mod perms;
 
+pub use config_files::{
+    find_config_in, plan as plan_config_files, ConfigInputs, ConfigPlan, ProcessFacts, ServiceContext,
+    SystemConfigSkip, CONFIG_EXTENSIONS,
+};
 pub use env::{Os, PathEnv};
 pub use layout::{
-    is_default_system_instance, legacy_state_dirs, legacy_state_dirs_for, same_lexical, Mode, Overrides,
+    default_system_layout, is_default_system_instance, is_system_instance, legacy_state_dirs,
+    legacy_state_dirs_for, same_lexical, Mode, Overrides,
     Paths, PathsError, DATA_KEY, ENV_DIRS, ENV_MODE, INITIAL_ADMIN_PASSWORD, SETUP_TOKEN,
 };
 pub use migrate::{migrate_secret_file, MigrationError, MigrationOutcome};

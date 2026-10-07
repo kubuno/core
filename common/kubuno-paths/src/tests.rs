@@ -132,6 +132,7 @@ fn macos_user_layout_lives_under_the_home_library() {
 #[test]
 fn environment_overrides_win_over_configuration_overrides() {
     let config = Overrides {
+        config_dir: Some(p("/srv/config")),
         state_dir: Some(p("/srv/state-from-config")),
         data_dir: Some(p("/srv/data")),
         ..Overrides::default()
@@ -140,11 +141,21 @@ fn environment_overrides_win_over_configuration_overrides() {
     let paths = Paths::resolve(&env, &config).unwrap();
     assert_eq!(paths.state_dir, p("/srv/state-from-env"));
     assert_eq!(paths.data_dir, p("/srv/data"));
-    // Derived directories follow the overridden data directory…
+    // Derived directories follow the overridden data directory.
     assert_eq!(paths.modules_store, p("/srv/data/modules-store"));
     assert_eq!(paths.modules_data_dir, p("/srv/data/modules"));
-    // …but not the ones with their own FHS home.
+    assert_eq!(paths.modules_config_dir, p("/srv/config/modules"));
+    // A separate instance never lands in the system FHS homes either.
+    assert_eq!(paths.backup_dir, p("/srv/data/backups"));
+    assert_eq!(paths.log_dir, p("/srv/state-from-env/logs"));
+    assert_eq!(paths.cache_dir, p("/srv/state-from-env/cache"));
+    assert_eq!(paths.runtime_dir, p("/srv/state-from-env/run"));
+
+    // Moving only the data directory keeps the system instance (and its FHS homes).
+    let env = PathEnv::new(Os::Linux).with_var("KUBUNO_PATHS_DATA_DIR", "/srv/data");
+    let paths = resolve(&env);
     assert_eq!(paths.backup_dir, p("/var/backups/kubuno"));
+    assert_eq!(paths.log_dir, p("/var/log/kubuno"));
 }
 
 #[test]
@@ -197,7 +208,9 @@ fn invalid_mode_and_relative_overrides_are_rejected() {
     ));
     let env = PathEnv::new(Os::Windows)
         .with_program_data(r"C:\ProgramData")
-        .with_var("KUBUNO_PATHS_STATE_DIR", r"\\server\share\kubuno");
+        .with_var("KUBUNO_PATHS_STATE_DIR", r"\\server\share\kubuno")
+        .with_var("KUBUNO_PATHS_CONFIG_DIR", r"\\server\share\kubuno\config")
+        .with_var("KUBUNO_PATHS_DATA_DIR", r"\\server\share\kubuno\data");
     assert!(Paths::resolve(&env, &Overrides::default()).is_ok());
 }
 
@@ -258,13 +271,22 @@ fn an_instance_with_its_own_state_dir_has_no_legacy_location() {
             .with_cwd(home);
 
         // Explicit state directory through the environment.
-        let env = base.clone().with_var("KUBUNO_PATHS_STATE_DIR", own);
+        let env = base
+            .clone()
+            .with_var("KUBUNO_PATHS_STATE_DIR", own)
+            .with_var("KUBUNO_PATHS_CONFIG_DIR", own)
+            .with_var("KUBUNO_PATHS_DATA_DIR", own);
         let paths = resolve(&env);
         assert!(!is_default_system_instance(&env, &paths), "{os:?}");
         assert!(legacy_state_dirs_for(&env, &paths).is_empty(), "{os:?}: env override");
 
         // Explicit state directory through the configuration (`[paths]`).
-        let cfg = Overrides { state_dir: Some(p(own)), ..Overrides::default() };
+        let cfg = Overrides {
+            config_dir: Some(p(own)),
+            state_dir: Some(p(own)),
+            data_dir: Some(p(own)),
+            ..Overrides::default()
+        };
         let paths = Paths::resolve(&base, &cfg).unwrap();
         assert!(legacy_state_dirs_for(&base, &paths).is_empty(), "{os:?}: [paths] override");
 
@@ -501,4 +523,221 @@ fn host_target_uses_package_spellings() {
     assert!(["linux", "windows", "macos"].contains(&os) || !os.is_empty());
     assert!(!arch.is_empty());
     assert_eq!(Os::current().as_str(), if cfg!(windows) { "windows" } else if cfg!(target_os = "macos") { "macos" } else { "linux" });
+}
+
+// ── Separate instances ──────────────────────────────────────────────────────
+
+#[test]
+fn a_state_dir_of_its_own_requires_its_own_config_and_data_dirs() {
+    for (os, own) in [(Os::Linux, "/home/dev/k"), (Os::MacOs, "/Users/dev/k"), (Os::Windows, r"C:\dev\k")] {
+        let env = PathEnv::new(os).with_program_data(r"C:\ProgramData").with_var("KUBUNO_PATHS_STATE_DIR", own);
+        assert_eq!(
+            Paths::resolve(&env, &Overrides::default()),
+            Err(PathsError::PartialOverride { missing: vec!["config_dir", "data_dir"] }),
+            "{os:?}"
+        );
+        let err = Paths::resolve(&env.clone().with_var("KUBUNO_PATHS_CONFIG_DIR", own), &Overrides::default())
+            .unwrap_err();
+        assert_eq!(err, PathsError::PartialOverride { missing: vec!["data_dir"] });
+        assert!(err.to_string().contains("KUBUNO_PATHS_DATA_DIR"), "{err}");
+        // User mode has no system directories to leak into.
+        let user = env
+            .with_var(ENV_MODE, "user")
+            .with_var("HOME", "/home/dev")
+            .with_local_app_data(r"C:\dev\AppData");
+        assert!(Paths::resolve(&user, &Overrides::default()).is_ok(), "{os:?}");
+    }
+    // Naming the system state directory itself is still the system instance.
+    let env = PathEnv::new(Os::Linux).with_var("KUBUNO_PATHS_STATE_DIR", "/var/lib/kubuno/");
+    assert_eq!(resolve(&env).config_dir, p("/etc/kubuno"));
+}
+
+// ── Configuration files ─────────────────────────────────────────────────────
+
+fn ctx(service: bool) -> ServiceContext {
+    ServiceContext { service_manager: service, ..ServiceContext::default() }
+}
+
+struct Layout {
+    env: PathEnv,
+    instance: Paths,
+    system: Paths,
+}
+
+fn layout(env: PathEnv) -> Layout {
+    let instance = resolve(&env);
+    let system = default_system_layout(&env).unwrap();
+    Layout { env, instance, system }
+}
+
+fn plan_for(l: &Layout, explicit: Option<&str>, local: Option<&str>, service: ServiceContext) -> ConfigPlan {
+    let explicit = explicit.map(PathBuf::from);
+    let local = local.map(PathBuf::from);
+    let legacy = vec![p("/etc/kubuno/config.toml")];
+    plan_config_files(&ConfigInputs {
+        instance: &l.instance,
+        system: &l.system,
+        cwd: l.env.cwd(),
+        explicit: explicit.as_deref(),
+        local: local.as_deref(),
+        legacy_system: &legacy,
+        service,
+    })
+}
+
+#[test]
+fn the_packaged_service_reads_the_system_configuration_on_every_os() {
+    // Linux: systemd unit, User=kubuno, WorkingDirectory=/var/lib/kubuno.
+    let l = layout(PathEnv::new(Os::Linux).with_cwd("/var/lib/kubuno"));
+    let plan = plan_for(&l, None, None, ctx(true));
+    assert_eq!(plan.system, vec![p("/etc/kubuno/config.toml")]);
+    assert_eq!(plan.skipped, None);
+    // A config.toml in its working directory (= its state directory) is read
+    // first and the system file still wins over it, exactly as before.
+    let plan = plan_for(&l, None, Some("/var/lib/kubuno/config.toml"), ctx(true));
+    assert_eq!(plan.local, Some(p("/var/lib/kubuno/config.toml")));
+    assert_eq!(plan.system, vec![p("/etc/kubuno/config.toml")]);
+
+    // Windows: WinSW service, working directory %ProgramData%\Kubuno (the config dir).
+    let l = layout(
+        PathEnv::new(Os::Windows)
+            .with_program_data(r"C:\ProgramData")
+            .with_cwd(r"C:\ProgramData\Kubuno"),
+    );
+    let plan = plan_for(&l, None, Some(r"C:\ProgramData\Kubuno\config.toml"), ctx(true));
+    assert_eq!(plan.system, vec![p(r"C:\ProgramData").join("Kubuno").join("config.toml")]);
+    assert_eq!(plan.instance, None, "the own file is the system file, listed once");
+
+    // macOS: launchd daemon; the pre-kubuno-paths /etc/kubuno file comes first.
+    let l = layout(PathEnv::new(Os::MacOs).with_cwd("/Library/Application Support/Kubuno"));
+    let plan = plan_for(&l, None, None, ctx(true));
+    assert_eq!(
+        plan.system,
+        vec![p("/etc/kubuno/config.toml"), p("/Library/Application Support/Kubuno/config.toml")]
+    );
+}
+
+#[test]
+fn an_administrator_or_the_service_account_reads_the_system_configuration() {
+    let l = layout(PathEnv::new(Os::Linux).with_cwd("/root"));
+    let admin = ServiceContext { privileged: true, ..ServiceContext::default() };
+    assert_eq!(plan_for(&l, None, None, admin).system, vec![p("/etc/kubuno/config.toml")]);
+    let account = ServiceContext { service_account: true, ..ServiceContext::default() };
+    assert_eq!(plan_for(&l, None, None, account).system, vec![p("/etc/kubuno/config.toml")]);
+}
+
+#[test]
+fn nothing_else_ever_reads_the_system_configuration() {
+    for os in [Os::Linux, Os::MacOs, Os::Windows] {
+        let (home, own) = if os == Os::Windows { (r"C:\dev", r"C:\dev\k") } else { ("/home/dev", "/home/dev/k") };
+        let base = PathEnv::new(os)
+            .with_var("HOME", home)
+            .with_program_data(r"C:\ProgramData")
+            .with_local_app_data(r"C:\dev\AppData\Local")
+            .with_cwd(home);
+        let local_path = PathBuf::from(home).join("config.toml");
+        let local = local_path.to_str().unwrap();
+        let admin = ServiceContext { privileged: true, service_manager: true, service_account: true };
+
+        // Explicit configuration: that file only.
+        let l = layout(base.clone());
+        let plan = plan_for(&l, Some("/srv/kubuno.toml"), Some(local), admin);
+        assert_eq!(plan.explicit, Some(p("/srv/kubuno.toml")));
+        assert!(plan.system.is_empty() && plan.local.is_none() && plan.instance.is_none());
+        assert_eq!(plan.skipped.unwrap().1, SystemConfigSkip::Explicit);
+
+        // A config file of its own in a working directory that is not the
+        // instance's: a development checkout.
+        let plan = plan_for(&l, None, Some(local), admin);
+        assert!(plan.system.is_empty(), "{os:?}");
+        assert_eq!(plan.local, Some(p(local)));
+        assert_eq!(plan.skipped.unwrap().1, SystemConfigSkip::LocalConfig(p(local)));
+
+        // The default layout, but an ordinary user outside the service manager.
+        let plan = plan_for(&l, None, None, ServiceContext::default());
+        assert!(plan.system.is_empty());
+        let (files, why) = plan.skipped.unwrap();
+        assert_eq!(why, SystemConfigSkip::NotService);
+        assert!(files.contains(&l.system.config_file()));
+
+        // A state directory of its own.
+        let l = layout(
+            base.clone()
+                .with_var("KUBUNO_PATHS_STATE_DIR", own)
+                .with_var("KUBUNO_PATHS_CONFIG_DIR", own)
+                .with_var("KUBUNO_PATHS_DATA_DIR", own),
+        );
+        let plan = plan_for(&l, None, None, admin);
+        assert!(plan.system.is_empty());
+        assert_eq!(plan.instance, Some(PathBuf::from(own).join("config.toml")), "its own file is read");
+        assert_eq!(plan.skipped.unwrap().1, SystemConfigSkip::NotSystemInstance);
+
+        // User mode.
+        let l = layout(base.clone().with_var(ENV_MODE, "user"));
+        let plan = plan_for(&l, None, None, admin);
+        assert!(plan.system.is_empty());
+        assert!(plan.instance.is_some());
+        assert_eq!(plan.skipped.unwrap().1, SystemConfigSkip::NotSystemInstance);
+
+        // User mode pointed at the system configuration directory: still not read.
+        let sys_cfg = default_system_layout(&base).unwrap().config_dir;
+        let l = layout(
+            base.clone()
+                .with_var(ENV_MODE, "user")
+                .with_var("KUBUNO_PATHS_CONFIG_DIR", sys_cfg.to_str().unwrap()),
+        );
+        let plan = plan_for(&l, None, None, admin);
+        assert!(plan.system.is_empty() && plan.instance.is_none(), "{os:?}");
+    }
+}
+
+#[test]
+fn write_target_follows_the_files_read() {
+    let l = layout(PathEnv::new(Os::Linux).with_cwd("/home/dev"));
+    let sys = l.system.config_file();
+    let plan = plan_for(&l, None, Some("/home/dev/config.toml"), ctx(false));
+    assert_eq!(plan.write_target(l.env.cwd(), &sys), p("/home/dev/config.toml"));
+    let plan = plan_for(&l, None, None, ctx(false));
+    assert_eq!(plan.write_target(l.env.cwd(), &sys), p("/home/dev/config.toml"), "never the system file");
+    let plan = plan_for(&l, None, None, ctx(true));
+    assert_eq!(plan.write_target(l.env.cwd(), &sys), sys);
+    let plan = plan_for(&l, Some("/srv/x.toml"), None, ctx(true));
+    assert_eq!(plan.write_target(l.env.cwd(), &sys), p("/srv/x.toml"));
+}
+
+#[test]
+fn service_context_from_process_facts() {
+    let linux = PathEnv::new(Os::Linux);
+    let facts = ProcessFacts { pid: 4242, ppid: 1, ..ProcessFacts::default() };
+    // systemd system unit.
+    assert!(ServiceContext::from_facts(&linux.clone().with_var("INVOCATION_ID", "abc"), &facts).service_manager);
+    // A user unit or a shell that inherited INVOCATION_ID: parent is not PID 1.
+    let user_unit = ProcessFacts { ppid: 1234, ..facts };
+    assert!(!ServiceContext::from_facts(&linux.clone().with_var("INVOCATION_ID", "abc"), &user_unit).is_service());
+    // No INVOCATION_ID: an orphan process is not a service.
+    assert!(!ServiceContext::from_facts(&linux, &facts).is_service());
+    // PID 1 of a container.
+    assert!(ServiceContext::from_facts(&linux, &ProcessFacts { pid: 1, ..facts }).service_manager);
+    // The service account, root.
+    assert!(ServiceContext::from_facts(&linux, &ProcessFacts { owns_system_state: true, ..user_unit }).is_service());
+    assert!(ServiceContext::from_facts(&linux, &ProcessFacts { privileged: true, ..user_unit }).is_service());
+
+    let mac = PathEnv::new(Os::MacOs);
+    let launchd = mac.clone().with_var("XPC_SERVICE_NAME", "com.kubuno.core");
+    assert!(ServiceContext::from_facts(&launchd, &facts).service_manager);
+    assert!(!ServiceContext::from_facts(&mac.with_var("XPC_SERVICE_NAME", "0"), &facts).service_manager);
+
+    let win = PathEnv::new(Os::Windows);
+    assert!(ServiceContext::from_facts(&win, &ProcessFacts { session_zero: true, ..user_unit }).service_manager);
+    assert!(!ServiceContext::from_facts(&win, &user_unit).is_service());
+}
+
+#[test]
+fn local_config_is_found_with_any_supported_extension() {
+    let s = Scratch::new("find-config");
+    assert_eq!(find_config_in(&s.0), None);
+    let f = s.write("config.yaml", "a: 1");
+    assert_eq!(find_config_in(&s.0), Some(f));
+    let t = s.write("config.toml", "a = 1");
+    assert_eq!(find_config_in(&s.0), Some(t), "toml first");
 }

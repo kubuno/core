@@ -126,6 +126,11 @@ pub enum PathsError {
     /// An override is a relative path: it would depend on the working
     /// directory, which is exactly the ambiguity this crate removes.
     RelativeOverride { field: &'static str, value: PathBuf },
+    /// System mode with a state directory of its own (so: not the system
+    /// instance) but the system instance's configuration or data directory:
+    /// the instance would read the system configuration and start its modules
+    /// on the system instance's module configuration and data.
+    PartialOverride { missing: Vec<&'static str> },
 }
 
 impl fmt::Display for PathsError {
@@ -143,6 +148,18 @@ impl fmt::Display for PathsError {
                 f,
                 "the Kubuno directory override {field} = {} is relative; use an absolute path",
                 value.display()
+            ),
+            PathsError::PartialOverride { missing } => write!(
+                f,
+                "this instance has a state directory of its own but would still use the system \
+                 instance's {}: set {} as well (or run it in user mode, {ENV_MODE}=user), so that \
+                 it never reads or writes another instance's configuration and data",
+                missing.join(" and "),
+                missing
+                    .iter()
+                    .map(|m| ENV_DIRS.iter().find(|(f, _)| f == m).map(|(_, v)| *v).unwrap_or(m))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
             ),
         }
     }
@@ -286,14 +303,43 @@ impl Paths {
         let mode = o.mode.unwrap_or_default();
         let b = bases(env, mode)?;
 
-        let config_dir = absolute("config_dir", o.config_dir, os)?.unwrap_or(b.config);
-        let state_dir = absolute("state_dir", o.state_dir, os)?.unwrap_or(b.state);
-        let data_dir = absolute("data_dir", o.data_dir, os)?.unwrap_or(b.data);
-        let log_dir = absolute("log_dir", o.log_dir, os)?.unwrap_or(b.log);
-        let cache_dir = absolute("cache_dir", o.cache_dir, os)?.unwrap_or(b.cache);
-        let runtime_dir = absolute("runtime_dir", o.runtime_dir, os)?.unwrap_or(b.runtime);
+        let own_config = absolute("config_dir", o.config_dir, os)?;
+        let own_state = absolute("state_dir", o.state_dir, os)?;
+        let own_data = absolute("data_dir", o.data_dir, os)?;
+
+        // System mode with a state directory of its own is NOT the system
+        // instance (a development or second instance on the same machine). It
+        // must not silently share the system instance's configuration or data
+        // directories, and its other per-instance directories default under its
+        // own state and data directories instead of the system ones.
+        let separate_instance =
+            mode == Mode::System && own_state.as_ref().is_some_and(|s| !same_lexical(s, &b.state, os));
+        if separate_instance {
+            let mut missing = Vec::new();
+            if own_config.is_none() {
+                missing.push("config_dir");
+            }
+            if own_data.is_none() {
+                missing.push("data_dir");
+            }
+            if !missing.is_empty() {
+                return Err(PathsError::PartialOverride { missing });
+            }
+        }
+
+        let config_dir = own_config.unwrap_or(b.config);
+        let state_dir = own_state.unwrap_or(b.state);
+        let data_dir = own_data.unwrap_or(b.data);
+        let (log_base, cache_base, runtime_base, backup_base) = if separate_instance {
+            (state_dir.join("logs"), state_dir.join("cache"), state_dir.join("run"), None)
+        } else {
+            (b.log, b.cache, b.runtime, b.backup)
+        };
+        let log_dir = absolute("log_dir", o.log_dir, os)?.unwrap_or(log_base);
+        let cache_dir = absolute("cache_dir", o.cache_dir, os)?.unwrap_or(cache_base);
+        let runtime_dir = absolute("runtime_dir", o.runtime_dir, os)?.unwrap_or(runtime_base);
         let backup_dir = absolute("backup_dir", o.backup_dir, os)?
-            .or(b.backup)
+            .or(backup_base)
             .unwrap_or_else(|| data_dir.join("backups"));
         let modules_store = absolute("modules_store", o.modules_store, os)?
             .unwrap_or_else(|| data_dir.join("modules-store"));
@@ -428,14 +474,23 @@ pub fn legacy_state_dirs(env: &PathEnv) -> Vec<PathBuf> {
 /// and the state directory the platform assigns to it, with no override
 /// (environment or configuration) moving it elsewhere.
 pub fn is_default_system_instance(env: &PathEnv, paths: &Paths) -> bool {
-    if paths.mode != Mode::System {
-        return false;
-    }
-    let system = Overrides { mode: Some(Mode::System), ..Overrides::default() };
-    match Paths::resolve(&env.without_path_overrides(), &system) {
-        Ok(default) => same_lexical(&default.state_dir, &paths.state_dir, env.os()),
+    match default_system_layout(env) {
+        Ok(system) => is_system_instance(paths, &system),
         Err(_) => false,
     }
+}
+
+/// The layout the default system instance (the packaged service) has on this
+/// machine: system mode, no override at all.
+pub fn default_system_layout(env: &PathEnv) -> Result<Paths, PathsError> {
+    let system = Overrides { mode: Some(Mode::System), ..Overrides::default() };
+    Paths::resolve(&env.without_path_overrides(), &system)
+}
+
+/// Whether `paths` is the instance whose default layout is `system`: system
+/// mode and the same state directory.
+pub fn is_system_instance(paths: &Paths, system: &Paths) -> bool {
+    paths.mode == Mode::System && same_lexical(&system.state_dir, &paths.state_dir, paths.os)
 }
 
 /// The legacy state directories THIS instance may take its secrets from.

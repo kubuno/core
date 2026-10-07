@@ -5,10 +5,15 @@ edition     = "2021"
 description = "Kubuno platform directories (Linux/Windows/macOS), secret-file migration and private file permissions"
 license     = "AGPL-3.0"
 
-# No runtime dependency on Unix: permissions go through std. On Windows the
+# Permissions go through std on Unix. On Windows the
 # DACL is set through the `windows` crate (no shelling out to icacls: the
 # seccomp rule forbids spawning anything, and it would be the wrong tool anyway).
 [dependencies]
+
+# Unix: the effective and parent process ids (`geteuid`, `getppid`) that tell
+# the service from an ordinary user, for the configuration rules.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
@@ -17,6 +22,7 @@ windows = { version = "0.62", features = [
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
+    "Win32_System_RemoteDesktop",
     "Win32_System_Threading",
     "Win32_UI_Shell",
 ] }

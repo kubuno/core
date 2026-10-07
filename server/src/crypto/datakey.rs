@@ -426,6 +426,8 @@ mod tests {
         ] {
             let env = PathEnv::new(os)
                 .with_var("KUBUNO_PATHS_STATE_DIR", own)
+                .with_var("KUBUNO_PATHS_CONFIG_DIR", own)
+                .with_var("KUBUNO_PATHS_DATA_DIR", own)
                 .with_program_data(r"C:\ProgramData")
                 .with_cwd(own);
             assert!(legacy_for(&env).is_empty(), "{os:?}");

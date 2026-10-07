@@ -148,25 +148,23 @@ pub fn remove_key(source: &str, section: &str, key: &str) -> String {
 }
 
 /// The configuration file the running instance actually reads, and that the
-/// installer therefore has to write: `KV_CONFIG_FILE` when set, else the system
-/// file of the platform layout (`kubuno-paths`) when it exists, else a
-/// `config.toml` in the working directory when one exists (development), else
-/// the system file. No location is inferred from whether a directory exists.
+/// installer therefore has to write. It follows the same plan as the loader
+/// (`kubuno_paths::plan_config_files`): `KV_CONFIG_FILE` when set; the system
+/// file only for the system instance; otherwise the instance's own file (its
+/// configuration directory, or `config.toml` in its working directory). An
+/// instance that is not the system one never writes the system file.
 pub fn target_path() -> PathBuf {
-    if let Ok(p) = std::env::var("KV_CONFIG_FILE") {
-        if !p.trim().is_empty() {
-            return PathBuf::from(p.trim());
-        }
+    let explicit = std::env::var("KV_CONFIG_FILE").ok().filter(|p| !p.trim().is_empty());
+    let system_file = kubuno_paths::default_system_layout(&kubuno_paths::PathEnv::from_process())
+        .map(|p| p.config_file())
+        .unwrap_or_else(|_| crate::config::paths::current().config_file());
+    let cwd = std::env::current_dir().ok();
+    match crate::config::paths::config_plan(explicit.as_deref()) {
+        Ok(plan) => plan.write_target(cwd.as_deref(), &system_file),
+        // The layout does not resolve: the loader refused it too; write
+        // nowhere near the system instance.
+        Err(_) => cwd.map(|d| d.join("config.toml")).unwrap_or_else(|| PathBuf::from("config.toml")),
     }
-    let system = crate::config::paths::current().config_file();
-    if system.exists() {
-        return system;
-    }
-    let local = PathBuf::from("config.toml");
-    if local.exists() {
-        return local;
-    }
-    system
 }
 
 /// Text to patch: the current configuration, else the shipped example (so a

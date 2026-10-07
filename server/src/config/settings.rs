@@ -451,13 +451,13 @@ impl Settings {
         // refine the other directories. `[paths]` cannot move the configuration
         // file itself: that is `--config` / `KV_CONFIG_FILE` /
         // `KUBUNO_PATHS_CONFIG_DIR`.
-        let env_paths = kubuno_paths::Paths::resolve(
-            &kubuno_paths::PathEnv::from_process(),
-            &kubuno_paths::Overrides::default(),
-        )
-        .map_err(|e| ConfigError::Message(e.to_string()))?;
-        let system_config = path_string(&env_paths.config_dir.join("config"));
-        let pre = Self::with_sources(Config::builder(), explicit, &system_config).build()?;
+        //
+        // Which files are read is decided once, from the environment alone:
+        // the system file is read by the system instance only (see
+        // `kubuno_paths::plan_config_files`).
+        let plan = crate::config::paths::config_plan(explicit)
+            .map_err(|e| ConfigError::Message(e.to_string()))?;
+        let pre = Self::with_sources(Config::builder(), &plan).build()?;
         let paths_section: crate::config::paths::PathsSettings = match pre.get("paths") {
             Ok(section) => section,
             Err(ConfigError::NotFound(_)) => Default::default(),
@@ -501,35 +501,45 @@ impl Settings {
             .set_default("logging.file_enabled", true)?
             .set_default("logging.rotation", "never")?
             .set_default("logging.max_log_files", 30u32)?;
-        let cfg = Self::with_sources(cfg, explicit, &system_config).build()?;
+        let cfg = Self::with_sources(cfg, &plan).build()?;
 
         Ok(cfg)
     }
 
-    /// The configuration sources, in increasing priority:
-    /// 1. `config.toml` in the working directory (development), or ONLY the
-    ///    file named explicitly;
-    /// 2. on macOS, the pre-`kubuno-paths` `/etc/kubuno/config.toml` (root-owned
-    ///    there, so it cannot be planted);
-    /// 3. the system file `<config_dir>/config.toml` (`/etc/kubuno`,
-    ///    `%ProgramData%\Kubuno`, `/Library/Application Support/Kubuno`). Never
-    ///    `/etc/kubuno` on Windows, where it would mean a `C:\etc` folder any
-    ///    local user can create;
+    /// The configuration sources of `plan`, in increasing priority:
+    /// 1. ONLY the file named explicitly (`--config` / `KV_CONFIG_FILE`), or:
+    /// 2. `config.<ext>` in the working directory;
+    /// 3. the system files (macOS: the pre-`kubuno-paths` `/etc/kubuno/config.toml`
+    ///    first; then `/etc/kubuno`, `%ProgramData%\Kubuno` or
+    ///    `/Library/Application Support/Kubuno`), for the system instance only;
+    ///    or the instance's own `<config_dir>/config.toml` when its configuration
+    ///    directory is not the system one (user mode, `KUBUNO_PATHS_CONFIG_DIR`);
     /// 4. the `KV__` environment variables (Docker / one-off overrides), e.g.
     ///    `KV__DATABASE__URL=postgres://...`; lists are comma-separated:
     ///    `KV__SERVER__TRUSTED_PROXY_CIDRS=127.0.0.0/8,10.0.0.0/8`.
+    ///
+    /// The directory files are given without their extension, as before, so
+    /// that `config.toml`, `config.yaml`… are all recognised.
     fn with_sources(
         builder: config::ConfigBuilder<config::builder::DefaultState>,
-        explicit: Option<&str>,
-        system_config: &str,
+        plan: &kubuno_paths::ConfigPlan,
     ) -> config::ConfigBuilder<config::builder::DefaultState> {
-        let mut builder = builder
-            .add_source(File::with_name(explicit.unwrap_or("config")).required(explicit.is_some()));
-        if explicit.is_none() {
-            if cfg!(target_os = "macos") {
-                builder = builder.add_source(File::with_name("/etc/kubuno/config").required(false));
+        fn stem(p: &std::path::Path) -> String {
+            path_string(&p.with_extension(""))
+        }
+        let mut builder = builder;
+        if let Some(explicit) = &plan.explicit {
+            builder = builder.add_source(File::with_name(&path_string(explicit)).required(true));
+        } else {
+            if let Some(local) = &plan.local {
+                builder = builder.add_source(File::from(local.as_path()).required(false));
             }
-            builder = builder.add_source(File::with_name(system_config).required(false));
+            for system in &plan.system {
+                builder = builder.add_source(File::with_name(&stem(system)).required(false));
+            }
+            if let Some(own) = &plan.instance {
+                builder = builder.add_source(File::with_name(&stem(own)).required(false));
+            }
         }
         builder.add_source(
             Environment::with_prefix("KV")
@@ -552,7 +562,9 @@ impl Settings {
     /// As `load_unvalidated`, against the configuration file named by
     /// `--config` / `KV_CONFIG_FILE` when there is one.
     pub fn load_unvalidated_from(explicit: Option<&str>) -> Result<Self, ConfigError> {
-        let mut settings: Self = Self::build_config(explicit)?.try_deserialize()?;
+        let mut settings: Self = Self::build_config(explicit)?
+            .try_deserialize()
+            .map_err(|e| ConfigError::Message(with_skipped_system_note(e.to_string(), explicit)))?;
         engine_from_url(&mut settings.database);
         Ok(settings)
     }
@@ -564,13 +576,31 @@ impl Settings {
     /// As `load`, against an explicitly named configuration file.
     pub fn load_from(explicit: Option<&str>) -> Result<Self, ConfigError> {
         let settings = Self::load_unvalidated_from(explicit)?;
-        validate_database(&settings.database)
-            .map_err(ConfigError::Message)?;
-        settings.server.tls.validate()
-            .map_err(ConfigError::Message)?;
-        settings.server.validate_internal_secret()
-            .map_err(ConfigError::Message)?;
+        let explain = |e: String| ConfigError::Message(with_skipped_system_note(e, explicit));
+        validate_database(&settings.database).map_err(explain)?;
+        settings.server.tls.validate().map_err(explain)?;
+        settings.server.validate_internal_secret().map_err(explain)?;
         Ok(settings)
+    }
+}
+
+/// `error`, plus why the system configuration was not read when it exists:
+/// an instance that is not the system one must never fall back to it, and
+/// must not leave the operator guessing either.
+fn with_skipped_system_note(error: String, explicit: Option<&str>) -> String {
+    let Ok(plan) = crate::config::paths::config_plan(explicit) else {
+        return error;
+    };
+    match &plan.skipped {
+        Some((files, why)) => {
+            let present: Vec<String> = files.iter().filter(|f| f.exists()).map(|f| f.display().to_string()).collect();
+            if present.is_empty() {
+                error
+            } else {
+                format!("{error}\n(the system configuration {} was not read: {why})", present.join(", "))
+            }
+        }
+        None => error,
     }
 }
 
@@ -964,5 +994,189 @@ mod duration_days {
     {
         let days = u64::deserialize(d)?;
         Ok(Duration::from_secs(days * 86_400))
+    }
+}
+
+/// Which configuration files are merged, on real files in a temporary
+/// directory that reproduces each layout (never the machine's own
+/// `/etc/kubuno` or `/var/lib/kubuno`).
+#[cfg(test)]
+mod config_source_tests {
+    use super::*;
+    use kubuno_paths::{ConfigPlan, Mode, Os, Paths, ServiceContext, SystemConfigSkip};
+    use std::path::{Path, PathBuf};
+
+    struct Root(PathBuf);
+    impl Root {
+        fn new(name: &str) -> Self {
+            let d = std::env::temp_dir().join(format!("kubuno-cfgsrc-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            Root(d)
+        }
+        fn dir(&self, rel: &str) -> PathBuf {
+            let d = self.0.join(rel);
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        }
+        fn write(&self, rel: &str, text: &str) -> PathBuf {
+            let f = self.0.join(rel);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(&f, text).unwrap();
+            f
+        }
+    }
+    impl Drop for Root {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The Linux system layout, rooted in `root` (`<root>/etc/kubuno`,
+    /// `<root>/var/lib/kubuno`, …).
+    fn system_layout(root: &Root) -> Paths {
+        let lib = root.dir("var/lib/kubuno");
+        let etc = root.dir("etc/kubuno");
+        Paths {
+            os: Os::current(),
+            mode: Mode::System,
+            config_dir: etc.clone(),
+            state_dir: lib.clone(),
+            data_dir: lib.clone(),
+            log_dir: root.0.join("var/log/kubuno"),
+            cache_dir: root.0.join("var/cache/kubuno"),
+            runtime_dir: root.0.join("run/kubuno"),
+            backup_dir: root.0.join("var/backups/kubuno"),
+            modules_store: lib.join("modules-store"),
+            modules_config_dir: etc.join("modules"),
+            modules_data_dir: lib.join("modules"),
+        }
+    }
+
+    /// The prod configuration: its database URL and JWT secret.
+    fn prod_config(root: &Root) {
+        root.write(
+            "etc/kubuno/config.toml",
+            "[probe]\norigin = \"system\"\nsystem_only = \"prod-db-url-and-jwt-secret\"\n",
+        );
+    }
+
+    fn merged(plan: &ConfigPlan) -> Config {
+        Settings::with_sources(Config::builder(), plan).build().unwrap()
+    }
+
+    fn service() -> ServiceContext {
+        // systemd unit, User=kubuno: started by the service manager, as the
+        // account that owns the state directory.
+        ServiceContext { service_manager: true, service_account: true, privileged: false }
+    }
+
+    #[test]
+    fn production_layout_loads_the_system_file_exactly_as_before() {
+        let root = Root::new("prod");
+        prod_config(&root);
+        let system = system_layout(&root);
+        let cwd = system.state_dir.clone(); // WorkingDirectory=/var/lib/kubuno
+
+        let plan = crate::config::paths::config_plan_for(&system, &system, Some(&cwd), None, service());
+        assert_eq!(plan.skipped, None);
+        let cfg = merged(&plan);
+        assert_eq!(cfg.get_string("probe.origin").unwrap(), "system");
+        assert_eq!(cfg.get_string("probe.system_only").unwrap(), "prod-db-url-and-jwt-secret");
+
+        // With a config.toml in the working directory: read first, the system
+        // file still wins over it, and what only it sets is kept: as today.
+        root.write("var/lib/kubuno/config.toml", "[probe]\norigin = \"local\"\nlocal_only = \"yes\"\n");
+        let plan = crate::config::paths::config_plan_for(&system, &system, Some(&cwd), None, service());
+        assert_eq!(plan.skipped, None);
+        let cfg = merged(&plan);
+        assert_eq!(cfg.get_string("probe.origin").unwrap(), "system");
+        assert_eq!(cfg.get_string("probe.system_only").unwrap(), "prod-db-url-and-jwt-secret");
+        assert_eq!(cfg.get_string("probe.local_only").unwrap(), "yes");
+    }
+
+    #[test]
+    fn administration_commands_under_sudo_read_the_system_file() {
+        let root = Root::new("sudo");
+        prod_config(&root);
+        let system = system_layout(&root);
+        let cwd = root.dir("root");
+        let admin = ServiceContext { privileged: true, ..ServiceContext::default() };
+        let plan = crate::config::paths::config_plan_for(&system, &system, Some(&cwd), None, admin);
+        assert_eq!(merged(&plan).get_string("probe.origin").unwrap(), "system");
+    }
+
+    #[test]
+    fn a_development_core_never_reads_the_system_file() {
+        let root = Root::new("dev");
+        prod_config(&root);
+        let system = system_layout(&root);
+        let checkout = root.dir("home/dev/core/server");
+
+        // 1. Its own config.toml in its checkout, even run as root.
+        let local = root.write("home/dev/core/server/config.toml", "[probe]\norigin = \"dev\"\n");
+        let everything = ServiceContext { privileged: true, service_account: true, service_manager: true };
+        let plan = crate::config::paths::config_plan_for(&system, &system, Some(&checkout), None, everything);
+        assert_eq!(plan.skipped.as_ref().unwrap().1, SystemConfigSkip::LocalConfig(local));
+        let cfg = merged(&plan);
+        assert_eq!(cfg.get_string("probe.origin").unwrap(), "dev");
+        assert!(cfg.get_string("probe.system_only").is_err(), "nothing of the system file leaks in");
+
+        // 2. No file of its own, as an ordinary user: no fallback either.
+        let elsewhere = root.dir("home/dev/elsewhere");
+        let plan =
+            crate::config::paths::config_plan_for(&system, &system, Some(&elsewhere), None, ServiceContext::default());
+        assert_eq!(plan.skipped.as_ref().unwrap().1, SystemConfigSkip::NotService);
+        assert!(merged(&plan).get_string("probe.system_only").is_err());
+
+        // 3. Explicit --config: that file only.
+        let own = root.write("home/dev/kubuno.toml", "[probe]\norigin = \"explicit\"\n");
+        let plan = crate::config::paths::config_plan_for(
+            &system,
+            &system,
+            Some(&checkout),
+            Some(own.to_str().unwrap()),
+            everything,
+        );
+        let cfg = merged(&plan);
+        assert_eq!(cfg.get_string("probe.origin").unwrap(), "explicit");
+        assert!(cfg.get_string("probe.system_only").is_err());
+
+        // 4. A state directory of its own (and its own config and data dirs).
+        let mut instance = system.clone();
+        instance.state_dir = root.dir("home/dev/state");
+        instance.data_dir = root.dir("home/dev/data");
+        instance.config_dir = root.dir("home/dev/config");
+        root.write("home/dev/config/config.toml", "[probe]\norigin = \"own-config-dir\"\n");
+        let plan = crate::config::paths::config_plan_for(&instance, &system, Some(&elsewhere), None, everything);
+        assert_eq!(plan.skipped.as_ref().unwrap().1, SystemConfigSkip::NotSystemInstance);
+        let cfg = merged(&plan);
+        assert_eq!(cfg.get_string("probe.origin").unwrap(), "own-config-dir");
+        assert!(cfg.get_string("probe.system_only").is_err());
+
+        // 5. User mode.
+        let mut user = instance.clone();
+        user.mode = Mode::User;
+        let plan = crate::config::paths::config_plan_for(&user, &system, Some(&elsewhere), None, everything);
+        assert!(merged(&plan).get_string("probe.system_only").is_err());
+    }
+
+    #[test]
+    fn the_skip_reason_is_explained_without_values() {
+        let root = Root::new("note");
+        prod_config(&root);
+        let system = system_layout(&root);
+        let plan = crate::config::paths::config_plan_for(
+            &system,
+            &system,
+            Some(Path::new(&root.dir("home/dev"))),
+            None,
+            ServiceContext::default(),
+        );
+        let (files, why) = plan.skipped.unwrap();
+        assert_eq!(files, vec![root.0.join("etc/kubuno/config.toml")]);
+        let text = why.to_string();
+        assert!(text.contains("sudo") && text.contains("--config"), "{text}");
+        assert!(!text.contains("prod-db-url"), "never a value");
     }
 }

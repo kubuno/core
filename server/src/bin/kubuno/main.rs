@@ -25,12 +25,29 @@ mod reset;
 use cli::external_args;
 use display::{fail, header};
 
+/// Administration commands act on the system instance only when they may read
+/// its configuration: run as root / Administrator (`sudo kubuno …`), as the
+/// service account, or with the configuration named (`KV_CONFIG_FILE`, or
+/// `--config` where the command offers it). Otherwise the system file is not
+/// read, and this says so before the command runs (paths only, no values).
+fn note_skipped_system_config() {
+    let explicit = std::env::var("KV_CONFIG_FILE").ok();
+    let Ok(plan) = kubuno_core::config::paths::config_plan(explicit.as_deref()) else { return };
+    if let Some((files, why)) = &plan.skipped {
+        let present: Vec<String> = files.iter().filter(|f| f.exists()).map(|f| f.display().to_string()).collect();
+        if !present.is_empty() && !matches!(why, kubuno_paths::SystemConfigSkip::Explicit) {
+            display::warn(&format!("Configuration système non lue ({}) : {why}", present.join(", ")));
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Charger .env si présent (développement / Docker) — optionnel
     let _ = dotenvy::dotenv();
 
     header();
+    note_skipped_system_config();
 
     let matches = cli::cli().get_matches();
 

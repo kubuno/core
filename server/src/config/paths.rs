@@ -6,9 +6,9 @@
 //! and the module store all read the same answer. No location is ever inferred
 //! from whether a directory happens to exist.
 
-use kubuno_paths::{Mode, Overrides, PathEnv, Paths, PathsError};
+use kubuno_paths::{ConfigInputs, ConfigPlan, Mode, Overrides, PathEnv, Paths, PathsError, ServiceContext};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
@@ -174,4 +174,73 @@ pub fn warn_about_legacy_locations(modules_install_dir: &str) {
 /// The SQLite directory used when a configuration names none.
 pub fn default_sqlite_dir() -> String {
     current().sqlite_dir().to_string_lossy().into_owned()
+}
+
+/// The macOS configuration file of the versions before `kubuno-paths`, read
+/// (like the current system file) by the system instance only.
+const LEGACY_SYSTEM_CONFIG: &str = "/etc/kubuno/config.toml";
+
+/// The configuration files this process reads, with `explicit` the file
+/// named by `--config` / `KV_CONFIG_FILE` (see
+/// [`kubuno_paths::plan_config_files`] for the rules).
+pub fn config_plan(explicit: Option<&str>) -> Result<ConfigPlan, PathsError> {
+    let env = PathEnv::from_process();
+    let instance = Paths::resolve(&env, &Overrides::default())?;
+    let system = kubuno_paths::default_system_layout(&env)?;
+    let service = ServiceContext::detect(&env, &system.state_dir);
+    Ok(config_plan_for(&instance, &system, env.cwd(), explicit, service))
+}
+
+/// [`config_plan`] on given facts.
+pub fn config_plan_for(
+    instance: &Paths,
+    system: &Paths,
+    cwd: Option<&Path>,
+    explicit: Option<&str>,
+    service: ServiceContext,
+) -> ConfigPlan {
+    let explicit = explicit.map(str::trim).filter(|e| !e.is_empty()).map(PathBuf::from);
+    let local = cwd.and_then(kubuno_paths::find_config_in);
+    let legacy = [PathBuf::from(LEGACY_SYSTEM_CONFIG)];
+    kubuno_paths::plan_config_files(&ConfigInputs {
+        instance,
+        system,
+        cwd,
+        explicit: explicit.as_deref(),
+        local: local.as_deref(),
+        legacy_system: &legacy,
+        service,
+    })
+}
+
+/// Logs which configuration files were read and, when the system file was
+/// not, why. Paths only: never a value.
+pub fn log_config_plan(plan: &ConfigPlan) {
+    let read: Vec<String> = plan
+        .explicit
+        .iter()
+        .chain(plan.local.iter())
+        .chain(plan.system.iter())
+        .chain(plan.instance.iter())
+        .filter(|p| plan.explicit.as_ref() == Some(*p) || p.exists())
+        .map(|p| p.display().to_string())
+        .collect();
+    let env_overrides = std::env::vars_os()
+        .filter(|(k, _)| k.to_str().is_some_and(|k| k.starts_with("KV__")))
+        .count();
+    tracing::info!(
+        files = %if read.is_empty() { "(none)".to_string() } else { read.join(", ") },
+        kv_environment_variables = env_overrides,
+        "Configuration loaded from"
+    );
+    if let Some((files, why)) = &plan.skipped {
+        let present: Vec<String> = files.iter().filter(|f| f.exists()).map(|f| f.display().to_string()).collect();
+        if !present.is_empty() {
+            tracing::warn!(
+                not_read = %present.join(", "),
+                reason = %why,
+                "System configuration NOT read"
+            );
+        }
+    }
 }

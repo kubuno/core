@@ -127,6 +127,29 @@ number at release time, and CI publishes that section as the GitHub Release note
   from a directory that carries a record. Existing installs adopt their key at the first start (the record
   is created next to it; the key itself is not rewritten); `kubuno rotate-data-key` updates the record. To
   adopt a directory moved or restored on purpose, delete `data.key.owner`.
+- **Only the system instance reads the system configuration.** A core started without `--config` merged
+  `/etc/kubuno/config.toml` (database URL, JWT secret…) over the `config.toml` of its working directory, so
+  a development core on a server got the production settings. The system file (`/etc/kubuno/config.toml`,
+  `%ProgramData%\Kubuno\config.toml`, `/Library/Application Support/Kubuno/config.toml`, and on macOS the
+  older `/etc/kubuno/config.toml`) is now read only when all of these hold: no `--config` / `KV_CONFIG_FILE`;
+  the default system layout (system mode, the platform's state directory, configuration directory not
+  overridden); no `config.*` of its own in the working directory, unless that directory is one of the
+  instance's own (the packaged service runs in `/var/lib/kubuno` or `%ProgramData%\Kubuno`, which keeps
+  working exactly as before); and the process is the service: started by systemd / launchd / the Windows
+  service manager or as PID 1 of a container, running as the account that owns the system state directory,
+  or with administrative rights. Everything else (a development core, a second instance, user mode) reads
+  its own files only, and the start-up log names the files read and why the system file was not; a
+  configuration error then says so too. The installation wizard writes the file the instance reads, never
+  the system file for another instance.
+- **Administration commands (`kubuno …`) follow the same rule**: they act on the system instance under
+  `sudo` / an elevated prompt or as the service account (as documented in `kubuno --help`), or on another
+  instance with `KV_CONFIG_FILE=<file>`. When they do not read the system file, they say so first.
+- **A second instance can no longer share the system instance's directories by accident.** In system mode,
+  a state directory of its own now requires its own configuration and data directories too
+  (`KUBUNO_PATHS_CONFIG_DIR`, `KUBUNO_PATHS_DATA_DIR`), or the start-up stops with an explicit error;
+  otherwise its modules would have been started on the system instance's module configuration
+  (`/etc/kubuno/modules/<id>`) and data. Its logs, cache, runtime and backup directories then default under
+  its own state and data directories instead of `/var/log/kubuno`, `/var/backups/kubuno`…
 
 ### Added
 

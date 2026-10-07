@@ -259,3 +259,38 @@ pub(crate) fn expected_sids() -> io::Result<Vec<String>> {
     v.dedup();
     Ok(v)
 }
+
+/// Whether the process token is elevated (an administrator prompt, or
+/// SYSTEM). `false` when it cannot be determined.
+pub(crate) fn process_is_elevated() -> bool {
+    use windows::Win32::Security::{TokenElevation, TOKEN_ELEVATION};
+    let mut token = HANDLE::default();
+    // SAFETY: plain Win32 calls on the current process's token; the output
+    // buffer is a TOKEN_ELEVATION of the size passed in.
+    unsafe {
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+            return false;
+        }
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut len = 0u32;
+        let r = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevation as *mut TOKEN_ELEVATION as *mut _),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut len,
+        );
+        let _ = CloseHandle(token);
+        r.is_ok() && elevation.TokenIsElevated != 0
+    }
+}
+
+/// Whether the process runs in session 0, where Windows services run and no
+/// interactive user ever does.
+pub(crate) fn process_in_session_zero() -> bool {
+    use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    let mut session = u32::MAX;
+    // SAFETY: `session` is a valid u32 the call writes to.
+    unsafe { ProcessIdToSessionId(GetCurrentProcessId(), &mut session) }.is_ok() && session == 0
+}
