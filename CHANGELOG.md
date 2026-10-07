@@ -9,6 +9,9 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Added
+- **Mobile foundation** (`mobile/`): the libraries shared by every Kubuno mobile app (API client, device accounts, Compose UI components, in-app viewers, conformance-vector runner) moved here from the `kubuno/mobile` repository with their history. They are published as Maven artifacts `com.kubuno.mobile:*` (version `kubunoMobileVersion`, tag `mobile-v<version>`), and the apps moved to their modules' repositories under `mobile/`. Workflow `mobile.yml` builds and tests them.
+
 ### Changed
 
 - **Kubuno Documents moves to the office repository.** The word processor (`kubuno-documents.exe`, crate
