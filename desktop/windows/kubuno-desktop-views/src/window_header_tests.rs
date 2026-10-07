@@ -304,7 +304,7 @@ fn on_a_coloured_band_the_items_take_its_ink_and_the_pale_avatar() {
         assert!(coloured_band(&r), "{view}");
         assert!(!FormSpec::read(&r, None).header_items, "no neutral look: {view}");
         let xml = HeaderSpec::read(&r).cluster_xml(true, false).expect("the cluster");
-        assert!(xml.contains(r#"ForeColor="OnPrimary" AvatarTint="Accent""#), "{xml}");
+        assert!(xml.contains(r#"ForeColor="TitleBarInk" AvatarTint="Accent""#), "{xml}");
     }
     let own = HeaderSpec::read(&root(r##"<Panel ShowSearch="true" TitleBarBackground="#102030" TitleBarForeground="#FFEECC"/>"##));
     assert!(own.search_xml().is_some_and(|x| x.contains(r##"ForeColor="#FFEECC""##)));

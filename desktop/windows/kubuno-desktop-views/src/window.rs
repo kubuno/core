@@ -514,7 +514,7 @@ pub struct HeaderSpec {
     /// `RightToLeftLayout`: the cluster runs from the left, its avatar next to the caption buttons.
     pub right_to_left: bool,
     /// The band is coloured (`TitleBarBackground`, `AccentColor`, or a ribbon whose tab strip it continues): the items
-    /// take the band's ink (`TitleBarForeground`, else `OnPrimary`) and the avatar its pale accent tint.
+    /// take the band's ink (`TitleBarForeground`, else `TitleBarInk`: the band's ink this frame) and the avatar its pale accent tint.
     pub band_ink: Option<String>,
 }
 
@@ -530,7 +530,7 @@ impl HeaderSpec {
             on_search: raw("OnSearchClicked"),
             on_cluster: HEADER_CLUSTER_EVENTS.map(raw),
             right_to_left: raw("RightToLeftLayout").as_deref() == Some("true"),
-            band_ink: coloured_band(root).then(|| raw("TitleBarForeground").unwrap_or_else(|| "OnPrimary".into())),
+            band_ink: coloured_band(root).then(|| raw("TitleBarForeground").unwrap_or_else(|| crate::style::TITLE_BAR_INK.into())),
             band_height: raw("TitleBarHeight").and_then(|v| v.parse::<f32>().ok()).filter(|v| *v > 0.0).unwrap_or_else(|| {
                 let tool = raw("WindowKind").as_deref() == Some("ToolWindow") || raw("FormBorderStyle").is_some_and(|b| b.ends_with("ToolWindow"));
                 if tool { kubuno_desktop_controls::window_chrome::TOOL_TITLEBAR_HEIGHT } else { title_bar_style(root).height() }

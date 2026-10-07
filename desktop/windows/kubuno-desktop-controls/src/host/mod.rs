@@ -50,7 +50,7 @@ mod window_tls;
 
 pub use input::{
     clipboard_text, composition, consume, events, has_events, key_pressed, now_ms, repaint_requested, request_repaint_after, set_zoom, zoom,
-    claim_wheel, close_window, set_caption_colors, set_clipboard_text, set_cursor, take_key, take_key_any, take_text, vk, wheel_claimed,
+    band_ink, claim_wheel, close_window, set_caption_colors, set_clipboard_text, set_cursor, take_key, take_key_any, take_text, vk, wheel_claimed,
     Cursor, InputEvent, Modifiers, WHEEL_NOTCH_DIP,
 };
 // Lifecycle and cross-thread services (`vskubuno/docs/EVENTS.md` EVT-6).
@@ -2472,6 +2472,9 @@ impl Host {
                         c
                     });
                     chrome::begin_frame(band_ctx.clone());
+                    // The band's ink for the controls placed in it (`input::band_ink`): the last frame's ribbon's,
+                    // else the view's own band ink.
+                    input::set_band_ink(self.caption_override.map(|(_, ink)| ink).or(self.form.chrome.foreground));
                     if let Some(c) = &band_ctx {
                         let l = crate::window_chrome::layout(&c.style, c.bounds, c.has_icon, c.buttons, Default::default());
                         crate::window_chrome::paint_band(&painter, &c.style, &l);

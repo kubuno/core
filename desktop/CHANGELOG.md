@@ -11,6 +11,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Header buttons hidden by a `Show…` property leave no hole.** A `<Stack>` with cross alignment (the header's
+  cluster) still gave a hidden child its width and a gap, so a cluster without settings or help pushed the bell out
+  of view. A hidden child of any `<Stack>` now takes no room.
+- **The header's buttons follow the title band's colours.** After a live switch to the dark theme the cluster kept
+  the light band's ink and its icons became almost invisible; a control in the band now takes the band's ink of
+  the frame (`TitleBarInk`), as recoloured by the ribbon or the theme.
+- **The Backstage covers the page cleanly.** While it is open, the panel holding the ribbon lays out and paints
+  none of its other children (they were squeezed to nothing, and their anchored controls were drawn over the
+  Backstage).
 - **Dialogs opened from a ribbon command, a dock panel or any container paint whole.** A modal dialog
   opened by a handler (`ShowDialog`) inherited the paint state of the window frame it was opened from — the clip of
   the container the command sat in, its disabled scope, its deferred drawings, its menu requests — so a dialog
@@ -38,6 +47,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Ribbon: `OnBackstageOpened` and `OnBackstageClosed`**, raised when the Backstage (the « Fichier » tab) opens over
+  the page and when it closes.
 - **Windows: full screen.** `Form::set_full_screen(true)` (or `FullScreen="true"`, bindable, on a view's
   root) shows a window over its whole monitor, without title bar, border or task bar — a slide show, F11;
   `set_full_screen(false)` puts it back where it was, maximised or not. `Form::is_full_screen()` reads it.

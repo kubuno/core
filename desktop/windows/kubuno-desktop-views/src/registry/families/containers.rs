@@ -430,8 +430,16 @@ impl ViewNode for PanelNode {
         // A hidden docked child takes no band (WinForms): a hidden rail leaves its width to the page.
         let page_shown: Vec<bool> = page.iter().map(|&i| !self.children[i].is_hidden(cx.vm)).collect();
         let mut rects = vec![Rect::default(); self.children.len()];
-        for (i, r) in page.iter().zip(panel_child_rects_shown(&page_specs, &page_measured, &page_shown, padding, design, body)) {
-            rects[*i] = r;
+        // A child covering the page (a ribbon's open Backstage) takes the whole body; the page's other children
+        // are hidden under it: neither laid out (no band squeezed to nothing) nor painted (no anchored control of a
+        // squeezed panel drawn over it).
+        let covering = page.iter().copied().find(|&i| self.children[i].covers_page());
+        if let Some(c) = covering {
+            rects[c] = body;
+        } else {
+            for (i, r) in page.iter().zip(panel_child_rects_shown(&page_specs, &page_measured, &page_shown, padding, design, body)) {
+                rects[*i] = r;
+            }
         }
         // The title-bar regions: in document order (mirrored right to left), `gap-1` apart, centred on the band.
         if let Some(l) = &band {
@@ -466,6 +474,10 @@ impl ViewNode for PanelNode {
             let in_title = in_band(&places[i]);
             // The title bar's standard items show in the band only (a window without a Kubuno band has none).
             if i >= first_header && !in_title {
+                continue;
+            }
+            // Hidden under a page-covering child (see above).
+            if covering.is_some_and(|c| c != i) && page.contains(&i) {
                 continue;
             }
             // What the window must know about the child: a control in the band takes the pointer

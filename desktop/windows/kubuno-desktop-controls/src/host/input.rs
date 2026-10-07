@@ -320,6 +320,8 @@ thread_local! {
     static WHEEL_CLAIMED: Cell<bool> = const { Cell::new(false) };
     /// The caption colours (band, ink) this frame asked for, if any.
     static CAPTION_COLORS: Cell<Option<(D2D1_COLOR_F, D2D1_COLOR_F)>> = const { Cell::new(None) };
+    /// The ink of the window's title band as the frame starts (see [`band_ink`]).
+    static BAND_INK: Cell<Option<D2D1_COLOR_F>> = const { Cell::new(None) };
     /// The shortest wake-up delay asked for during the current frame, in ms
     /// (see [`request_wake_after`]).
     static WAKE_AFTER: Cell<Option<u32>> = const { Cell::new(None) };
@@ -538,6 +540,7 @@ pub(crate) struct WindowState {
     main_hwnd: isize,
     wheel_claimed: bool,
     caption_colors: Option<(D2D1_COLOR_F, D2D1_COLOR_F)>,
+    band_ink: Option<D2D1_COLOR_F>,
     wake_after: Option<u32>,
     close_deferred: bool,
     close_cancelled: bool,
@@ -553,6 +556,7 @@ impl Default for WindowState {
             main_hwnd: 0,
             wheel_claimed: false,
             caption_colors: None,
+            band_ink: None,
             wake_after: None,
             close_deferred: false,
             close_cancelled: false,
@@ -570,6 +574,7 @@ pub(crate) fn take_window_state() -> WindowState {
         main_hwnd: MAIN_HWND.with(|c| c.replace(0)),
         wheel_claimed: WHEEL_CLAIMED.with(|c| c.replace(false)),
         caption_colors: CAPTION_COLORS.with(|c| c.take()),
+        band_ink: BAND_INK.with(|c| c.take()),
         wake_after: WAKE_AFTER.with(|c| c.take()),
         close_deferred: CLOSE_DEFERRED.with(|c| c.replace(false)),
         close_cancelled: CLOSE_CANCELLED.with(|c| c.replace(false)),
@@ -593,6 +598,7 @@ pub(crate) fn put_window_state(state: WindowState) {
     MAIN_HWND.with(|c| c.set(state.main_hwnd));
     WHEEL_CLAIMED.with(|c| c.set(state.wheel_claimed));
     CAPTION_COLORS.with(|c| c.set(state.caption_colors));
+    BAND_INK.with(|c| c.set(state.band_ink));
     WAKE_AFTER.with(|c| c.set(state.wake_after));
     CLOSE_DEFERRED.with(|c| c.set(state.close_deferred));
     CLOSE_CANCELLED.with(|c| c.set(state.close_cancelled));
@@ -631,6 +637,20 @@ pub fn events() -> Vec<InputEvent> {
 /// not ask gets the accent back.
 pub fn set_caption_colors(band: D2D1_COLOR_F, ink: D2D1_COLOR_F) {
     CAPTION_COLORS.with(|c| c.set(Some((band, ink))));
+}
+
+/// The ink the window's title band is drawn with: what this frame asked for ([`set_caption_colors`], a
+/// ribbon continuing its tab strip into the band), else the band's ink as the frame started (the last
+/// frame's ribbon, or the view's `TitleBarForeground`). `None`: the theme's accent band, its ink the
+/// theme's `OnPrimary`. Controls placed in the band (the header's buttons) follow it, so a live theme
+/// switch that recolours the band recolours them too.
+pub fn band_ink() -> Option<D2D1_COLOR_F> {
+    CAPTION_COLORS.with(|c| c.get()).map(|(_, ink)| ink).or_else(|| BAND_INK.with(|c| c.get()))
+}
+
+/// Sets the band's ink as a frame starts (the host, see [`band_ink`]).
+pub(crate) fn set_band_ink(ink: Option<D2D1_COLOR_F>) {
+    BAND_INK.with(|c| c.set(ink));
 }
 
 pub fn claim_wheel() {

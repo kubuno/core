@@ -194,6 +194,8 @@ component! {
         EventMeta::new("OnSelectedTabChanged", "Occurs when another tab becomes active (e.new is its name).").category(crate::registry::EventCategory::PropertyChanged).args::<crate::events::TextChangedEventArgs>(),
         EventMeta::new("OnIsMinimizedChanged", "Occurs when the ribbon is minimized or restored.").category(crate::registry::EventCategory::PropertyChanged).args::<crate::events::CheckedChangedEventArgs>(),
         EventMeta::new("OnQatChanged", "Occurs when the user adds a command to the quick access toolbar or removes one (e.new: their names, comma-separated).").category(crate::registry::EventCategory::PropertyChanged).args::<crate::events::TextChangedEventArgs>(),
+        EventMeta::new("OnBackstageOpened", "Occurs when the Backstage (the « Fichier » tab) opens over the page.").category(crate::registry::EventCategory::Behavior),
+        EventMeta::new("OnBackstageClosed", "Occurs when the Backstage closes and the page shows again.").category(crate::registry::EventCategory::Behavior),
     ],
     smoke: |r| { r },
     build: |props, cx| { crate::registry::families::ribbon::build_ribbon(props, cx) },
@@ -692,6 +694,8 @@ pub fn french(key: &str) -> Option<&'static str> {
         "Ribbon.OnSelectedTabChanged" => "Se produit quand un autre onglet devient actif (e.new est son nom).",
         "Ribbon.OnIsMinimizedChanged" => "Se produit quand le ruban est réduit ou restauré.",
         "Ribbon.OnQatChanged" => "Se produit quand l'utilisateur ajoute une commande à la barre d'outils Accès rapide ou l'en retire (e.new : leurs noms, séparés par des virgules).",
+        "Ribbon.OnBackstageOpened" => "Se produit quand le Backstage (l'onglet « Fichier ») s'ouvre par-dessus la page.",
+        "Ribbon.OnBackstageClosed" => "Se produit quand le Backstage se ferme et que la page réapparaît.",
         "RibbonTab" => "Un onglet du ruban : ses groupes de commandes. Un enfant <RibbonTab.ScalingPolicy> (étapes Scale : Group, Size, Ideal) ordonne la réduction de ses groupes.",
         "RibbonTab.Header" => "Texte de l'onglet.",
         "RibbonContextualTabGroup" => "Des onglets affichés seulement dans un contexte (un tableau, une image sélectionnés), sous un en-tête coloré. Liez sa propriété Visible.",
@@ -1027,6 +1031,13 @@ pub struct RibbonNode {
     cmd_checked: HashMap<String, bool>,
     /// The tab shown last (to report it when it changes).
     last_tab: Option<String>,
+    on_backstage_opened: Option<String>,
+    on_backstage_closed: Option<String>,
+    /// The Backstage was open at the last paint (its open/close events are raised on a change).
+    backstage_was_open: Cell<bool>,
+    /// The Backstage covers the page: the panel holding the ribbon lays out and paints nothing else
+    /// (`ViewNode::covers_page`).
+    covering: Cell<bool>,
     /// Painting on the design surface (no view model behind the bindings: fields show sample values).
     design: Cell<bool>,
     /// The `<Ribbon>` element's own stable id (its smart tag, its « + » for a new tab).
@@ -1147,6 +1158,10 @@ pub(crate) fn build_ribbon(props: &Props<'_>, cx: &mut BuildCx) -> Result<Box<dy
         local_value: HashMap::new(),
         cmd_checked: HashMap::new(),
         last_tab: None,
+        on_backstage_opened: props.event("OnBackstageOpened"),
+        on_backstage_closed: props.event("OnBackstageClosed"),
+        backstage_was_open: Cell::new(false),
+        covering: Cell::new(false),
         design: Cell::new(false),
         own_id: props.element().stable_id(),
         preview_width: literal_f32(props, "PreviewWidth", 0.0),
@@ -1958,6 +1973,10 @@ fn access_names(engine: &Ribbon) -> HashMap<String, (String, kubuno_desktop_cont
 }
 
 impl ViewNode for RibbonNode {
+    fn covers_page(&self) -> bool {
+        self.covering.get()
+    }
+
     fn measure(&self, _c: &dyn Canvas, _vm: &dyn ViewModel) -> Size {
         Size::new(400.0, self.height.get())
     }
@@ -2055,6 +2074,12 @@ impl ViewNode for RibbonNode {
             crate::virtual_regions::set_design_caption(engine.caption_colors(canvas));
         }
         let backstage_open = run.backstage;
+        self.covering.set(backstage_open);
+        if !design && backstage_open != self.backstage_was_open.get() {
+            self.backstage_was_open.set(backstage_open);
+            let (event, handler) = if backstage_open { ("OnBackstageOpened", self.on_backstage_opened.clone()) } else { ("OnBackstageClosed", self.on_backstage_closed.clone()) };
+            cx.fire(event, self.focus_id, handler.as_deref(), ViewEventKind::Toggled(backstage_open), &mut crate::events::EmptyEventArgs);
+        }
         let mut regions = run.regions.clone();
         // The Backstage over the page: its rail and the active tab's view.
         let mut bs_rows = Vec::new();

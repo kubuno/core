@@ -442,6 +442,12 @@ pub trait ViewNode {
         false
     }
 
+    /// Whether the node covers the whole page of the panel that holds it (a ribbon's open Backstage): that
+    /// panel then lays out and paints nothing else — the page's other controls are hidden under it, as in Office.
+    fn covers_page(&self) -> bool {
+        false
+    }
+
     /// Whether the element is hidden this frame (`Visible="false"` at run time): a container lays it
     /// out like WinForms lays out an invisible control — a hidden docked child takes no band.
     fn is_hidden(&self, _vm: &dyn ViewModel) -> bool {
@@ -1044,7 +1050,9 @@ impl StackNode {
                 d.right - d.left
             })
         };
-        for child in &self.children {
+        // A hidden child takes no room (WinForms lays an invisible control out nowhere): no block,
+        // no gap — its explicit `Width`/`Height` included.
+        for child in self.children.iter().filter(|ch| !ch.node.is_hidden(vm)) {
             let explicit = if horizontal { child.explicit_width } else { child.explicit_height };
             let extent = match explicit {
                 Some(e) => e,
@@ -1081,7 +1089,9 @@ impl StackNode {
         let horizontal = matches!(direction, FlowDirection::LeftToRight | FlowDirection::RightToLeft);
         let reversed = matches!(direction, FlowDirection::RightToLeft | FlowDirection::BottomUp);
         let (main_len, cross_len) = if horizontal { (area.right - area.left, area.bottom - area.top) } else { (area.bottom - area.top, area.right - area.left) };
-        let sizes: Vec<(f32, f32)> = self.children.iter().map(|ch| Self::child_size(ch, c, vm, horizontal, cross_len)).collect();
+        // The shown children only (a hidden one takes no room and no gap): `vis[k]` is the k-th one's index.
+        let vis: Vec<usize> = (0..self.children.len()).filter(|&i| !self.children[i].node.is_hidden(vm)).collect();
+        let sizes: Vec<(f32, f32)> = vis.iter().map(|&i| Self::child_size(&self.children[i], c, vm, horizontal, cross_len)).collect();
         // Lines of children: (first index, end index, cross extent of the line).
         let mut lines: Vec<(usize, usize, f32)> = Vec::new();
         if wrap {
@@ -1104,17 +1114,18 @@ impl StackNode {
         } else {
             lines.push((0, sizes.len(), cross_len));
         }
-        let mut out = vec![Rect::default(); sizes.len()];
+        let mut out = vec![Rect::new(area.left, area.top, area.left, area.top); self.children.len()];
         let mut cross_at = 0.0f32;
         for (start, end, line_cross) in lines {
             // Along the flow: the fill children share what the others leave.
-            let fills = (start..end).filter(|&i| self.children[i].fill).count();
-            let fixed: f32 = (start..end).filter(|&i| !self.children[i].fill).map(|i| sizes[i].0).sum::<f32>() + gap * (end - start).saturating_sub(1) as f32;
+            let fills = (start..end).filter(|&k| self.children[vis[k]].fill).count();
+            let fixed: f32 = (start..end).filter(|&k| !self.children[vis[k]].fill).map(|k| sizes[k].0).sum::<f32>() + gap * (end - start).saturating_sub(1) as f32;
             let share = if fills > 0 { ((main_len - fixed) / fills as f32).max(0.0) } else { 0.0 };
             let mut main_at = 0.0f32;
-            for i in start..end {
-                let m = if self.children[i].fill { share } else { sizes[i].0 };
-                let x = sizes[i].1.min(line_cross);
+            for k in start..end {
+                let i = vis[k];
+                let m = if self.children[i].fill { share } else { sizes[k].0 };
+                let x = sizes[k].1.min(line_cross);
                 let (cross_off, cross_size) = match align {
                     "Start" => (0.0, x),
                     "Center" => ((line_cross - x) / 2.0, x),
@@ -1147,7 +1158,7 @@ impl ViewNode for StackNode {
         // (`AutoSize`, a `Dock="Bottom"` band).
         let horizontal = matches!(parse_flow_direction(&self.direction.resolve(vm)), FlowDirection::LeftToRight | FlowDirection::RightToLeft);
         if horizontal && !self.wrap.resolve(vm) && !self.children.is_empty() {
-            let cross = self.children.iter().map(|ch| Self::child_size(ch, c, vm, true, 0.0).1).fold(0.0f32, f32::max);
+            let cross = self.children.iter().filter(|ch| !ch.node.is_hidden(vm)).map(|ch| Self::child_size(ch, c, vm, true, 0.0).1).fold(0.0f32, f32::max);
             return Size::new(size.width, size.height.max(cross + 2.0 * self.padding.resolve(vm)));
         }
         size
@@ -1178,8 +1189,11 @@ impl ViewNode for StackNode {
             }
             return;
         }
-        let rects = stack.layout_children(bounds);
-        for (child, rect) in self.children.iter_mut().zip(rects) {
+        // The stack laid out the shown children only (`build_inner`); a hidden one gets an empty box.
+        let mut rects = stack.layout_children(bounds).into_iter();
+        let shown: Vec<bool> = self.children.iter().map(|ch| !ch.node.is_hidden(cx.vm)).collect();
+        for (child, shown) in self.children.iter_mut().zip(shown) {
+            let rect = if shown { rects.next().unwrap_or(Rect::new(bounds.left, bounds.top, bounds.left, bounds.top)) } else { Rect::new(bounds.left, bounds.top, bounds.left, bounds.top) };
             // A vertical column's block is always full-row-wide (see
             // `build_inner`'s own note); narrow it to the child's own
             // `intrinsic_width`, left-aligned, when it declares one — see

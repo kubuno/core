@@ -344,6 +344,10 @@ impl Drop for DesignSlot {
 }
 
 impl ViewNode for DesignSlot {
+    fn covers_page(&self) -> bool {
+        self.inner.covers_page()
+    }
+
     fn is_hidden(&self, vm: &dyn crate::binding::ViewModel) -> bool {
         self.common.as_ref().is_some_and(|common| !common.visible(vm))
     }

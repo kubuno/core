@@ -124,6 +124,11 @@ pub const THEME_TOKENS: &[ThemeToken] = &[
 ];
 
 /// The theme token named `name` (exact spelling).
+/// The ink of the window's title band this frame (`kubuno_desktop_controls::host::band_ink`): the colour of a
+/// control placed in the band (the header's buttons), which follows the band when a ribbon or a live theme switch
+/// recolours it. Without a coloured band, the theme's `OnPrimary`.
+pub const TITLE_BAR_INK: &str = "TitleBarInk";
+
 pub fn theme_token(name: &str) -> Option<&'static ThemeToken> {
     THEME_TOKENS.iter().find(|t| t.name == name)
 }
@@ -200,6 +205,10 @@ impl ColorValue {
     /// Its value in `theme` (`high_contrast`: tokens take their system colour).
     pub fn resolve_with(&self, theme: &Theme, high_contrast: bool) -> D2D1_COLOR_F {
         match self {
+            ColorValue::Token(name) if *name == TITLE_BAR_INK => match kubuno_desktop_controls::host::band_ink() {
+                Some(ink) if !high_contrast => ink,
+                _ => ColorValue::Token("OnPrimary").resolve_with(theme, high_contrast),
+            },
             ColorValue::Token(name) => match theme_token(name) {
                 Some(t) if high_contrast => system_rgba(t.high_contrast).unwrap_or_else(|| (t.get)(theme)),
                 Some(t) => (t.get)(theme),
@@ -269,6 +278,9 @@ pub fn parse_color(text: &str) -> Result<Option<ColorValue>, String> {
     }
     if let Some(hex) = t.strip_prefix('#') {
         return parse_hex(hex).map(|c| Some(ColorValue::Rgba(c))).ok_or_else(|| format!("`{t}` is not a colour: write #RRGGBB or #RRGGBBAA"));
+    }
+    if t == TITLE_BAR_INK {
+        return Ok(Some(ColorValue::Token(TITLE_BAR_INK)));
     }
     if let Some(token) = theme_token(t) {
         return Ok(Some(ColorValue::Token(token.name)));
