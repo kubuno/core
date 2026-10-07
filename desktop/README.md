@@ -78,17 +78,17 @@ reorganisation, 2026-10): **Kubuno Chat** (`kubuno-chat.exe`) in
 
 ### Versions and tags
 
-Every crate of the workspace shares the version `0.1.1-alpha` (`[workspace.package]` of `desktop/Cargo.toml`),
+Every crate of the workspace shares the version `0.1.2-alpha` (`[workspace.package]` of `desktop/Cargo.toml`),
 except the two crates ported from Files (`kubuno-drive-desktop-app-controls`, `kubuno-drive-desktop-shared`, MIT,
 `0.1.0`) and the separately released `kubuno-web-views-compiler-core`. **One annotated tag of the core repository
-pins them all: `desktop-v<version>`** (`desktop-v0.1.1-alpha`, the first one cut in the core repository), following
+pins them all: `desktop-v<version>`** (`desktop-v0.1.2-alpha`; `desktop-v0.1.1-alpha` was the first one cut in the core repository), following
 the shared-crate convention `<crate>-v<version>` with the facade crate `kubuno-desktop`. An app takes every crate it
 needs from the same tag; Cargo finds each crate by its name anywhere in the repository:
 
 ```toml
 [workspace.dependencies]
-kubuno-desktop         = { git = "https://github.com/kubuno/core", tag = "desktop-v0.1.1-alpha" }
-kubuno-desktop-account = { git = "https://github.com/kubuno/core", tag = "desktop-v0.1.1-alpha" }
+kubuno-desktop         = { git = "https://github.com/kubuno/core", tag = "desktop-v0.1.2-alpha" }
+kubuno-desktop-account = { git = "https://github.com/kubuno/core", tag = "desktop-v0.1.2-alpha" }
 ```
 
 The web views compiler has its own tags, `web-views-compiler-core-v<its version>` (`web-views-compiler-core-v0.2.1`),

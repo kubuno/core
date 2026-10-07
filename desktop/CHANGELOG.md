@@ -9,6 +9,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+## [0.1.2-alpha] - 2026-10-07
+
 ### Fixed
 
 - **Kubuno Desktop no longer stays on « Serveur injoignable » after the server comes back.** The connection shown
