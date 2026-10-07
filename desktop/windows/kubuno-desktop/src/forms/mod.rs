@@ -334,6 +334,16 @@ impl Control {
             return;
         }
         self.0.code_set.borrow_mut().insert(name.to_string());
+        // A property the view gives a resource (`Text="{Res save}"`): what code sets replaces it, as
+        // in Windows Forms the code's value replaces the designer's. The view is composed again with
+        // the property bound to this control's value (`compose`), and the resource is not read back.
+        let resource = self.0.user_bound.borrow().get(name).is_some_and(|path| path.starts_with(kubuno_desktop_views::resources::RES_PREFIX));
+        if resource {
+            self.0.user_bound.borrow_mut().remove(name);
+            self.0.props.borrow_mut().insert(name.to_string(), value);
+            self.structure_changed();
+            return;
+        }
         if self.0.user_bound.borrow().contains_key(name) {
             self.0.pending_writes.borrow_mut().push((name.to_string(), value.clone()));
         }

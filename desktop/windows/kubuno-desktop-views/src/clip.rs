@@ -27,7 +27,7 @@ use kubuno_desktop_ui::Rect;
 
 thread_local! {
     /// The clips in force, innermost last, each already cut by the ones before it (client coordinates).
-    static STACK: RefCell<Vec<Rect>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static STACK: RefCell<Vec<Rect>> = const { RefCell::new(Vec::new()) };
 }
 
 /// `a` ∩ `b` (empty, not inverted, when they do not meet).

@@ -144,6 +144,7 @@ component! {
 /// a design slot of its own), its viewport child and its properties.
 pub(crate) fn build_dock_area(props: &Props<'_>, cx: &mut crate::props::BuildCx) -> Result<Box<dyn ViewNode>, BuildError> {
     let mut panels = Vec::new();
+    let mut titles: Vec<PropSource<String>> = Vec::new();
     let mut nodes: Vec<Box<dyn ViewNode>> = Vec::new();
     let mut arrangement = DockArrangement::new();
     // (side, group) → index in the side's group list, for `Group`.
@@ -168,7 +169,13 @@ pub(crate) fn build_dock_area(props: &Props<'_>, cx: &mut crate::props::BuildCx)
         if panels.iter().any(|d: &DockPanel| d.id == id) {
             return Err(BuildError::new(format!("two `<DockPanel>`s are named `{id}`"), child.name_range()));
         }
-        let title = literal(&p, "Title", "")?;
+        // The title may be bound (a named panel's `Title` is bound to its control, so code can change it):
+        // read again every frame, the literal (or the binding's first value) shown until then.
+        let title_src = p.str("Title", "")?;
+        let title = match &title_src {
+            PropSource::Literal(s) => s.clone(),
+            PropSource::Bound { .. } => String::new(),
+        };
         let side = match literal(&p, "Side", "Right")?.as_str() {
             "Left" => DockSide::Left,
             "Float" => DockSide::Float,
@@ -205,6 +212,7 @@ pub(crate) fn build_dock_area(props: &Props<'_>, cx: &mut crate::props::BuildCx)
             }
         }
         panels.push(panel);
+        titles.push(title_src);
         nodes.push(crate::compile::build_node(&child, cx, LayoutKind::None)?);
     }
     let mut dock = DockArea::new(panels, arrangement);
@@ -232,6 +240,7 @@ pub(crate) fn build_dock_area(props: &Props<'_>, cx: &mut crate::props::BuildCx)
         focus_id: props.focus_id(),
         dock,
         default_layout,
+        titles,
         nodes,
         viewport,
         last_layout_prop: None,
@@ -265,6 +274,8 @@ pub struct DockAreaNode {
     dock: DockArea,
     /// The default arrangement (with the `Active` panels), for design mode.
     default_layout: kubuno_desktop_ui::dock::DockLayout,
+    /// Each panel's `Title`, index-aligned with `dock.panels` (empty: the panel's name).
+    titles: Vec<PropSource<String>>,
     /// One node per `<DockPanel>`, index-aligned with `dock.panels`.
     nodes: Vec<Box<dyn ViewNode>>,
     viewport: Option<Box<dyn ViewNode>>,
@@ -296,6 +307,14 @@ impl ViewNode for DockAreaNode {
     fn paint(&mut self, cx: &mut PaintCx<'_>, bounds: Rect) {
         let design = cx.design.is_some();
         self.dock.hidden = self.hidden.resolve(cx.vm);
+        // The panels' titles (a bound one follows its source; an empty one shows the panel's name).
+        for (panel, title) in self.dock.panels.iter_mut().zip(&self.titles) {
+            let title = title.resolve(cx.vm);
+            let label = if title.is_empty() { panel.id.clone() } else { title };
+            if panel.label != label {
+                panel.label = label;
+            }
+        }
         if self.viewport_auto {
             let c: &dyn Canvas = cx.canvas;
             self.dock.viewport_bg = Some(c.theme().window_background);

@@ -61,6 +61,7 @@ extern crate self as kubuno_desktop_views;
 pub use kubuno_desktop_views_syntax::ast;
 pub mod binding;
 // Every control clips its children to its own box (WinForms): the clip in force while a view paints.
+mod ambient;
 mod clip;
 mod clock;
 pub mod compile;

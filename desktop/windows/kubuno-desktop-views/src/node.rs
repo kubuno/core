@@ -1617,9 +1617,9 @@ pub(crate) trait TopLayer {
 thread_local! {
     /// What the floating parts of the view keep from it (see [`TopLayer::hold`]), from the frame
     /// before: the runtime shows the view the pointer away accordingly.
-    static TOP_LAYER_HOLD: std::cell::RefCell<Vec<Option<Rect>>> = const { std::cell::RefCell::new(Vec::new()) };
+    pub(crate) static TOP_LAYER_HOLD: std::cell::RefCell<Vec<Option<Rect>>> = const { std::cell::RefCell::new(Vec::new()) };
     /// The frame as it came, while the runtime shows the view a masked one.
-    static REAL_FRAME: std::cell::Cell<Option<Frame>> = const { std::cell::Cell::new(None) };
+    pub(crate) static REAL_FRAME: std::cell::Cell<Option<Frame>> = const { std::cell::Cell::new(None) };
 }
 
 /// Whether a floating part of the view keeps the pointer at `(x, y)` from the view under it.

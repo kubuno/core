@@ -274,7 +274,7 @@ pub struct BarItem {
 }
 
 #[derive(Default)]
-struct BarState {
+pub(crate) struct BarState {
     /// The bar whose menu is open, and the index of its item.
     open: Option<(String, usize)>,
     /// The bar in keyboard mode (Alt or F10 pressed alone), and its hot item.
@@ -284,10 +284,10 @@ struct BarState {
 }
 
 thread_local! {
-    static BAR: RefCell<BarState> = RefCell::new(BarState::default());
-    static RUN_ITEMS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
-    static TYPE_SLOTS: RefCell<Vec<TypeSlot>> = const { RefCell::new(Vec::new()) };
-    static DESIGN_VIEW: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
+    pub(crate) static BAR: RefCell<BarState> = RefCell::new(BarState::default());
+    pub(crate) static RUN_ITEMS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static TYPE_SLOTS: RefCell<Vec<TypeSlot>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static DESIGN_VIEW: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
 }
 
 /// The bar menu now open (set by the runtime).
@@ -385,7 +385,7 @@ pub struct MenuRow {
 }
 
 thread_local! {
-    static ROWS: RefCell<Vec<MenuRow>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static ROWS: RefCell<Vec<MenuRow>> = const { RefCell::new(Vec::new()) };
     static LAST_ROWS: RefCell<Vec<MenuRow>> = const { RefCell::new(Vec::new()) };
     static LAST_SLOTS: RefCell<Vec<TypeSlot>> = const { RefCell::new(Vec::new()) };
     static DRAG_HOVER: RefCell<Option<String>> = const { RefCell::new(None) };

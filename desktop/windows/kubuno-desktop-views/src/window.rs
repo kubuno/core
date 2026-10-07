@@ -416,8 +416,8 @@ pub struct DesignChrome {
 }
 
 thread_local! {
-    static DESIGN_CHROME: std::cell::RefCell<Option<DesignChrome>> = const { std::cell::RefCell::new(None) };
-    static DECLARED_SLOTS: std::cell::Cell<kubuno_desktop_controls::window_chrome::SlotWidths> =
+    pub(crate) static DESIGN_CHROME: std::cell::RefCell<Option<DesignChrome>> = const { std::cell::RefCell::new(None) };
+    pub(crate) static DECLARED_SLOTS: std::cell::Cell<kubuno_desktop_controls::window_chrome::SlotWidths> =
         const { std::cell::Cell::new(kubuno_desktop_controls::window_chrome::SlotWidths { left: 0.0, center: 0.0, right: 0.0 }) };
 }
 
@@ -1178,8 +1178,8 @@ impl MenuRequest {
 }
 
 thread_local! {
-    static MENU_REQUESTS: std::cell::RefCell<Vec<MenuRequest>> = const { std::cell::RefCell::new(Vec::new()) };
-    static OPEN_MENU: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    pub(crate) static MENU_REQUESTS: std::cell::RefCell<Vec<MenuRequest>> = const { std::cell::RefCell::new(Vec::new()) };
+    pub(crate) static OPEN_MENU: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
 /// The menu open now (set by the runtime after each frame's input).

@@ -298,13 +298,13 @@ fn dispatch_to(scope: &ComponentScope, vm: &mut dyn ViewModel, component: &str, 
 
 // ── The synchronous event sink ───────────────────────────────────────────────────────────────
 
-type SinkFn<'a> = dyn FnMut(&str, &'static str, &mut dyn EventArgs) -> bool + 'a;
+pub(crate) type SinkFn<'a> = dyn FnMut(&str, &'static str, &mut dyn EventArgs) -> bool + 'a;
 
 thread_local! {
     /// The sink lent by [`with_sink`] while a component is called through a binding: taken out
     /// (set to `None`) while it runs, so a handler reaching another component queues instead of
     /// making a second `&mut` of the view model.
-    static SINK: Cell<Option<NonNull<SinkFn<'static>>>> = const { Cell::new(None) };
+    pub(crate) static SINK: Cell<Option<NonNull<SinkFn<'static>>>> = const { Cell::new(None) };
 }
 
 /// Runs `f` with `sink` as the synchronous event sink (see [`raise_now`]).

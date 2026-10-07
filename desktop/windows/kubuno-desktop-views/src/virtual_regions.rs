@@ -118,13 +118,13 @@ impl VirtualElement {
 }
 
 /// Anything painted late, with its layout entries.
-type LatePaint = Box<dyn FnOnce(&dyn ControlCanvas)>;
+pub(crate) type LatePaint = Box<dyn FnOnce(&dyn ControlCanvas)>;
 /// Anything painted late, with its layout entries.
-type Late = (Vec<LayoutEntry>, LatePaint);
+pub(crate) type Late = (Vec<LayoutEntry>, LatePaint);
 
 thread_local! {
     static SELECTION: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    static LATE: RefCell<Vec<Late>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static LATE: RefCell<Vec<Late>> = const { RefCell::new(Vec::new()) };
     static DESIGN_CAPTION: std::cell::Cell<Option<Caption>> = const { std::cell::Cell::new(None) };
 }
 

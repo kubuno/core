@@ -841,6 +841,13 @@ struct Host {
     left_press_latch:   bool,
     right_press_latch:  bool,
     middle_press_latch: bool,
+    /// A button was released and no frame has shown it up yet (the release of a click whose
+    /// press and release both came before a paint: a tap, a posted click). Cleared by the first
+    /// frame that reports every button up.
+    release_in_flight: bool,
+    /// The pointer left (`WM_MOUSELEAVE`) while a click was in flight: applied once the page has
+    /// seen its release where it happened (see [`Host::settle_pointer`]).
+    leave_pending: bool,
     /// Set when the window loses activation, handed to the next frame as
     /// [`Frame::dismiss`] and cleared.
     dismiss_pending: bool,
@@ -1306,6 +1313,8 @@ fn create(opts: HostOptions, on_paint: PaintFn, role: Role) -> Result<Created> {
             left_press_latch: false,
             right_press_latch: false,
             middle_press_latch: false,
+            release_in_flight: false,
+            leave_pending: false,
             dismiss_pending: false,
             want: (width.max(1), height.max(1)),
             on_paint,
@@ -2320,6 +2329,10 @@ impl Host {
             let mouse_down = consume_button_edge(self.mouse_down, &mut self.left_press_latch);
             let right_down = consume_button_edge(self.right_down, &mut self.right_press_latch);
             let middle_down = consume_button_edge(self.middle_down, &mut self.middle_press_latch);
+            if !mouse_down && !right_down && !middle_down {
+                // This frame shows every button up: the release it carries is delivered.
+                self.release_in_flight = false;
+            }
             // A floating panel's page is the panel alone, one shadow margin in from the window's
             // edges: its size, its pointer and its origin on screen are the panel's.
             let margin = self.panel_margin();
@@ -2657,11 +2670,49 @@ impl Host {
     /// other one, or a drag holds it, the page is told it is nowhere, so hover
     /// states clear.
     fn pointer_left(&mut self) {
+        if self.click_in_flight() {
+            // The click has not reached the page yet (its press or release is still to be painted):
+            // moving the pointer away now would deliver it nowhere. Applied after its release frame.
+            self.leave_pending = true;
+            return;
+        }
         if self.mouse_down || self.pointer_is_ours() {
             return;
         }
         self.mouse = (POINTER_AWAY, POINTER_AWAY);
         self.invalidate();
+    }
+
+    /// Whether a click has not fully reached the page yet: a press still latched for the next frame,
+    /// or a release no frame has shown.
+    fn click_in_flight(&self) -> bool {
+        self.left_press_latch || self.right_press_latch || self.middle_press_latch || self.release_in_flight
+    }
+
+    /// After a paint: a click still in flight needs the next frame (its release), and a pointer
+    /// that left while it was in flight leaves now that the page has seen the click where it
+    /// happened. Returns whether another frame is wanted.
+    ///
+    /// A press and its release can both arrive before the frame that would show them (a touchpad
+    /// tap, a posted `WM_LBUTTONDOWN`/`WM_LBUTTONUP`, input relayed by assistive technology or a
+    /// remote session), and the release re-arms `TME_LEAVE`: when the system cursor is not over the
+    /// window — or has already moved on — `WM_MOUSELEAVE` follows at once, still before that frame.
+    /// Clearing the pointer then would show the page a press and a release nowhere, and the click
+    /// would be lost.
+    fn settle_pointer(&mut self) -> bool {
+        if self.renderer.is_none() || self.visuals.is_none() {
+            // No frame can be painted (it would be skipped): nothing to wait for.
+            return false;
+        }
+        if self.click_in_flight() {
+            return true;
+        }
+        if self.leave_pending {
+            self.leave_pending = false;
+            self.pointer_left();
+            return true;
+        }
+        false
     }
 
     /// Arms `TME_LEAVE` on the main window, once per entry.
@@ -3047,18 +3098,25 @@ unsafe extern "system" fn overlay_wndproc(
                     }
                     WM_LBUTTONUP => {
                         host.mouse_down = false;
+                        host.release_in_flight = true;
                         let _ = ReleaseCapture();
                     }
                     WM_RBUTTONDOWN => {
                         host.right_down = true;
                         host.right_press_latch = true;
                     }
-                    WM_RBUTTONUP => host.right_down = false,
+                    WM_RBUTTONUP => {
+                        host.right_down = false;
+                        host.release_in_flight = true;
+                    }
                     WM_MBUTTONDOWN => {
                         host.middle_down = true;
                         host.middle_press_latch = true;
                     }
-                    WM_MBUTTONUP => host.middle_down = false,
+                    WM_MBUTTONUP => {
+                        host.middle_down = false;
+                        host.release_in_flight = true;
+                    }
                     _ => {}
                 }
                 host.invalidate();
@@ -3365,7 +3423,7 @@ unsafe extern "system" fn wndproc(
                 let _ = ValidateRect(Some(hwnd), None);
                 // A theme or font asked for DURING this paint was invalidated
                 // before the validation above cancelled it: ask again.
-                if has_pending_changes() {
+                if has_pending_changes() || (!host.rendering && host.settle_pointer()) {
                     host.invalidate();
                 }
                 LRESULT(0)
@@ -3403,6 +3461,7 @@ unsafe extern "system" fn wndproc(
             WM_LBUTTONUP => {
                 host.mouse = (host.dip(x()), host.dip(y()));
                 host.mouse_down = false;
+                host.release_in_flight = true;
                 let _ = ReleaseCapture();
                 // Released outside the window: re-arm the leave tracking,
                 // which then fires at once and clears the hover.
@@ -3596,6 +3655,7 @@ unsafe extern "system" fn wndproc(
                 }
                 host.mouse = (host.dip(x()), host.dip(y()));
                 host.right_down = msg == WM_RBUTTONDOWN;
+                host.release_in_flight |= msg == WM_RBUTTONUP;
                 host.invalidate();
                 LRESULT(0)
             }
@@ -3606,6 +3666,7 @@ unsafe extern "system" fn wndproc(
                 }
                 host.mouse = (host.dip(x()), host.dip(y()));
                 host.middle_down = msg == WM_MBUTTONDOWN;
+                host.release_in_flight |= msg == WM_MBUTTONUP;
                 host.invalidate();
                 LRESULT(0)
             }

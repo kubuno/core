@@ -107,6 +107,21 @@ number at release time, and CI publishes that section as the GitHub Release note
   Only one connection is told the room is empty and seeds it; the others receive the seed through
   the room (the claim passes on if that client leaves without seeding).
 
+- **Desktop dialogs opened from a ribbon command, a dock panel or any container paint whole.** A modal dialog
+  opened by a handler (`ShowDialog`) inherited the paint state of the window frame it was opened from — the clip of
+  the container the command sat in, its disabled scope, its deferred drawings, its menu requests — so a dialog
+  opened from the ribbon showed only the ribbon's band (about 32 to 146 DIP from its top): its first control and its
+  action bar were cut away. Each view's frame now runs with its own state; the window underneath finds its own
+  again when the dialog closes. Applications no longer need to defer their dialogs to the end of the frame.
+- **Desktop views: a named `<DockPanel>` keeps its `Title`**, which failed with « attribute `Title` must be a literal
+  value »; the title can also be changed from code (`panel.set_property("Title", …)`).
+- **Desktop views: text set from code wins over a `{Res …}` of the view.** A button whose view gives its `Text` from
+  the resources (`Text="{Res save}"`) showed the resource again, over the text the code had set, when the window
+  or dialog opened; as in Windows Forms, the value the code sets now replaces the designer's.
+- **Desktop windows: a click whose press and release arrive before the next paint is no longer lost when the pointer
+  leaves right after it** (a touchpad tap at the edge of a control followed by a quick move out, input relayed by
+  assistive technology, a remote session or a test tool posting `WM_LBUTTONDOWN`/`WM_LBUTTONUP`): the window waits
+  until the page has seen the release where it happened before it moves the pointer away.
 - **Module dialogs appear again.** Since the shell became a view, the dialogs a module adds once it has loaded —
   drive's « Select a file », « Save », folder picker, audio player, paint editor and remote storage — never opened:
   the shell's dialog area read the module contributions once and never looked again. It now follows them as they are

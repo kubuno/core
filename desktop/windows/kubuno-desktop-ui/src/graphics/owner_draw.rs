@@ -204,6 +204,22 @@ pub fn with_handler<R>(handler: &mut dyn OwnerDrawHandler, f: impl FnOnce() -> R
     f()
 }
 
+/// The handlers lent on this thread, set aside while another view's frame runs inside the current
+/// one (a modal dialog's nested loop opened from a handler): see [`swap_lent`].
+#[derive(Default)]
+pub struct LentHandlers(Vec<Option<Erased>>);
+
+/// Exchanges the handlers lent on this thread with `lent` (its own inverse): a frame nested in
+/// another one starts with none of the outer frame's handlers, and the outer frame finds them again
+/// once the nested frame swaps them back.
+pub fn swap_lent(lent: &mut LentHandlers) {
+    HANDLERS.with(|h| {
+        if let Ok(mut h) = h.try_borrow_mut() {
+            std::mem::swap(&mut *h, &mut lent.0);
+        }
+    });
+}
+
 /// Whether a handler is lent (the widgets paint normally when not).
 pub fn has_handler() -> bool {
     HANDLERS.with(|h| h.borrow().last().is_some_and(Option::is_some))

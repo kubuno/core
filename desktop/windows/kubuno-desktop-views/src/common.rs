@@ -42,9 +42,9 @@ use crate::style::{self, ColorValue, FontSpec};
 
 thread_local! {
     /// How many disabled elements the element painting now is inside (0: enabled).
-    static DISABLED: Cell<u32> = const { Cell::new(0) };
+    pub(crate) static DISABLED: Cell<u32> = const { Cell::new(0) };
     /// The frame being painted is the designer's (Visible is ignored there, like in WinForms).
-    static DESIGN: Cell<bool> = const { Cell::new(false) };
+    pub(crate) static DESIGN: Cell<bool> = const { Cell::new(false) };
 }
 
 /// The resting [`WidgetState`] of a widget painted now: disabled inside a disabled element. What a

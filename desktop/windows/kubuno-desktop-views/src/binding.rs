@@ -184,7 +184,7 @@ pub struct ItemContext {
 }
 
 thread_local! {
-    static CURRENT_ITEM: std::cell::RefCell<Option<ItemContext>> = const { std::cell::RefCell::new(None) };
+    pub(crate) static CURRENT_ITEM: std::cell::RefCell<Option<ItemContext>> = const { std::cell::RefCell::new(None) };
 }
 
 /// The `<Repeater>` item being painted or handled on this thread, if any (see [`ItemContext`]).

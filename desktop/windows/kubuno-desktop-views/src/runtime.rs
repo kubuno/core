@@ -408,6 +408,9 @@ pub struct Runtime {
     /// What the elements asked of the window last frame (mnemonics, context menus, drop targets,
     /// the accessibility ids): what this frame's input is resolved against.
     last: crate::common::FrameServices,
+    /// What this view's frames keep in thread-locals, set aside between its frames when they run
+    /// inside another view's frame (a modal dialog's nested loop): `crate::ambient`.
+    ambient: crate::ambient::Ambient,
     /// The tooltip under the pointer (`crate::window`).
     tooltip: crate::window::TooltipState,
     /// The open context menu.
@@ -484,6 +487,7 @@ impl Runtime {
             form_closing: Event::new(),
             form_closed: Event::new(),
             last: crate::common::FrameServices::new(),
+            ambient: crate::ambient::Ambient::default(),
             tooltip: crate::window::TooltipState::default(),
             menu: None,
             menu_scope: None,
@@ -808,7 +812,26 @@ impl Runtime {
 
     /// One frame (see the module doc for the order). `canvas` is `None` only in this crate's
     /// tests, which run everything but the paint.
+    ///
+    /// A frame started while another view's frame is running (a modal dialog's nested loop, opened
+    /// by a handler of that frame) sees none of that frame's paint state, and gives it back when it
+    /// ends (`crate::ambient`).
     fn run_frame<F: FrameVm>(
+        &mut self,
+        canvas: Option<&dyn ControlCanvas>,
+        frame: &Frame,
+        vm: &mut F,
+        handlers: &mut HandlerTable,
+        bounds: Rect,
+        design: Option<&mut crate::design::LayoutMap>,
+    ) -> Vec<ViewEvent> {
+        let scope = crate::ambient::FrameScope::enter(&mut self.ambient);
+        let events = self.run_frame_scoped(canvas, frame, vm, handlers, bounds, design);
+        scope.leave(&mut self.ambient);
+        events
+    }
+
+    fn run_frame_scoped<F: FrameVm>(
         &mut self,
         canvas: Option<&dyn ControlCanvas>,
         frame: &Frame,

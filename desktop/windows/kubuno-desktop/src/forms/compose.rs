@@ -294,6 +294,13 @@ impl Cx<'_> {
                 }
                 if is_binding_expr(&value) {
                     if let Some(spec) = parse_binding(&value) {
+                        // A resource (`{Res key}`) is the designer's value, like a literal: once code
+                        // set the property, code wins (Windows Forms) — it is bound to the control's
+                        // value below instead of re-reading the resource every frame.
+                        let resource = spec.path.starts_with(kubuno_desktop_views::resources::RES_PREFIX);
+                        if resource && control.0.code_set.borrow().contains(&name) {
+                            continue;
+                        }
                         control.0.user_bound.borrow_mut().insert(name.clone(), spec.path);
                     }
                     continue;
