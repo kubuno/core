@@ -618,6 +618,9 @@ pub fn build(state: AppState, frontend_dist: String) -> Router {
         .route("/modules/:id/unregister",  post(unregister_module))
         .route("/modules/:id/log",         post(module_log))
         .route("/events/publish",           post(publish_event))
+        // A module closes one of its collaboration rooms after replacing the
+        // content behind it (REST save from outside the room).
+        .route("/collab/rooms/close",       post(crate::collab::close_room))
         // Portail de protection des données : un module demande, AVANT de
         // valider une opération, si elle est autorisée. Interne par nature —
         // pouvoir soumettre un texte et lire « bloqué » depuis un navigateur,

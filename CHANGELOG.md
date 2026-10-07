@@ -10,6 +10,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 ## [Unreleased]
 
 ### Added
+- **Collaboration rooms can be closed by the module that owns them**
+  (`POST /internal/collab/rooms/close`, internal secret; a module may only close its own rooms).
+  Used when a module replaces the content behind a room (a REST save from outside it): the connected
+  clients receive `{"type":"replaced"}` and are disconnected, the room's stored state is dropped,
+  and stray updates or new joins are refused, so the previous content can never be written back.
+
 - **Mobile foundation** (`mobile/`): the libraries shared by every Kubuno mobile app (API client, device accounts, Compose UI components, in-app viewers, conformance-vector runner) moved here from the `kubuno/mobile` repository with their history. They are published as Maven artifacts `com.kubuno.mobile:*` (version `kubunoMobileVersion`, tag `mobile-v<version>`), and the apps moved to their modules' repositories under `mobile/`. Workflow `mobile.yml` builds and tests them.
 
 ### Changed
@@ -81,6 +87,9 @@ number at release time, and CI publishes that section as the GitHub Release note
   `public`, and moves them there on an install that has them elsewhere (existing tables are unaffected). Moving
   an extension needs a PostgreSQL superuser: when the database role is not one, the log names the
   `ALTER EXTENSION … SET SCHEMA public` statement to run once. No migration file changes.
+- **Several clients joining an empty collaboration room at once no longer duplicate its content.**
+  Only one connection is told the room is empty and seeds it; the others receive the seed through
+  the room (the claim passes on if that client leaves without seeding).
 
 - **Module dialogs appear again.** Since the shell became a view, the dialogs a module adds once it has loaded —
   drive's « Select a file », « Save », folder picker, audio player, paint editor and remote storage — never opened:
