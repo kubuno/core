@@ -11,6 +11,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **A click on a ribbon drop-down no longer goes through to the page.** Picking an item of a gallery or menu
+  opened over the page (the Equation gallery over a sheet's grid) also selected what lay under it. An open
+  drop-down of the ribbon is now light-dismiss, as in Office: the rest of the window does not see the pointer
+  while it is open, and the press that picks an item or closes it never reaches the page, nor does its release.
 - **Header buttons hidden by a `Show…` property leave no hole.** A `<Stack>` with cross alignment (the header's
   cluster) still gave a hidden child its width and a gap, so a cluster without settings or help pushed the bell out
   of view. A hidden child of any `<Stack>` now takes no room.
@@ -47,6 +51,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Ribbon galleries draw custom items.** `kubuno_desktop::ui::ribbon::set_gallery_renderer("gallery_name", …)`
+  paints the content of each item of a `<RibbonGallery x:Name="gallery_name">` (a formula preview, a style
+  sample), in the ribbon and in its drop-down; the gallery keeps the item's frame, hover and selection.
+- **Views: `kubuno_desktop_views::node::hold_pointer`** lets a control keep the pointer from the rest of the view
+  while a drop-down of its own is open (`real_frame` gives it the real pointer).
 - **Ribbon: `OnBackstageOpened` and `OnBackstageClosed`**, raised when the Backstage (the « Fichier » tab) opens over
   the page and when it closes.
 - **Windows: full screen.** `Form::set_full_screen(true)` (or `FullScreen="true"`, bindable, on a view's

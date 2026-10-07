@@ -1634,11 +1634,33 @@ thread_local! {
     pub(crate) static TOP_LAYER_HOLD: std::cell::RefCell<Vec<Option<Rect>>> = const { std::cell::RefCell::new(Vec::new()) };
     /// The frame as it came, while the runtime shows the view a masked one.
     pub(crate) static REAL_FRAME: std::cell::Cell<Option<Frame>> = const { std::cell::Cell::new(None) };
+    /// What the nodes painted this frame keep from the rest of the view NEXT frame ([`hold_pointer`]): a
+    /// ribbon's open drop-down (a gallery over the page). Taken by the runtime at the end of the frame.
+    pub(crate) static NODE_HOLDS: std::cell::RefCell<Vec<Option<Rect>>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Whether a floating part of the view keeps the pointer at `(x, y)` from the view under it.
 pub(crate) fn top_layer_holds(x: f32, y: f32) -> bool {
     TOP_LAYER_HOLD.with(|h| h.borrow().iter().any(|r| r.is_none_or(|r| r.contains(x, y))))
+}
+
+/// Keeps the pointer from the rest of the view next frame — `None`: all of it (a light-dismiss drop-down: a press
+/// outside only closes it), `Some(r)`: over `r`. The node that asks reads the real pointer through
+/// [`real_frame`]; everything else sees it away, until the button is released if a press began while held (the
+/// press on a drop-down's item never reaches the control under the drop-down, nor does its release).
+pub fn hold_pointer(area: Option<Rect>) {
+    NODE_HOLDS.with(|h| h.borrow_mut().push(area));
+}
+
+/// The frame as it came (the real pointer), while the view under a hold sees it away; `None` when nothing holds
+/// the pointer this frame (the frame painted is the real one).
+pub fn real_frame() -> Option<Frame> {
+    REAL_FRAME.with(|f| f.get())
+}
+
+/// Takes the holds the nodes declared this frame ([`hold_pointer`]).
+pub(crate) fn take_node_holds() -> Vec<Option<Rect>> {
+    NODE_HOLDS.with(|h| std::mem::take(&mut *h.borrow_mut()))
 }
 
 /// Sets (or clears) the real frame of this paint, which the floating parts read.

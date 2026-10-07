@@ -21,6 +21,9 @@ pub struct Cell {
     /// A colour swatch (or a gallery item previewing a colour).
     pub color: Option<D2D1_COLOR_F>,
     pub selected: bool,
+    /// The gallery's own painter of its items' content (`super::GalleryCellPaint`), in place of the label and
+    /// icon.
+    pub render: Option<super::GalleryCellRenderer>,
 }
 
 /// One row of the panel.
@@ -230,6 +233,13 @@ pub fn paint_cell(c: &dyn Canvas, cell: &Cell, r: Rect, hot: bool, font: &IDWrit
     }
     let inner = Rect::new(r.left + 4.0, r.top + 4.0, r.right - 4.0, r.bottom - 4.0);
     let tall = r.bottom - r.top >= 40.0;
+    if let Some(render) = &cell.render {
+        // The application draws the item (a formula preview, a style sample) inside its frame.
+        c.push_clip(&inner);
+        (render.0)(c, &cell.value, inner, hot, cell.selected);
+        c.pop_clip();
+        return;
+    }
     if let Some(colour) = cell.color {
         let sw = if tall { Rect::new(inner.left, inner.top, inner.right, inner.bottom - 14.0) } else { inner };
         c.fill_rounded(&sw, 2.0, &colour);
@@ -254,8 +264,25 @@ mod tests {
     use super::*;
 
     fn grid(n: usize, columns: usize) -> Row {
-        let cells = (0..n).map(|i| Cell { value: format!("v{i}"), label: format!("c{i}"), icon: None, color: None, selected: false }).collect();
+        let cells = (0..n).map(|i| Cell { value: format!("v{i}"), label: format!("c{i}"), icon: None, color: None, selected: false, render: None }).collect();
         Row::Grid { cells, columns, cell_w: 20.0, cell_h: 20.0, swatch: true }
+    }
+
+    #[test]
+    fn a_gallery_renderer_paints_the_item_content_instead_of_its_label() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let seen: Rc<RefCell<Vec<(String, bool, bool)>>> = Rc::default();
+        let log = seen.clone();
+        let render = super::super::GalleryCellRenderer(Rc::new(move |_c: &dyn Canvas, value: &str, _r: Rect, hot: bool, selected: bool| {
+            log.borrow_mut().push((value.to_string(), hot, selected));
+        }));
+        let canvas = crate::graphics::testing::RecordingCanvas::new();
+        let cell = Cell { value: "x^2".into(), label: "Carré".into(), icon: None, color: None, selected: true, render: Some(render) };
+        let font = &canvas.formats().body;
+        paint_cell(&canvas, &cell, Rect::new(0.0, 0.0, 60.0, 40.0), true, font, canvas.theme().accent);
+        assert_eq!(*seen.borrow(), [("x^2".to_string(), true, true)]);
+        assert!(!canvas.calls().iter().any(|c| c.contains("Carré")), "the label is not drawn: {:?}", canvas.calls());
     }
 
     #[test]

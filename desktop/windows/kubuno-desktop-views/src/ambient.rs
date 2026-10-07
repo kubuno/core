@@ -52,6 +52,7 @@ pub(crate) struct Ambient {
     design: bool,
     top_layer_hold: Vec<Option<Rect>>,
     real_frame: Option<Frame>,
+    node_holds: Vec<Option<Rect>>,
     late: Vec<crate::virtual_regions::Late>,
     design_chrome: Option<crate::window::DesignChrome>,
     declared_slots: kubuno_desktop_controls::window_chrome::SlotWidths,
@@ -76,6 +77,7 @@ impl Ambient {
         swap_cell(&crate::common::DESIGN, &mut self.design);
         swap_ref(&crate::node::TOP_LAYER_HOLD, &mut self.top_layer_hold);
         swap_cell(&crate::node::REAL_FRAME, &mut self.real_frame);
+        swap_ref(&crate::node::NODE_HOLDS, &mut self.node_holds);
         swap_ref(&crate::virtual_regions::LATE, &mut self.late);
         swap_ref(&crate::window::DESIGN_CHROME, &mut self.design_chrome);
         swap_cell(&crate::window::DECLARED_SLOTS, &mut self.declared_slots);

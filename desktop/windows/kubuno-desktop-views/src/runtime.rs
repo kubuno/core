@@ -411,6 +411,12 @@ pub struct Runtime {
     /// What this view's frames keep in thread-locals, set aside between its frames when they run
     /// inside another view's frame (a modal dialog's nested loop): `crate::ambient`.
     ambient: crate::ambient::Ambient,
+    /// What the nodes held last frame (`crate::node::hold_pointer`), applied to this frame's pointer.
+    node_holds: Vec<Option<Rect>>,
+    /// A press began while the pointer was held: the view under the hold sees it away until the release.
+    swallow_press: bool,
+    /// The left button was down last frame (for the press edge of the hold).
+    hold_was_down: bool,
     /// The tooltip under the pointer (`crate::window`).
     tooltip: crate::window::TooltipState,
     /// The open context menu.
@@ -488,6 +494,9 @@ impl Runtime {
             form_closed: Event::new(),
             last: crate::common::FrameServices::new(),
             ambient: crate::ambient::Ambient::default(),
+            node_holds: Vec::new(),
+            swallow_press: false,
+            hold_was_down: false,
             tooltip: crate::window::TooltipState::default(),
             menu: None,
             menu_scope: None,
@@ -827,6 +836,8 @@ impl Runtime {
     ) -> Vec<ViewEvent> {
         let scope = crate::ambient::FrameScope::enter(&mut self.ambient);
         let events = self.run_frame_scoped(canvas, frame, vm, handlers, bounds, design);
+        // What the nodes hold from the rest of the view next frame (`crate::node::hold_pointer`).
+        self.node_holds = crate::node::take_node_holds();
         scope.leave(&mut self.ambient);
         events
     }
@@ -848,7 +859,23 @@ impl Runtime {
         let masked;
         // So does an open `<Popover>` (all of it while a light-dismiss one is open: the press outside
         // it only closes it), which reads the real frame (`crate::node::TopLayer`).
-        let held = design.is_none() && crate::node::top_layer_holds(frame.mouse.0, frame.mouse.1);
+        let (mx, my) = frame.mouse;
+        let node_held = self.node_holds.iter().any(|r| r.is_none_or(|r| r.contains(mx, my)));
+        let mut held = design.is_none() && (crate::node::top_layer_holds(mx, my) || node_held);
+        // A press that began while held stays from the view under the hold until its release (included): the
+        // click on a drop-down's item, which closes it, never reaches the control under it.
+        if design.is_none() {
+            if held && frame.mouse_down && !self.hold_was_down {
+                self.swallow_press = true;
+            }
+            if self.swallow_press {
+                held = true;
+                if !frame.mouse_down {
+                    self.swallow_press = false;
+                }
+            }
+        }
+        self.hold_was_down = frame.mouse_down;
         crate::node::set_real_frame(held.then_some(*frame));
         let frame: &Frame = if held || (design.is_none() && self.menu.as_ref().is_some_and(|m| m.contains(frame.mouse.0, frame.mouse.1))) {
             masked = crate::common::away_frame(frame);

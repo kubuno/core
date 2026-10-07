@@ -1038,6 +1038,10 @@ pub struct RibbonNode {
     /// The Backstage covers the page: the panel holding the ribbon lays out and paints nothing else
     /// (`ViewNode::covers_page`).
     covering: Cell<bool>,
+    /// The ribbon held the pointer at its last paint (its drop-down was open): it reads the real frame.
+    holding: Cell<bool>,
+    /// The button went down while the ribbon held the pointer, and is not released yet.
+    held_press: Cell<bool>,
     /// Painting on the design surface (no view model behind the bindings: fields show sample values).
     design: Cell<bool>,
     /// The `<Ribbon>` element's own stable id (its smart tag, its « + » for a new tab).
@@ -1162,6 +1166,8 @@ pub(crate) fn build_ribbon(props: &Props<'_>, cx: &mut BuildCx) -> Result<Box<dy
         on_backstage_closed: props.event("OnBackstageClosed"),
         backstage_was_open: Cell::new(false),
         covering: Cell::new(false),
+        holding: Cell::new(false),
+        held_press: Cell::new(false),
         design: Cell::new(false),
         own_id: props.element().stable_id(),
         preview_width: literal_f32(props, "PreviewWidth", 0.0),
@@ -1520,6 +1526,8 @@ impl RibbonNode {
                     spec.first_row = 0;
                     spec
                 });
+                // The application's painter of the items, set for the gallery's name (`set_gallery_renderer`).
+                it.cell_render = ve.name.as_deref().and_then(kubuno_desktop_ui::ribbon::gallery_renderer);
                 it.value = Some(self.value_of(n, vm)).filter(|v| !v.is_empty());
                 let mut opts = Vec::new();
                 for c in &n.children {
@@ -2056,7 +2064,20 @@ impl ViewNode for RibbonNode {
         let full = bounds;
         let preview = design && self.preview_width > 0.0 && bounds.left + self.preview_width < bounds.right;
         let bounds = if preview { Rect::new(bounds.left, bounds.top, bounds.left + self.preview_width, bounds.bottom) } else { bounds };
-        let run = engine.frame(canvas, bounds, cx.frame);
+        // While its drop-down is open the ribbon holds the pointer from the rest of the view (below): it reads the
+        // real one.
+        // So does a press that began while it held, until its release (the runtime keeps it from the view too).
+        let was_holding = self.holding.get();
+        let own_frame = if was_holding || self.held_press.get() { crate::node::real_frame().unwrap_or(*cx.frame) } else { *cx.frame };
+        let run = engine.frame(canvas, bounds, &own_frame);
+        // An open drop-down (a gallery, a menu, a list) is light-dismiss, as in Office: the press outside it only
+        // closes it, and a click on one of its items never reaches the control under it.
+        let holding = !design && engine.has_float();
+        self.holding.set(holding);
+        self.held_press.set(own_frame.mouse_down && (self.held_press.get() || holding || was_holding));
+        if holding {
+            crate::node::hold_pointer(None);
+        }
         if preview {
             let shade = Rect::new(bounds.right, full.top, full.right, full.top + run.height);
             let label = format!("{} px", self.preview_width.round());
@@ -2102,7 +2123,7 @@ impl ViewNode for RibbonNode {
             }
             let _ = active_before;
             let theme = engine.theme;
-            let b = bs.frame(canvas, run.content, cx.frame, &theme);
+            let b = bs.frame(canvas, run.content, &own_frame, &theme);
             if b.back {
                 engine.close_backstage();
             }

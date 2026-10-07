@@ -650,6 +650,49 @@ impl RibbonOption {
 /// What a custom slot paints: the canvas, its rectangle, and its state.
 pub type CustomPaint = Rc<dyn Fn(&dyn Canvas, Rect, WidgetState)>;
 
+/// What paints a gallery item's content in place of its label and icon (a formula preview, a style sample):
+/// the canvas, the item's value, the content rectangle inside the item's frame (clipped to it), whether the
+/// pointer is over the item, and whether it is the selected one. The frame, the hover and the selection are
+/// the gallery's. Called wherever the item shows: in the ribbon and in its drop-down.
+pub type GalleryCellPaint = Rc<dyn Fn(&dyn Canvas, &str, Rect, bool, bool)>;
+
+/// A [`GalleryCellPaint`] held by a gallery (`Debug` for the structures that carry it).
+#[derive(Clone)]
+pub struct GalleryCellRenderer(pub GalleryCellPaint);
+
+impl std::fmt::Debug for GalleryCellRenderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GalleryCellRenderer")
+    }
+}
+
+thread_local! {
+    static GALLERY_RENDERERS: std::cell::RefCell<std::collections::HashMap<String, GalleryCellRenderer>> = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Draws the items of the gallery named `name` (its `x:Name` in a `.kbview`) with `paint` — the owner-draw of
+/// a ribbon gallery: the application paints each item's content, the gallery keeps its frame, hover and
+/// selection. Set it once (before or after the window opens); `None` goes back to the labels and icons.
+pub fn set_gallery_renderer(name: &str, paint: Option<GalleryCellPaint>) {
+    GALLERY_RENDERERS.with(|r| {
+        let mut r = r.borrow_mut();
+        match paint {
+            Some(p) => {
+                r.insert(name.to_string(), GalleryCellRenderer(p));
+            }
+            None => {
+                r.remove(name);
+            }
+        }
+    });
+    host::request_repaint_after(0);
+}
+
+/// The renderer set for the gallery `name` ([`set_gallery_renderer`]).
+pub fn gallery_renderer(name: &str) -> Option<GalleryCellRenderer> {
+    GALLERY_RENDERERS.with(|r| r.borrow().get(name).cloned())
+}
+
 /// `RibbonItem`.
 #[derive(Clone)]
 pub struct RibbonItem {
@@ -690,6 +733,8 @@ pub struct RibbonItem {
     pub range:       Option<(f32, f32, f32)>,
     /// A gallery's grid (see [`GallerySpec`]); `None` is the web's single row.
     pub gallery:     Option<GallerySpec>,
+    /// A gallery's painter of its items (see [`set_gallery_renderer`]).
+    pub cell_render: Option<GalleryCellRenderer>,
     /// A colour picker's current colour (its bar under the icon).
     pub color:       Option<D2D1_COLOR_F>,
     /// The KeyTip (assigned automatically when `None`).
@@ -730,6 +775,7 @@ impl RibbonItem {
             editable: false,
             range: None,
             gallery: None,
+            cell_render: None,
             color: None,
             key_tip: None,
             column_break: false,
@@ -1867,7 +1913,7 @@ fn paint_grid_gallery(c: &dyn Canvas, col: &Colors, fonts: &Fonts, it: &RibbonIt
             continue;
         }
         let hot = !dead && is(look.hot, Target::Option(p.key, i));
-        let cell = panel::Cell { value: o.value.clone(), label: o.label.clone(), icon: o.icon.clone(), color: o.color, selected: it.value.as_deref() == Some(o.value.as_str()) };
+        let cell = panel::Cell { value: o.value.clone(), label: o.label.clone(), icon: o.icon.clone(), color: o.color, selected: it.value.as_deref() == Some(o.value.as_str()), render: it.cell_render.clone() };
         panel::paint_cell(c, &cell, *or, hot, &fonts.item, col.accent);
     }
     if let (Some(first), Some(last)) = (p.parts.first(), p.parts.last()) {
@@ -2284,6 +2330,11 @@ impl Ribbon {
         if let Some(t) = self.tabs.iter().find(|t| t.visible && !t.backstage) {
             self.active = t.id.clone();
         }
+    }
+
+    /// Whether one of its drop-downs is open (a menu, a list, a gallery panel, the quick access toolbar's menu).
+    pub fn has_float(&self) -> bool {
+        self.float.is_some()
     }
 
     pub fn is_collapsed(&self) -> bool {
@@ -3935,7 +3986,7 @@ fn entry_rows(items: &[RibbonItem], rows: &mut Vec<panel::Row>, owners: &mut Vec
 fn gallery_sections(it: &RibbonItem) -> Vec<(Option<String>, Vec<panel::Cell>)> {
     let mut out: Vec<(Option<String>, Vec<panel::Cell>)> = Vec::new();
     for o in &it.options {
-        let cell = panel::Cell { value: o.value.clone(), label: o.label.clone(), icon: o.icon.clone(), color: o.color, selected: it.value.as_deref() == Some(o.value.as_str()) };
+        let cell = panel::Cell { value: o.value.clone(), label: o.label.clone(), icon: o.icon.clone(), color: o.color, selected: it.value.as_deref() == Some(o.value.as_str()), render: it.cell_render.clone() };
         match out.iter_mut().find(|(c, _)| *c == o.category) {
             Some((_, cells)) => cells.push(cell),
             None => out.push((o.category.clone(), vec![cell])),
@@ -3976,7 +4027,7 @@ fn color_panel(it: &RibbonItem, key: Target, anchor: Rect, texts: &RibbonTexts) 
     };
     let cells = palette
         .into_iter()
-        .map(|(v, d)| panel::Cell { label: v.clone(), selected: it.color.is_some_and(|c| same_color(c, d)), value: v, icon: None, color: Some(d) })
+        .map(|(v, d)| panel::Cell { label: v.clone(), selected: it.color.is_some_and(|c| same_color(c, d)), value: v, icon: None, color: Some(d), render: None })
         .collect();
     let mut rows = vec![
         panel::Row::Entry { entry: "value:".into(), label: texts.automatic.clone(), icon: None, checked: it.color.is_none(), enabled: true },
