@@ -224,14 +224,10 @@ fn legacy_dirs_on_windows_include_the_drive_relative_var_lib_and_the_service_cwd
     let dirs = legacy_state_dirs(&env);
     assert_eq!(
         dirs,
-        vec![
-            p(r"D:\var\lib\kubuno"),
-            p(r"C:\var\lib\kubuno"),
-            p(r"C:\ProgramData").join("Kubuno"),
-            p(r"D:\work"),
-        ]
+        vec![p(r"D:\var\lib\kubuno"), p(r"C:\var\lib\kubuno"), p(r"C:\ProgramData").join("Kubuno")],
+        "the current working directory is never a candidate"
     );
-    // Same drive: listed once; the service CWD equal to the current one too.
+    // Same drive: listed once.
     let env = PathEnv::new(Os::Windows)
         .with_program_data(r"C:\ProgramData")
         .with_cwd(r"\\?\c:\programdata\kubuno");
@@ -241,13 +237,73 @@ fn legacy_dirs_on_windows_include_the_drive_relative_var_lib_and_the_service_cwd
 
 #[test]
 fn legacy_dirs_on_unix() {
-    let env = PathEnv::new(Os::Linux).with_cwd("/var/lib/kubuno/");
+    let env = PathEnv::new(Os::Linux).with_cwd("/home/dev/kubuno");
     assert_eq!(legacy_state_dirs(&env), vec![p("/var/lib/kubuno")]);
     let env = PathEnv::new(Os::MacOs).with_cwd("/Users/ada");
+    assert_eq!(legacy_state_dirs(&env), vec![p("/var/lib/kubuno"), p("/usr/local/var/kubuno")]);
+}
+
+/// The bug this guards against: a development core on a machine that also
+/// runs the packaged service looked for `data.key` in `/var/lib/kubuno` and
+/// moved it into its own state directory.
+#[test]
+fn an_instance_with_its_own_state_dir_has_no_legacy_location() {
+    for os in [Os::Linux, Os::MacOs, Os::Windows] {
+        let home = if os == Os::Windows { r"C:\Users\dev" } else { "/home/dev" };
+        let own = if os == Os::Windows { r"C:\Users\dev\kubuno-state" } else { "/home/dev/kubuno-state" };
+        let base = PathEnv::new(os)
+            .with_var("HOME", home)
+            .with_program_data(r"C:\ProgramData")
+            .with_local_app_data(r"C:\Users\dev\AppData\Local")
+            .with_cwd(home);
+
+        // Explicit state directory through the environment.
+        let env = base.clone().with_var("KUBUNO_PATHS_STATE_DIR", own);
+        let paths = resolve(&env);
+        assert!(!is_default_system_instance(&env, &paths), "{os:?}");
+        assert!(legacy_state_dirs_for(&env, &paths).is_empty(), "{os:?}: env override");
+
+        // Explicit state directory through the configuration (`[paths]`).
+        let cfg = Overrides { state_dir: Some(p(own)), ..Overrides::default() };
+        let paths = Paths::resolve(&base, &cfg).unwrap();
+        assert!(legacy_state_dirs_for(&base, &paths).is_empty(), "{os:?}: [paths] override");
+
+        // User mode: per-user directories, never the system ones.
+        let env = base.clone().with_var(ENV_MODE, "user");
+        let paths = resolve(&env);
+        assert!(legacy_state_dirs_for(&env, &paths).is_empty(), "{os:?}: user mode");
+
+        // An override that does not move the state directory keeps it the
+        // system instance.
+        let env = base.clone().with_var("KUBUNO_PATHS_LOG_DIR", own);
+        let paths = resolve(&env);
+        assert!(is_default_system_instance(&env, &paths), "{os:?}: log override only");
+    }
+}
+
+#[test]
+fn the_default_system_instance_keeps_its_legacy_locations_but_never_its_own_dir() {
+    // Linux: the state directory IS /var/lib/kubuno, so there is nothing to
+    // migrate from: the packaged service's key never moves.
+    let env = PathEnv::new(Os::Linux).with_cwd("/var/lib/kubuno");
+    let paths = resolve(&env);
+    assert!(is_default_system_instance(&env, &paths));
+    assert!(legacy_state_dirs_for(&env, &paths).is_empty());
+
+    // Windows: the pre-`kubuno-paths` locations of the same service.
+    let env = PathEnv::new(Os::Windows)
+        .with_program_data(r"C:\ProgramData")
+        .with_cwd(r"C:\ProgramData\Kubuno");
+    let paths = resolve(&env);
     assert_eq!(
-        legacy_state_dirs(&env),
-        vec![p("/var/lib/kubuno"), p("/usr/local/var/kubuno"), p("/Users/ada")]
+        legacy_state_dirs_for(&env, &paths),
+        vec![p(r"C:\var\lib\kubuno"), p(r"C:\ProgramData").join("Kubuno")]
     );
+
+    // macOS.
+    let env = PathEnv::new(Os::MacOs).with_cwd("/");
+    let paths = resolve(&env);
+    assert_eq!(legacy_state_dirs_for(&env, &paths), vec![p("/var/lib/kubuno"), p("/usr/local/var/kubuno")]);
 }
 
 #[test]
@@ -285,88 +341,132 @@ impl Drop for Scratch {
     }
 }
 
+fn accept(_: &Path, _: &str) -> Result<(), String> {
+    Ok(())
+}
+
 #[test]
-fn migration_old_location_only_moves_the_key_and_retires_the_old_copy() {
-    let s = Scratch::new("old-only");
+fn migration_copies_the_key_and_leaves_the_source_untouched() {
+    let s = Scratch::new("copy");
     let target = s.path("new/state/data.key");
     let old = s.write("var/lib/kubuno/data.key", "abc123\n");
-    let out = migrate_secret_file(&target, &[s.path("var/lib/kubuno/data.key"), s.path("cwd/data.key")]).unwrap();
-    match out {
-        MigrationOutcome::Migrated { from, to, retired } => {
-            assert_eq!(from, old);
-            assert_eq!(to, target);
-            assert_eq!(retired.len(), 1);
-            assert_eq!(retired[0].result, Ok(s.path("var/lib/kubuno/data.key.migrated")));
-        }
-        other => panic!("unexpected outcome {other:?}"),
-    }
+    let before = std::fs::metadata(&old).unwrap().modified().unwrap();
+    let out = migrate_secret_file(&target, &[old.clone(), s.path("other/data.key")], &accept).unwrap();
+    assert_eq!(out, MigrationOutcome::Copied { from: old.clone(), to: target.clone() });
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "abc123\n");
-    assert!(!old.exists(), "the legacy copy is renamed, not left in place");
-    assert_eq!(std::fs::read_to_string(s.path("var/lib/kubuno/data.key.migrated")).unwrap(), "abc123\n");
+    // The source is never moved, renamed or rewritten.
+    assert_eq!(std::fs::read_to_string(&old).unwrap(), "abc123\n");
+    assert_eq!(std::fs::metadata(&old).unwrap().modified().unwrap(), before);
+    assert!(!s.path("var/lib/kubuno/data.key.migrated").exists());
+    // No temporary file is left behind.
+    let left: Vec<_> = std::fs::read_dir(s.path("new/state")).unwrap().flatten().map(|e| e.file_name()).collect();
+    assert_eq!(left.len(), 1, "{left:?}");
 
-    // A second run finds the key in place and does nothing else.
-    let again = migrate_secret_file(&target, &[s.path("var/lib/kubuno/data.key")]).unwrap();
-    assert_eq!(again, MigrationOutcome::InPlace { path: target.clone(), retired: vec![] });
+    // A second run finds the key in place, reads nothing else and reports the
+    // legacy copy as stale.
+    let again = migrate_secret_file(&target, std::slice::from_ref(&old), &accept).unwrap();
+    assert_eq!(again, MigrationOutcome::InPlace { path: target.clone(), stale: vec![old.clone()] });
+    assert!(old.exists());
+}
+
+#[test]
+fn migration_refused_by_the_check_puts_nothing_in_place() {
+    let s = Scratch::new("refused");
+    let target = s.path("state/data.key");
+    let old = s.write("legacy/data.key", "k\n");
+    let err = migrate_secret_file(&target, std::slice::from_ref(&old), &|_, _| Err("foreign key".into())).unwrap_err();
+    assert!(matches!(err, MigrationError::VerifyFailed { .. }), "{err}");
+    assert!(err.to_string().contains("foreign key"), "{err}");
+    assert!(!target.exists());
+    assert_eq!(std::fs::read_to_string(&old).unwrap(), "k\n");
+    assert_eq!(std::fs::read_dir(s.path("state")).unwrap().count(), 0, "no temporary file left");
+}
+
+#[test]
+fn migration_check_sees_the_value_read_back_from_the_copy() {
+    let s = Scratch::new("check-value");
+    let target = s.path("state/data.key");
+    let old = s.write("legacy/data.key", "  the-key \n");
+    let seen = std::cell::RefCell::new(None);
+    migrate_secret_file(&target, std::slice::from_ref(&old), &|from, v| {
+        *seen.borrow_mut() = Some((from.to_path_buf(), v.to_string()));
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(seen.into_inner(), Some((old, "the-key".to_string())));
+}
+
+#[test]
+fn migration_does_not_replace_a_target_that_appears_meanwhile() {
+    let s = Scratch::new("race");
+    let target = s.path("state/data.key");
+    let old = s.write("legacy/data.key", "old\n");
+    // The check runs just before the copy is linked into place: simulate
+    // another process creating the target at that moment.
+    let err = migrate_secret_file(&target, std::slice::from_ref(&old), &|_, _| {
+        std::fs::write(&target, "concurrent\n").map_err(|e| e.to_string())
+    })
+    .unwrap_err();
+    assert!(matches!(err, MigrationError::Io { .. }), "{err}");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "concurrent\n");
+    assert_eq!(std::fs::read_to_string(&old).unwrap(), "old\n");
 }
 
 #[test]
 fn migration_new_location_only_is_used_as_is() {
     let s = Scratch::new("new-only");
     let target = s.write("state/data.key", "k1\n");
-    let out = migrate_secret_file(&target, &[s.path("legacy/data.key")]).unwrap();
-    assert_eq!(out, MigrationOutcome::InPlace { path: target.clone(), retired: vec![] });
+    let out = migrate_secret_file(&target, &[s.path("legacy/data.key")], &accept).unwrap();
+    assert_eq!(out, MigrationOutcome::InPlace { path: target.clone(), stale: vec![] });
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "k1\n");
 }
 
 #[test]
-fn migration_both_identical_keeps_the_new_one_and_retires_the_old() {
-    let s = Scratch::new("identical");
-    let target = s.write("state/data.key", "same\n");
-    let old = s.write("legacy/data.key", "same");
-    let out = migrate_secret_file(&target, std::slice::from_ref(&old)).unwrap();
-    match out {
-        MigrationOutcome::InPlace { retired, .. } => {
-            assert_eq!(retired.len(), 1);
-            assert!(retired[0].result.is_ok());
-        }
-        other => panic!("unexpected outcome {other:?}"),
-    }
-    assert!(!old.exists());
-    assert_eq!(std::fs::read_to_string(&target).unwrap(), "same\n");
-}
-
-#[test]
-fn migration_both_different_refuses_and_touches_nothing() {
-    let s = Scratch::new("different");
+fn migration_with_a_key_in_place_never_reads_or_touches_legacy_copies() {
+    let s = Scratch::new("in-place");
     let target = s.write("state/data.key", "new-key\n");
     let old = s.write("legacy/data.key", "old-key\n");
-    let err = migrate_secret_file(&target, std::slice::from_ref(&old)).unwrap_err();
-    match &err {
-        MigrationError::Conflict { found, .. } => assert_eq!(found, &vec![target.clone(), old.clone()]),
-        other => panic!("unexpected error {other:?}"),
-    }
-    let msg = err.to_string();
-    assert!(msg.contains("Refusing to choose"), "{msg}");
+    // A different legacy value is not a conflict: the instance's own key wins
+    // (it may have been rotated since) and the old copy stays as it is.
+    let out = migrate_secret_file(&target, std::slice::from_ref(&old), &accept).unwrap();
+    assert_eq!(out, MigrationOutcome::InPlace { path: target.clone(), stale: vec![old.clone()] });
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "new-key\n");
     assert_eq!(std::fs::read_to_string(&old).unwrap(), "old-key\n");
 }
 
 #[test]
-fn migration_two_different_legacy_copies_refuse_even_without_a_new_one() {
+fn migration_two_different_legacy_copies_refuse_and_touch_nothing() {
     let s = Scratch::new("two-legacy");
     let target = s.path("state/data.key");
     let a = s.write("a/data.key", "one");
     let b = s.write("b/data.key", "two");
-    let err = migrate_secret_file(&target, &[a.clone(), b.clone()]).unwrap_err();
-    assert!(matches!(err, MigrationError::Conflict { .. }));
+    let err = migrate_secret_file(&target, &[a.clone(), b.clone()], &accept).unwrap_err();
+    match &err {
+        MigrationError::Conflict { found, .. } => assert_eq!(found, &vec![a.clone(), b.clone()]),
+        other => panic!("unexpected error {other:?}"),
+    }
+    assert!(err.to_string().contains("Refusing to choose"), "{err}");
     assert!(!target.exists(), "no key is written while the conflict stands");
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "one");
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "two");
+}
+
+#[test]
+fn migration_identical_legacy_copies_are_one_source() {
+    let s = Scratch::new("two-same");
+    let target = s.path("state/data.key");
+    let a = s.write("a/data.key", "same\n");
+    let b = s.write("b/data.key", "same");
+    let out = migrate_secret_file(&target, &[a.clone(), b.clone()], &accept).unwrap();
+    assert_eq!(out, MigrationOutcome::Copied { from: a.clone(), to: target.clone() });
+    assert!(a.exists() && b.exists());
 }
 
 #[test]
 fn migration_none_reports_not_found_and_creates_nothing() {
     let s = Scratch::new("none");
     let target = s.path("state/data.key");
-    let out = migrate_secret_file(&target, &[s.path("a/data.key"), s.path("b/data.key")]).unwrap();
+    let out = migrate_secret_file(&target, &[s.path("a/data.key"), s.path("b/data.key")], &accept).unwrap();
     assert_eq!(out, MigrationOutcome::NotFound);
     assert!(!target.exists());
 }
@@ -378,25 +478,9 @@ fn migration_ignores_blank_files_and_the_target_listed_as_legacy() {
     let blank = s.write("legacy/data.key", "  \n");
     // The target itself appears among the legacy candidates (Linux: the old and
     // new locations are the same file).
-    let out = migrate_secret_file(&target, &[target.clone(), blank.clone()]).unwrap();
-    assert_eq!(out, MigrationOutcome::InPlace { path: target.clone(), retired: vec![] });
+    let out = migrate_secret_file(&target, &[target.clone(), blank.clone()], &accept).unwrap();
+    assert_eq!(out, MigrationOutcome::InPlace { path: target.clone(), stale: vec![blank.clone()] });
     assert!(blank.exists(), "a blank file is not a copy of the key and is left alone");
-}
-
-#[test]
-fn migration_retires_next_to_an_earlier_retired_copy() {
-    let s = Scratch::new("retired-twice");
-    let target = s.path("state/data.key");
-    s.write("legacy/data.key.migrated", "older");
-    let old = s.write("legacy/data.key", "k");
-    let out = migrate_secret_file(&target, std::slice::from_ref(&old)).unwrap();
-    match out {
-        MigrationOutcome::Migrated { retired, .. } => {
-            assert_eq!(retired[0].result, Ok(s.path("legacy/data.key.migrated-2")));
-        }
-        other => panic!("unexpected outcome {other:?}"),
-    }
-    assert_eq!(std::fs::read_to_string(s.path("legacy/data.key.migrated")).unwrap(), "older");
 }
 
 #[cfg(unix)]
@@ -406,9 +490,10 @@ fn migrated_key_is_private() {
     let s = Scratch::new("private");
     let target = s.path("state/data.key");
     let old = s.write("legacy/data.key", "k");
-    migrate_secret_file(&target, &[old]).unwrap();
+    migrate_secret_file(&target, &[old], &accept).unwrap();
     assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
 }
+
 
 #[test]
 fn host_target_uses_package_spellings() {

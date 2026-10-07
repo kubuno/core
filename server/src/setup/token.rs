@@ -22,7 +22,7 @@ impl SetupToken {
     /// restart mid-installation must not invalidate the token the administrator
     /// already copied), otherwise mints a fresh one.
     pub fn create_or_load() -> Result<Self> {
-        let path = Self::path();
+        let path = Self::path()?;
         if let Ok(existing) = fs::read_to_string(&path) {
             let existing = existing.trim().to_string();
             if existing.len() >= 32 {
@@ -43,20 +43,26 @@ impl SetupToken {
     /// Where the token lives: `KV_SETUP_TOKEN_FILE`, else the instance's state
     /// directory (`kubuno-paths`), never inferred from whether a directory exists.
     ///
-    /// A token an earlier version left in one of its old locations is moved
-    /// here, so a restart in the middle of an upgrade keeps the token the
-    /// administrator already copied. If two different tokens exist, the one at
-    /// the new location wins: a token only guards the wizard, it protects no data.
-    fn path() -> PathBuf {
-        let path = match std::env::var("KV_SETUP_TOKEN_FILE") {
-            Ok(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
-            _ => crate::config::paths::current().setup_token_file(),
-        };
-        let legacy = crate::config::paths::legacy_state_files(kubuno_paths::SETUP_TOKEN);
-        if let Err(e) = kubuno_paths::migrate_secret_file(&path, &legacy) {
+    /// For the default system instance only, a token an earlier version of the
+    /// same service left in one of its old locations is copied here (never
+    /// moved), so a restart in the middle of an upgrade keeps the token the
+    /// administrator already copied. If the token already exists here, it
+    /// wins. An instance with a directory of its own, or a token file named
+    /// explicitly, never looks elsewhere.
+    fn path() -> Result<PathBuf> {
+        if let Ok(p) = std::env::var("KV_SETUP_TOKEN_FILE") {
+            if !p.trim().is_empty() {
+                return Ok(PathBuf::from(p.trim()));
+            }
+        }
+        let paths = crate::config::paths::try_current()
+            .map_err(|e| anyhow::anyhow!("cannot locate the installation token: {e}"))?;
+        let path = paths.setup_token_file();
+        let legacy = crate::config::paths::legacy_state_files(paths, kubuno_paths::SETUP_TOKEN);
+        if let Err(e) = kubuno_paths::migrate_secret_file(&path, &legacy, &|_, _| Ok(())) {
             tracing::warn!(error = %e, "Installation token: an old copy was left where it is");
         }
-        path
+        Ok(path)
     }
 
     pub fn file(&self) -> &Path {

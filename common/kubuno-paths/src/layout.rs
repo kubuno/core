@@ -388,10 +388,15 @@ pub const INITIAL_ADMIN_PASSWORD: &str = "initial-admin-password";
 ///   drive's spelling and `C:\var\lib\kubuno` are listed;
 /// - the working directories the installers gave the service (`%ProgramData%\Kubuno`
 ///   on Windows, `/usr/local/var/kubuno` on macOS), so that a CLI started from
-///   anywhere still finds the service's old key;
-/// - the current working directory.
+///   anywhere still finds the service's old key.
 ///
-/// The list is deduplicated; it is up to the caller to skip the new location.
+/// The current working directory is deliberately NOT a candidate: it belongs
+/// to whoever started the process, not to the instance.
+///
+/// This is the raw, deduplicated list. To decide where a given instance may
+/// look, use [`legacy_state_dirs_for`], which returns nothing unless the
+/// instance IS the default system instance: a development or second instance
+/// must never read, copy or touch the system instance's secrets.
 pub fn legacy_state_dirs(env: &PathEnv) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     match env.os() {
@@ -410,9 +415,6 @@ pub fn legacy_state_dirs(env: &PathEnv) -> Vec<PathBuf> {
         }
         Os::Linux => dirs.push(PathBuf::from("/var/lib/kubuno")),
     }
-    if let Some(cwd) = env.cwd() {
-        dirs.push(cwd.to_path_buf());
-    }
     let mut out: Vec<PathBuf> = Vec::new();
     for d in dirs {
         if !out.iter().any(|o| same_lexical(o, &d, env.os())) {
@@ -420,6 +422,37 @@ pub fn legacy_state_dirs(env: &PathEnv) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+/// Whether `paths` is the default layout of the system instance: system mode
+/// and the state directory the platform assigns to it, with no override
+/// (environment or configuration) moving it elsewhere.
+pub fn is_default_system_instance(env: &PathEnv, paths: &Paths) -> bool {
+    if paths.mode != Mode::System {
+        return false;
+    }
+    let system = Overrides { mode: Some(Mode::System), ..Overrides::default() };
+    match Paths::resolve(&env.without_path_overrides(), &system) {
+        Ok(default) => same_lexical(&default.state_dir, &paths.state_dir, env.os()),
+        Err(_) => false,
+    }
+}
+
+/// The legacy state directories THIS instance may take its secrets from.
+///
+/// Empty unless `paths` is the default system instance
+/// ([`is_default_system_instance`]): an instance given a state directory of
+/// its own (development, a second instance, user mode) owns that directory
+/// only and never looks into the system one. The instance's own state
+/// directory is never listed.
+pub fn legacy_state_dirs_for(env: &PathEnv, paths: &Paths) -> Vec<PathBuf> {
+    if !is_default_system_instance(env, paths) {
+        return Vec::new();
+    }
+    legacy_state_dirs(env)
+        .into_iter()
+        .filter(|d| !same_lexical(d, &paths.state_dir, env.os()))
+        .collect()
 }
 
 /// The drive (`C:`) a Windows path is on, `\\?\` prefix tolerated.

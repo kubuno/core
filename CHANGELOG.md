@@ -87,6 +87,22 @@ number at release time, and CI publishes that section as the GitHub Release note
   `public`, and moves them there on an install that has them elsewhere (existing tables are unaffected). Moving
   an extension needs a PostgreSQL superuser: when the database role is not one, the log names the
   `ALTER EXTENSION … SET SCHEMA public` statement to run once. No migration file changes.
+- **A development or second core no longer touches the system instance's data encryption key.** Any core,
+  even one given a state directory of its own (`KUBUNO_PATHS_STATE_DIR`, `[paths] state_dir`, user mode),
+  looked for `data.key` and the setup token in the system location (`/var/lib/kubuno` on Linux) and, when it
+  could read them, copied them into its own directory and renamed the originals to `*.migrated`: the
+  packaged service would then no longer find its key at the next start. Now:
+  - only the default system instance looks at the locations older versions of the same service used
+    (`C:\var\lib\kubuno`, its former working directory…); an instance with its own state directory, user
+    mode, or `KUBUNO_DATA_KEY_FILE` looks nowhere else. The current working directory is no longer a
+    candidate at all;
+  - a key is never moved: an upgrade copies it to a temporary file, reads it back, checks the source did
+    not change, then links it into place without overwriting anything. The original stays where it was
+    (the log says it can be deleted);
+  - once the instance's own key exists, older copies are neither read nor touched (a rotated key no
+    longer conflicts with a stale copy);
+  - the instance's secrets never fall back to guessed default directories: invalid `KUBUNO_PATHS_*`
+    variables or a relative `KUBUNO_DATA_KEY_FILE` stop the start-up instead.
 - **Several clients joining an empty collaboration room at once no longer duplicate its content.**
   Only one connection is told the room is empty and seeds it; the others receive the seed through
   the room (the claim passes on if that client leaves without seeding).
@@ -100,6 +116,17 @@ number at release time, and CI publishes that section as the GitHub Release note
   again once the modules' bundles have loaded (they kept the empty list of the first render).
 - **Spacing under a text field inside a view**: a field (or any control drawn inside its own wrapper) in a vertical
   list kept no space below it; it gets the list's spacing again.
+
+### Security
+
+- **Ownership record next to the data encryption key** (`data.key.owner`: instance id, state directory,
+  and a check value derived from the key). The core refuses to start, touching nothing, when the key in its
+  state directory was recorded for another directory (a copy of another instance's state), when the key no
+  longer matches its record (replaced or altered), or when the record exists but the key was deleted
+  (instead of silently seeding a new key that could not decrypt the stored secrets). A key is never copied
+  from a directory that carries a record. Existing installs adopt their key at the first start (the record
+  is created next to it; the key itself is not rewritten); `kubuno rotate-data-key` updates the record. To
+  adopt a directory moved or restored on purpose, delete `data.key.owner`.
 
 ### Added
 

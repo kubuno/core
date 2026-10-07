@@ -76,6 +76,14 @@ impl PathEnv {
         env
     }
 
+    /// The same environment without any `KUBUNO_PATHS_*` variable: what the
+    /// layout would be if nothing had been overridden.
+    pub fn without_path_overrides(&self) -> Self {
+        let mut env = self.clone();
+        env.vars.retain(|k, _| !k.starts_with("KUBUNO_PATHS_"));
+        env
+    }
+
     pub fn with_var(mut self, key: &str, value: &str) -> Self {
         self.vars.insert(key.to_string(), value.to_string());
         self

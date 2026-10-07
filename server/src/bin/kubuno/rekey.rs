@@ -231,7 +231,7 @@ pub async fn cmd_security_rekey(force: bool, check: bool, config: Option<&str>) 
 
     // The key currently in force — the one every stored value was sealed with.
     datakey::init(&settings.auth.jwt_secret).context("Lecture de la clé de données actuelle")?;
-    let path = datakey::key_path();
+    let path = datakey::key_path()?;
 
     info(&format!("Fichier de clé : {}", path.display()));
     println!();

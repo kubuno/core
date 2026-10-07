@@ -36,9 +36,12 @@
 //! so the rules of every OS are tested on every host.
 //!
 //! The crate also provides:
-//! - [`migrate_secret_file`]: brings a secret (`data.key`) from the locations
-//!   older versions used to its explicit location, and refuses to choose when
-//!   two different copies exist;
+//! - [`migrate_secret_file`]: copies a secret (`data.key`) from the locations
+//!   older versions used to its explicit location (copy, verify, atomic link;
+//!   the source is never moved), and refuses to choose when two different
+//!   copies exist. [`legacy_state_dirs_for`] restricts those locations to the
+//!   default system instance, so a development or second instance never looks
+//!   into the system one;
 //! - [`write_private`], [`create_private_dir`], [`restrict_to_owner`]: `0600`/`0700`
 //!   on Unix, a protected DACL (SYSTEM + Administrators + the service account)
 //!   on Windows, without spawning anything.
@@ -50,10 +53,10 @@ mod perms;
 
 pub use env::{Os, PathEnv};
 pub use layout::{
-    legacy_state_dirs, same_lexical, Mode, Overrides, Paths, PathsError, DATA_KEY, ENV_DIRS, ENV_MODE,
-    INITIAL_ADMIN_PASSWORD, SETUP_TOKEN,
+    is_default_system_instance, legacy_state_dirs, legacy_state_dirs_for, same_lexical, Mode, Overrides,
+    Paths, PathsError, DATA_KEY, ENV_DIRS, ENV_MODE, INITIAL_ADMIN_PASSWORD, SETUP_TOKEN,
 };
-pub use migrate::{migrate_secret_file, MigrationError, MigrationOutcome, Retired};
+pub use migrate::{migrate_secret_file, MigrationError, MigrationOutcome};
 pub use perms::{create_private_dir, restrict_to_owner, write_private, ENV_SERVICE_ACCOUNT};
 
 /// The Rust target this binary was built for, as `(os, arch)` with the

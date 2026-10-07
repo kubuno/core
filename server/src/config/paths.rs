@@ -9,6 +9,7 @@
 use kubuno_paths::{Mode, Overrides, PathEnv, Paths, PathsError};
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 static CURRENT: OnceLock<Paths> = OnceLock::new();
@@ -68,17 +69,46 @@ pub fn init(settings: &PathsSettings) -> Result<&'static Paths, PathsError> {
     Ok(CURRENT.get_or_init(|| paths))
 }
 
+/// Set when [`current`] had to fall back to the platform defaults because the
+/// environment did not resolve: the layout is then a guess, not the instance's.
+static FALLBACK: AtomicBool = AtomicBool::new(false);
+
 /// The current layout. When the configuration was never loaded (a unit test,
 /// a command that does not read it), the environment alone decides; an
 /// invalid environment then falls back to the platform defaults, and the
 /// error surfaces at the next configuration load.
+///
+/// Secrets never use this fallback: see [`try_current`].
 pub fn current() -> &'static Paths {
     CURRENT.get_or_init(|| {
         let env = PathEnv::from_process();
-        Paths::resolve(&env, &Overrides::default())
-            .or_else(|_| Paths::resolve(&PathEnv::new(env.os()).with_program_data(fallback_program_data(&env)), &Overrides::default()))
-            .unwrap_or_else(|_| last_resort())
+        Paths::resolve(&env, &Overrides::default()).unwrap_or_else(|_| {
+            FALLBACK.store(true, Ordering::SeqCst);
+            Paths::resolve(&PathEnv::new(env.os()).with_program_data(fallback_program_data(&env)), &Overrides::default())
+                .unwrap_or_else(|_| last_resort())
+        })
     })
+}
+
+/// The current layout, or an error when it could only be guessed. Used for
+/// the instance's secrets (`data.key`, the setup token): a development
+/// instance whose `KUBUNO_PATHS_*` variables are invalid must stop, not
+/// silently fall back to the system instance's directories.
+pub fn try_current() -> Result<&'static Paths, PathsError> {
+    let paths = match CURRENT.get() {
+        Some(p) => p,
+        None => {
+            let p = Paths::resolve(&PathEnv::from_process(), &Overrides::default())?;
+            CURRENT.get_or_init(|| p)
+        }
+    };
+    if FALLBACK.load(Ordering::SeqCst) {
+        // Report the real resolution error when there still is one.
+        return Err(Paths::resolve(&PathEnv::from_process(), &Overrides::default())
+            .err()
+            .unwrap_or(PathsError::MissingBase("the instance directories")));
+    }
+    Ok(paths)
 }
 
 fn fallback_program_data(env: &PathEnv) -> PathBuf {
@@ -105,10 +135,13 @@ fn last_resort() -> Paths {
     }
 }
 
-/// Legacy state-file locations for this process (see
-/// [`kubuno_paths::legacy_state_dirs`]), each joined with `file`.
-pub fn legacy_state_files(file: &str) -> Vec<PathBuf> {
-    kubuno_paths::legacy_state_dirs(&PathEnv::from_process())
+/// Legacy locations this instance may take `file` from (see
+/// [`kubuno_paths::legacy_state_dirs_for`]): none at all unless the instance
+/// is the default system instance. A development or second instance, or one
+/// whose secret file is named explicitly, never looks into another
+/// instance's directory.
+pub fn legacy_state_files(paths: &Paths, file: &str) -> Vec<PathBuf> {
+    kubuno_paths::legacy_state_dirs_for(&PathEnv::from_process(), paths)
         .into_iter()
         .map(|d| d.join(file))
         .collect()
