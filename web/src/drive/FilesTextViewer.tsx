@@ -95,26 +95,26 @@ export default function FilesTextViewer({ name, load, onClose }: Props) {
         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm transition-colors ${
           wrap ? 'border-primary text-primary bg-primary-light' : 'border-border text-text-secondary hover:bg-surface-1'
         }`}
-        title={t('txtview.wrap', { defaultValue: 'Retour à la ligne' })}
+        title={t('txtview.wrap', { defaultValue: "Word wrap" })}
       >
         <WrapText size={15} />
-        <span className="hidden sm:inline">{t('txtview.wrap', { defaultValue: 'Retour à la ligne' })}</span>
+        <span className="hidden sm:inline">{t('txtview.wrap', { defaultValue: "Word wrap" })}</span>
       </button>
       <button
         onClick={copy}
         disabled={text == null}
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-sm
                    text-text-secondary hover:bg-surface-1 disabled:opacity-40"
-        title={t('txtview.copy', { defaultValue: 'Copier' })}
+        title={t('txtview.copy', { defaultValue: 'Copy' })}
       >
         {copied ? <Check size={15} className="text-success" /> : <Copy size={15} />}
-        <span className="hidden sm:inline">{copied ? t('txtview.copied', { defaultValue: 'Copié' }) : t('txtview.copy', { defaultValue: 'Copier' })}</span>
+        <span className="hidden sm:inline">{copied ? t('txtview.copied', { defaultValue: "Copied" }) : t('txtview.copy', { defaultValue: 'Copy' })}</span>
       </button>
       <button
         onClick={download}
         disabled={text == null}
         className="p-2 text-text-tertiary hover:text-text-primary rounded-lg hover:bg-surface-1 disabled:opacity-40"
-        title={t('common.download', { defaultValue: 'Télécharger' })}
+        title={t('common.download', { defaultValue: "Download" })}
       >
         <Download size={16} />
       </button>
@@ -126,7 +126,7 @@ export default function FilesTextViewer({ name, load, onClose }: Props) {
       title={
         <span className="flex items-center gap-2">
           <span className="font-semibold">{name}</span>
-          <span className="text-xs text-text-tertiary font-normal">{ext}{text != null && !error && ` · ${lineCount} ${t('txtview.lines', { defaultValue: 'lignes' })}`}</span>
+          <span className="text-xs text-text-tertiary font-normal">{ext}{text != null && !error && ` · ${lineCount} ${t('txtview.lines', { defaultValue: 'lines' })}`}</span>
         </span>
       }
       icon={<FileText size={16} className="text-sky-600" />}
@@ -139,13 +139,13 @@ export default function FilesTextViewer({ name, load, onClose }: Props) {
       <div className="flex flex-col flex-1 min-h-0">
         {truncated && (
           <div className="px-4 py-1.5 text-xs text-warning bg-warning-light border-b border-border shrink-0">
-            {t('txtview.truncated', { defaultValue: 'Fichier volumineux - aperçu tronqué.' })}
+            {t('txtview.truncated', { defaultValue: "Large file — preview truncated." })}
           </div>
         )}
         {error ? (
           <div className="flex flex-col items-center justify-center flex-1 text-text-tertiary gap-3">
             <FileText size={40} className="opacity-30" />
-            <p className="text-sm">{t('txtview.cannot_load', { defaultValue: 'Aperçu indisponible (fichier binaire ou illisible).' })}</p>
+            <p className="text-sm">{t('txtview.cannot_load', { defaultValue: "Preview unavailable (binary or unreadable file)." })}</p>
           </div>
         ) : text == null ? (
           <div className="flex items-center justify-center flex-1">
@@ -153,7 +153,7 @@ export default function FilesTextViewer({ name, load, onClose }: Props) {
           </div>
         ) : text.length === 0 ? (
           <div className="flex items-center justify-center flex-1 text-text-tertiary text-sm">
-            {t('txtview.empty', { defaultValue: 'Fichier vide.' })}
+            {t('txtview.empty', { defaultValue: 'Empty file.' })}
           </div>
         ) : (
           <div className="flex flex-1 min-h-0 overflow-auto bg-white font-mono text-xs leading-5">

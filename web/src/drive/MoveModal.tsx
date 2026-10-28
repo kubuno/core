@@ -135,7 +135,7 @@ export default function MoveModal({ target, onClose }: Props) {
               onClick={() => navigateTo(-1)}
               className="flex items-center gap-1 hover:text-primary"
             >
-              <Home size={11} /> Mes fichiers
+              <Home size={11} /> My files
             </button>
             {path.map((p, i) => (
               <span key={p.id} className="flex items-center gap-1">
@@ -158,7 +158,8 @@ export default function MoveModal({ target, onClose }: Props) {
               </div>
             ) : folders.length === 0 ? (
               <p className="flex items-center justify-center h-32 text-xs text-text-tertiary">
-                Aucun sous-dossier ici
+
+                No subfolders here
               </p>
             ) : (
               folders.map(f => (

@@ -4,6 +4,7 @@
 import { bind, type EventArgs } from '@kubuno/views'
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
+import { setLanguage } from '../../../i18n'
 import { Dropdown, useToast } from "@ui"
 import { useAuthStore } from "../../../store/authStore"
 import { api } from "../../../api/client"
@@ -65,7 +66,7 @@ export class ProfileTab extends ViewBase {
     extraEmails:    Array.isArray(this.prof.extraEmails) ? (this.prof.extraEmails as string[]) : [],
     phone:          this.s(this.prof.phone),
     location:       this.s(this.prof.location),
-    language:       this.s(this.prefs.language) || 'fr',
+    language:       this.s(this.prefs.language) || this.i18n.resolvedLanguage || this.i18n.language || 'en',
     locale:         this.s(this.prefs.locale),
     firstDayOfWeek: this.s(this.prefs.firstDayOfWeek) || 'auto',
     timezone:       this.s(this.prefs.timezone),
@@ -213,7 +214,7 @@ export class ProfileTab extends ViewBase {
         birthday:           orNull(this.f.birthday),
       })
       if (data.user) this.updateUser(data.user as Parameters<ProfileTab['updateUser']>[0])
-      if (this.f.language && this.f.language !== this.i18n.language) this.i18n.changeLanguage(this.f.language)
+      if (this.f.language) setLanguage(this.f.language)
       this.saved = true; setTimeout(() => this.saved = false, 2200)
     } catch (err) {
       // A refusal by the organisation's policy arrives as a 403 carrying its own
